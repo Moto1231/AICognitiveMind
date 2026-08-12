@@ -37,3 +37,4 @@ Then open `/docs` on the forwarded port to use the API.
 ## Project status
 
 The current code is an architecture skeleton, not a claim of consciousness. It establishes the protected boundaries among identity, memory, stewards, and interchangeable reasoning engines before connecting a live model.
+
