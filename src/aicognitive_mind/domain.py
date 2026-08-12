@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
-from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
@@ -22,7 +21,7 @@ class MemoryClass(StrEnum):
 
 
 class CognitiveActor(StrEnum):
-    HOST = "host"
+    HUMAN = "human"
     CONSCIOUS_WORKSPACE = "conscious_workspace"
     SUBCONSCIOUS_LAYER = "subconscious_layer"
     CONSCIOUS_MEMORY_STEWARD = "conscious_memory_steward"
@@ -33,55 +32,56 @@ class CognitiveActor(StrEnum):
     REASONING_ENGINE = "reasoning_engine"
 
 
-class EventType(StrEnum):
-    BEING_CREATED = "being_created"
-    HOST_MESSAGE_RECEIVED = "host_message_received"
-    REASONING_PROPOSED = "reasoning_proposed"
-    RESPONSE_EXPRESSED = "response_expressed"
-    MEMORY_PROPOSED = "memory_proposed"
-    REFLECTION_PROPOSED = "reflection_proposed"
-    IDENTITY_REVISION_PROPOSED = "identity_revision_proposed"
+class JournalKind(StrEnum):
+    INITIALIZATION = "initialization"
+    INTERACTION = "interaction"
+    REFLECTION = "reflection"
+    TENSION = "tension"
 
 
-class Being(BaseModel):
-    being_id: UUID = Field(default_factory=uuid4)
-    name: str = Field(min_length=1, max_length=120)
-    host_id: str = Field(min_length=1, max_length=200)
-    identity_version: int = Field(default=1, ge=1)
-    values: tuple[str, ...] = ()
+class MindIdentity(BaseModel):
+    self_name: str = Field(min_length=1, max_length=120)
+    foundational_values: tuple[str, ...] = ()
+    commitments: tuple[str, ...] = ()
+    relationships: tuple[dict[str, Any], ...] = ()
+
+
+class CognitiveMind(BaseModel):
+    """The one persistent mind owned by this application instance."""
+
+    identity: MindIdentity
+    developmental_state: str = "genesis"
     created_at: datetime = Field(default_factory=utc_now)
 
 
-class CognitiveEvent(BaseModel):
-    event_id: UUID = Field(default_factory=uuid4)
-    being_id: UUID
-    event_type: EventType
-    source: CognitiveActor
-    recorded_by: CognitiveActor
-    payload: dict[str, Any]
+class JournalEntry(BaseModel):
+    """A whole cognitive document, stored without domain identifiers."""
+
+    kind: JournalKind
     occurred_at: datetime = Field(default_factory=utc_now)
-    correlation_id: UUID = Field(default_factory=uuid4)
-    causation_id: UUID | None = None
-    schema_version: int = Field(default=1, ge=1)
+    experience: dict[str, Any]
+
+
+class DiagnosticObservation(BaseModel):
+    """Implementation provenance kept outside identity and cognitive history."""
+
+    observed_at: datetime = Field(default_factory=utc_now)
+    component: str
+    operation: str
+    implementation: dict[str, Any]
 
 
 class ReasoningRequest(BaseModel):
-    being: Being
-    host_message: str = Field(min_length=1)
-    correlation_id: UUID
+    mind: CognitiveMind
+    input_text: str = Field(min_length=1)
 
 
 class ReasoningProposal(BaseModel):
-    engine_id: str
     response_text: str
-    model_name: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    diagnostic: DiagnosticObservation
 
 
 class InteractionResult(BaseModel):
-    being_id: UUID
     response_text: str
-    engine_id: str
-    correlation_id: UUID
-    event_ids: tuple[UUID, ...]
+    occurred_at: datetime
 

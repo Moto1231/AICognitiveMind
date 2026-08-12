@@ -24,6 +24,12 @@ class PermissionPolicyTests(unittest.TestCase):
                 CognitiveOperation.WRITE_DURABLE_MEMORY,
             )
 
+        with self.assertRaises(CognitivePermissionError):
+            self.policy.assert_allowed(
+                CognitiveActor.REASONING_ENGINE,
+                CognitiveOperation.RECORD_JOURNAL,
+            )
+
     def test_reasoning_engine_cannot_revise_identity(self) -> None:
         with self.assertRaises(CognitivePermissionError):
             self.policy.assert_allowed(
@@ -34,4 +40,3 @@ class PermissionPolicyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

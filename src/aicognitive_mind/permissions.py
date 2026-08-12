@@ -4,7 +4,7 @@ from aicognitive_mind.domain import CognitiveActor
 
 
 class CognitiveOperation(StrEnum):
-    APPEND_EVENT = "append_event"
+    RECORD_JOURNAL = "record_journal"
     PROPOSE_RESPONSE = "propose_response"
     PROPOSE_MEMORY = "propose_memory"
     WRITE_DURABLE_MEMORY = "write_durable_memory"
@@ -20,14 +20,10 @@ class CognitivePermissionError(PermissionError):
 
 
 class PermissionPolicy:
-    """Central authority boundary for the first prototype.
-
-    A component may only perform operations listed here. Most importantly, a
-    reasoning engine can propose cognitive material but cannot persist it.
-    """
+    """Cognitive authority, independent from MongoDB access mechanics."""
 
     _allowed: dict[CognitiveActor, frozenset[CognitiveOperation]] = {
-        CognitiveActor.HOST: frozenset(
+        CognitiveActor.HUMAN: frozenset(
             {
                 CognitiveOperation.PROPOSE_MEMORY,
                 CognitiveOperation.PROPOSE_IDENTITY_REVISION,
@@ -35,7 +31,7 @@ class PermissionPolicy:
         ),
         CognitiveActor.CONSCIOUS_WORKSPACE: frozenset(
             {
-                CognitiveOperation.APPEND_EVENT,
+                CognitiveOperation.RECORD_JOURNAL,
                 CognitiveOperation.PROPOSE_MEMORY,
                 CognitiveOperation.PROPOSE_REFLECTION,
                 CognitiveOperation.PROPOSE_IDENTITY_REVISION,
@@ -49,32 +45,32 @@ class PermissionPolicy:
         ),
         CognitiveActor.CONSCIOUS_MEMORY_STEWARD: frozenset(
             {
-                CognitiveOperation.APPEND_EVENT,
+                CognitiveOperation.RECORD_JOURNAL,
                 CognitiveOperation.WRITE_DURABLE_MEMORY,
             }
         ),
         CognitiveActor.SUBCONSCIOUS_MEMORY_STEWARD: frozenset(
             {
-                CognitiveOperation.APPEND_EVENT,
+                CognitiveOperation.RECORD_JOURNAL,
                 CognitiveOperation.WRITE_DURABLE_MEMORY,
             }
         ),
         CognitiveActor.REFLECTION_STEWARD: frozenset(
             {
-                CognitiveOperation.APPEND_EVENT,
+                CognitiveOperation.RECORD_JOURNAL,
                 CognitiveOperation.APPROVE_REFLECTION,
                 CognitiveOperation.WRITE_DURABLE_MEMORY,
             }
         ),
         CognitiveActor.VALUES_STEWARD: frozenset(
             {
-                CognitiveOperation.APPEND_EVENT,
+                CognitiveOperation.RECORD_JOURNAL,
                 CognitiveOperation.APPROVE_IDENTITY_REVISION,
             }
         ),
         CognitiveActor.KNOWLEDGE_STEWARD: frozenset(
             {
-                CognitiveOperation.APPEND_EVENT,
+                CognitiveOperation.RECORD_JOURNAL,
                 CognitiveOperation.WRITE_DURABLE_MEMORY,
             }
         ),
@@ -89,7 +85,9 @@ class PermissionPolicy:
     }
 
     def assert_allowed(
-        self, actor: CognitiveActor, operation: CognitiveOperation
+        self,
+        actor: CognitiveActor,
+        operation: CognitiveOperation,
     ) -> None:
         if operation not in self._allowed.get(actor, frozenset()):
             raise CognitivePermissionError(f"{actor} may not perform {operation}")

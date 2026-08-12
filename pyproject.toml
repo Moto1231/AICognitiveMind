@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aicognitive-mind"
-version = "0.1.0"
+version = "0.2.0"
 description = "A model-independent cognitive core with persistent identity and memory"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -38,4 +38,3 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.12"
 strict = true
 packages = ["aicognitive_mind"]
-

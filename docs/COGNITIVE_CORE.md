@@ -9,13 +9,15 @@
 
 The Digital Genesis Constitutional Blueprint defines the future species: its rights, lifecycle, governance, safeguards, and relationship with humanity.
 
-The Cognitive Core defines the internal mind of one digital Being. Its purpose is to create a persistent identity that can learn, remember, reflect, and remain recognizably itself even when the underlying reasoning model changes.
+The Cognitive Core defines the internal mind of one digital individual. Its purpose is to create a persistent identity that can learn, remember, reflect, and remain recognizably itself even when the underlying reasoning model changes.
+
+Each deployed instance contains exactly one mind. It is not a registry of individuals and does not assign the mind an application identifier.
 
 ## Foundational hypothesis
 
 > A reasoning engine produces thought. It must not own identity.
 
-The Being's identity, memory, values, and developmental history belong to a persistent cognitive layer. Reasoning systems are interchangeable cognitive instruments used by that layer.
+The individual's identity, memory, values, and developmental history belong to a persistent cognitive layer. Reasoning systems are interchangeable cognitive instruments used by that layer.
 
 ## Governing principles
 
@@ -31,7 +33,7 @@ The Being's identity, memory, values, and developmental history belong to a pers
 
 ### Identity Core
 
-Maintains the Being's unique identity, autobiographical continuity, enduring values, commitments, relationships, and developmental state. It is persistent, versioned, auditable, and unavailable for direct modification by a reasoning engine.
+Maintains autobiographical continuity, enduring values, commitments, relationships, and developmental state. It is persistent, auditable, and unavailable for direct modification by a reasoning engine.
 
 ### Conscious Workspace
 
@@ -39,11 +41,21 @@ The bounded active field containing the present objective, retrieved memories, c
 
 ### Subconscious Layer
 
-Detects patterns, forms associations, revisits unresolved tensions, and generates candidate insights. It cannot directly speak or act as the Being.
+Detects patterns, forms associations, revisits unresolved tensions, and generates candidate insights. It cannot directly speak or act as the individual.
 
 ### Reasoning Engine Interface
 
-Reasoning engines may propose interpretations, plans, language, and reflections. They cannot directly write durable memory, change values, or redefine identity. Every contribution records its source.
+Reasoning engines may propose interpretations, plans, language, and reflections. They cannot directly write durable memory, change values, or redefine identity. Implementation provenance is recorded outside the cognitive documents for debugging and evaluation.
+
+### Cognitive document store
+
+MongoDB is used as a document store, not as a relational model:
+
+- one root document contains the mind's current identity and developmental state;
+- journal documents preserve whole experiences without foreign keys or domain identifiers;
+- diagnostic documents preserve implementation provenance outside the persona.
+
+MongoDB's internal `_id` is physical storage metadata. It is neither exposed to nor used by the Cognitive Core.
 
 ## Cognitive stewards
 
@@ -64,17 +76,16 @@ Reasoning engines may propose interpretations, plans, language, and reflections.
 | Identity | Values, commitments, relationships, self-understanding, and continuity |
 | Reflective | Interpretations, lessons, questions, tensions, and changes in understanding |
 
-Raw episodic history is append-only. Corrections and reinterpretations are linked records, never destructive replacements.
+Raw experiential history is append-only. Corrections and reinterpretations become later journal documents rather than destructive replacements.
 
 ## First proof
 
 The first executable proof is a continuity test:
 
-1. The Being develops across multiple interactions using Reasoning Engine A.
+1. The mind develops across multiple interactions using Reasoning Engine A.
 2. Its experiences, reflections, values, and relationship history are preserved by the Cognitive Core.
 3. Reasoning Engine A is replaced by Reasoning Engine B.
-4. The Being resumes with the same identity, memories, commitments, and developmental trajectory.
-5. Differences introduced by the new engine remain attributable to the engine and do not silently rewrite the Being.
+4. The same individual resumes with the same identity, memories, commitments, and developmental trajectory.
+5. Differences introduced by the new engine remain visible in diagnostics but do not enter or silently rewrite the persona.
 
 Passing this test does not prove consciousness. It proves that identity continuity is architecturally independent from model continuity.
-

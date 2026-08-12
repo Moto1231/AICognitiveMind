@@ -1,6 +1,6 @@
 # ADR 0001: Initial implementation stack
 
-**Status:** Accepted for prototype  
+**Status:** Accepted for prototype; cognitive storage amended by ADR 0002  
 **Date:** August 11, 2026
 
 ## Decision
@@ -25,6 +25,6 @@ An agent framework is intentionally excluded from the Cognitive Core. Such frame
 
 - Reasoning providers can be added later without altering the domain core.
 - The initial implementation is a modular monolith, not a distributed multi-agent system.
-- Raw events are append-only; interpretations and identity changes require separate governed records.
+- Cognitive history is append-only; its document shape is governed by ADR 0002.
 - A mock engine allows continuity and permission tests to run without API keys, cost, or provider behavior affecting the result.
 

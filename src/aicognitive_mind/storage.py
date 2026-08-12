@@ -2,48 +2,82 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Protocol
-from uuid import UUID
 
-from aicognitive_mind.domain import Being, CognitiveEvent
+from aicognitive_mind.domain import (
+    CognitiveActor,
+    CognitiveMind,
+    DiagnosticObservation,
+    JournalEntry,
+)
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 
 
-class BeingStore(Protocol):
-    async def create(self, being: Being) -> Being: ...
-
-    async def get(self, being_id: UUID) -> Being | None: ...
+class MindAlreadyInitializedError(RuntimeError):
+    pass
 
 
-class EventStore(Protocol):
-    async def append(self, event: CognitiveEvent) -> CognitiveEvent: ...
+class MindStore(Protocol):
+    async def initialize(self, mind: CognitiveMind) -> CognitiveMind: ...
 
-    async def list_for_being(self, being_id: UUID) -> list[CognitiveEvent]: ...
+    async def load(self) -> CognitiveMind | None: ...
 
 
-class InMemoryBeingStore:
+class JournalStore(Protocol):
+    async def append(
+        self,
+        entry: JournalEntry,
+        recorded_by: CognitiveActor,
+    ) -> JournalEntry: ...
+
+    async def read(self) -> list[JournalEntry]: ...
+
+
+class DiagnosticStore(Protocol):
+    async def record(self, observation: DiagnosticObservation) -> None: ...
+
+    async def read(self) -> list[DiagnosticObservation]: ...
+
+
+class InMemoryMindStore:
     def __init__(self) -> None:
-        self._beings: dict[UUID, Being] = {}
+        self._mind: CognitiveMind | None = None
 
-    async def create(self, being: Being) -> Being:
-        self._beings[being.being_id] = deepcopy(being)
-        return deepcopy(being)
+    async def initialize(self, mind: CognitiveMind) -> CognitiveMind:
+        if self._mind is not None:
+            raise MindAlreadyInitializedError("This instance already contains its mind")
+        self._mind = deepcopy(mind)
+        return deepcopy(mind)
 
-    async def get(self, being_id: UUID) -> Being | None:
-        being = self._beings.get(being_id)
-        return deepcopy(being) if being else None
+    async def load(self) -> CognitiveMind | None:
+        return deepcopy(self._mind)
 
 
-class InMemoryEventStore:
+class InMemoryJournalStore:
     def __init__(self, policy: PermissionPolicy | None = None) -> None:
-        self._events: list[CognitiveEvent] = []
+        self._entries: list[JournalEntry] = []
         self._policy = policy or PermissionPolicy()
 
-    async def append(self, event: CognitiveEvent) -> CognitiveEvent:
-        self._policy.assert_allowed(event.recorded_by, CognitiveOperation.APPEND_EVENT)
-        stored = deepcopy(event)
-        self._events.append(stored)
+    async def append(
+        self,
+        entry: JournalEntry,
+        recorded_by: CognitiveActor,
+    ) -> JournalEntry:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.RECORD_JOURNAL)
+        stored = deepcopy(entry)
+        self._entries.append(stored)
         return deepcopy(stored)
 
-    async def list_for_being(self, being_id: UUID) -> list[CognitiveEvent]:
-        return [deepcopy(event) for event in self._events if event.being_id == being_id]
+    async def read(self) -> list[JournalEntry]:
+        return deepcopy(self._entries)
+
+
+class InMemoryDiagnosticStore:
+    def __init__(self) -> None:
+        self._observations: list[DiagnosticObservation] = []
+
+    async def record(self, observation: DiagnosticObservation) -> None:
+        self._observations.append(deepcopy(observation))
+
+    async def read(self) -> list[DiagnosticObservation]:
+        return deepcopy(self._observations)
 
