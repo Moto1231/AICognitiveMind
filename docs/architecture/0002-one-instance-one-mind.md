@@ -18,6 +18,7 @@ It also allowed reasoning-engine provenance to appear beside cognitive history, 
 5. The root `mind` document contains identity and current developmental state as one aggregate.
 6. The `journal` stores whole experiences as append-only documents rather than normalized event fragments.
 7. Reasoning-engine names, models, and proposal provenance live only in `diagnostics`; they are absent from the root mind and cognitive journal.
+8. Steward-curated durable learning lives as whole documents in `memory`, without cognitive identifiers or references to normalized records.
 
 ## Consequences
 

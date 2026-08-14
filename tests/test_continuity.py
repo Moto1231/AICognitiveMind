@@ -1,11 +1,12 @@
 import unittest
 
 from aicognitive_mind.core import CognitiveCore
-from aicognitive_mind.domain import JournalKind
+from aicognitive_mind.domain import CognitiveActor, DurableMemory, JournalKind, MemoryClass
 from aicognitive_mind.engines import EchoReasoningEngine
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
     InMemoryJournalStore,
+    InMemoryMemoryStore,
     InMemoryMindStore,
     MindAlreadyInitializedError,
 )
@@ -16,6 +17,7 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         core = CognitiveCore(
             mind=InMemoryMindStore(),
             journal=InMemoryJournalStore(),
+            memory=InMemoryMemoryStore(),
             diagnostics=InMemoryDiagnosticStore(),
             engine=EchoReasoningEngine(),
         )
@@ -28,10 +30,12 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         mind_store = InMemoryMindStore()
         journal = InMemoryJournalStore()
         diagnostics = InMemoryDiagnosticStore()
+        memory = InMemoryMemoryStore()
 
         core_a = CognitiveCore(
             mind=mind_store,
             journal=journal,
+            memory=memory,
             diagnostics=diagnostics,
             engine=EchoReasoningEngine(diagnostic_name="engine-a", prefix="A considered"),
         )
@@ -44,6 +48,7 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         core_b = CognitiveCore(
             mind=mind_store,
             journal=journal,
+            memory=memory,
             diagnostics=diagnostics,
             engine=EchoReasoningEngine(diagnostic_name="engine-b", prefix="B considered"),
         )
@@ -68,17 +73,33 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_cognitive_documents_have_no_domain_identifiers(self) -> None:
+        memory = InMemoryMemoryStore()
         core = CognitiveCore(
             mind=InMemoryMindStore(),
             journal=InMemoryJournalStore(),
+            memory=memory,
             diagnostics=InMemoryDiagnosticStore(),
             engine=EchoReasoningEngine(),
         )
         mind = await core.initialize("Genesis")
+        await memory.remember(
+            DurableMemory(
+                memory_class=MemoryClass.SEMANTIC,
+                content="mir.ai Technology contains the Digital Genesis framework.",
+                associations=("mir.ai Technology", "Digital Genesis"),
+                grounding=("established-project-context",),
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
         await core.interact("Hello.")
         journal = await core.read_journal()
+        memories = await core.read_memory()
 
-        cognitive_documents = [mind.model_dump(), *[entry.model_dump() for entry in journal]]
+        cognitive_documents = [
+            mind.model_dump(),
+            *[entry.model_dump() for entry in journal],
+            *[memory.model_dump() for memory in memories],
+        ]
         identifier_keys = {
             key
             for document in cognitive_documents
@@ -105,4 +126,3 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

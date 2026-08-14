@@ -1,6 +1,7 @@
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
+    DurableMemory,
     InteractionResult,
     JournalEntry,
     JournalKind,
@@ -8,8 +9,10 @@ from aicognitive_mind.domain import (
     ReasoningRequest,
 )
 from aicognitive_mind.engines import ReasoningEngine
+from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
-from aicognitive_mind.storage import DiagnosticStore, JournalStore, MindStore
+from aicognitive_mind.prompts import CONSCIOUS_WORKSPACE_SYSTEM_PROMPT
+from aicognitive_mind.storage import DiagnosticStore, JournalStore, MemoryStore, MindStore
 
 
 class MindNotInitializedError(LookupError):
@@ -21,12 +24,14 @@ class CognitiveCore:
         self,
         mind: MindStore,
         journal: JournalStore,
+        memory: MemoryStore,
         diagnostics: DiagnosticStore,
         engine: ReasoningEngine,
         policy: PermissionPolicy | None = None,
     ) -> None:
         self._mind = mind
         self._journal = journal
+        self._memory = memory
         self._diagnostics = diagnostics
         self._engine = engine
         self._policy = policy or PermissionPolicy()
@@ -65,13 +70,25 @@ class CognitiveCore:
 
     async def interact(self, input_text: str) -> InteractionResult:
         mind = await self.load_mind()
+        memory_steward = MemoryStewardTool(
+            mind=mind,
+            input_text=input_text,
+            memory=self._memory,
+            journal=self._journal,
+        )
         self._policy.assert_allowed(
             CognitiveActor.REASONING_ENGINE,
             CognitiveOperation.PROPOSE_RESPONSE,
         )
         proposal = await self._engine.propose(
-            ReasoningRequest(mind=mind, input_text=input_text)
+            ReasoningRequest(
+                mind=mind,
+                input_text=input_text,
+                system_prompt=CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
+            ),
+            tools=(memory_steward,),
         )
+        memory_trace = await memory_steward.complete()
 
         journal_entry = await self._journal.append(
             JournalEntry(
@@ -81,6 +98,7 @@ class CognitiveCore:
                         "source": "human",
                         "content": input_text,
                     },
+                    "memory_steward": memory_trace.model_dump(mode="python"),
                     "expression": {
                         "source": "conscious_workspace",
                         "content": proposal.response_text,
@@ -100,3 +118,6 @@ class CognitiveCore:
         await self.load_mind()
         return await self._journal.read()
 
+    async def read_memory(self) -> list[DurableMemory]:
+        await self.load_mind()
+        return await self._memory.read()

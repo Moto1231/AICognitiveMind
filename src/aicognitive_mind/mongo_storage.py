@@ -7,6 +7,7 @@ from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
     DiagnosticObservation,
+    DurableMemory,
     JournalEntry,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
@@ -21,6 +22,8 @@ class MongoRuntime:
     async def initialize(self) -> None:
         await self.client.admin.command("ping")
         await self.database["journal"].create_index([("occurred_at", ASCENDING)])
+        await self.database["memory"].create_index([("formed_at", ASCENDING)])
+        await self.database["memory"].create_index([("associations", ASCENDING)])
         await self.database["diagnostics"].create_index([("observed_at", ASCENDING)])
 
     async def ping(self) -> None:
@@ -85,3 +88,27 @@ class MongoDiagnosticStore:
         cursor = self._collection.find({}, {"_id": 0}).sort("observed_at", ASCENDING)
         return [DiagnosticObservation.model_validate(document) async for document in cursor]
 
+
+class MongoMemoryStore:
+    """Whole durable memories, curated by a Memory Steward without domain keys."""
+
+    def __init__(
+        self,
+        database: AsyncDatabase[dict[str, Any]],
+        policy: PermissionPolicy | None = None,
+    ) -> None:
+        self._collection = database["memory"]
+        self._policy = policy or PermissionPolicy()
+
+    async def remember(
+        self,
+        memory: DurableMemory,
+        recorded_by: CognitiveActor,
+    ) -> DurableMemory:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
+        await self._collection.insert_one(memory.model_dump(mode="python"))
+        return memory
+
+    async def read(self) -> list[DurableMemory]:
+        cursor = self._collection.find({}, {"_id": 0}).sort("formed_at", ASCENDING)
+        return [DurableMemory.model_validate(document) async for document in cursor]

@@ -54,6 +54,16 @@ class CognitiveMind(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class DurableMemory(BaseModel):
+    """A whole memory document curated by a Memory Steward."""
+
+    memory_class: MemoryClass
+    formed_at: datetime = Field(default_factory=utc_now)
+    content: str = Field(min_length=1)
+    associations: tuple[str, ...] = ()
+    grounding: tuple[str, ...] = ()
+
+
 class JournalEntry(BaseModel):
     """A whole cognitive document, stored without domain identifiers."""
 
@@ -74,6 +84,7 @@ class DiagnosticObservation(BaseModel):
 class ReasoningRequest(BaseModel):
     mind: CognitiveMind
     input_text: str = Field(min_length=1)
+    system_prompt: str = Field(min_length=1)
 
 
 class ReasoningProposal(BaseModel):
@@ -84,4 +95,3 @@ class ReasoningProposal(BaseModel):
 class InteractionResult(BaseModel):
     response_text: str
     occurred_at: datetime
-

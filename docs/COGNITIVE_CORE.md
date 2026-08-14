@@ -53,6 +53,7 @@ MongoDB is used as a document store, not as a relational model:
 
 - one root document contains the mind's current identity and developmental state;
 - journal documents preserve whole experiences without foreign keys or domain identifiers;
+- memory documents preserve whole Steward-curated semantic, procedural, and reflective memory;
 - diagnostic documents preserve implementation provenance outside the persona.
 
 MongoDB's internal `_id` is physical storage metadata. It is neither exposed to nor used by the Cognitive Core.
@@ -64,6 +65,16 @@ MongoDB's internal `_id` is physical storage metadata. It is neither exposed to 
 - **Reflection Steward:** accepts, links, defers, rejects, or preserves candidate interpretations as tension.
 - **Governance and Values Steward:** protects values, constitutional constraints, and behavioral boundaries.
 - **Skills and Knowledge Steward:** distinguishes facts, procedures, demonstrated abilities, and unverified claims.
+
+### Executable Memory Steward boundary
+
+The V0.1 Conscious Memory Steward is exposed to the reasoning engine as an interaction-scoped
+tool. The system prompt requires recall before response, permits research evidence to be submitted
+for comparison, and permits durable memory to be proposed but not written by the reasoning
+engine. The runtime rejects a response that bypasses recall.
+
+Whole interactions remain episodic journal experiences. Only Steward-approved stable learning is
+written to durable memory; identity and value changes remain subject to constitutional governance.
 
 ## Memory classes
 

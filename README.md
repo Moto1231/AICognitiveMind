@@ -26,9 +26,31 @@ The cognitive model contains no application-level primary keys, foreign keys, mi
 
 - `mind` contains the whole current identity and developmental state.
 - `journal` contains whole cognitive experiences in chronological order.
+- `memory` contains whole durable memories curated by the Memory Steward.
 - `diagnostics` contains implementation details such as the reasoning model used.
 
 Nothing in `diagnostics` is part of identity, memory, or persona.
+
+## Memory Steward Tool V0.1
+
+Every interaction now gives the reasoning engine one interaction-scoped tool named
+`memory_steward`. The Conscious Workspace system prompt requires this sequence:
+
+1. `recall` related memory before reaching a conclusion;
+2. `consider_evidence` for research results materially used in the answer;
+3. compare the user message, recalled context, and current evidence;
+4. `propose_memory` for stable learning that may deserve durable retention;
+5. return the response, after which the Cognitive Core journals the whole experience.
+
+The runtime rejects a response if the reasoning engine skipped recall. The reasoning engine can
+only propose memory. The Conscious Memory Steward accepts or rejects the proposal and is the only
+process in this path allowed to write it. V0.1 accepts semantic, procedural, and reflective memory;
+episodic experience belongs in the append-only journal, while identity and values remain outside
+the Steward's authority.
+
+The implementation remains provider-neutral. A live model adapter receives the system prompt and
+tool schema through the `ReasoningEngine` interface; the deterministic echo adapter exercises the
+same mandatory recall boundary in tests and local development.
 
 ## Initial stack
 

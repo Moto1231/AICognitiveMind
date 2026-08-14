@@ -10,6 +10,7 @@ from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
     CognitiveMind,
     DiagnosticObservation,
+    DurableMemory,
     InteractionResult,
     JournalEntry,
 )
@@ -17,6 +18,7 @@ from aicognitive_mind.engines import EchoReasoningEngine
 from aicognitive_mind.mongo_storage import (
     MongoDiagnosticStore,
     MongoJournalStore,
+    MongoMemoryStore,
     MongoMindStore,
     MongoRuntime,
 )
@@ -46,6 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.core = CognitiveCore(
         mind=MongoMindStore(runtime.database),
         journal=MongoJournalStore(runtime.database),
+        memory=MongoMemoryStore(runtime.database),
         diagnostics=app.state.diagnostics,
         engine=EchoReasoningEngine(),
     )
@@ -111,8 +114,18 @@ async def read_journal(request: Request) -> list[JournalEntry]:
         ) from exc
 
 
+@app.get("/v1/mind/memory", response_model=list[DurableMemory])
+async def read_memory(request: Request) -> list[DurableMemory]:
+    try:
+        return await get_core(request).read_memory()
+    except MindNotInitializedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The mind has not been initialized",
+        ) from exc
+
+
 @app.get("/debug/diagnostics", response_model=list[DiagnosticObservation])
 async def read_diagnostics(request: Request) -> list[DiagnosticObservation]:
     diagnostics = cast(MongoDiagnosticStore, request.app.state.diagnostics)
     return await diagnostics.read()
-
