@@ -14,7 +14,7 @@ from aicognitive_mind.domain import (
     InteractionResult,
     JournalEntry,
 )
-from aicognitive_mind.engines import EchoReasoningEngine
+from aicognitive_mind.engines import EchoReasoningEngine, OpenAIReasoningEngine
 from aicognitive_mind.mongo_storage import (
     MongoDiagnosticStore,
     MongoJournalStore,
@@ -45,19 +45,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await runtime.initialize()
     app.state.runtime = runtime
     app.state.diagnostics = MongoDiagnosticStore(runtime.database)
+    engine = (
+        OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
+        if settings.openai_api_key
+        else EchoReasoningEngine()
+    )
     app.state.core = CognitiveCore(
         mind=MongoMindStore(runtime.database),
         journal=MongoJournalStore(runtime.database),
         memory=MongoMemoryStore(runtime.database),
         diagnostics=app.state.diagnostics,
-        engine=EchoReasoningEngine(),
+        engine=engine,
     )
     yield
     await runtime.close()
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
 
 
 @app.get("/health")
