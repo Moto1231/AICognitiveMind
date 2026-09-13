@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     app_name: str = "AI Cognitive Mind"
     mongodb_uri: str = "mongodb://mongodb:27017"
     mongodb_database: str = "ai_cognitive_mind"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-5.6-terra"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -14,4 +16,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
