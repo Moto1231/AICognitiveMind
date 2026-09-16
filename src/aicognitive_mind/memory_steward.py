@@ -51,7 +51,7 @@ MemoryStewardCall = Annotated[
     RecallCall | ConsiderEvidenceCall | ProposeMemoryCall,
     Field(discriminator="action"),
 ]
-_CALL_ADAPTER = TypeAdapter(MemoryStewardCall)
+_CALL_ADAPTER: TypeAdapter[MemoryStewardCall] = TypeAdapter(MemoryStewardCall)
 
 
 class MemoryBrief(BaseModel):
