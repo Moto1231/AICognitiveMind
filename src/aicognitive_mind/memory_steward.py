@@ -115,7 +115,72 @@ class MemoryStewardTool:
 
     @property
     def input_schema(self) -> dict[str, Any]:
-        return _CALL_ADAPTER.json_schema()
+        # Keep the model-facing contract flat. Small local models commonly fail to
+        # call tools whose schemas use Pydantic's nested $defs/oneOf representation.
+        # The discriminated Pydantic adapter below remains the authority that
+        # validates each action and its required fields.
+        return {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["recall", "consider_evidence", "propose_memory"],
+                    "description": "The Memory Steward operation to perform.",
+                },
+                "focus": {
+                    "type": "string",
+                    "description": "Required for recall: what related memory to retrieve.",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Required for consider_evidence: the research question.",
+                },
+                "response": {
+                    "type": "string",
+                    "description": "Required for consider_evidence: the research result.",
+                },
+                "articles": {
+                    "type": "array",
+                    "description": "Optional supporting article references.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "url": {"type": "string"},
+                            "relevant_content": {"type": "string"},
+                        },
+                        "required": ["title", "url", "relevant_content"],
+                    },
+                },
+                "memory_class": {
+                    "type": "string",
+                    "enum": [
+                        "working",
+                        "episodic",
+                        "semantic",
+                        "procedural",
+                        "identity",
+                        "reflective",
+                    ],
+                    "description": "Required for propose_memory.",
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Required for propose_memory: the stable learning.",
+                },
+                "associations": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional concepts associated with the memory.",
+                },
+                "grounding": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Required for propose_memory: evidence supporting it.",
+                },
+            },
+            "required": ["action"],
+        }
 
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
         if self._completed:
