@@ -16,10 +16,7 @@ from aicognitive_mind.foundation import (
     CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
     CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
 )
-from aicognitive_mind.memory_steward import (
-    MemoryStewardNotConsultedError,
-    MemoryStewardTool,
-)
+from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
     InMemoryFoundationStore,
@@ -87,13 +84,17 @@ class MemoryUsingEngine:
 
 
 class NonConsultingEngine:
+    def __init__(self) -> None:
+        self.request: ReasoningRequest | None = None
+
     async def propose(
         self,
         request: ReasoningRequest,
         tools: tuple[ReasoningTool, ...] = (),
     ) -> ReasoningProposal:
+        self.request = request
         return ReasoningProposal(
-            response_text="I skipped memory.",
+            response_text="I did not call recall myself.",
             diagnostic=DiagnosticObservation(
                 component="reasoning_engine",
                 operation="propose_response",
@@ -204,7 +205,8 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(recalled), 2)
         self.assertTrue(any("Digital Genesis" in item["content"] for item in recalled))
 
-    async def test_response_is_rejected_when_engine_skips_memory(self) -> None:
+    async def test_core_performs_recall_before_non_consulting_engine_runs(self) -> None:
+        engine = NonConsultingEngine()
         journal = InMemoryJournalStore()
         core = CognitiveCore(
             mind=InMemoryMindStore(),
@@ -212,14 +214,18 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             journal=journal,
             memory=InMemoryMemoryStore(),
             diagnostics=InMemoryDiagnosticStore(),
-            engine=NonConsultingEngine(),
+            engine=engine,
         )
         await core.initialize("Genesis")
 
-        with self.assertRaises(MemoryStewardNotConsultedError):
-            await core.interact("Respond without remembering.")
+        result = await core.interact("Respond without remembering.")
 
-        self.assertEqual(len(await core.read_journal()), 1)
+        self.assertEqual(result.response_text, "I did not call recall myself.")
+        self.assertIsNotNone(engine.request)
+        request = cast(ReasoningRequest, engine.request)
+        self.assertIn("Relevant context:", request.system_prompt)
+        self.assertIn("No relevant knowledge is available.", request.system_prompt)
+        self.assertEqual(len(await core.read_journal()), 2)
 
     async def test_memory_steward_refuses_direct_identity_change(self) -> None:
         memory = InMemoryMemoryStore()
