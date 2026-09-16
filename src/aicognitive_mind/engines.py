@@ -196,7 +196,7 @@ class OllamaReasoningEngine:
         ]
         tool_calls = 0
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=600.0) as client:
             for _ in range(self._max_tool_rounds):
                 api_response = await client.post(
                     self._chat_url,
