@@ -120,17 +120,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is required when REASONING_PROVIDER=openai")
         engine = OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
-    elif provider == "auto":
-        engine = (
-            OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
-            if settings.openai_api_key
-            else EchoReasoningEngine()
-        )
     elif provider == "echo":
         engine = EchoReasoningEngine()
     else:
         raise RuntimeError(
-            "REASONING_PROVIDER must be one of: auto, echo, openai, ollama"
+            "REASONING_PROVIDER must be one of: echo, openai, ollama"
         )
     app.state.core = CognitiveCore(
         mind=MongoMindStore(runtime.database),
