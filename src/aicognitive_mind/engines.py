@@ -204,6 +204,7 @@ class OllamaReasoningEngine:
                         "model": self._model,
                         "messages": messages,
                         "tools": api_tools,
+                        "options": {"num_ctx": 4096},
                         "stream": False,
                     },
                 )
