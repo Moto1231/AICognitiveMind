@@ -15,7 +15,10 @@ from aicognitive_mind.domain import (
 from aicognitive_mind.foundation import (
     CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
     CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
+    MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
+    MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
 )
+from aicognitive_mind.knowledge import KnowledgeSynthesizer
 from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
@@ -125,12 +128,37 @@ class RecallOnlyEngine:
         )
 
 
+class RecordingSynthesizer:
+    def __init__(self, summary: str) -> None:
+        self.summary = summary
+        self.focus: str | None = None
+        self.evidence: tuple[str, ...] = ()
+        self.instructions: str | None = None
+
+    async def synthesize(
+        self,
+        mind: CognitiveMind,
+        focus: str,
+        evidence: tuple[str, ...],
+        instructions: str,
+    ) -> str:
+        del mind
+        self.focus = focus
+        self.evidence = evidence
+        self.instructions = instructions
+        return self.summary
+
+
 class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
     async def _foundation(self) -> InMemoryFoundationStore:
         foundation = InMemoryFoundationStore()
         await foundation.seed(
             CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
             CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
+        )
+        await foundation.seed(
+            MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
+            MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
         )
         return foundation
 
@@ -153,7 +181,7 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(engine.request)
         request = cast(ReasoningRequest, engine.request)
         self.assertTrue(request.system_prompt.startswith(CONSCIOUS_WORKSPACE_FOUNDATION_SEED))
-        self.assertIn("Relevant context:", request.system_prompt)
+        self.assertIn("Relevant knowledge:", request.system_prompt)
         self.assertIn("memory_steward", request.system_prompt)
         memories = await core.read_memory()
         self.assertEqual(len(memories), 1)
@@ -223,9 +251,57 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.response_text, "I did not call recall myself.")
         self.assertIsNotNone(engine.request)
         request = cast(ReasoningRequest, engine.request)
-        self.assertIn("Relevant context:", request.system_prompt)
+        self.assertIn("Relevant knowledge:", request.system_prompt)
         self.assertIn("No relevant knowledge is available.", request.system_prompt)
         self.assertEqual(len(await core.read_journal()), 2)
+
+    async def test_synthesized_knowledge_crosses_reasoning_boundary_not_raw_evidence(self) -> None:
+        engine = NonConsultingEngine()
+        synthesizer: KnowledgeSynthesizer = RecordingSynthesizer(
+            "The human's birthday is February 7."
+        )
+        journal = InMemoryJournalStore()
+        await journal.append(
+            JournalEntry(
+                kind="interaction",
+                experience={
+                    "input": {
+                        "source": "human",
+                        "content": "I love birthday parties and my birthday is February 7.",
+                    },
+                    "expression": {
+                        "source": "conscious_workspace",
+                        "content": "That sounds fun.",
+                    },
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=engine,
+            knowledge_synthesizer=synthesizer,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("When is my birthday?")
+
+        request = cast(ReasoningRequest, engine.request)
+        self.assertIn("The human's birthday is February 7.", request.system_prompt)
+        self.assertNotIn("I love birthday parties", request.system_prompt)
+        recorder = cast(RecordingSynthesizer, synthesizer)
+        self.assertIn(
+            "I love birthday parties and my birthday is February 7.",
+            recorder.evidence,
+        )
+        self.assertEqual(
+            recorder.instructions,
+            MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
+        )
 
     async def test_memory_steward_refuses_direct_identity_change(self) -> None:
         memory = InMemoryMemoryStore()
