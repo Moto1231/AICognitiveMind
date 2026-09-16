@@ -267,7 +267,11 @@ class MemoryStewardTool:
             expanded_tokens.update(_tokens(" ".join(memory.associations)))
 
         ranked_memories = _rank(memories, expanded_tokens, self._recall_limit)
-        ranked_experiences = _rank(experiences, expanded_tokens, self._recall_limit)
+        ranked_experiences = _rank_experiences(
+            experiences,
+            expanded_tokens,
+            self._recall_limit,
+        )
         self._brief = await self._build_brief(
             focus=self._input_text,
             memories=tuple(ranked_memories),
@@ -385,6 +389,31 @@ _STOP_WORDS = {
     "your",
 }
 
+_QUESTION_PREFIXES = (
+    "am ",
+    "are ",
+    "can ",
+    "could ",
+    "did ",
+    "do ",
+    "does ",
+    "has ",
+    "have ",
+    "how ",
+    "is ",
+    "should ",
+    "was ",
+    "were ",
+    "what ",
+    "when ",
+    "where ",
+    "which ",
+    "who ",
+    "why ",
+    "will ",
+    "would ",
+)
+
 
 def _tokens(text: str) -> set[str]:
     return {
@@ -406,6 +435,38 @@ def _rank[T](items: list[T], focus_tokens: set[str], limit: int) -> list[T]:
     return related[:limit]
 
 
+def _rank_experiences(
+    items: list[JournalEntry],
+    focus_tokens: set[str],
+    limit: int,
+) -> list[JournalEntry]:
+    """Prefer fact-bearing human statements over repeated query-only episodes."""
+    scored = [
+        (
+            _score(focus_tokens, item),
+            _experience_evidence_priority(item),
+            position,
+            item,
+        )
+        for position, item in enumerate(items)
+    ]
+    ranked = sorted(scored, key=lambda row: (row[0], row[1], row[2]), reverse=True)
+    related: list[JournalEntry] = []
+    seen_inputs: set[str] = set()
+    for score, _, _, item in ranked:
+        if score <= 0:
+            continue
+        dedupe_key = _normalized_experience_input(item)
+        if dedupe_key and dedupe_key in seen_inputs:
+            continue
+        if dedupe_key:
+            seen_inputs.add(dedupe_key)
+        related.append(item)
+        if len(related) >= limit:
+            break
+    return related
+
+
 def _as_text(value: object) -> str:
     if isinstance(value, BaseModel):
         return _as_text(value.model_dump(mode="json"))
@@ -414,6 +475,17 @@ def _as_text(value: object) -> str:
     if isinstance(value, (list, tuple, set)):
         return " ".join(_as_text(item) for item in value)
     return str(value)
+
+
+def _experience_input_text(entry: JournalEntry) -> str:
+    experience = entry.experience
+    if isinstance(experience, dict):
+        input_value = experience.get("input")
+        if isinstance(input_value, dict):
+            content = input_value.get("content")
+            if isinstance(content, str):
+                return content.strip()
+    return ""
 
 
 def _experience_search_text(entry: JournalEntry) -> str:
@@ -430,16 +502,25 @@ def _experience_search_text(entry: JournalEntry) -> str:
     return " ".join(parts) or entry.kind.value
 
 
+def _experience_evidence_priority(entry: JournalEntry) -> int:
+    input_text = _experience_input_text(entry)
+    return 0 if _looks_like_question(input_text) else 1
+
+
+def _looks_like_question(text: str) -> bool:
+    normalized = " ".join(text.casefold().split())
+    return normalized.endswith("?") or normalized.startswith(_QUESTION_PREFIXES)
+
+
+def _normalized_experience_input(entry: JournalEntry) -> str:
+    input_text = _experience_input_text(entry).casefold()
+    return re.sub(r"[^a-z0-9]+", " ", input_text).strip()
+
+
 def _experience_knowledge(entry: JournalEntry) -> str:
     """Extract human-provided evidence without exposing journal machinery."""
-    experience = entry.experience
-    if isinstance(experience, dict):
-        input_value = experience.get("input")
-        if isinstance(input_value, dict):
-            content = input_value.get("content")
-            if isinstance(content, str):
-                return content
-    return _experience_search_text(entry)
+    input_text = _experience_input_text(entry)
+    return input_text or _experience_search_text(entry)
 
 
 def _derived_associations(content: str) -> list[str]:
