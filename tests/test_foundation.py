@@ -2,7 +2,10 @@ import unittest
 
 from aicognitive_mind.core import CognitiveCore
 from aicognitive_mind.engines import EchoReasoningEngine
-from aicognitive_mind.foundation import CONSCIOUS_WORKSPACE_FOUNDATION_KEY
+from aicognitive_mind.foundation import (
+    CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+    MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
+)
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
     InMemoryFoundationStore,
@@ -35,7 +38,7 @@ class FoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(history[1].active)
         self.assertEqual(active, history[1])
 
-    async def test_core_uses_active_foundation_without_code_change(self) -> None:
+    async def test_core_uses_active_foundations_without_code_change(self) -> None:
         foundation = InMemoryFoundationStore()
         await foundation.seed(
             CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
@@ -45,6 +48,10 @@ class FoundationTests(unittest.IsolatedAsyncioTestCase):
             CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
             "Version two",
             changed_by="administrator",
+        )
+        await foundation.seed(
+            MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
+            "Synthesize selected evidence.",
         )
         core = CognitiveCore(
             mind=InMemoryMindStore(),
@@ -60,8 +67,11 @@ class FoundationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.response_text, "I heard: Hello")
         active = await foundation.load_active(CONSCIOUS_WORKSPACE_FOUNDATION_KEY)
+        synthesis = await foundation.load_active(MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY)
         self.assertIsNotNone(active)
+        self.assertIsNotNone(synthesis)
         self.assertEqual(active.content, "Version two")
+        self.assertEqual(synthesis.content, "Synthesize selected evidence.")
 
 
 if __name__ == "__main__":
