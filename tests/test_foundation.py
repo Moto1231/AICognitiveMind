@@ -58,7 +58,7 @@ class FoundationTests(unittest.IsolatedAsyncioTestCase):
 
         result = await core.interact("Hello")
 
-        self.assertEqual(result.response_text, "Echo: Hello")
+        self.assertEqual(result.response_text, "I heard: Hello")
         active = await foundation.load_active(CONSCIOUS_WORKSPACE_FOUNDATION_KEY)
         self.assertIsNotNone(active)
         self.assertEqual(active.content, "Version two")
