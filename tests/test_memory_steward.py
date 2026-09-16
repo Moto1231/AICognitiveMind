@@ -14,6 +14,8 @@ from aicognitive_mind.domain import (
     ReasoningRequest,
 )
 from aicognitive_mind.foundation import (
+    CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
+    CONSCIOUS_EXPRESSION_FOUNDATION_SEED,
     CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
     CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
@@ -160,6 +162,10 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         await foundation.seed(
             MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
             MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
+        )
+        await foundation.seed(
+            CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
+            CONSCIOUS_EXPRESSION_FOUNDATION_SEED,
         )
         return foundation
 
