@@ -92,6 +92,55 @@ class MemoryTraceTests(unittest.IsolatedAsyncioTestCase):
             "No relevant knowledge is available.",
         )
 
+    async def test_repeated_questions_do_not_crowd_out_older_fact_statement(self) -> None:
+        journal = InMemoryJournalStore()
+        await journal.append(
+            JournalEntry(
+                kind=JournalKind.INTERACTION,
+                experience={
+                    "input": {
+                        "source": "human",
+                        "content": "I love birthday parties and my birthday is February 7.",
+                    },
+                    "expression": {
+                        "source": "conscious_workspace",
+                        "content": "That sounds fun.",
+                    },
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        for _ in range(8):
+            await journal.append(
+                JournalEntry(
+                    kind=JournalKind.INTERACTION,
+                    experience={
+                        "input": {
+                            "source": "human",
+                            "content": "When is my birthday?",
+                        },
+                        "expression": {
+                            "source": "conscious_workspace",
+                            "content": "I am not sure when your birthday is.",
+                        },
+                    },
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="When is my birthday?",
+            memory=InMemoryMemoryStore(),
+            journal=journal,
+        )
+
+        await tool.invoke({"action": "recall", "focus": "birthday"})
+        trace = await tool.complete()
+
+        self.assertEqual(trace.recalled_context.prior_experience_count, 2)
+        self.assertIn("my birthday is February 7", trace.recalled_context.summary)
+
 
 if __name__ == "__main__":
     unittest.main()
