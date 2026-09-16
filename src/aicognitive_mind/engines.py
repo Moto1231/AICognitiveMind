@@ -166,7 +166,7 @@ class OllamaReasoningEngine:
     def __init__(
         self,
         base_url: str = "http://localhost:11434/v1",
-        model: str = "qwen3:1.7b",
+        model: str = "llama3.2:3b",
         max_tool_rounds: int = 8,
     ) -> None:
         self._chat_url = f"{base_url.removesuffix('/v1').rstrip('/')}/api/chat"
@@ -204,7 +204,6 @@ class OllamaReasoningEngine:
                         "model": self._model,
                         "messages": messages,
                         "tools": api_tools,
-                        "think": False,
                         "stream": False,
                     },
                 )
