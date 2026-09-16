@@ -14,7 +14,11 @@ from aicognitive_mind.domain import (
     InteractionResult,
     JournalEntry,
 )
-from aicognitive_mind.engines import EchoReasoningEngine, OpenAIReasoningEngine
+from aicognitive_mind.engines import (
+    EchoReasoningEngine,
+    OllamaReasoningEngine,
+    OpenAIReasoningEngine,
+)
 from aicognitive_mind.mongo_storage import (
     MongoDiagnosticStore,
     MongoJournalStore,
@@ -45,11 +49,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await runtime.initialize()
     app.state.runtime = runtime
     app.state.diagnostics = MongoDiagnosticStore(runtime.database)
-    engine = (
-        OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
-        if settings.openai_api_key
-        else EchoReasoningEngine()
-    )
+    provider = settings.reasoning_provider.lower()
+    if provider == "ollama":
+        engine = OllamaReasoningEngine(settings.ollama_base_url, settings.ollama_model)
+    elif provider == "openai":
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is required when REASONING_PROVIDER=openai")
+        engine = OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
+    elif provider == "auto":
+        engine = (
+            OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
+            if settings.openai_api_key
+            else EchoReasoningEngine()
+        )
+    elif provider == "echo":
+        engine = EchoReasoningEngine()
+    else:
+        raise RuntimeError(
+            "REASONING_PROVIDER must be one of: auto, echo, openai, ollama"
+        )
     app.state.core = CognitiveCore(
         mind=MongoMindStore(runtime.database),
         journal=MongoJournalStore(runtime.database),
