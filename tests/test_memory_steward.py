@@ -7,6 +7,7 @@ from aicognitive_mind.domain import (
     CognitiveMind,
     DiagnosticObservation,
     DurableMemory,
+    JournalEntry,
     MemoryClass,
     MindIdentity,
     ReasoningProposal,
