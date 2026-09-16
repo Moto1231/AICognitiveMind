@@ -29,7 +29,10 @@ from aicognitive_mind.engines import (
 from aicognitive_mind.foundation import (
     CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
     CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
+    MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
+    MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
 )
+from aicognitive_mind.knowledge import ReasoningKnowledgeSynthesizer
 from aicognitive_mind.mongo_storage import (
     MongoDiagnosticStore,
     MongoFoundationStore,
@@ -96,6 +99,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
         CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
     )
+    await foundation.seed(
+        MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
+        MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
+    )
     app.state.foundation = foundation
 
     provider = settings.reasoning_provider.lower()
@@ -125,6 +132,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory=MongoMemoryStore(runtime.database),
         diagnostics=app.state.diagnostics,
         engine=engine,
+        knowledge_synthesizer=ReasoningKnowledgeSynthesizer(engine),
     )
     yield
     await runtime.close()
@@ -178,7 +186,7 @@ async def interact(body: InteractionRequest, request: Request) -> InteractionRes
     except FoundationNotInitializedError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The Conscious Workspace foundation is unavailable",
+            detail="A required governed foundation is unavailable",
         ) from exc
 
 
