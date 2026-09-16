@@ -155,12 +155,12 @@ class MemoryStewardTool:
                 "memory_class": {
                     "type": "string",
                     "enum": [
+                        "working",
+                        "episodic",
                         "semantic",
                         "procedural",
-                        "reflective",
-                        "episodic",
                         "identity",
-                        "values",
+                        "reflective",
                     ],
                     "description": "Required for propose_memory.",
                 },
