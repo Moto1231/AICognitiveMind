@@ -1,5 +1,3 @@
-import json
-
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -81,11 +79,11 @@ class CognitiveCore:
         recalled_context = await memory_steward.invoke(
             {"action": "recall", "focus": input_text}
         )
+        memory_summary = recalled_context["context"]["summary"]
         reasoning_prompt = (
             f"{CONSCIOUS_WORKSPACE_SYSTEM_PROMPT}\n\n"
-            "The Cognitive Core has already performed the mandatory initial recall. "
-            "Use this Memory Steward context when reasoning:\n"
-            f"{json.dumps(recalled_context)}"
+            "Relevant context:\n"
+            f"{memory_summary}"
         )
         self._policy.assert_allowed(
             CognitiveActor.REASONING_ENGINE,
