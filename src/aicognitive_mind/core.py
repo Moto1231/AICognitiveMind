@@ -9,7 +9,9 @@ from aicognitive_mind.domain import (
     ReasoningRequest,
 )
 from aicognitive_mind.engines import ReasoningEngine
+from aicognitive_mind.expression import DirectExpressionRenderer, ExpressionRenderer
 from aicognitive_mind.foundation import (
+    CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
     CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
 )
@@ -43,6 +45,7 @@ class CognitiveCore:
         diagnostics: DiagnosticStore,
         engine: ReasoningEngine,
         knowledge_synthesizer: KnowledgeSynthesizer | None = None,
+        expression_renderer: ExpressionRenderer | None = None,
         policy: PermissionPolicy | None = None,
     ) -> None:
         self._mind = mind
@@ -52,6 +55,7 @@ class CognitiveCore:
         self._diagnostics = diagnostics
         self._engine = engine
         self._knowledge_synthesizer = knowledge_synthesizer or DirectKnowledgeSynthesizer()
+        self._expression_renderer = expression_renderer or DirectExpressionRenderer()
         self._policy = policy or PermissionPolicy()
 
     async def initialize(
@@ -94,6 +98,9 @@ class CognitiveCore:
         synthesis_foundation = await self._foundation.load_active(
             MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY
         )
+        expression_foundation = await self._foundation.load_active(
+            CONSCIOUS_EXPRESSION_FOUNDATION_KEY
+        )
         if workspace_foundation is None:
             raise FoundationNotInitializedError(
                 "The Conscious Workspace foundation has not been initialized"
@@ -101,6 +108,10 @@ class CognitiveCore:
         if synthesis_foundation is None:
             raise FoundationNotInitializedError(
                 "The Memory Steward synthesis foundation has not been initialized"
+            )
+        if expression_foundation is None:
+            raise FoundationNotInitializedError(
+                "The Conscious Expression foundation has not been initialized"
             )
 
         memory_steward = MemoryStewardTool(
@@ -133,6 +144,13 @@ class CognitiveCore:
             tools=(memory_steward,),
         )
         memory_trace = await memory_steward.complete()
+        expression = await self._expression_renderer.render(
+            mind=mind,
+            input_text=input_text,
+            knowledge=memory_summary,
+            draft=proposal.response_text,
+            instructions=expression_foundation.content,
+        )
 
         journal_entry = await self._journal.append(
             JournalEntry(
@@ -145,16 +163,17 @@ class CognitiveCore:
                     "memory_steward": memory_trace.model_dump(mode="python"),
                     "expression": {
                         "source": "conscious_workspace",
-                        "content": proposal.response_text,
+                        "content": expression.response_text,
                     },
                 },
             ),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
         await self._diagnostics.record(proposal.diagnostic)
+        await self._diagnostics.record(expression.diagnostic)
 
         return InteractionResult(
-            response_text=proposal.response_text,
+            response_text=expression.response_text,
             occurred_at=journal_entry.occurred_at,
         )
 
