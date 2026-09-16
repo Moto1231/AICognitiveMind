@@ -16,7 +16,6 @@ from aicognitive_mind.foundation import (
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
 )
-from aicognitive_mind.knowledge import KnowledgeSynthesizer
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
     InMemoryFoundationStore,
