@@ -54,6 +54,17 @@ class CognitiveMind(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class FoundationalMemory(BaseModel):
+    """A governed, versioned instruction or principle loaded before ordinary recall."""
+
+    key: str = Field(min_length=1, max_length=120)
+    version: int = Field(ge=1)
+    content: str = Field(min_length=1)
+    active: bool = True
+    changed_at: datetime = Field(default_factory=utc_now)
+    changed_by: str = Field(min_length=1, max_length=120)
+
+
 class DurableMemory(BaseModel):
     """A whole memory document curated by a Memory Steward."""
 
