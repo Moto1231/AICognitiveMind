@@ -51,7 +51,7 @@ class MemoryTraceTests(unittest.IsolatedAsyncioTestCase):
         payload = json.dumps(trace.model_dump(mode="json"))
         self.assertEqual(trace.recalled_context.prior_experience_count, 1)
         self.assertIn("My birthday is February 7.", trace.recalled_context.summary)
-        self.assertNotIn("prior_experience", payload)
+        self.assertNotIn('"prior_experience":', payload)
         self.assertNotIn("legacy_recursive_payload", payload)
         self.assertLess(len(payload), 5_000)
 
