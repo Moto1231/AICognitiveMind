@@ -12,13 +12,17 @@ from aicognitive_mind.domain import (
     ReasoningProposal,
     ReasoningRequest,
 )
+from aicognitive_mind.foundation import (
+    CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+    CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
+)
 from aicognitive_mind.memory_steward import (
     MemoryStewardNotConsultedError,
     MemoryStewardTool,
 )
-from aicognitive_mind.prompts import CONSCIOUS_WORKSPACE_SYSTEM_PROMPT
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
+    InMemoryFoundationStore,
     InMemoryJournalStore,
     InMemoryMemoryStore,
     InMemoryMindStore,
@@ -121,12 +125,21 @@ class RecallOnlyEngine:
 
 
 class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
+    async def _foundation(self) -> InMemoryFoundationStore:
+        foundation = InMemoryFoundationStore()
+        await foundation.seed(
+            CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+            CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
+        )
+        return foundation
+
     async def test_prompt_driven_tool_flow_records_experience_and_durable_learning(self) -> None:
         engine = MemoryUsingEngine()
         memory = InMemoryMemoryStore()
         journal = InMemoryJournalStore()
         core = CognitiveCore(
             mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
             journal=journal,
             memory=memory,
             diagnostics=InMemoryDiagnosticStore(),
@@ -138,7 +151,8 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(engine.request)
         request = cast(ReasoningRequest, engine.request)
-        self.assertEqual(request.system_prompt, CONSCIOUS_WORKSPACE_SYSTEM_PROMPT)
+        self.assertTrue(request.system_prompt.startswith(CONSCIOUS_WORKSPACE_FOUNDATION_SEED))
+        self.assertIn("Relevant context:", request.system_prompt)
         self.assertIn("memory_steward", request.system_prompt)
         memories = await core.read_memory()
         self.assertEqual(len(memories), 1)
@@ -173,6 +187,7 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         engine = RecallOnlyEngine()
         core = CognitiveCore(
             mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
             journal=InMemoryJournalStore(),
             memory=memory,
             diagnostics=InMemoryDiagnosticStore(),
@@ -193,6 +208,7 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         journal = InMemoryJournalStore()
         core = CognitiveCore(
             mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
             journal=journal,
             memory=InMemoryMemoryStore(),
             diagnostics=InMemoryDiagnosticStore(),
