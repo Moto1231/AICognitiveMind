@@ -207,7 +207,11 @@ class OllamaReasoningEngine:
                         "stream": False,
                     },
                 )
-                api_response.raise_for_status()
+                if api_response.is_error:
+                    raise RuntimeError(
+                        "Ollama chat request failed: "
+                        f"status={api_response.status_code}, body={api_response.text}"
+                    )
                 response_data = api_response.json()
                 message = response_data.get("message", {})
                 calls = message.get("tool_calls") or []
