@@ -3,8 +3,10 @@ import unittest
 from aicognitive_mind.core import CognitiveCore
 from aicognitive_mind.domain import CognitiveActor, DurableMemory, JournalKind, MemoryClass
 from aicognitive_mind.engines import EchoReasoningEngine
+from aicognitive_mind.foundation import CONSCIOUS_WORKSPACE_FOUNDATION_KEY
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
+    InMemoryFoundationStore,
     InMemoryJournalStore,
     InMemoryMemoryStore,
     InMemoryMindStore,
@@ -16,6 +18,7 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_instance_has_one_mind(self) -> None:
         core = CognitiveCore(
             mind=InMemoryMindStore(),
+            foundation=InMemoryFoundationStore(),
             journal=InMemoryJournalStore(),
             memory=InMemoryMemoryStore(),
             diagnostics=InMemoryDiagnosticStore(),
@@ -26,14 +29,20 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(MindAlreadyInitializedError):
             await core.initialize("Someone Else")
 
-    async def test_identity_and_journal_survive_engine_swap(self) -> None:
+    async def test_identity_journal_and_foundation_survive_engine_swap(self) -> None:
         mind_store = InMemoryMindStore()
+        foundation = InMemoryFoundationStore()
+        await foundation.seed(
+            CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+            "Speak as the persistent Cognitive Mind.",
+        )
         journal = InMemoryJournalStore()
         diagnostics = InMemoryDiagnosticStore()
         memory = InMemoryMemoryStore()
 
         core_a = CognitiveCore(
             mind=mind_store,
+            foundation=foundation,
             journal=journal,
             memory=memory,
             diagnostics=diagnostics,
@@ -47,6 +56,7 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
 
         core_b = CognitiveCore(
             mind=mind_store,
+            foundation=foundation,
             journal=journal,
             memory=memory,
             diagnostics=diagnostics,
@@ -55,10 +65,13 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         second = await core_b.interact("Who is thinking now?")
 
         restored = await core_b.load_mind()
+        active_foundation = await foundation.load_active(CONSCIOUS_WORKSPACE_FOUNDATION_KEY)
         entries = await core_b.read_journal()
         observations = await diagnostics.read()
 
         self.assertEqual(restored, mind)
+        self.assertIsNotNone(active_foundation)
+        self.assertEqual(active_foundation.content, "Speak as the persistent Cognitive Mind.")
         self.assertEqual(first.response_text, "A considered: Remember how we began.")
         self.assertEqual(second.response_text, "B considered: Who is thinking now?")
         self.assertEqual(
@@ -74,8 +87,14 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cognitive_documents_have_no_domain_identifiers(self) -> None:
         memory = InMemoryMemoryStore()
+        foundation = InMemoryFoundationStore()
+        await foundation.seed(
+            CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+            "Speak as the persistent Cognitive Mind.",
+        )
         core = CognitiveCore(
             mind=InMemoryMindStore(),
+            foundation=foundation,
             journal=InMemoryJournalStore(),
             memory=memory,
             diagnostics=InMemoryDiagnosticStore(),
@@ -94,11 +113,13 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         await core.interact("Hello.")
         journal = await core.read_journal()
         memories = await core.read_memory()
+        foundation_history = await foundation.read_history(CONSCIOUS_WORKSPACE_FOUNDATION_KEY)
 
         cognitive_documents = [
             mind.model_dump(),
             *[entry.model_dump() for entry in journal],
             *[memory.model_dump() for memory in memories],
+            *[record.model_dump() for record in foundation_history],
         ]
         identifier_keys = {
             key
