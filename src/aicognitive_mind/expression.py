@@ -56,7 +56,7 @@ class ReasoningExpressionRenderer:
         draft: str,
         instructions: str,
     ) -> ReasoningProposal:
-        return await self._engine.propose(
+        proposal = await self._engine.propose(
             ReasoningRequest(
                 mind=mind,
                 input_text=(
@@ -67,4 +67,12 @@ class ReasoningExpressionRenderer:
                 system_prompt=instructions,
             ),
             tools=(),
+        )
+        return ReasoningProposal(
+            response_text=proposal.response_text,
+            diagnostic=DiagnosticObservation(
+                component="expression_renderer",
+                operation="render_response",
+                implementation=proposal.diagnostic.implementation,
+            ),
         )
