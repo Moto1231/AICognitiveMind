@@ -9,7 +9,11 @@ from aicognitive_mind.domain import (
     ReasoningRequest,
 )
 from aicognitive_mind.engines import ReasoningEngine
-from aicognitive_mind.foundation import CONSCIOUS_WORKSPACE_FOUNDATION_KEY
+from aicognitive_mind.foundation import (
+    CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+    MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
+)
+from aicognitive_mind.knowledge import DirectKnowledgeSynthesizer, KnowledgeSynthesizer
 from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 from aicognitive_mind.storage import (
@@ -38,6 +42,7 @@ class CognitiveCore:
         memory: MemoryStore,
         diagnostics: DiagnosticStore,
         engine: ReasoningEngine,
+        knowledge_synthesizer: KnowledgeSynthesizer | None = None,
         policy: PermissionPolicy | None = None,
     ) -> None:
         self._mind = mind
@@ -46,6 +51,7 @@ class CognitiveCore:
         self._memory = memory
         self._diagnostics = diagnostics
         self._engine = engine
+        self._knowledge_synthesizer = knowledge_synthesizer or DirectKnowledgeSynthesizer()
         self._policy = policy or PermissionPolicy()
 
     async def initialize(
@@ -82,10 +88,19 @@ class CognitiveCore:
 
     async def interact(self, input_text: str) -> InteractionResult:
         mind = await self.load_mind()
-        foundation = await self._foundation.load_active(CONSCIOUS_WORKSPACE_FOUNDATION_KEY)
-        if foundation is None:
+        workspace_foundation = await self._foundation.load_active(
+            CONSCIOUS_WORKSPACE_FOUNDATION_KEY
+        )
+        synthesis_foundation = await self._foundation.load_active(
+            MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY
+        )
+        if workspace_foundation is None:
             raise FoundationNotInitializedError(
                 "The Conscious Workspace foundation has not been initialized"
+            )
+        if synthesis_foundation is None:
+            raise FoundationNotInitializedError(
+                "The Memory Steward synthesis foundation has not been initialized"
             )
 
         memory_steward = MemoryStewardTool(
@@ -93,14 +108,16 @@ class CognitiveCore:
             input_text=input_text,
             memory=self._memory,
             journal=self._journal,
+            synthesizer=self._knowledge_synthesizer,
+            synthesis_instructions=synthesis_foundation.content,
         )
         recalled_context = await memory_steward.invoke(
             {"action": "recall", "focus": input_text}
         )
         memory_summary = recalled_context["context"]["summary"]
         reasoning_prompt = (
-            f"{foundation.content}\n\n"
-            "Relevant context:\n"
+            f"{workspace_foundation.content}\n\n"
+            "Relevant knowledge:\n"
             f"{memory_summary}"
         )
         self._policy.assert_allowed(
