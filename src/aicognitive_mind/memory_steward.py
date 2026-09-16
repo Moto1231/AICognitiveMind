@@ -440,20 +440,16 @@ def _rank_experiences(
     focus_tokens: set[str],
     limit: int,
 ) -> list[JournalEntry]:
-    """Prefer fact-bearing human statements over repeated query-only episodes."""
+    """Rank fact-bearing experiences; prior questions have zero evidence weight."""
     scored = [
-        (
-            _score(focus_tokens, item),
-            _experience_evidence_priority(item),
-            position,
-            item,
-        )
+        (_score(focus_tokens, item), position, item)
         for position, item in enumerate(items)
+        if _experience_evidence_weight(item) > 0
     ]
-    ranked = sorted(scored, key=lambda row: (row[0], row[1], row[2]), reverse=True)
+    ranked = sorted(scored, key=lambda row: (row[0], row[1]), reverse=True)
     related: list[JournalEntry] = []
     seen_inputs: set[str] = set()
-    for score, _, _, item in ranked:
+    for score, _, item in ranked:
         if score <= 0:
             continue
         dedupe_key = _normalized_experience_input(item)
@@ -502,7 +498,8 @@ def _experience_search_text(entry: JournalEntry) -> str:
     return " ".join(parts) or entry.kind.value
 
 
-def _experience_evidence_priority(entry: JournalEntry) -> int:
+def _experience_evidence_weight(entry: JournalEntry) -> int:
+    """Questions guide retrieval but provide no evidence for knowledge synthesis."""
     input_text = _experience_input_text(entry)
     return 0 if _looks_like_question(input_text) else 1
 
