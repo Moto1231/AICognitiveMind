@@ -26,7 +26,10 @@ from aicognitive_mind.engines import (
     OpenAIReasoningEngine,
     ReasoningEngine,
 )
+from aicognitive_mind.expression import ReasoningExpressionRenderer
 from aicognitive_mind.foundation import (
+    CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
+    CONSCIOUS_EXPRESSION_FOUNDATION_SEED,
     CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
     CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
@@ -103,6 +106,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
         MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
     )
+    await foundation.seed(
+        CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
+        CONSCIOUS_EXPRESSION_FOUNDATION_SEED,
+    )
     app.state.foundation = foundation
 
     provider = settings.reasoning_provider.lower()
@@ -133,6 +140,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         diagnostics=app.state.diagnostics,
         engine=engine,
         knowledge_synthesizer=ReasoningKnowledgeSynthesizer(engine),
+        expression_renderer=ReasoningExpressionRenderer(engine),
     )
     yield
     await runtime.close()
