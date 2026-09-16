@@ -297,22 +297,18 @@ class MemoryStewardTool:
         experiences: tuple[JournalEntry, ...],
     ) -> MemoryBrief:
         parts: list[str] = []
+
+        # The summary is the reasoning-engine boundary. Give the engine knowledge,
+        # not retrieval history. Full prior experience remains on MemoryBrief for
+        # Steward diagnostics and traceability, but does not cross into reasoning.
         if memories:
-            parts.append(
-                "Established memory: " + " | ".join(memory.content for memory in memories)
-            )
-        if experiences:
-            parts.append(
-                "Related prior experience: "
-                + " | ".join(_experience_excerpt(entry) for entry in experiences)
-            )
+            parts.extend(memory.content for memory in memories)
+        elif experiences:
+            parts.extend(_experience_knowledge(entry) for entry in experiences)
         if self._evidence:
-            parts.append(
-                "Current research evidence: "
-                + " | ".join(observation.response for observation in self._evidence)
-            )
+            parts.extend(observation.response for observation in self._evidence)
         if not parts:
-            parts.append("No materially related durable memory or prior experience was found.")
+            parts.append("No relevant knowledge is available.")
 
         return MemoryBrief(
             focus=focus,
@@ -320,7 +316,7 @@ class MemoryStewardTool:
             durable_memory=memories,
             prior_experience=experiences,
             current_evidence=tuple(self._evidence),
-            summary="\n".join(parts),
+            summary="\n".join(part for part in parts if part),
         )
 
     def _require_recall(self) -> MemoryBrief:
@@ -400,6 +396,18 @@ def _as_text(value: object) -> str:
 def _experience_excerpt(entry: JournalEntry) -> str:
     text = _as_text(entry.experience)
     return text if len(text) <= 280 else f"{text[:277]}..."
+
+
+def _experience_knowledge(entry: JournalEntry) -> str:
+    """Extract user-provided knowledge without exposing journal machinery."""
+    experience = entry.experience
+    if isinstance(experience, dict):
+        input_value = experience.get("input")
+        if isinstance(input_value, dict):
+            content = input_value.get("content")
+            if isinstance(content, str):
+                return content
+    return _experience_excerpt(entry)
 
 
 def _derived_associations(content: str) -> list[str]:
