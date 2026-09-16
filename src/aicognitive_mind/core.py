@@ -9,13 +9,23 @@ from aicognitive_mind.domain import (
     ReasoningRequest,
 )
 from aicognitive_mind.engines import ReasoningEngine
+from aicognitive_mind.foundation import CONSCIOUS_WORKSPACE_FOUNDATION_KEY
 from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
-from aicognitive_mind.prompts import CONSCIOUS_WORKSPACE_SYSTEM_PROMPT
-from aicognitive_mind.storage import DiagnosticStore, JournalStore, MemoryStore, MindStore
+from aicognitive_mind.storage import (
+    DiagnosticStore,
+    FoundationReader,
+    JournalStore,
+    MemoryStore,
+    MindStore,
+)
 
 
 class MindNotInitializedError(LookupError):
+    pass
+
+
+class FoundationNotInitializedError(LookupError):
     pass
 
 
@@ -23,6 +33,7 @@ class CognitiveCore:
     def __init__(
         self,
         mind: MindStore,
+        foundation: FoundationReader,
         journal: JournalStore,
         memory: MemoryStore,
         diagnostics: DiagnosticStore,
@@ -30,6 +41,7 @@ class CognitiveCore:
         policy: PermissionPolicy | None = None,
     ) -> None:
         self._mind = mind
+        self._foundation = foundation
         self._journal = journal
         self._memory = memory
         self._diagnostics = diagnostics
@@ -70,6 +82,12 @@ class CognitiveCore:
 
     async def interact(self, input_text: str) -> InteractionResult:
         mind = await self.load_mind()
+        foundation = await self._foundation.load_active(CONSCIOUS_WORKSPACE_FOUNDATION_KEY)
+        if foundation is None:
+            raise FoundationNotInitializedError(
+                "The Conscious Workspace foundation has not been initialized"
+            )
+
         memory_steward = MemoryStewardTool(
             mind=mind,
             input_text=input_text,
@@ -81,7 +99,7 @@ class CognitiveCore:
         )
         memory_summary = recalled_context["context"]["summary"]
         reasoning_prompt = (
-            f"{CONSCIOUS_WORKSPACE_SYSTEM_PROMPT}\n\n"
+            f"{foundation.content}\n\n"
             "Relevant context:\n"
             f"{memory_summary}"
         )
