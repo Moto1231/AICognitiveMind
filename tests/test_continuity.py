@@ -4,6 +4,7 @@ from aicognitive_mind.core import CognitiveCore
 from aicognitive_mind.domain import CognitiveActor, DurableMemory, JournalKind, MemoryClass
 from aicognitive_mind.engines import EchoReasoningEngine
 from aicognitive_mind.foundation import (
+    CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
     CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
 )
@@ -27,6 +28,10 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         await foundation.seed(
             MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
             "Synthesize selected evidence into concise knowledge.",
+        )
+        await foundation.seed(
+            CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
+            "Render the final response directly to the human.",
         )
         return foundation
 
@@ -80,16 +85,24 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         synthesis_foundation = await foundation.load_active(
             MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY
         )
+        expression_foundation = await foundation.load_active(
+            CONSCIOUS_EXPRESSION_FOUNDATION_KEY
+        )
         entries = await core_b.read_journal()
         observations = await diagnostics.read()
 
         self.assertEqual(restored, mind)
         self.assertIsNotNone(active_foundation)
         self.assertIsNotNone(synthesis_foundation)
+        self.assertIsNotNone(expression_foundation)
         self.assertEqual(active_foundation.content, "Speak as the persistent Cognitive Mind.")
         self.assertEqual(
             synthesis_foundation.content,
             "Synthesize selected evidence into concise knowledge.",
+        )
+        self.assertEqual(
+            expression_foundation.content,
+            "Render the final response directly to the human.",
         )
         self.assertEqual(first.response_text, "A considered: Remember how we began.")
         self.assertEqual(second.response_text, "B considered: Who is thinking now?")
@@ -101,7 +114,7 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("engine-b", str([entry.model_dump() for entry in entries]))
         self.assertEqual(
             [observation.implementation["name"] for observation in observations],
-            ["engine-a", "engine-b"],
+            ["engine-a", "direct-expression", "engine-b", "direct-expression"],
         )
 
     async def test_cognitive_documents_have_no_domain_identifiers(self) -> None:
@@ -132,6 +145,9 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         synthesis_history = await foundation.read_history(
             MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY
         )
+        expression_history = await foundation.read_history(
+            CONSCIOUS_EXPRESSION_FOUNDATION_KEY
+        )
 
         cognitive_documents = [
             mind.model_dump(),
@@ -139,6 +155,7 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
             *[memory.model_dump() for memory in memories],
             *[record.model_dump() for record in foundation_history],
             *[record.model_dump() for record in synthesis_history],
+            *[record.model_dump() for record in expression_history],
         ]
         identifier_keys = {
             key
