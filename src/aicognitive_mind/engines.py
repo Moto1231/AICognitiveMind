@@ -99,7 +99,13 @@ class OpenAIReasoningEngine:
             if not calls:
                 response_text = response.output_text.strip()
                 if not response_text:
-                    raise RuntimeError("Reasoning engine returned no response text")
+                    output_details = [
+                        item.model_dump(exclude_none=True) for item in response.output
+                    ]
+                    raise RuntimeError(
+                        "Reasoning engine returned no response text; "
+                        f"status={response.status!r}, output={output_details!r}"
+                    )
                 return ReasoningProposal(
                     response_text=response_text,
                     diagnostic=DiagnosticObservation(
