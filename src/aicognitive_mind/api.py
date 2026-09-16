@@ -1,7 +1,7 @@
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import cast
+from typing import Annotated, cast
 
 from fastapi import FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -211,7 +211,7 @@ async def read_memory(request: Request) -> list[DurableMemory]:
 async def read_foundation_history(
     key: str,
     request: Request,
-    authorization: str | None = Header(default=None),
+    authorization: Annotated[str | None, Header()] = None,
 ) -> list[FoundationalMemory]:
     authorize_admin(authorization)
     return await get_foundation(request).read_history(key)
@@ -225,7 +225,7 @@ async def revise_foundation(
     key: str,
     body: FoundationRevisionRequest,
     request: Request,
-    authorization: str | None = Header(default=None),
+    authorization: Annotated[str | None, Header()] = None,
 ) -> FoundationalMemory:
     authorize_admin(authorization)
     return await get_foundation(request).revise(
