@@ -3,6 +3,7 @@ import unittest
 from aicognitive_mind.core import CognitiveCore
 from aicognitive_mind.engines import EchoReasoningEngine
 from aicognitive_mind.foundation import (
+    CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
     CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
 )
@@ -53,6 +54,10 @@ class FoundationTests(unittest.IsolatedAsyncioTestCase):
             MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
             "Synthesize selected evidence.",
         )
+        await foundation.seed(
+            CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
+            "Render the final response directly.",
+        )
         core = CognitiveCore(
             mind=InMemoryMindStore(),
             foundation=foundation,
@@ -68,10 +73,13 @@ class FoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.response_text, "I heard: Hello")
         active = await foundation.load_active(CONSCIOUS_WORKSPACE_FOUNDATION_KEY)
         synthesis = await foundation.load_active(MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY)
+        expression = await foundation.load_active(CONSCIOUS_EXPRESSION_FOUNDATION_KEY)
         self.assertIsNotNone(active)
         self.assertIsNotNone(synthesis)
+        self.assertIsNotNone(expression)
         self.assertEqual(active.content, "Version two")
         self.assertEqual(synthesis.content, "Synthesize selected evidence.")
+        self.assertEqual(expression.content, "Render the final response directly.")
 
 
 if __name__ == "__main__":
