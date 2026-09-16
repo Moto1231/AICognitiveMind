@@ -1,16 +1,22 @@
+import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import cast
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from aicognitive_mind.config import get_settings
-from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
+from aicognitive_mind.core import (
+    CognitiveCore,
+    FoundationNotInitializedError,
+    MindNotInitializedError,
+)
 from aicognitive_mind.domain import (
     CognitiveMind,
     DiagnosticObservation,
     DurableMemory,
+    FoundationalMemory,
     InteractionResult,
     JournalEntry,
 )
@@ -20,8 +26,13 @@ from aicognitive_mind.engines import (
     OpenAIReasoningEngine,
     ReasoningEngine,
 )
+from aicognitive_mind.foundation import (
+    CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+    CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
+)
 from aicognitive_mind.mongo_storage import (
     MongoDiagnosticStore,
+    MongoFoundationStore,
     MongoJournalStore,
     MongoMemoryStore,
     MongoMindStore,
@@ -39,8 +50,38 @@ class InteractionRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+class FoundationRevisionRequest(BaseModel):
+    content: str = Field(min_length=1)
+
+
 def get_core(request: Request) -> CognitiveCore:
     return cast(CognitiveCore, request.app.state.core)
+
+
+def get_foundation(request: Request) -> MongoFoundationStore:
+    return cast(MongoFoundationStore, request.app.state.foundation)
+
+
+def authorize_admin(authorization: str | None) -> None:
+    expected = get_settings().admin_token
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Administrative access is not configured",
+        )
+    scheme, separator, supplied = (authorization or "").partition(" ")
+    valid = (
+        separator == " "
+        and scheme.lower() == "bearer"
+        and bool(supplied)
+        and secrets.compare_digest(supplied, expected)
+    )
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Administrative authorization required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 @asynccontextmanager
@@ -50,6 +91,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await runtime.initialize()
     app.state.runtime = runtime
     app.state.diagnostics = MongoDiagnosticStore(runtime.database)
+    foundation = MongoFoundationStore(runtime.database)
+    await foundation.seed(
+        CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+        CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
+    )
+    app.state.foundation = foundation
+
     provider = settings.reasoning_provider.lower()
     engine: ReasoningEngine
     if provider == "ollama":
@@ -72,6 +120,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     app.state.core = CognitiveCore(
         mind=MongoMindStore(runtime.database),
+        foundation=foundation,
         journal=MongoJournalStore(runtime.database),
         memory=MongoMemoryStore(runtime.database),
         diagnostics=app.state.diagnostics,
@@ -126,6 +175,11 @@ async def interact(body: InteractionRequest, request: Request) -> InteractionRes
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The mind has not been initialized",
         ) from exc
+    except FoundationNotInitializedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The Conscious Workspace foundation is unavailable",
+        ) from exc
 
 
 @app.get("/v1/mind/journal", response_model=list[JournalEntry])
@@ -148,6 +202,37 @@ async def read_memory(request: Request) -> list[DurableMemory]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The mind has not been initialized",
         ) from exc
+
+
+@app.get(
+    "/v1/admin/foundation/{key}",
+    response_model=list[FoundationalMemory],
+)
+async def read_foundation_history(
+    key: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> list[FoundationalMemory]:
+    authorize_admin(authorization)
+    return await get_foundation(request).read_history(key)
+
+
+@app.put(
+    "/v1/admin/foundation/{key}",
+    response_model=FoundationalMemory,
+)
+async def revise_foundation(
+    key: str,
+    body: FoundationRevisionRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> FoundationalMemory:
+    authorize_admin(authorization)
+    return await get_foundation(request).revise(
+        key=key,
+        content=body.content,
+        changed_by="administrator",
+    )
 
 
 @app.get("/debug/diagnostics", response_model=list[DiagnosticObservation])
