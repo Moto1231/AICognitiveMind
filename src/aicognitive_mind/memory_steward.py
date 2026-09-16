@@ -64,6 +64,16 @@ class MemoryBrief(BaseModel):
     summary: str
 
 
+class MemoryRecallTrace(BaseModel):
+    """Compact recall result safe to persist without recursively embedding history."""
+
+    focus: str
+    summary: str
+    durable_memory_count: int = Field(ge=0)
+    prior_experience_count: int = Field(ge=0)
+    current_evidence_count: int = Field(ge=0)
+
+
 class MemoryDecision(BaseModel):
     accepted: bool
     reason: str
@@ -71,7 +81,7 @@ class MemoryDecision(BaseModel):
 
 
 class MemoryStewardTrace(BaseModel):
-    recalled_context: MemoryBrief
+    recalled_context: MemoryRecallTrace
     evidence_considered: tuple[ResearchObservation, ...] = ()
     memory_decisions: tuple[MemoryDecision, ...] = ()
 
@@ -230,7 +240,13 @@ class MemoryStewardTool:
             )
         self._completed = True
         return MemoryStewardTrace(
-            recalled_context=brief,
+            recalled_context=MemoryRecallTrace(
+                focus=brief.focus,
+                summary=brief.summary,
+                durable_memory_count=len(brief.durable_memory),
+                prior_experience_count=len(brief.prior_experience),
+                current_evidence_count=len(brief.current_evidence),
+            ),
             evidence_considered=tuple(self._evidence),
             memory_decisions=tuple(self._decisions),
         )
@@ -379,7 +395,8 @@ def _tokens(text: str) -> set[str]:
 
 
 def _score(focus_tokens: set[str], value: object) -> int:
-    return len(focus_tokens & _tokens(_as_text(value)))
+    text = _experience_search_text(value) if isinstance(value, JournalEntry) else _as_text(value)
+    return len(focus_tokens & _tokens(text))
 
 
 def _rank[T](items: list[T], focus_tokens: set[str], limit: int) -> list[T]:
@@ -399,9 +416,18 @@ def _as_text(value: object) -> str:
     return str(value)
 
 
-def _experience_excerpt(entry: JournalEntry) -> str:
-    text = _as_text(entry.experience)
-    return text if len(text) <= 280 else f"{text[:277]}..."
+def _experience_search_text(entry: JournalEntry) -> str:
+    """Return only human-visible interaction content for associative recall scoring."""
+    experience = entry.experience
+    parts: list[str] = []
+    if isinstance(experience, dict):
+        for key in ("input", "expression"):
+            value = experience.get(key)
+            if isinstance(value, dict):
+                content = value.get("content")
+                if isinstance(content, str):
+                    parts.append(content)
+    return " ".join(parts) or entry.kind.value
 
 
 def _experience_knowledge(entry: JournalEntry) -> str:
@@ -413,7 +439,7 @@ def _experience_knowledge(entry: JournalEntry) -> str:
             content = input_value.get("content")
             if isinstance(content, str):
                 return content
-    return _experience_excerpt(entry)
+    return _experience_search_text(entry)
 
 
 def _derived_associations(content: str) -> list[str]:
