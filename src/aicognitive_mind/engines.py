@@ -59,10 +59,15 @@ class OpenAIReasoningEngine:
         api_key: str,
         model: str = "gpt-5.6-terra",
         max_tool_rounds: int = 8,
+        base_url: str | None = None,
+        supports_previous_response_id: bool = True,
+        diagnostic_name: str = "openai-responses",
     ) -> None:
-        self._client = AsyncOpenAI(api_key=api_key)
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._model = model
         self._max_tool_rounds = max_tool_rounds
+        self._supports_previous_response_id = supports_previous_response_id
+        self._diagnostic_name = diagnostic_name
 
     async def propose(
         self,
@@ -101,7 +106,7 @@ class OpenAIReasoningEngine:
                         component="reasoning_engine",
                         operation="propose_response",
                         implementation={
-                            "name": "openai-responses",
+                            "name": self._diagnostic_name,
                             "model": self._model,
                             "response_id": response.id,
                             "tool_calls": tool_calls,
@@ -126,12 +131,42 @@ class OpenAIReasoningEngine:
                 )
                 tool_calls += 1
 
-            response = await self._client.responses.create(
-                model=self._model,
-                instructions=request.system_prompt,
-                previous_response_id=response.id,
-                input=outputs,
-                tools=api_tools,
-            )
+            if self._supports_previous_response_id:
+                response = await self._client.responses.create(
+                    model=self._model,
+                    instructions=request.system_prompt,
+                    previous_response_id=response.id,
+                    input=outputs,
+                    tools=api_tools,
+                )
+            else:
+                prior_output = [
+                    item.model_dump(exclude_none=True) for item in response.output
+                ]
+                response = await self._client.responses.create(
+                    model=self._model,
+                    instructions=request.system_prompt,
+                    input=[*prior_output, *outputs],
+                    tools=api_tools,
+                )
 
         raise RuntimeError("Reasoning engine exceeded the maximum number of tool rounds")
+
+
+class OllamaReasoningEngine(OpenAIReasoningEngine):
+    """Local Ollama reasoning process using its OpenAI-compatible Responses API."""
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434/v1",
+        model: str = "qwen3:1.7b",
+        max_tool_rounds: int = 8,
+    ) -> None:
+        super().__init__(
+            api_key="ollama",
+            model=model,
+            max_tool_rounds=max_tool_rounds,
+            base_url=base_url,
+            supports_previous_response_id=False,
+            diagnostic_name="ollama-responses",
+        )
