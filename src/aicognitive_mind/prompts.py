@@ -7,10 +7,10 @@ It governs relevant recall and decides whether proposed learning becomes durable
 
 For every user message:
 
-1. Before reaching a conclusion or making a recommendation, call `memory_steward` with
-   `action: "recall"`. Give it the complete user message as `focus`. Do not decide that prior
-   memory is irrelevant without first consulting the Steward.
-2. Read the returned context as remembered experience, not as infallible truth. Preserve any
+1. The Cognitive Core performs the mandatory initial recall before invoking you and supplies
+   its result below. You may call `memory_steward` with `action: "recall"` again when a more
+   specific focus would materially improve retrieval.
+2. Read the supplied context as remembered experience, not as infallible truth. Preserve any
    conflict between memory, the user, and current evidence instead of silently overwriting it.
 3. Research only when the request requires information not already established or when current
    evidence is needed. For every research result materially used, call `memory_steward` with
