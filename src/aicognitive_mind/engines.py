@@ -1,6 +1,7 @@
 import json
 from typing import Any, Protocol
 
+import httpx
 from openai import AsyncOpenAI
 
 from aicognitive_mind.domain import (
@@ -133,5 +134,106 @@ class OpenAIReasoningEngine:
                 input=outputs,
                 tools=api_tools,
             )
+
+        raise RuntimeError("Reasoning engine exceeded the maximum number of tool rounds")
+
+
+class OllamaReasoningEngine:
+    """Local Ollama reasoning process using Ollama's native tool-calling API."""
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434/v1",
+        model: str = "llama3.2:3b",
+        max_tool_rounds: int = 8,
+    ) -> None:
+        self._chat_url = f"{base_url.removesuffix('/v1').rstrip('/')}/api/chat"
+        self._model = model
+        self._max_tool_rounds = max_tool_rounds
+
+    async def propose(
+        self,
+        request: ReasoningRequest,
+        tools: tuple[ReasoningTool, ...] = (),
+    ) -> ReasoningProposal:
+        tools_by_name = {tool.name: tool for tool in tools}
+        api_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema,
+                },
+            }
+            for tool in tools
+        ]
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": request.system_prompt},
+            {"role": "user", "content": request.input_text},
+        ]
+        tool_calls = 0
+
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            for _ in range(self._max_tool_rounds):
+                api_response = await client.post(
+                    self._chat_url,
+                    json={
+                        "model": self._model,
+                        "messages": messages,
+                        "tools": api_tools,
+                        "options": {"num_ctx": 4096},
+                        "stream": False,
+                    },
+                )
+                if api_response.is_error:
+                    raise RuntimeError(
+                        "Ollama chat request failed: "
+                        f"status={api_response.status_code}, body={api_response.text}"
+                    )
+                response_data = api_response.json()
+                message = response_data.get("message", {})
+                calls = message.get("tool_calls") or []
+
+                if not calls:
+                    response_text = (message.get("content") or "").strip()
+                    if not response_text:
+                        raise RuntimeError(
+                            "Ollama returned neither tool calls nor response text"
+                        )
+                    return ReasoningProposal(
+                        response_text=response_text,
+                        diagnostic=DiagnosticObservation(
+                            component="reasoning_engine",
+                            operation="propose_response",
+                            implementation={
+                                "name": "ollama-native-chat",
+                                "model": self._model,
+                                "tool_calls": tool_calls,
+                                "tools_exposed": [tool.name for tool in tools],
+                            },
+                        ),
+                    )
+
+                messages.append(message)
+                for call in calls:
+                    function = call.get("function", {})
+                    name = function.get("name")
+                    tool = tools_by_name.get(name)
+                    if tool is None:
+                        raise RuntimeError(
+                            f"Reasoning engine requested unknown tool: {name}"
+                        )
+                    arguments = function.get("arguments") or {}
+                    if isinstance(arguments, str):
+                        arguments = json.loads(arguments)
+                    result = await tool.invoke(arguments)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "content": json.dumps(result),
+                        }
+                    )
+                    tool_calls += 1
 
         raise RuntimeError("Reasoning engine exceeded the maximum number of tool rounds")
