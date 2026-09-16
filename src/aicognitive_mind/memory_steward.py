@@ -12,6 +12,7 @@ from aicognitive_mind.domain import (
     JournalEntry,
     MemoryClass,
 )
+from aicognitive_mind.knowledge import DirectKnowledgeSynthesizer, KnowledgeSynthesizer
 from aicognitive_mind.storage import JournalStore, MemoryStore
 
 
@@ -88,12 +89,16 @@ class MemoryStewardTool:
         input_text: str,
         memory: MemoryStore,
         journal: JournalStore,
+        synthesizer: KnowledgeSynthesizer | None = None,
+        synthesis_instructions: str = "",
         recall_limit: int = 6,
     ) -> None:
         self._mind = mind
         self._input_text = input_text
         self._memory = memory
         self._journal = journal
+        self._synthesizer = synthesizer or DirectKnowledgeSynthesizer()
+        self._synthesis_instructions = synthesis_instructions
         self._recall_limit = recall_limit
         self._brief: MemoryBrief | None = None
         self._evidence: list[ResearchObservation] = []
@@ -199,7 +204,7 @@ class MemoryStewardTool:
                 articles=call.articles,
             )
             self._evidence.append(observation)
-            self._brief = self._build_brief(
+            self._brief = await self._build_brief(
                 focus=brief.focus,
                 memories=brief.durable_memory,
                 experiences=brief.prior_experience,
@@ -247,7 +252,7 @@ class MemoryStewardTool:
 
         ranked_memories = _rank(memories, expanded_tokens, self._recall_limit)
         ranked_experiences = _rank(experiences, expanded_tokens, self._recall_limit)
-        self._brief = self._build_brief(
+        self._brief = await self._build_brief(
             focus=self._input_text,
             memories=tuple(ranked_memories),
             experiences=tuple(ranked_experiences),
@@ -290,25 +295,26 @@ class MemoryStewardTool:
             memory=memory,
         )
 
-    def _build_brief(
+    async def _build_brief(
         self,
         focus: str,
         memories: tuple[DurableMemory, ...],
         experiences: tuple[JournalEntry, ...],
     ) -> MemoryBrief:
-        parts: list[str] = []
-
-        # The summary is the reasoning-engine boundary. Give the engine knowledge,
-        # not retrieval history. Full prior experience remains on MemoryBrief for
-        # Steward diagnostics and traceability, but does not cross into reasoning.
-        if memories:
-            parts.extend(memory.content for memory in memories)
-        elif experiences:
-            parts.extend(_experience_knowledge(entry) for entry in experiences)
-        if self._evidence:
-            parts.extend(observation.response for observation in self._evidence)
-        if not parts:
-            parts.append("No relevant knowledge is available.")
+        # Individual memories and journal experiences remain evidence. The summary is
+        # synthesized knowledge and is the only recalled content passed into the
+        # Conscious Workspace system prompt.
+        evidence = tuple(
+            [memory.content for memory in memories]
+            + [_experience_knowledge(entry) for entry in experiences]
+            + [observation.response for observation in self._evidence]
+        )
+        summary = await self._synthesizer.synthesize(
+            mind=self._mind,
+            focus=focus,
+            evidence=tuple(item for item in evidence if item),
+            instructions=self._synthesis_instructions,
+        )
 
         return MemoryBrief(
             focus=focus,
@@ -316,7 +322,7 @@ class MemoryStewardTool:
             durable_memory=memories,
             prior_experience=experiences,
             current_evidence=tuple(self._evidence),
-            summary="\n".join(part for part in parts if part),
+            summary=summary,
         )
 
     def _require_recall(self) -> MemoryBrief:
@@ -399,7 +405,7 @@ def _experience_excerpt(entry: JournalEntry) -> str:
 
 
 def _experience_knowledge(entry: JournalEntry) -> str:
-    """Extract user-provided knowledge without exposing journal machinery."""
+    """Extract human-provided evidence without exposing journal machinery."""
     experience = entry.experience
     if isinstance(experience, dict):
         input_value = experience.get("input")
