@@ -3,7 +3,10 @@ import unittest
 from aicognitive_mind.core import CognitiveCore
 from aicognitive_mind.domain import CognitiveActor, DurableMemory, JournalKind, MemoryClass
 from aicognitive_mind.engines import EchoReasoningEngine
-from aicognitive_mind.foundation import CONSCIOUS_WORKSPACE_FOUNDATION_KEY
+from aicognitive_mind.foundation import (
+    CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+    MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
+)
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
     InMemoryFoundationStore,
@@ -15,6 +18,18 @@ from aicognitive_mind.storage import (
 
 
 class ContinuityTests(unittest.IsolatedAsyncioTestCase):
+    async def _foundation(self) -> InMemoryFoundationStore:
+        foundation = InMemoryFoundationStore()
+        await foundation.seed(
+            CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
+            "Speak as the persistent Cognitive Mind.",
+        )
+        await foundation.seed(
+            MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
+            "Synthesize selected evidence into concise knowledge.",
+        )
+        return foundation
+
     async def test_one_instance_has_one_mind(self) -> None:
         core = CognitiveCore(
             mind=InMemoryMindStore(),
@@ -31,11 +46,7 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_identity_journal_and_foundation_survive_engine_swap(self) -> None:
         mind_store = InMemoryMindStore()
-        foundation = InMemoryFoundationStore()
-        await foundation.seed(
-            CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
-            "Speak as the persistent Cognitive Mind.",
-        )
+        foundation = await self._foundation()
         journal = InMemoryJournalStore()
         diagnostics = InMemoryDiagnosticStore()
         memory = InMemoryMemoryStore()
@@ -66,12 +77,20 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
 
         restored = await core_b.load_mind()
         active_foundation = await foundation.load_active(CONSCIOUS_WORKSPACE_FOUNDATION_KEY)
+        synthesis_foundation = await foundation.load_active(
+            MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY
+        )
         entries = await core_b.read_journal()
         observations = await diagnostics.read()
 
         self.assertEqual(restored, mind)
         self.assertIsNotNone(active_foundation)
+        self.assertIsNotNone(synthesis_foundation)
         self.assertEqual(active_foundation.content, "Speak as the persistent Cognitive Mind.")
+        self.assertEqual(
+            synthesis_foundation.content,
+            "Synthesize selected evidence into concise knowledge.",
+        )
         self.assertEqual(first.response_text, "A considered: Remember how we began.")
         self.assertEqual(second.response_text, "B considered: Who is thinking now?")
         self.assertEqual(
@@ -87,11 +106,7 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cognitive_documents_have_no_domain_identifiers(self) -> None:
         memory = InMemoryMemoryStore()
-        foundation = InMemoryFoundationStore()
-        await foundation.seed(
-            CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
-            "Speak as the persistent Cognitive Mind.",
-        )
+        foundation = await self._foundation()
         core = CognitiveCore(
             mind=InMemoryMindStore(),
             foundation=foundation,
@@ -114,12 +129,16 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         journal = await core.read_journal()
         memories = await core.read_memory()
         foundation_history = await foundation.read_history(CONSCIOUS_WORKSPACE_FOUNDATION_KEY)
+        synthesis_history = await foundation.read_history(
+            MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY
+        )
 
         cognitive_documents = [
             mind.model_dump(),
             *[entry.model_dump() for entry in journal],
             *[memory.model_dump() for memory in memories],
             *[record.model_dump() for record in foundation_history],
+            *[record.model_dump() for record in synthesis_history],
         ]
         identifier_keys = {
             key
