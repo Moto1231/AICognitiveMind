@@ -8,6 +8,7 @@ from aicognitive_mind.domain import (
     CognitiveMind,
     DiagnosticObservation,
     DurableMemory,
+    FoundationalMemory,
     JournalEntry,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
@@ -21,6 +22,23 @@ class MindStore(Protocol):
     async def initialize(self, mind: CognitiveMind) -> CognitiveMind: ...
 
     async def load(self) -> CognitiveMind | None: ...
+
+
+class FoundationReader(Protocol):
+    async def load_active(self, key: str) -> FoundationalMemory | None: ...
+
+
+class FoundationStore(FoundationReader, Protocol):
+    async def seed(self, key: str, content: str) -> FoundationalMemory: ...
+
+    async def revise(
+        self,
+        key: str,
+        content: str,
+        changed_by: str,
+    ) -> FoundationalMemory: ...
+
+    async def read_history(self, key: str) -> list[FoundationalMemory]: ...
 
 
 class JournalStore(Protocol):
@@ -61,6 +79,57 @@ class InMemoryMindStore:
 
     async def load(self) -> CognitiveMind | None:
         return deepcopy(self._mind)
+
+
+class InMemoryFoundationStore:
+    def __init__(self) -> None:
+        self._records: list[FoundationalMemory] = []
+
+    async def seed(self, key: str, content: str) -> FoundationalMemory:
+        existing = await self.load_active(key)
+        if existing is not None:
+            return existing
+        record = FoundationalMemory(
+            key=key,
+            version=1,
+            content=content,
+            changed_by="bootstrap",
+        )
+        self._records.append(record)
+        return deepcopy(record)
+
+    async def revise(
+        self,
+        key: str,
+        content: str,
+        changed_by: str,
+    ) -> FoundationalMemory:
+        history = await self.read_history(key)
+        next_version = history[-1].version + 1 if history else 1
+        for index, record in enumerate(self._records):
+            if record.key == key and record.active:
+                self._records[index] = record.model_copy(update={"active": False})
+        revised = FoundationalMemory(
+            key=key,
+            version=next_version,
+            content=content,
+            changed_by=changed_by,
+        )
+        self._records.append(revised)
+        return deepcopy(revised)
+
+    async def load_active(self, key: str) -> FoundationalMemory | None:
+        active = [record for record in self._records if record.key == key and record.active]
+        if not active:
+            return None
+        return deepcopy(max(active, key=lambda record: record.version))
+
+    async def read_history(self, key: str) -> list[FoundationalMemory]:
+        records = sorted(
+            (record for record in self._records if record.key == key),
+            key=lambda record: record.version,
+        )
+        return deepcopy(records)
 
 
 class InMemoryJournalStore:
