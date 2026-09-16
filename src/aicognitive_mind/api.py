@@ -18,6 +18,7 @@ from aicognitive_mind.engines import (
     EchoReasoningEngine,
     OllamaReasoningEngine,
     OpenAIReasoningEngine,
+    ReasoningEngine,
 )
 from aicognitive_mind.mongo_storage import (
     MongoDiagnosticStore,
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.runtime = runtime
     app.state.diagnostics = MongoDiagnosticStore(runtime.database)
     provider = settings.reasoning_provider.lower()
+    engine: ReasoningEngine
     if provider == "ollama":
         engine = OllamaReasoningEngine(settings.ollama_base_url, settings.ollama_model)
     elif provider == "openai":
