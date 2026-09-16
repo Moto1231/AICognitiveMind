@@ -204,6 +204,7 @@ class OllamaReasoningEngine:
                         "model": self._model,
                         "messages": messages,
                         "tools": api_tools,
+                        "think": False,
                         "stream": False,
                     },
                 )
