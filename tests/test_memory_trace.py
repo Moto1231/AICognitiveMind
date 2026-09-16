@@ -92,7 +92,7 @@ class MemoryTraceTests(unittest.IsolatedAsyncioTestCase):
             "No relevant knowledge is available.",
         )
 
-    async def test_repeated_questions_do_not_crowd_out_older_fact_statement(self) -> None:
+    async def test_prior_questions_have_zero_evidence_weight(self) -> None:
         journal = InMemoryJournalStore()
         await journal.append(
             JournalEntry(
@@ -138,8 +138,9 @@ class MemoryTraceTests(unittest.IsolatedAsyncioTestCase):
         await tool.invoke({"action": "recall", "focus": "birthday"})
         trace = await tool.complete()
 
-        self.assertEqual(trace.recalled_context.prior_experience_count, 2)
+        self.assertEqual(trace.recalled_context.prior_experience_count, 1)
         self.assertIn("my birthday is February 7", trace.recalled_context.summary)
+        self.assertNotIn("When is my birthday?", trace.recalled_context.summary)
 
 
 if __name__ == "__main__":
