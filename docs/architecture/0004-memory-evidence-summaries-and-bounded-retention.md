@@ -40,6 +40,12 @@ Weight is not increased merely because a memory was retrieved. Reinforcement mus
 experience, repetition, corroboration, successful use, or another materially meaningful encounter.
 This prevents self-reinforcing recall loops.
 
+Questions remain part of episodic experience and may be remembered as events, but a question has
+**evidence weight 0** with respect to the fact it asks about. A question may establish recall intent,
+context, interests, or behavioral history, but asking whether something is true does not itself make
+that proposition more credible, reinforced, or established. Question-only experiences therefore do
+not consume evidence-selection capacity during factual knowledge synthesis.
+
 ### Knowledge summaries are synthesized understanding
 
 The Memory Steward synthesizes related individual memories into knowledge summaries.
@@ -131,6 +137,8 @@ management function.
 - Confidence represents factual belief; weight represents reinforcement and cognitive retention
   value. They must not be collapsed into one score.
 - Confidence and weight exist independently on both individual memories and synthesized summaries.
+- Questions remain rememberable experiences but have zero evidentiary weight for the proposition
+  they ask about.
 - The Conscious Workspace normally consumes summaries, not raw memory histories.
 - Memory cleanup becomes a responsibility of the Memory Steward rather than a database TTL or
   oldest-first deletion policy.
