@@ -245,7 +245,16 @@ class OllamaReasoningEngine:
                     arguments = function.get("arguments", {})
                     if isinstance(arguments, str):
                         arguments = json.loads(arguments)
-                    result = await tool.invoke(arguments)
+                    try:
+                        result = await tool.invoke(arguments)
+                    except (ValueError, RuntimeError) as error:
+                        # A model may produce an incomplete call or invoke operations
+                        # out of order. Return that recoverable contract error to the
+                        # model so it can correct the call within the agent loop.
+                        result = {
+                            "status": "tool_error",
+                            "error": str(error),
+                        }
                     messages.append(
                         {
                             "role": "tool",
