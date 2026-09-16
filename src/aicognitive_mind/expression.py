@@ -1,6 +1,11 @@
 from typing import Protocol
 
-from aicognitive_mind.domain import CognitiveMind, ReasoningProposal, ReasoningRequest
+from aicognitive_mind.domain import (
+    CognitiveMind,
+    DiagnosticObservation,
+    ReasoningProposal,
+    ReasoningRequest,
+)
 from aicognitive_mind.engines import ReasoningEngine
 
 
@@ -27,8 +32,6 @@ class DirectExpressionRenderer:
         instructions: str,
     ) -> ReasoningProposal:
         del mind, input_text, knowledge, instructions
-        from aicognitive_mind.domain import DiagnosticObservation
-
         return ReasoningProposal(
             response_text=draft,
             diagnostic=DiagnosticObservation(
