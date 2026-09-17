@@ -1,4 +1,5 @@
 import secrets
+import subprocess
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated, cast
@@ -68,6 +69,20 @@ def get_foundation(request: Request) -> MongoFoundationStore:
     return cast(MongoFoundationStore, request.app.state.foundation)
 
 
+def get_runtime_revision() -> str:
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return completed.stdout.strip() or "unknown"
+
+
 def authorize_admin(authorization: str | None) -> None:
     expected = get_settings().admin_token
     if not expected:
@@ -93,6 +108,7 @@ def authorize_admin(authorization: str | None) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    app.state.runtime_revision = get_runtime_revision()
     runtime = MongoRuntime(settings.mongodb_uri, settings.mongodb_database)
     await runtime.initialize()
     app.state.runtime = runtime
@@ -148,6 +164,11 @@ app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
 async def health(request: Request) -> dict[str, str]:
     await request.app.state.runtime.ping()
     return {"status": "healthy"}
+
+
+@app.get("/debug/revision")
+async def read_runtime_revision(request: Request) -> dict[str, str]:
+    return {"revision": cast(str, request.app.state.runtime_revision)}
 
 
 @app.post(
