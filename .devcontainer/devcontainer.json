@@ -11,7 +11,8 @@
       "onAutoForward": "openPreview"
     }
   },
-  "postCreateCommand": "python -m pip install --upgrade pip && python -m pip install -e '.[dev]'",
+  "postCreateCommand": "python -m pip install --upgrade pip && python -m pip install -e '.[dev]' && (command -v ollama >/dev/null 2>&1 || curl -fsSL https://ollama.com/install.sh | sh)",
+  "postStartCommand": "bash scripts/codespace_start.sh",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -22,4 +23,3 @@
     }
   }
 }
-
