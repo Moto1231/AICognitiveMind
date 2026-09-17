@@ -10,6 +10,7 @@ from aicognitive_mind.domain import (
     DurableMemory,
     FoundationalMemory,
     JournalEntry,
+    WorkingMemory,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 
@@ -65,6 +66,18 @@ class MemoryStore(Protocol):
     ) -> DurableMemory: ...
 
     async def read(self) -> list[DurableMemory]: ...
+
+
+class WorkingMemoryStore(Protocol):
+    async def load(self) -> WorkingMemory: ...
+
+    async def save(
+        self,
+        memory: WorkingMemory,
+        recorded_by: CognitiveActor,
+    ) -> WorkingMemory: ...
+
+    async def clear(self, recorded_by: CognitiveActor) -> WorkingMemory: ...
 
 
 class InMemoryMindStore:
@@ -179,3 +192,26 @@ class InMemoryMemoryStore:
 
     async def read(self) -> list[DurableMemory]:
         return deepcopy(self._memories)
+
+
+class InMemoryWorkingMemoryStore:
+    def __init__(self, policy: PermissionPolicy | None = None) -> None:
+        self._memory = WorkingMemory()
+        self._policy = policy or PermissionPolicy()
+
+    async def load(self) -> WorkingMemory:
+        return deepcopy(self._memory)
+
+    async def save(
+        self,
+        memory: WorkingMemory,
+        recorded_by: CognitiveActor,
+    ) -> WorkingMemory:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_WORKING_MEMORY)
+        self._memory = deepcopy(memory)
+        return deepcopy(self._memory)
+
+    async def clear(self, recorded_by: CognitiveActor) -> WorkingMemory:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.CLEAR_WORKING_MEMORY)
+        self._memory = WorkingMemory()
+        return deepcopy(self._memory)
