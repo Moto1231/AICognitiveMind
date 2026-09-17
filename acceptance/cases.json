@@ -1,0 +1,16 @@
+[
+  {
+    "name": "birthday-recall",
+    "message": "When is my birthday?",
+    "must_contain": [
+      "February 7"
+    ],
+    "must_not_contain": [
+      "not sure",
+      "don't have any information",
+      "do not have any information",
+      "unknown",
+      "memory steward"
+    ]
+  }
+]
