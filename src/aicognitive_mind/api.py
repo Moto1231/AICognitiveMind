@@ -45,7 +45,22 @@ from aicognitive_mind.mongo_storage import (
     MongoMindStore,
     MongoRuntime,
 )
-from aicognitive_mind.storage import MindAlreadyInitializedError
+from aicognitive_mind.storage import (
+    DiagnosticStore,
+    FoundationStore,
+    JournalStore,
+    MemoryStore,
+    MindAlreadyInitializedError,
+    MindStore,
+)
+from aicognitive_mind.surreal_storage import (
+    SurrealDiagnosticStore,
+    SurrealFoundationStore,
+    SurrealJournalStore,
+    SurrealMemoryStore,
+    SurrealMindStore,
+    SurrealRuntime,
+)
 
 
 class InitializeMindRequest(BaseModel):
@@ -65,8 +80,8 @@ def get_core(request: Request) -> CognitiveCore:
     return cast(CognitiveCore, request.app.state.core)
 
 
-def get_foundation(request: Request) -> MongoFoundationStore:
-    return cast(MongoFoundationStore, request.app.state.foundation)
+def get_foundation(request: Request) -> FoundationStore:
+    return cast(FoundationStore, request.app.state.foundation)
 
 
 def get_runtime_revision() -> str:
@@ -109,11 +124,44 @@ def authorize_admin(authorization: str | None) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     app.state.runtime_revision = get_runtime_revision()
-    runtime = MongoRuntime(settings.mongodb_uri, settings.mongodb_database)
-    await runtime.initialize()
+
+    runtime: MongoRuntime | SurrealRuntime
+    mind_store: MindStore
+    foundation: FoundationStore
+    journal_store: JournalStore
+    memory_store: MemoryStore
+    diagnostic_store: DiagnosticStore
+
+    storage_provider = settings.storage_provider.lower()
+    if storage_provider == "mongo":
+        runtime = MongoRuntime(settings.mongodb_uri, settings.mongodb_database)
+        await runtime.initialize()
+        mind_store = MongoMindStore(runtime.database)
+        foundation = MongoFoundationStore(runtime.database)
+        journal_store = MongoJournalStore(runtime.database)
+        memory_store = MongoMemoryStore(runtime.database)
+        diagnostic_store = MongoDiagnosticStore(runtime.database)
+    elif storage_provider == "surreal":
+        runtime = SurrealRuntime(
+            settings.surrealdb_uri,
+            settings.surrealdb_namespace,
+            settings.surrealdb_database,
+            settings.surrealdb_username,
+            settings.surrealdb_password,
+        )
+        await runtime.initialize()
+        mind_store = SurrealMindStore(runtime.database)
+        foundation = SurrealFoundationStore(runtime.database)
+        journal_store = SurrealJournalStore(runtime.database)
+        memory_store = SurrealMemoryStore(runtime.database)
+        diagnostic_store = SurrealDiagnosticStore(runtime.database)
+    else:
+        raise RuntimeError("STORAGE_PROVIDER must be one of: mongo, surreal")
+
     app.state.runtime = runtime
-    app.state.diagnostics = MongoDiagnosticStore(runtime.database)
-    foundation = MongoFoundationStore(runtime.database)
+    app.state.diagnostics = diagnostic_store
+    app.state.foundation = foundation
+
     await foundation.seed(
         CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
         CONSCIOUS_WORKSPACE_FOUNDATION_SEED,
@@ -126,7 +174,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
         CONSCIOUS_EXPRESSION_FOUNDATION_SEED,
     )
-    app.state.foundation = foundation
 
     provider = settings.reasoning_provider.lower()
     engine: ReasoningEngine
@@ -139,15 +186,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     elif provider == "echo":
         engine = EchoReasoningEngine()
     else:
-        raise RuntimeError(
-            "REASONING_PROVIDER must be one of: echo, openai, ollama"
-        )
+        raise RuntimeError("REASONING_PROVIDER must be one of: echo, openai, ollama")
+
     app.state.core = CognitiveCore(
-        mind=MongoMindStore(runtime.database),
+        mind=mind_store,
         foundation=foundation,
-        journal=MongoJournalStore(runtime.database),
-        memory=MongoMemoryStore(runtime.database),
-        diagnostics=app.state.diagnostics,
+        journal=journal_store,
+        memory=memory_store,
+        diagnostics=diagnostic_store,
         engine=engine,
         knowledge_synthesizer=ReasoningKnowledgeSynthesizer(engine),
         expression_renderer=ReasoningExpressionRenderer(engine),
@@ -268,5 +314,5 @@ async def revise_foundation(
 
 @app.get("/debug/diagnostics", response_model=list[DiagnosticObservation])
 async def read_diagnostics(request: Request) -> list[DiagnosticObservation]:
-    diagnostics = cast(MongoDiagnosticStore, request.app.state.diagnostics)
+    diagnostics = cast(DiagnosticStore, request.app.state.diagnostics)
     return await diagnostics.read()

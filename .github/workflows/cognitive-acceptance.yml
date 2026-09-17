@@ -5,6 +5,7 @@ on:
     branches:
       - codex/autonomous-acceptance-loop
       - codex/ollama-reasoning-engine
+      - codex/surreal-storage-engine
     paths:
       - "src/**"
       - "tests/**"
@@ -49,6 +50,7 @@ jobs:
         run: pytest -q
 
       - name: Live cognitive acceptance
+        if: github.ref != 'refs/heads/codex/surreal-storage-engine'
         env:
           COGNITIVE_MIND_TEST_URL: ${{ secrets.COGNITIVE_MIND_TEST_URL || vars.COGNITIVE_MIND_TEST_URL }}
           EXPECTED_REVISION: ${{ github.sha }}

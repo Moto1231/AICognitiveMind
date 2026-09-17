@@ -5,8 +5,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "AI Cognitive Mind"
+    storage_provider: str = "surreal"
     mongodb_uri: str = "mongodb://mongodb:27017"
     mongodb_database: str = "ai_cognitive_mind"
+    surrealdb_uri: str = "surrealkv://.surreal/cognitive_mind"
+    surrealdb_namespace: str = "mir_ai"
+    surrealdb_database: str = "ai_cognitive_mind"
+    surrealdb_username: str | None = None
+    surrealdb_password: str | None = None
     reasoning_provider: str = "ollama"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.6-terra"
