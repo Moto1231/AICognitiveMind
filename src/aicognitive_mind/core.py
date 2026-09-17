@@ -141,7 +141,7 @@ class CognitiveCore:
             "Current working context (temporary present-state, not long-term memory):\n"
             f"current_speaker: {current_speaker}\n"
             f"context: {working_state.context}\n\n"
-            "Relevant long-term knowledge:\n"
+            "Relevant knowledge:\n"
             f"{memory_summary}"
         )
         self._policy.assert_allowed(
@@ -154,7 +154,7 @@ class CognitiveCore:
                 input_text=input_text,
                 system_prompt=reasoning_prompt,
             ),
-            tools=(working_tool, memory_steward),
+            tools=(memory_steward, working_tool),
         )
         memory_trace = await memory_steward.complete()
         expression = await self._expression_renderer.render(
