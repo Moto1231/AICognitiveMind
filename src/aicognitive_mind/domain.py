@@ -37,6 +37,7 @@ class JournalKind(StrEnum):
     INTERACTION = "interaction"
     REFLECTION = "reflection"
     TENSION = "tension"
+    CHECKPOINT = "checkpoint"
 
 
 class MindIdentity(BaseModel):
@@ -52,6 +53,24 @@ class CognitiveMind(BaseModel):
     identity: MindIdentity
     developmental_state: str = "genesis"
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class InterlocutorContext(BaseModel):
+    """Present-tense identity hypothesis for the human currently addressing the Mind."""
+
+    name: str = Field(min_length=1, max_length=120)
+    source: str = Field(default="self_identification", min_length=1, max_length=120)
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    established_at: datetime = Field(default_factory=utc_now)
+
+
+class WorkingMemory(BaseModel):
+    """Disposable present-tense context owned by the Cognitive Mind."""
+
+    current_interlocutor: InterlocutorContext | None = None
+    state: dict[str, Any] = Field(default_factory=dict)
+    started_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class FoundationalMemory(BaseModel):
