@@ -8,12 +8,18 @@
         "must_not_contain": ["February 7"]
       },
       {
-        "message": "I'm William."
+        "message": "I'm William.",
+        "working_context": {
+          "current_speaker": "William"
+        }
       },
       {
         "message": "What is my birthday?",
         "must_contain": ["February 7"],
-        "must_not_contain": ["memory steward", "not sure", "unknown"]
+        "must_not_contain": ["memory steward", "not sure", "unknown"],
+        "working_context": {
+          "current_speaker": "William"
+        }
       },
       {
         "checkpoint": true

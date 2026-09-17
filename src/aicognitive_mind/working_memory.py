@@ -35,8 +35,10 @@ class WorkingMemoryTool:
     def description(self) -> str:
         return (
             "Read or update temporary conscious context such as the current speaker, location, "
-            "active topic, or immediate situation. This context is intentionally flushable at "
-            "checkpoints and is not long-term memory."
+            "active topic, or immediate situation. If the human says 'I'm <name>' or "
+            "'This is <name>', call set_context with key current_speaker and that human-provided "
+            "name before responding. This context is intentionally flushable at checkpoints and "
+            "is not long-term memory."
         )
 
     @property

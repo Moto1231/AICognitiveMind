@@ -148,7 +148,19 @@ def _run_step(base_url: str, step: dict[str, Any]) -> tuple[str, list[str]]:
         timeout_seconds=INTERACTION_REQUEST_TIMEOUT_SECONDS,
     )
     response_text = str(result.get("response_text", ""))
-    return response_text, _evaluate(step, response_text)
+    failures = _evaluate(step, response_text)
+
+    expected_context = step.get("working_context")
+    if expected_context is not None:
+        state = _request_json(f"{base_url}/v1/mind/working-memory")
+        actual_context = state.get("context", {})
+        if actual_context != expected_context:
+            failures.append(
+                "working context mismatch: "
+                f"expected {expected_context!r}, got {actual_context!r}"
+            )
+
+    return response_text, failures
 
 
 def _write_summary(lines: list[str]) -> None:
