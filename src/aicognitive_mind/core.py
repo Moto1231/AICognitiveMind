@@ -1,3 +1,5 @@
+import re
+
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -43,6 +45,50 @@ UNKNOWN_SPEAKER_KNOWLEDGE = (
     "Person-specific long-term knowledge is unavailable until the current speaker "
     "is identified."
 )
+IDENTITY_CLARIFICATION_RESPONSE = (
+    "I don't know who I'm speaking with yet. What's your name?"
+)
+_IDENTITY_DEPENDENT_TERMS = {
+    "address",
+    "age",
+    "birthday",
+    "favorite",
+    "favourite",
+    "name",
+    "preference",
+    "preferences",
+}
+
+
+def _speaker_is_known(current_speaker: object) -> bool:
+    speaker = str(current_speaker or "").strip().casefold()
+    return bool(speaker) and speaker != "unknown"
+
+
+def _explicit_speaker_identity(input_text: str) -> str | None:
+    match = re.match(
+        r"^\s*(?:i['’]?m|i am|this is|my name is)\s+"
+        r"([A-Za-z][A-Za-z' -]{0,79}?)(?=\s*(?:[.!?,]|$))",
+        input_text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+
+    speaker = " ".join(match.group(1).split())
+    if not speaker or len(speaker.split()) > 4:
+        return None
+    return speaker
+
+
+def _requires_speaker_identity(input_text: str, current_speaker: object) -> bool:
+    if _speaker_is_known(current_speaker):
+        return False
+    normalized = "".join(
+        character if character.isalnum() else " " for character in input_text.casefold()
+    )
+    tokens = set(normalized.split())
+    return "my" in tokens and bool(tokens & _IDENTITY_DEPENDENT_TERMS)
 
 
 def _scope_recalled_knowledge(
@@ -50,8 +96,7 @@ def _scope_recalled_knowledge(
     current_speaker: object,
     memory_summary: str,
 ) -> tuple[str, bool]:
-    speaker = str(current_speaker or "").strip().casefold()
-    speaker_known = bool(speaker) and speaker != "unknown"
+    speaker_known = _speaker_is_known(current_speaker)
     normalized = "".join(
         character if character.isalnum() else " " for character in input_text.casefold()
     )
@@ -131,6 +176,32 @@ class CognitiveCore:
 
     async def interact(self, input_text: str) -> InteractionResult:
         mind = await self.load_mind()
+
+        explicit_speaker = _explicit_speaker_identity(input_text)
+        if explicit_speaker is not None:
+            await self._working_memory.set_context("current_speaker", explicit_speaker)
+
+        working_state = await self._working_memory.read()
+        current_speaker = working_state.context.get("current_speaker", "unknown")
+        if _requires_speaker_identity(input_text, current_speaker):
+            journal_entry = await self._journal.append(
+                JournalEntry(
+                    kind=JournalKind.INTERACTION,
+                    experience={
+                        "input": {"source": "human", "content": input_text},
+                        "expression": {
+                            "source": "conscious_workspace",
+                            "content": IDENTITY_CLARIFICATION_RESPONSE,
+                        },
+                    },
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+            return InteractionResult(
+                response_text=IDENTITY_CLARIFICATION_RESPONSE,
+                occurred_at=journal_entry.occurred_at,
+            )
+
         workspace_foundation = await self._foundation.load_active(
             CONSCIOUS_WORKSPACE_FOUNDATION_KEY
         )
@@ -153,7 +224,6 @@ class CognitiveCore:
                 "The Conscious Expression foundation has not been initialized"
             )
 
-        working_state = await self._working_memory.read()
         working_tool = WorkingMemoryTool(self._working_memory)
         memory_steward = MemoryStewardTool(
             mind=mind,
@@ -167,7 +237,6 @@ class CognitiveCore:
             {"action": "recall", "focus": input_text}
         )
         memory_summary = recalled_context["context"]["summary"]
-        current_speaker = working_state.context.get("current_speaker", "unknown")
         visible_knowledge, recall_allowed = _scope_recalled_knowledge(
             input_text,
             current_speaker,

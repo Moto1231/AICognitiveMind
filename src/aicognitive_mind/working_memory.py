@@ -34,11 +34,10 @@ class WorkingMemoryTool:
     @property
     def description(self) -> str:
         return (
-            "Read or update temporary conscious context such as the current speaker, location, "
-            "active topic, or immediate situation. If the human says 'I'm <name>' or "
-            "'This is <name>', call set_context with key current_speaker and that human-provided "
-            "name before responding. This context is intentionally flushable at checkpoints and "
-            "is not long-term memory."
+            "Read or update temporary conscious context such as location, active topic, or "
+            "immediate situation. current_speaker is managed by the Mind boundary and may be "
+            "read here but cannot be written by the reasoning engine. This context is "
+            "intentionally flushable at checkpoints and is not long-term memory."
         )
 
     @property
@@ -67,6 +66,11 @@ class WorkingMemoryTool:
         if isinstance(call, ReadWorkingMemoryCall):
             state = await self._store.read()
             return {"status": "read", "working_context": state.context}
+
+        if call.key == "current_speaker":
+            raise ValueError(
+                "current_speaker is managed by the Mind boundary, not the reasoning engine"
+            )
 
         state = await self._store.set_context(call.key, call.value)
         return {
