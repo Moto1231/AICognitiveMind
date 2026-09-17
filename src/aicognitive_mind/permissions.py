@@ -8,6 +8,8 @@ class CognitiveOperation(StrEnum):
     PROPOSE_RESPONSE = "propose_response"
     PROPOSE_MEMORY = "propose_memory"
     WRITE_DURABLE_MEMORY = "write_durable_memory"
+    WRITE_WORKING_MEMORY = "write_working_memory"
+    CLEAR_WORKING_MEMORY = "clear_working_memory"
     PROPOSE_REFLECTION = "propose_reflection"
     APPROVE_REFLECTION = "approve_reflection"
     PROPOSE_IDENTITY_REVISION = "propose_identity_revision"
@@ -20,7 +22,7 @@ class CognitivePermissionError(PermissionError):
 
 
 class PermissionPolicy:
-    """Cognitive authority, independent from MongoDB access mechanics."""
+    """Cognitive authority, independent from persistence mechanics."""
 
     _allowed: dict[CognitiveActor, frozenset[CognitiveOperation]] = {
         CognitiveActor.HUMAN: frozenset(
@@ -33,6 +35,8 @@ class PermissionPolicy:
             {
                 CognitiveOperation.RECORD_JOURNAL,
                 CognitiveOperation.PROPOSE_MEMORY,
+                CognitiveOperation.WRITE_WORKING_MEMORY,
+                CognitiveOperation.CLEAR_WORKING_MEMORY,
                 CognitiveOperation.PROPOSE_REFLECTION,
                 CognitiveOperation.PROPOSE_IDENTITY_REVISION,
             }
@@ -91,4 +95,3 @@ class PermissionPolicy:
     ) -> None:
         if operation not in self._allowed.get(actor, frozenset()):
             raise CognitivePermissionError(f"{actor} may not perform {operation}")
-
