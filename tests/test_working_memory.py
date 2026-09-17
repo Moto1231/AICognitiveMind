@@ -1,5 +1,6 @@
 import unittest
 
+from aicognitive_mind.core import UNKNOWN_SPEAKER_KNOWLEDGE, _scope_recalled_knowledge
 from aicognitive_mind.storage import InMemoryWorkingMemoryStore
 from aicognitive_mind.working_memory import WorkingMemoryTool
 
@@ -45,6 +46,33 @@ class WorkingMemoryTests(unittest.IsolatedAsyncioTestCase):
                 "attention": "memory architecture",
             },
         )
+
+    def test_unknown_speaker_cannot_receive_first_person_recalled_knowledge(self) -> None:
+        knowledge = "William's birthday is February 7."
+
+        visible, recall_allowed = _scope_recalled_knowledge(
+            "What is my birthday?",
+            "unknown",
+            knowledge,
+        )
+        self.assertEqual(visible, UNKNOWN_SPEAKER_KNOWLEDGE)
+        self.assertFalse(recall_allowed)
+
+        visible, recall_allowed = _scope_recalled_knowledge(
+            "What is my birthday?",
+            "William",
+            knowledge,
+        )
+        self.assertEqual(visible, knowledge)
+        self.assertTrue(recall_allowed)
+
+        visible, recall_allowed = _scope_recalled_knowledge(
+            "What is William's birthday?",
+            "unknown",
+            knowledge,
+        )
+        self.assertEqual(visible, knowledge)
+        self.assertTrue(recall_allowed)
 
 
 if __name__ == "__main__":
