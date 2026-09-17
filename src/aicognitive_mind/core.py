@@ -31,6 +31,30 @@ from aicognitive_mind.storage import (
 from aicognitive_mind.working_memory import WorkingMemoryTool
 
 
+UNKNOWN_SPEAKER_KNOWLEDGE = (
+    "Person-specific long-term knowledge is unavailable until the current speaker "
+    "is identified."
+)
+
+
+def _scope_recalled_knowledge(
+    input_text: str,
+    current_speaker: object,
+    memory_summary: str,
+) -> tuple[str, bool]:
+    speaker = str(current_speaker or "").strip().casefold()
+    speaker_known = bool(speaker) and speaker != "unknown"
+    normalized = "".join(
+        character if character.isalnum() else " " for character in input_text.casefold()
+    )
+    first_person_reference = bool(
+        {"i", "me", "my", "mine"}.intersection(normalized.split())
+    )
+    if not speaker_known and first_person_reference:
+        return UNKNOWN_SPEAKER_KNOWLEDGE, False
+    return memory_summary, True
+
+
 class MindNotInitializedError(LookupError):
     pass
 
@@ -136,17 +160,27 @@ class CognitiveCore:
         )
         memory_summary = recalled_context["context"]["summary"]
         current_speaker = working_state.context.get("current_speaker", "unknown")
+        visible_knowledge, recall_allowed = _scope_recalled_knowledge(
+            input_text,
+            current_speaker,
+            memory_summary,
+        )
         reasoning_prompt = (
             f"{workspace_foundation.content}\n\n"
             "Current working context (temporary present-state, not long-term memory):\n"
             f"current_speaker: {current_speaker}\n"
             f"context: {working_state.context}\n\n"
             "Relevant knowledge:\n"
-            f"{memory_summary}"
+            f"{visible_knowledge}"
         )
         self._policy.assert_allowed(
             CognitiveActor.REASONING_ENGINE,
             CognitiveOperation.PROPOSE_RESPONSE,
+        )
+        tools = (
+            (memory_steward, working_tool)
+            if recall_allowed
+            else (working_tool,)
         )
         proposal = await self._engine.propose(
             ReasoningRequest(
@@ -154,13 +188,13 @@ class CognitiveCore:
                 input_text=input_text,
                 system_prompt=reasoning_prompt,
             ),
-            tools=(memory_steward, working_tool),
+            tools=tools,
         )
         memory_trace = await memory_steward.complete()
         expression = await self._expression_renderer.render(
             mind=mind,
             input_text=input_text,
-            knowledge=memory_summary,
+            knowledge=visible_knowledge,
             draft=proposal.response_text,
             instructions=expression_foundation.content,
         )
