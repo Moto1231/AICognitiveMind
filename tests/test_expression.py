@@ -22,6 +22,7 @@ from aicognitive_mind.storage import (
     InMemoryJournalStore,
     InMemoryMemoryStore,
     InMemoryMindStore,
+    InMemoryWorkingMemoryStore,
 )
 from aicognitive_mind.tooling import ReasoningTool
 
@@ -102,6 +103,7 @@ class ExpressionBoundaryTests(unittest.IsolatedAsyncioTestCase):
         )
         renderer: ExpressionRenderer = RecordingRenderer()
         journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
         core = CognitiveCore(
             mind=InMemoryMindStore(),
             foundation=foundation,
@@ -111,8 +113,10 @@ class ExpressionBoundaryTests(unittest.IsolatedAsyncioTestCase):
             engine=DraftEngine(),
             knowledge_synthesizer=FixedSynthesizer(),
             expression_renderer=renderer,
+            working_memory=working_memory,
         )
         await core.initialize("Genesis")
+        await working_memory.set_context("current_speaker", "William")
 
         result = await core.interact("When is my birthday?")
 
