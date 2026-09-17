@@ -10,15 +10,24 @@ from aicognitive_mind.domain import (
     WorkingMemoryState,
 )
 from aicognitive_mind.engines import ReasoningEngine
-from aicognitive_mind.expression import DirectExpressionRenderer, ExpressionRenderer
+from aicognitive_mind.expression import (
+    DirectExpressionRenderer,
+    ExpressionRenderer,
+)
 from aicognitive_mind.foundation import (
     CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
     CONSCIOUS_WORKSPACE_FOUNDATION_KEY,
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_KEY,
 )
-from aicognitive_mind.knowledge import DirectKnowledgeSynthesizer, KnowledgeSynthesizer
+from aicognitive_mind.knowledge import (
+    DirectKnowledgeSynthesizer,
+    KnowledgeSynthesizer,
+)
 from aicognitive_mind.memory_steward import MemoryStewardTool
-from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
+from aicognitive_mind.permissions import (
+    CognitiveOperation,
+    PermissionPolicy,
+)
 from aicognitive_mind.storage import (
     DiagnosticStore,
     FoundationReader,
