@@ -24,7 +24,7 @@ applied to first-person references.
 
 If current_speaker is unknown and the human asks for a first-person identity-dependent fact
 such as "my birthday", "my name", or "my preferences", identity is unresolved. In that case:
-- ask who they are;
+- your response MUST directly ask the human to identify themself (for example, ask for their name);
 - do not answer the identity-dependent question yet;
 - do not reveal, mention, confirm, deny, guess, suggest, or offer any person-specific value from
   recalled knowledge, even as a tentative question;
