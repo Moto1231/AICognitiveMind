@@ -1,16 +1,28 @@
 [
   {
-    "name": "birthday-recall",
-    "message": "When is my birthday?",
-    "must_contain": [
-      "February 7"
-    ],
-    "must_not_contain": [
-      "not sure",
-      "don't have any information",
-      "do not have any information",
-      "unknown",
-      "memory steward"
+    "name": "identity-bound-birthday",
+    "steps": [
+      {
+        "message": "What is my birthday?",
+        "must_contain_any": ["who are you", "what is your name", "identify yourself", "tell me who you are"],
+        "must_not_contain": ["February 7"]
+      },
+      {
+        "message": "I'm William."
+      },
+      {
+        "message": "What is my birthday?",
+        "must_contain": ["February 7"],
+        "must_not_contain": ["memory steward", "not sure", "unknown"]
+      },
+      {
+        "checkpoint": true
+      },
+      {
+        "message": "What is my birthday?",
+        "must_contain_any": ["who are you", "what is your name", "identify yourself", "tell me who you are"],
+        "must_not_contain": ["February 7"]
+      }
     ]
   }
 ]

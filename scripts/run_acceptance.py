@@ -57,7 +57,6 @@ def _wait_for_revision(base_url: str, expected_revision: str) -> None:
         os.getenv("ACCEPTANCE_SYNC_TIMEOUT", str(DEFAULT_TIMEOUT_SECONDS))
     )
     last_revision = "unavailable"
-
     while time.monotonic() < deadline:
         try:
             payload = _request_json(f"{base_url}/debug/revision")
@@ -68,7 +67,6 @@ def _wait_for_revision(base_url: str, expected_revision: str) -> None:
         except RuntimeError as exc:
             last_revision = str(exc)
         time.sleep(3)
-
     raise RuntimeError(
         "Runtime did not synchronize to the tested commit. "
         f"Expected {expected_revision}, last observed {last_revision}"
@@ -80,26 +78,46 @@ def _load_cases(path: Path) -> list[dict[str, Any]]:
     if not isinstance(payload, list) or not payload:
         raise RuntimeError(f"{path} must contain a non-empty JSON list")
     for index, case in enumerate(payload, start=1):
-        if not isinstance(case, dict):
-            raise RuntimeError(f"Case {index} in {path} is not a JSON object")
-        if not case.get("name") or not case.get("message"):
-            raise RuntimeError(f"Case {index} in {path} requires name and message")
+        if not isinstance(case, dict) or not case.get("name"):
+            raise RuntimeError(f"Case {index} in {path} requires a name")
+        if not case.get("message") and not case.get("steps"):
+            raise RuntimeError(f"Case {index} in {path} requires message or steps")
     return payload
 
 
-def _evaluate(case: dict[str, Any], response_text: str) -> list[str]:
+def _evaluate(expectation: dict[str, Any], response_text: str) -> list[str]:
     failures: list[str] = []
     normalized = response_text.casefold()
-
-    for required in case.get("must_contain", []):
+    for required in expectation.get("must_contain", []):
         if str(required).casefold() not in normalized:
             failures.append(f"missing required text: {required!r}")
-
-    for forbidden in case.get("must_not_contain", []):
+    required_any = expectation.get("must_contain_any", [])
+    if required_any and not any(str(value).casefold() in normalized for value in required_any):
+        failures.append(f"missing any required alternative: {required_any!r}")
+    for forbidden in expectation.get("must_not_contain", []):
         if str(forbidden).casefold() in normalized:
             failures.append(f"contained forbidden text: {forbidden!r}")
-
     return failures
+
+
+def _run_step(base_url: str, step: dict[str, Any]) -> tuple[str, list[str]]:
+    if step.get("checkpoint"):
+        result = _request_json(f"{base_url}/v1/mind/checkpoint", method="POST")
+        context = result.get("context", {})
+        failures = [] if context == {} else [f"checkpoint did not clear context: {context!r}"]
+        return "checkpoint", failures
+
+    message = str(step.get("message", ""))
+    if not message:
+        return "", ["step requires message or checkpoint"]
+    result = _request_json(
+        f"{base_url}/v1/mind/interactions",
+        method="POST",
+        body={"message": message},
+        timeout_seconds=INTERACTION_REQUEST_TIMEOUT_SECONDS,
+    )
+    response_text = str(result.get("response_text", ""))
+    return response_text, _evaluate(step, response_text)
 
 
 def _write_summary(lines: list[str]) -> None:
@@ -115,58 +133,54 @@ def main() -> int:
     if not base_url:
         print("COGNITIVE_MIND_TEST_URL is not configured", file=sys.stderr)
         return 2
-
     expected_revision = os.getenv("EXPECTED_REVISION", "").strip()
     cases_path = Path(os.getenv("ACCEPTANCE_CASES", str(DEFAULT_CASES)))
 
     try:
         if expected_revision:
             _wait_for_revision(base_url, expected_revision)
-
         health = _request_json(f"{base_url}/health")
         if health.get("status") != "healthy":
             raise RuntimeError(f"Health check failed: {health}")
-
         cases = _load_cases(cases_path)
     except (OSError, json.JSONDecodeError, RuntimeError) as exc:
         print(f"Acceptance infrastructure failure: {exc}", file=sys.stderr)
         return 2
 
     failed = 0
+    total = 0
     summary = ["## Cognitive acceptance", ""]
 
     for case in cases:
         name = str(case["name"])
-        message = str(case["message"])
-        try:
-            result = _request_json(
-                f"{base_url}/v1/mind/interactions",
-                method="POST",
-                body={"message": message},
-                timeout_seconds=INTERACTION_REQUEST_TIMEOUT_SECONDS,
-            )
-            response_text = str(result.get("response_text", ""))
-            failures = _evaluate(case, response_text)
-        except RuntimeError as exc:
-            response_text = ""
-            failures = [str(exc)]
-
-        if failures:
-            failed += 1
-            print(f"FAIL {name}")
-            for failure in failures:
-                print(f"  - {failure}")
-            if response_text:
-                print(f"  response: {response_text}")
-            summary.append(f"- ❌ **{name}** — {'; '.join(failures)}")
-        else:
-            print(f"PASS {name}: {response_text}")
-            summary.append(f"- ✅ **{name}** — {response_text}")
+        steps = case.get("steps") or [case]
+        case_failed = False
+        for index, step in enumerate(steps, start=1):
+            total += 1
+            try:
+                response_text, failures = _run_step(base_url, step)
+            except RuntimeError as exc:
+                response_text = ""
+                failures = [str(exc)]
+            label = f"{name} step {index}"
+            if failures:
+                failed += 1
+                case_failed = True
+                print(f"FAIL {label}")
+                for failure in failures:
+                    print(f"  - {failure}")
+                if response_text:
+                    print(f"  response: {response_text}")
+                summary.append(f"- ❌ **{label}** — {'; '.join(failures)}")
+                break
+            print(f"PASS {label}: {response_text}")
+            summary.append(f"- ✅ **{label}** — {response_text}")
+        if case_failed:
+            continue
 
     summary.append("")
-    summary.append(f"Result: {len(cases) - failed}/{len(cases)} passed")
+    summary.append(f"Result: {total - failed}/{total} executed steps passed")
     _write_summary(summary)
-
     return 1 if failed else 0
 
 

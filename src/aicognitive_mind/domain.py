@@ -37,6 +37,7 @@ class JournalKind(StrEnum):
     INTERACTION = "interaction"
     REFLECTION = "reflection"
     TENSION = "tension"
+    CHECKPOINT = "checkpoint"
 
 
 class MindIdentity(BaseModel):
@@ -52,6 +53,13 @@ class CognitiveMind(BaseModel):
     identity: MindIdentity
     developmental_state: str = "genesis"
     created_at: datetime = Field(default_factory=utc_now)
+
+
+class WorkingMemoryState(BaseModel):
+    """Temporary conscious context describing the Mind's present situation."""
+
+    context: dict[str, Any] = Field(default_factory=dict)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class FoundationalMemory(BaseModel):

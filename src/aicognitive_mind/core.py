@@ -7,6 +7,7 @@ from aicognitive_mind.domain import (
     JournalKind,
     MindIdentity,
     ReasoningRequest,
+    WorkingMemoryState,
 )
 from aicognitive_mind.engines import ReasoningEngine
 from aicognitive_mind.expression import DirectExpressionRenderer, ExpressionRenderer
@@ -21,10 +22,13 @@ from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 from aicognitive_mind.storage import (
     DiagnosticStore,
     FoundationReader,
+    InMemoryWorkingMemoryStore,
     JournalStore,
     MemoryStore,
     MindStore,
+    WorkingMemoryStore,
 )
+from aicognitive_mind.working_memory import WorkingMemoryTool
 
 
 class MindNotInitializedError(LookupError):
@@ -44,6 +48,7 @@ class CognitiveCore:
         memory: MemoryStore,
         diagnostics: DiagnosticStore,
         engine: ReasoningEngine,
+        working_memory: WorkingMemoryStore | None = None,
         knowledge_synthesizer: KnowledgeSynthesizer | None = None,
         expression_renderer: ExpressionRenderer | None = None,
         policy: PermissionPolicy | None = None,
@@ -52,6 +57,7 @@ class CognitiveCore:
         self._foundation = foundation
         self._journal = journal
         self._memory = memory
+        self._working_memory = working_memory or InMemoryWorkingMemoryStore()
         self._diagnostics = diagnostics
         self._engine = engine
         self._knowledge_synthesizer = knowledge_synthesizer or DirectKnowledgeSynthesizer()
@@ -71,6 +77,7 @@ class CognitiveCore:
                 )
             )
         )
+        await self._working_memory.clear()
         await self._journal.append(
             JournalEntry(
                 kind=JournalKind.INITIALIZATION,
@@ -114,6 +121,8 @@ class CognitiveCore:
                 "The Conscious Expression foundation has not been initialized"
             )
 
+        working_state = await self._working_memory.read()
+        working_tool = WorkingMemoryTool(self._working_memory)
         memory_steward = MemoryStewardTool(
             mind=mind,
             input_text=input_text,
@@ -126,9 +135,13 @@ class CognitiveCore:
             {"action": "recall", "focus": input_text}
         )
         memory_summary = recalled_context["context"]["summary"]
+        current_speaker = working_state.context.get("current_speaker", "unknown")
         reasoning_prompt = (
             f"{workspace_foundation.content}\n\n"
-            "Relevant knowledge:\n"
+            "Current working context (temporary present-state, not long-term memory):\n"
+            f"current_speaker: {current_speaker}\n"
+            f"context: {working_state.context}\n\n"
+            "Relevant long-term knowledge:\n"
             f"{memory_summary}"
         )
         self._policy.assert_allowed(
@@ -141,7 +154,7 @@ class CognitiveCore:
                 input_text=input_text,
                 system_prompt=reasoning_prompt,
             ),
-            tools=(memory_steward,),
+            tools=(working_tool, memory_steward),
         )
         memory_trace = await memory_steward.complete()
         expression = await self._expression_renderer.render(
@@ -156,10 +169,7 @@ class CognitiveCore:
             JournalEntry(
                 kind=JournalKind.INTERACTION,
                 experience={
-                    "input": {
-                        "source": "human",
-                        "content": input_text,
-                    },
+                    "input": {"source": "human", "content": input_text},
                     "memory_steward": memory_trace.model_dump(mode="python"),
                     "expression": {
                         "source": "conscious_workspace",
@@ -171,7 +181,6 @@ class CognitiveCore:
         )
         await self._diagnostics.record(proposal.diagnostic)
         await self._diagnostics.record(expression.diagnostic)
-
         return InteractionResult(
             response_text=expression.response_text,
             occurred_at=journal_entry.occurred_at,
@@ -184,3 +193,19 @@ class CognitiveCore:
     async def read_memory(self) -> list[DurableMemory]:
         await self.load_mind()
         return await self._memory.read()
+
+    async def read_working_memory(self) -> WorkingMemoryState:
+        await self.load_mind()
+        return await self._working_memory.read()
+
+    async def checkpoint(self) -> WorkingMemoryState:
+        await self.load_mind()
+        state = await self._working_memory.clear()
+        await self._journal.append(
+            JournalEntry(
+                kind=JournalKind.CHECKPOINT,
+                experience={"working_memory_flushed": True},
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        return state

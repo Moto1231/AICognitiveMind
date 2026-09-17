@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Protocol
+from typing import Any, Protocol
 
 from aicognitive_mind.domain import (
     CognitiveActor,
@@ -10,6 +10,8 @@ from aicognitive_mind.domain import (
     DurableMemory,
     FoundationalMemory,
     JournalEntry,
+    WorkingMemoryState,
+    utc_now,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 
@@ -31,22 +33,13 @@ class FoundationReader(Protocol):
 class FoundationStore(FoundationReader, Protocol):
     async def seed(self, key: str, content: str) -> FoundationalMemory: ...
 
-    async def revise(
-        self,
-        key: str,
-        content: str,
-        changed_by: str,
-    ) -> FoundationalMemory: ...
+    async def revise(self, key: str, content: str, changed_by: str) -> FoundationalMemory: ...
 
     async def read_history(self, key: str) -> list[FoundationalMemory]: ...
 
 
 class JournalStore(Protocol):
-    async def append(
-        self,
-        entry: JournalEntry,
-        recorded_by: CognitiveActor,
-    ) -> JournalEntry: ...
+    async def append(self, entry: JournalEntry, recorded_by: CognitiveActor) -> JournalEntry: ...
 
     async def read(self) -> list[JournalEntry]: ...
 
@@ -59,12 +52,18 @@ class DiagnosticStore(Protocol):
 
 class MemoryStore(Protocol):
     async def remember(
-        self,
-        memory: DurableMemory,
-        recorded_by: CognitiveActor,
+        self, memory: DurableMemory, recorded_by: CognitiveActor
     ) -> DurableMemory: ...
 
     async def read(self) -> list[DurableMemory]: ...
+
+
+class WorkingMemoryStore(Protocol):
+    async def read(self) -> WorkingMemoryState: ...
+
+    async def set_context(self, key: str, value: Any) -> WorkingMemoryState: ...
+
+    async def clear(self) -> WorkingMemoryState: ...
 
 
 class InMemoryMindStore:
@@ -89,21 +88,11 @@ class InMemoryFoundationStore:
         existing = await self.load_active(key)
         if existing is not None:
             return existing
-        record = FoundationalMemory(
-            key=key,
-            version=1,
-            content=content,
-            changed_by="bootstrap",
-        )
+        record = FoundationalMemory(key=key, version=1, content=content, changed_by="bootstrap")
         self._records.append(record)
         return deepcopy(record)
 
-    async def revise(
-        self,
-        key: str,
-        content: str,
-        changed_by: str,
-    ) -> FoundationalMemory:
+    async def revise(self, key: str, content: str, changed_by: str) -> FoundationalMemory:
         history = await self.read_history(key)
         next_version = history[-1].version + 1 if history else 1
         for index, record in enumerate(self._records):
@@ -137,11 +126,7 @@ class InMemoryJournalStore:
         self._entries: list[JournalEntry] = []
         self._policy = policy or PermissionPolicy()
 
-    async def append(
-        self,
-        entry: JournalEntry,
-        recorded_by: CognitiveActor,
-    ) -> JournalEntry:
+    async def append(self, entry: JournalEntry, recorded_by: CognitiveActor) -> JournalEntry:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.RECORD_JOURNAL)
         stored = deepcopy(entry)
         self._entries.append(stored)
@@ -168,9 +153,7 @@ class InMemoryMemoryStore:
         self._policy = policy or PermissionPolicy()
 
     async def remember(
-        self,
-        memory: DurableMemory,
-        recorded_by: CognitiveActor,
+        self, memory: DurableMemory, recorded_by: CognitiveActor
     ) -> DurableMemory:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
         stored = deepcopy(memory)
@@ -179,3 +162,21 @@ class InMemoryMemoryStore:
 
     async def read(self) -> list[DurableMemory]:
         return deepcopy(self._memories)
+
+
+class InMemoryWorkingMemoryStore:
+    def __init__(self) -> None:
+        self._state = WorkingMemoryState()
+
+    async def read(self) -> WorkingMemoryState:
+        return deepcopy(self._state)
+
+    async def set_context(self, key: str, value: Any) -> WorkingMemoryState:
+        context = deepcopy(self._state.context)
+        context[key] = deepcopy(value)
+        self._state = WorkingMemoryState(context=context, updated_at=utc_now())
+        return deepcopy(self._state)
+
+    async def clear(self) -> WorkingMemoryState:
+        self._state = WorkingMemoryState(context={}, updated_at=utc_now())
+        return deepcopy(self._state)
