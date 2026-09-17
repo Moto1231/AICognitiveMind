@@ -65,10 +65,15 @@ def _speaker_is_known(current_speaker: object) -> bool:
     return bool(speaker) and speaker != "unknown"
 
 
+_SPEAKER_IDENTITY_PATTERN = (
+    r"(?:i['’]?m|i am|this is|my name is)\s+"
+    r"([A-Za-z][A-Za-z' -]{0,79}?)"
+)
+
+
 def _explicit_speaker_identity(input_text: str) -> str | None:
     match = re.match(
-        r"^\s*(?:i['’]?m|i am|this is|my name is)\s+"
-        r"([A-Za-z][A-Za-z' -]{0,79}?)(?=\s*(?:[.!?,]|$))",
+        rf"^\s*{_SPEAKER_IDENTITY_PATTERN}(?=\s*(?:[.!?,]|$))",
         input_text,
         flags=re.IGNORECASE,
     )
@@ -79,6 +84,17 @@ def _explicit_speaker_identity(input_text: str) -> str | None:
     if not speaker or len(speaker.split()) > 4:
         return None
     return speaker
+
+
+def _is_identity_declaration_only(input_text: str) -> bool:
+    return (
+        re.fullmatch(
+            rf"\s*{_SPEAKER_IDENTITY_PATTERN}\s*[.!]?\s*",
+            input_text,
+            flags=re.IGNORECASE,
+        )
+        is not None
+    )
 
 
 def _requires_speaker_identity(input_text: str, current_speaker: object) -> bool:
@@ -180,6 +196,25 @@ class CognitiveCore:
         explicit_speaker = _explicit_speaker_identity(input_text)
         if explicit_speaker is not None:
             await self._working_memory.set_context("current_speaker", explicit_speaker)
+            if _is_identity_declaration_only(input_text):
+                response_text = f"Got it, {explicit_speaker}."
+                journal_entry = await self._journal.append(
+                    JournalEntry(
+                        kind=JournalKind.INTERACTION,
+                        experience={
+                            "input": {"source": "human", "content": input_text},
+                            "expression": {
+                                "source": "conscious_workspace",
+                                "content": response_text,
+                            },
+                        },
+                    ),
+                    recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+                )
+                return InteractionResult(
+                    response_text=response_text,
+                    occurred_at=journal_entry.occurred_at,
+                )
 
         working_state = await self._working_memory.read()
         current_speaker = working_state.context.get("current_speaker", "unknown")
