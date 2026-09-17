@@ -63,34 +63,59 @@ class MongoFoundationStore:
 
     async def seed(self, key: str, content: str) -> FoundationalMemory:
         existing = await self._collection.find_one(
-            {"key": key}, {"_id": 0}, sort=[("version", DESCENDING)]
+            {"key": key},
+            {"_id": 0},
+            sort=[("version", DESCENDING)],
         )
         if existing is not None:
             return FoundationalMemory.model_validate(existing)
-        record = FoundationalMemory(key=key, version=1, content=content, changed_by="bootstrap")
+        record = FoundationalMemory(
+            key=key,
+            version=1,
+            content=content,
+            changed_by="bootstrap",
+        )
         await self._collection.insert_one(record.model_dump(mode="python"))
         return record
 
-    async def revise(self, key: str, content: str, changed_by: str) -> FoundationalMemory:
+    async def revise(
+        self,
+        key: str,
+        content: str,
+        changed_by: str,
+    ) -> FoundationalMemory:
         latest = await self._collection.find_one(
-            {"key": key}, {"_id": 0, "version": 1}, sort=[("version", DESCENDING)]
+            {"key": key},
+            {"_id": 0, "version": 1},
+            sort=[("version", DESCENDING)],
         )
         next_version = int(latest["version"]) + 1 if latest is not None else 1
-        await self._collection.update_many({"key": key, "active": True}, {"$set": {"active": False}})
+        await self._collection.update_many(
+            {"key": key, "active": True},
+            {"$set": {"active": False}},
+        )
         revised = FoundationalMemory(
-            key=key, version=next_version, content=content, changed_by=changed_by
+            key=key,
+            version=next_version,
+            content=content,
+            changed_by=changed_by,
         )
         await self._collection.insert_one(revised.model_dump(mode="python"))
         return revised
 
     async def load_active(self, key: str) -> FoundationalMemory | None:
         document = await self._collection.find_one(
-            {"key": key, "active": True}, {"_id": 0}, sort=[("version", DESCENDING)]
+            {"key": key, "active": True},
+            {"_id": 0},
+            sort=[("version", DESCENDING)],
         )
         return FoundationalMemory.model_validate(document) if document else None
 
     async def read_history(self, key: str) -> list[FoundationalMemory]:
-        cursor = self._collection.find({"key": key}, {"_id": 0}).sort("version", ASCENDING)
+        cursor = self._collection.find({"key": key}, {"_id": 0}).sort(
+            "version",
+            ASCENDING,
+        )
         return [FoundationalMemory.model_validate(document) async for document in cursor]
 
 
@@ -103,13 +128,20 @@ class MongoJournalStore:
         self._collection = database["journal"]
         self._policy = policy or PermissionPolicy()
 
-    async def append(self, entry: JournalEntry, recorded_by: CognitiveActor) -> JournalEntry:
+    async def append(
+        self,
+        entry: JournalEntry,
+        recorded_by: CognitiveActor,
+    ) -> JournalEntry:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.RECORD_JOURNAL)
         await self._collection.insert_one(entry.model_dump(mode="python"))
         return entry
 
     async def read(self) -> list[JournalEntry]:
-        cursor = self._collection.find({}, {"_id": 0}).sort("occurred_at", ASCENDING)
+        cursor = self._collection.find({}, {"_id": 0}).sort(
+            "occurred_at",
+            ASCENDING,
+        )
         return [JournalEntry.model_validate(document) async for document in cursor]
 
 
@@ -121,7 +153,10 @@ class MongoDiagnosticStore:
         await self._collection.insert_one(observation.model_dump(mode="python"))
 
     async def read(self) -> list[DiagnosticObservation]:
-        cursor = self._collection.find({}, {"_id": 0}).sort("observed_at", ASCENDING)
+        cursor = self._collection.find({}, {"_id": 0}).sort(
+            "observed_at",
+            ASCENDING,
+        )
         return [DiagnosticObservation.model_validate(document) async for document in cursor]
 
 
@@ -135,25 +170,36 @@ class MongoMemoryStore:
         self._policy = policy or PermissionPolicy()
 
     async def remember(
-        self, memory: DurableMemory, recorded_by: CognitiveActor
+        self,
+        memory: DurableMemory,
+        recorded_by: CognitiveActor,
     ) -> DurableMemory:
-        self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
+        self._policy.assert_allowed(
+            recorded_by,
+            CognitiveOperation.WRITE_DURABLE_MEMORY,
+        )
         await self._collection.insert_one(memory.model_dump(mode="python"))
         return memory
 
     async def read(self) -> list[DurableMemory]:
-        cursor = self._collection.find({}, {"_id": 0}).sort("formed_at", ASCENDING)
+        cursor = self._collection.find({}, {"_id": 0}).sort(
+            "formed_at",
+            ASCENDING,
+        )
         return [DurableMemory.model_validate(document) async for document in cursor]
 
 
 class MongoWorkingMemoryStore:
-    """Single mutable present-context document, deliberately flushable at checkpoints."""
+    """Single mutable present-context document, flushable at checkpoints."""
 
     def __init__(self, database: AsyncDatabase[dict[str, Any]]) -> None:
         self._collection = database["working_memory"]
 
     async def read(self) -> WorkingMemoryState:
-        document = await self._collection.find_one({"slot": "current"}, {"_id": 0, "slot": 0})
+        document = await self._collection.find_one(
+            {"slot": "current"},
+            {"_id": 0, "slot": 0},
+        )
         if document is None:
             return WorkingMemoryState()
         return WorkingMemoryState.model_validate(document)
