@@ -27,13 +27,15 @@ class SurrealRuntime:
         username: str | None = None,
         password: str | None = None,
     ) -> None:
-        if (username is None) != (password is None):
+        resolved_username = username.strip() if username and username.strip() else None
+        resolved_password = password if password else None
+        if (resolved_username is None) != (resolved_password is None):
             raise ValueError("SurrealDB username and password must be supplied together")
         self.database: Any = AsyncSurreal(uri)
         self._namespace = namespace
         self._database_name = database_name
-        self._username = username
-        self._password = password
+        self._username = resolved_username
+        self._password = resolved_password
 
     async def initialize(self) -> None:
         await self.database.connect()
