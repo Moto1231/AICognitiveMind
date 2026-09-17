@@ -85,6 +85,33 @@ def _load_cases(path: Path) -> list[dict[str, Any]]:
     return payload
 
 
+def _indicates_identity_clarification(response_text: str) -> bool:
+    normalized = response_text.casefold()
+    identity_targets = (
+        "who you are",
+        "who are you",
+        "your name",
+        "identify yourself",
+        "identifying information",
+        "about yourself",
+    )
+    clarification_cues = (
+        "not sure",
+        "don't know",
+        "do not know",
+        "can you",
+        "could you",
+        "would you",
+        "please",
+        "tell me",
+        "what is",
+        "who are",
+    )
+    return any(target in normalized for target in identity_targets) and any(
+        cue in normalized for cue in clarification_cues
+    )
+
+
 def _evaluate(expectation: dict[str, Any], response_text: str) -> list[str]:
     failures: list[str] = []
     normalized = response_text.casefold()
@@ -94,6 +121,10 @@ def _evaluate(expectation: dict[str, Any], response_text: str) -> list[str]:
     required_any = expectation.get("must_contain_any", [])
     if required_any and not any(str(value).casefold() in normalized for value in required_any):
         failures.append(f"missing any required alternative: {required_any!r}")
+    if expectation.get("must_request_identity") and not _indicates_identity_clarification(
+        response_text
+    ):
+        failures.append("did not request clarification of the current speaker's identity")
     for forbidden in expectation.get("must_not_contain", []):
         if str(forbidden).casefold() in normalized:
             failures.append(f"contained forbidden text: {forbidden!r}")
