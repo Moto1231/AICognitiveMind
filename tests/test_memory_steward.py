@@ -29,6 +29,7 @@ from aicognitive_mind.storage import (
     InMemoryJournalStore,
     InMemoryMemoryStore,
     InMemoryMindStore,
+    InMemoryWorkingMemoryStore,
 )
 from aicognitive_mind.tooling import ReasoningTool
 
@@ -268,6 +269,7 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             "The human's birthday is February 7."
         )
         journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
         await journal.append(
             JournalEntry(
                 kind="interaction",
@@ -292,8 +294,10 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             diagnostics=InMemoryDiagnosticStore(),
             engine=engine,
             knowledge_synthesizer=synthesizer,
+            working_memory=working_memory,
         )
         await core.initialize("Genesis")
+        await working_memory.set_context("current_speaker", "William")
 
         await core.interact("When is my birthday?")
 
