@@ -3,6 +3,9 @@
     "name": "identity-bound-birthday",
     "steps": [
       {
+        "checkpoint": true
+      },
+      {
         "message": "What is my birthday?",
         "must_request_identity": true,
         "must_not_contain": ["February 7"]
