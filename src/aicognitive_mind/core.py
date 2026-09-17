@@ -39,7 +39,6 @@ from aicognitive_mind.storage import (
 )
 from aicognitive_mind.working_memory import WorkingMemoryTool
 
-
 UNKNOWN_SPEAKER_KNOWLEDGE = (
     "Person-specific long-term knowledge is unavailable until the current speaker "
     "is identified."
@@ -186,11 +185,7 @@ class CognitiveCore:
             CognitiveActor.REASONING_ENGINE,
             CognitiveOperation.PROPOSE_RESPONSE,
         )
-        tools = (
-            (memory_steward, working_tool)
-            if recall_allowed
-            else (working_tool,)
-        )
+        tools = (memory_steward, working_tool) if recall_allowed else (working_tool,)
         proposal = await self._engine.propose(
             ReasoningRequest(
                 mind=mind,
