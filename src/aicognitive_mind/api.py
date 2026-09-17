@@ -122,7 +122,6 @@ async def ensure_foundation(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    app.state.runtime_revision = get_runtime_revision()
     runtime = MongoRuntime(settings.mongodb_uri, settings.mongodb_database)
     await runtime.initialize()
     app.state.runtime = runtime
@@ -186,8 +185,8 @@ async def health(request: Request) -> dict[str, str]:
 
 
 @app.get("/debug/revision")
-async def read_runtime_revision(request: Request) -> dict[str, str]:
-    return {"revision": cast(str, request.app.state.runtime_revision)}
+async def read_runtime_revision() -> dict[str, str]:
+    return {"revision": get_runtime_revision()}
 
 
 @app.post(

@@ -11,6 +11,7 @@ on:
       - "acceptance/**"
       - "scripts/run_acceptance.py"
       - "scripts/dev_sync.sh"
+      - "scripts/codespace_start.sh"
       - "pyproject.toml"
       - ".github/workflows/cognitive-acceptance.yml"
   workflow_dispatch:
