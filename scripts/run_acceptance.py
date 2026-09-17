@@ -14,7 +14,10 @@ from urllib.request import Request, urlopen
 
 DEFAULT_CASES = Path("acceptance/cases.json")
 DEFAULT_TIMEOUT_SECONDS = 120
-REQUEST_TIMEOUT_SECONDS = 30
+CONTROL_REQUEST_TIMEOUT_SECONDS = 30
+INTERACTION_REQUEST_TIMEOUT_SECONDS = int(
+    os.getenv("ACCEPTANCE_INTERACTION_TIMEOUT", "1800")
+)
 
 
 def _request_json(
@@ -22,6 +25,7 @@ def _request_json(
     *,
     method: str = "GET",
     body: dict[str, Any] | None = None,
+    timeout_seconds: int = CONTROL_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     data = None
     headers = {"Accept": "application/json"}
@@ -31,13 +35,13 @@ def _request_json(
 
     request = Request(url, data=data, headers=headers, method=method)
     try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+        with urlopen(request, timeout=timeout_seconds) as response:
             payload = response.read().decode("utf-8")
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"HTTP {exc.code} from {url}: {detail}") from exc
-    except URLError as exc:
-        raise RuntimeError(f"Unable to reach {url}: {exc.reason}") from exc
+    except (TimeoutError, URLError) as exc:
+        raise RuntimeError(f"Unable to reach {url}: {exc}") from exc
 
     try:
         result = json.loads(payload)
@@ -139,6 +143,7 @@ def main() -> int:
                 f"{base_url}/v1/mind/interactions",
                 method="POST",
                 body={"message": message},
+                timeout_seconds=INTERACTION_REQUEST_TIMEOUT_SECONDS,
             )
             response_text = str(result.get("response_text", ""))
             failures = _evaluate(case, response_text)
