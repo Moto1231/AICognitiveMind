@@ -4,7 +4,7 @@
     "steps": [
       {
         "message": "What is my birthday?",
-        "must_contain_any": ["who are you", "what is your name", "identify yourself", "tell me who you are"],
+        "must_contain_any": ["who are you", "who you are", "what is your name", "identify yourself", "tell me who you are"],
         "must_not_contain": ["February 7"]
       },
       {
@@ -20,7 +20,7 @@
       },
       {
         "message": "What is my birthday?",
-        "must_contain_any": ["who are you", "what is your name", "identify yourself", "tell me who you are"],
+        "must_contain_any": ["who are you", "who you are", "what is your name", "identify yourself", "tell me who you are"],
         "must_not_contain": ["February 7"]
       }
     ]
