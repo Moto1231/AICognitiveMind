@@ -10,6 +10,7 @@ from aicognitive_mind.domain import (
     DurableMemory,
     FoundationalMemory,
     JournalEntry,
+    WorkingMemory,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 from aicognitive_mind.storage import MindAlreadyInitializedError
@@ -180,3 +181,46 @@ class MongoMemoryStore:
     async def read(self) -> list[DurableMemory]:
         cursor = self._collection.find({}, {"_id": 0}).sort("formed_at", ASCENDING)
         return [DurableMemory.model_validate(document) async for document in cursor]
+
+
+class MongoWorkingMemoryStore:
+    """Present-tense context that persists only until an explicit cognitive checkpoint."""
+
+    _ACTIVE_ID = "active"
+
+    def __init__(
+        self,
+        database: AsyncDatabase[dict[str, Any]],
+        policy: PermissionPolicy | None = None,
+    ) -> None:
+        self._collection = database["working_memory"]
+        self._policy = policy or PermissionPolicy()
+
+    async def load(self) -> WorkingMemory:
+        document = await self._collection.find_one({"_id": self._ACTIVE_ID}, {"_id": 0})
+        return WorkingMemory.model_validate(document) if document else WorkingMemory()
+
+    async def save(
+        self,
+        memory: WorkingMemory,
+        recorded_by: CognitiveActor,
+    ) -> WorkingMemory:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_WORKING_MEMORY)
+        document = memory.model_dump(mode="python")
+        await self._collection.replace_one(
+            {"_id": self._ACTIVE_ID},
+            {"_id": self._ACTIVE_ID, **document},
+            upsert=True,
+        )
+        return memory
+
+    async def clear(self, recorded_by: CognitiveActor) -> WorkingMemory:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.CLEAR_WORKING_MEMORY)
+        cleared = WorkingMemory()
+        document = cleared.model_dump(mode="python")
+        await self._collection.replace_one(
+            {"_id": self._ACTIVE_ID},
+            {"_id": self._ACTIVE_ID, **document},
+            upsert=True,
+        )
+        return cleared
