@@ -174,7 +174,7 @@ class SpeakerAwareBirthdaySynthesizer:
         instructions: str,
     ) -> str:
         del mind, focus, instructions
-        if any("my birthday is February 7" in item for item in evidence):
+        if any("my birthday is february 7" in item.casefold() for item in evidence):
             return "The current speaker's birthday is February 7."
         return "No relevant birthday knowledge is available."
 
