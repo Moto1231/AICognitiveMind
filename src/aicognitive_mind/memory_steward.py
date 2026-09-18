@@ -17,6 +17,8 @@ from aicognitive_mind.evidence import (
     EvidenceProvenanceHop,
     EvidenceScorecard,
     PriorPreservingScorecardEvaluator,
+    RecursiveRecallBudget,
+    RecursiveRecallState,
     adjudicate_contradiction,
     assess_evidence,
 )
@@ -78,6 +80,9 @@ class MemoryBrief(BaseModel):
     current_evidence: tuple[ResearchObservation, ...] = ()
     summary: str
     clarification_question: str | None = None
+    supporting_recall_focus: str | None = None
+    recursive_recall_depth: int = Field(default=0, ge=0)
+    evidence_items_examined: int = Field(default=0, ge=0)
 
 
 class MemoryRecallTrace(BaseModel):
@@ -86,6 +91,8 @@ class MemoryRecallTrace(BaseModel):
     focus: str
     summary: str
     clarification_question: str | None = None
+    recursive_recall_depth: int = Field(default=0, ge=0)
+    evidence_items_examined: int = Field(default=0, ge=0)
     durable_memory_count: int = Field(ge=0)
     prior_experience_count: int = Field(ge=0)
     current_evidence_count: int = Field(ge=0)
@@ -123,6 +130,7 @@ class MemoryStewardTool:
         synthesizer: KnowledgeSynthesizer | None = None,
         synthesis_instructions: str = "",
         recall_limit: int = 6,
+        recursive_recall_budget: RecursiveRecallBudget | None = None,
     ) -> None:
         self._mind = mind
         self._input_text = input_text
@@ -135,6 +143,7 @@ class MemoryStewardTool:
         self._synthesizer = synthesizer or DirectKnowledgeSynthesizer()
         self._synthesis_instructions = synthesis_instructions
         self._recall_limit = recall_limit
+        self._recursive_recall_budget = recursive_recall_budget or RecursiveRecallBudget()
         self._brief: MemoryBrief | None = None
         self._evidence: list[ResearchObservation] = []
         self._decisions: list[MemoryDecision] = []
@@ -243,6 +252,10 @@ class MemoryStewardTool:
                 focus=brief.focus,
                 memories=brief.durable_memory,
                 experiences=brief.prior_experience,
+                recall_state=RecursiveRecallState(
+                    depth=brief.recursive_recall_depth,
+                    evidence_items_examined=brief.evidence_items_examined,
+                ),
             )
             return {
                 "status": "evidence_considered",
@@ -269,6 +282,8 @@ class MemoryStewardTool:
                 focus=brief.focus,
                 summary=brief.summary,
                 clarification_question=brief.clarification_question,
+                recursive_recall_depth=brief.recursive_recall_depth,
+                evidence_items_examined=brief.evidence_items_examined,
                 durable_memory_count=len(brief.durable_memory),
                 prior_experience_count=len(brief.prior_experience),
                 current_evidence_count=len(brief.current_evidence),
@@ -302,11 +317,58 @@ class MemoryStewardTool:
             expanded_tokens,
             self._recall_limit,
         )
-        self._brief = await self._build_brief(
+        initial_state = RecursiveRecallState(
+            depth=0,
+            evidence_items_examined=len(ranked_memories) + len(ranked_experiences),
+        )
+        initial_brief = await self._build_brief(
             focus=self._input_text,
             memories=tuple(ranked_memories),
             experiences=tuple(ranked_experiences),
+            recall_state=initial_state,
         )
+
+        support_focus = initial_brief.supporting_recall_focus
+        if (
+            support_focus is not None
+            and initial_state.depth < self._recursive_recall_budget.max_depth
+            and initial_state.evidence_items_examined
+            < self._recursive_recall_budget.max_evidence_items
+        ):
+            support_tokens = _tokens(support_focus)
+            remaining_experiences = [
+                item for item in experiences if item not in ranked_experiences
+            ]
+            remaining_capacity = (
+                self._recursive_recall_budget.max_evidence_items
+                - initial_state.evidence_items_examined
+            )
+            additional_experiences = _rank_experiences(
+                remaining_experiences,
+                support_tokens,
+                min(self._recall_limit, remaining_capacity),
+            )
+            if additional_experiences:
+                expanded_experiences = (
+                    *ranked_experiences,
+                    *additional_experiences,
+                )
+                expanded_state = RecursiveRecallState(
+                    depth=initial_state.depth + 1,
+                    evidence_items_examined=(
+                        initial_state.evidence_items_examined
+                        + len(additional_experiences)
+                    ),
+                )
+                self._brief = await self._build_brief(
+                    focus=self._input_text,
+                    memories=tuple(ranked_memories),
+                    experiences=tuple(expanded_experiences),
+                    recall_state=expanded_state,
+                )
+                return self._brief
+
+        self._brief = initial_brief
         return self._brief
 
     async def _consider_memory(self, call: ProposeMemoryCall) -> MemoryDecision:
@@ -350,10 +412,14 @@ class MemoryStewardTool:
         focus: str,
         memories: tuple[DurableMemory, ...],
         experiences: tuple[JournalEntry, ...],
+        recall_state: RecursiveRecallState | None = None,
     ) -> MemoryBrief:
         # Individual memories and journal experiences remain evidence. The summary is
         # synthesized knowledge and is the only recalled content passed into the
         # Conscious Workspace system prompt.
+        state = recall_state or RecursiveRecallState(
+            evidence_items_examined=len(memories) + len(experiences)
+        )
         evidence_items: list[str] = []
         propositions: list[PropositionEvidence] = []
         for memory in memories:
@@ -439,6 +505,7 @@ class MemoryStewardTool:
             evidence_items.append(current_context)
 
         clarification_response: str | None = None
+        supporting_recall_focus: str | None = None
         preferred_proposition: str | None = None
         contradiction = first_conflict(propositions)
         if contradiction is not None:
@@ -455,6 +522,7 @@ class MemoryStewardTool:
                     f"support_delta={adjudication.support_delta:.3f}"
                 )
             else:
+                supporting_recall_focus = f"{first.subject} {first.attribute}"
                 clarification_response = (
                     clarification_question(
                         first,
@@ -489,6 +557,9 @@ class MemoryStewardTool:
             current_evidence=tuple(self._evidence),
             summary=summary,
             clarification_question=clarification_response,
+            supporting_recall_focus=supporting_recall_focus,
+            recursive_recall_depth=state.depth,
+            evidence_items_examined=state.evidence_items_examined,
         )
 
     def _require_recall(self) -> MemoryBrief:

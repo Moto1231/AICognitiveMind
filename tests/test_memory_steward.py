@@ -724,6 +724,96 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Michael's birthday is January 3.", recorder.evidence)
         self.assertIn("No, my birthday is January 4.", recorder.evidence)
 
+    async def test_unresolved_conflict_expands_supporting_recall_before_clarifying(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        await journal.append(
+            JournalEntry(
+                kind="interaction",
+                experience={
+                    "input": {
+                        "source": "human",
+                        "speaker": "William",
+                        "content": (
+                            "Michael directly reported birthday information to William."
+                        ),
+                    },
+                    "expression": {
+                        "source": "conscious_workspace",
+                        "content": "Noted.",
+                    },
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        await journal.append(
+            JournalEntry(
+                kind="interaction",
+                experience={
+                    "input": {
+                        "source": "human",
+                        "speaker": "William",
+                        "content": "Michael's birthday is January 3.",
+                    },
+                    "expression": {
+                        "source": "conscious_workspace",
+                        "content": "Noted.",
+                    },
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        await journal.append(
+            JournalEntry(
+                kind="interaction",
+                experience={
+                    "input": {
+                        "source": "human",
+                        "speaker": "Michael",
+                        "content": "My birthday is January 4.",
+                    },
+                    "expression": {
+                        "source": "conscious_workspace",
+                        "content": "Noted.",
+                    },
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        synthesizer: KnowledgeSynthesizer = RecordingSynthesizer(
+            "Conflicting birthday evidence remains unresolved."
+        )
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="What is my birthday?",
+            memory=InMemoryMemoryStore(),
+            journal=journal,
+            current_speaker="Michael",
+            current_context={"current_speaker": "Michael"},
+            synthesizer=synthesizer,
+            recall_limit=2,
+        )
+
+        result = await tool.invoke(
+            {"action": "recall", "focus": "What is my birthday?"}
+        )
+
+        context = cast(dict[str, Any], result["context"])
+        self.assertEqual(context["recursive_recall_depth"], 1)
+        self.assertEqual(context["evidence_items_examined"], 3)
+        self.assertEqual(len(context["prior_experience"]), 3)
+        self.assertEqual(
+            context["clarification_question"],
+            "I have conflicting information about your birthday. "
+            "Is it January 3 or January 4?",
+        )
+        recorder = cast(RecordingSynthesizer, synthesizer)
+        self.assertIn(
+            "Michael directly reported birthday information to William.",
+            recorder.evidence,
+        )
+
     async def test_non_birthday_detector_uses_generic_contradiction_boundary(
         self,
     ) -> None:
