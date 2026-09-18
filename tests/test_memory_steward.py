@@ -22,7 +22,11 @@ from aicognitive_mind.foundation import (
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
 )
 from aicognitive_mind.knowledge import KnowledgeSynthesizer
-from aicognitive_mind.memory_steward import MemoryStewardTool
+from aicognitive_mind.memory_steward import (
+    EvidenceAssessment,
+    MemoryStewardTool,
+    adjudicate_contradiction,
+)
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
     InMemoryFoundationStore,
@@ -595,6 +599,65 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         recorder = cast(RecordingSynthesizer, synthesizer)
         self.assertIn("Michael's birthday is January 3.", recorder.evidence)
         self.assertIn("No, my birthday is January 4.", recorder.evidence)
+
+    def test_confidence_weight_support_prefers_materially_stronger_evidence(self) -> None:
+        earlier = EvidenceAssessment(
+            proposition="Michael's birthday is January 3.",
+            confidence=0.7,
+            weight=0.7,
+        )
+        correction = EvidenceAssessment(
+            proposition="Michael's birthday is January 4.",
+            confidence=0.9,
+            weight=0.8,
+        )
+
+        decision = adjudicate_contradiction(earlier, correction)
+
+        self.assertTrue(decision.resolved)
+        self.assertEqual(
+            decision.preferred_proposition,
+            "Michael's birthday is January 4.",
+        )
+        self.assertFalse(decision.clarification_required)
+        self.assertAlmostEqual(decision.support_delta, 0.23)
+
+    def test_near_equal_support_requires_clarification(self) -> None:
+        first = EvidenceAssessment(
+            proposition="Michael's birthday is January 3.",
+            confidence=0.8,
+            weight=0.5,
+        )
+        second = EvidenceAssessment(
+            proposition="Michael's birthday is January 4.",
+            confidence=0.5,
+            weight=0.8,
+        )
+
+        decision = adjudicate_contradiction(first, second)
+
+        self.assertFalse(decision.resolved)
+        self.assertIsNone(decision.preferred_proposition)
+        self.assertTrue(decision.clarification_required)
+        self.assertAlmostEqual(decision.support_delta, 0.0)
+
+    def test_support_within_prototype_epsilon_requires_clarification(self) -> None:
+        first = EvidenceAssessment(
+            proposition="Michael's birthday is January 3.",
+            confidence=0.8,
+            weight=0.6,
+        )
+        second = EvidenceAssessment(
+            proposition="Michael's birthday is January 4.",
+            confidence=0.75,
+            weight=0.6,
+        )
+
+        decision = adjudicate_contradiction(first, second)
+
+        self.assertFalse(decision.resolved)
+        self.assertTrue(decision.clarification_required)
+        self.assertAlmostEqual(decision.support_delta, 0.03)
 
     async def test_memory_steward_refuses_direct_identity_change(self) -> None:
         memory = InMemoryMemoryStore()

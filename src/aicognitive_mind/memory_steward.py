@@ -16,6 +16,52 @@ from aicognitive_mind.knowledge import DirectKnowledgeSynthesizer, KnowledgeSynt
 from aicognitive_mind.storage import JournalStore, MemoryStore
 
 
+PROTOTYPE_CONTRADICTION_EPSILON = 0.05
+
+
+class EvidenceAssessment(BaseModel):
+    proposition: str = Field(min_length=1)
+    confidence: float = Field(ge=0.0, le=1.0)
+    weight: float = Field(ge=0.0, le=1.0)
+
+    @property
+    def support(self) -> float:
+        return self.confidence * self.weight
+
+
+class ContradictionAdjudication(BaseModel):
+    resolved: bool
+    preferred_proposition: str | None = None
+    support_delta: float = Field(ge=0.0)
+    clarification_required: bool = False
+
+
+def adjudicate_contradiction(
+    first: EvidenceAssessment,
+    second: EvidenceAssessment,
+    epsilon: float = PROTOTYPE_CONTRADICTION_EPSILON,
+) -> ContradictionAdjudication:
+    """Apply ADR 0008 without collapsing confidence and weight in storage."""
+    if epsilon < 0.0:
+        raise ValueError("epsilon must be non-negative")
+
+    delta = abs(first.support - second.support)
+    if delta <= epsilon:
+        return ContradictionAdjudication(
+            resolved=False,
+            support_delta=delta,
+            clarification_required=True,
+        )
+
+    preferred = first if first.support > second.support else second
+    return ContradictionAdjudication(
+        resolved=True,
+        preferred_proposition=preferred.proposition,
+        support_delta=delta,
+        clarification_required=False,
+    )
+
+
 class ArticleReference(BaseModel):
     title: str = Field(min_length=1)
     url: str = Field(min_length=1)

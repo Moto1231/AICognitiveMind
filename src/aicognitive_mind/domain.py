@@ -81,6 +81,8 @@ class DurableMemory(BaseModel):
     content: str = Field(min_length=1)
     associations: tuple[str, ...] = ()
     grounding: tuple[str, ...] = ()
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    weight: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
 class JournalEntry(BaseModel):
