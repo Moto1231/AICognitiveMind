@@ -348,7 +348,7 @@ class MemoryStewardTool:
                 weight=memory.weight,
             )
             grounding_context = "; ".join(memory.grounding) or None
-            provenance = (
+            memory_provenance = (
                 EvidenceProvenanceHop(
                     source="long-term memory",
                     condition="Recalled durable memory.",
@@ -359,7 +359,7 @@ class MemoryStewardTool:
             assessment = assess_evidence(
                 proposition=memory.content,
                 prior=prior,
-                provenance=provenance,
+                provenance=memory_provenance,
                 current_speaker=self._current_speaker,
                 current_context=self._current_context,
                 evaluator=self._scorecard_evaluator,
@@ -372,9 +372,9 @@ class MemoryStewardTool:
             knowledge = _experience_knowledge(entry)
             if knowledge:
                 evidence_items.append(knowledge)
-            provenance = _experience_provenance(entry)
-            if provenance:
-                evidence_items.append(provenance)
+            provenance_text = _experience_provenance(entry)
+            if provenance_text:
+                evidence_items.append(provenance_text)
             if knowledge:
                 prior = EvidenceScorecard(confidence=0.5, weight=0.5)
                 source = _experience_speaker(entry) or "human"
