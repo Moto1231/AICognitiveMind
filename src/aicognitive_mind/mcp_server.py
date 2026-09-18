@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Any
 
 from mcp.server.mcpserver import Context, MCPServer
 
@@ -48,7 +49,7 @@ async def initialize_mind(
     self_name: str,
     foundational_values: list[str],
     ctx: Context[AppState],
-) -> dict:
+) -> dict[str, Any]:
     """Initialize the one persistent Mind for this deployment.
 
     Call this only when the Mind has never been initialized. A second initialization is rejected.
@@ -61,7 +62,7 @@ async def initialize_mind(
 
 
 @mcp.tool()
-async def mind_status(ctx: Context[AppState]) -> dict:
+async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
     """Read the persistent Mind identity and continuity counters.
 
     Use this for administration, diagnostics, and demonstrations that identity/memory remain
@@ -74,7 +75,7 @@ async def mind_status(ctx: Context[AppState]) -> dict:
 async def begin_interaction(
     user_message: str,
     ctx: Context[AppState],
-) -> dict:
+) -> dict[str, Any]:
     """Mandatory first step before answering a human as this Cognitive Mind.
 
     Returns identity plus related durable memory and prior experience. The connected MCP host
@@ -90,7 +91,7 @@ async def complete_interaction(
     response_text: str,
     proposed_memories: list[MemoryProposal],
     ctx: Context[AppState],
-) -> dict:
+) -> dict[str, Any]:
     """Mandatory final step after reasoning and before presenting the final answer.
 
     The connected model proposes only stable learning worth preserving. The Memory Steward
