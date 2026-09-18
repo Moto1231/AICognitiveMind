@@ -350,7 +350,7 @@ class MemoryStewardTool:
             self._current_speaker,
             self._current_context,
         )
-        if current_context:
+        if current_context and evidence_items:
             evidence_items.append(current_context)
 
         evidence = tuple(evidence_items)
