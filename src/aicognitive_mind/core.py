@@ -36,6 +36,10 @@ class CognitiveCore:
         self._engine = engine
         self._policy = policy or PermissionPolicy()
 
+    def replace_engine(self, engine: ReasoningEngine) -> None:
+        """Replace only the reasoning process; the persistent Mind remains untouched."""
+        self._engine = engine
+
     async def initialize(
         self,
         self_name: str,
