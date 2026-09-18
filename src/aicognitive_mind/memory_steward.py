@@ -446,6 +446,24 @@ def _has_first_person_reference(text: str) -> bool:
     return bool({"i", "me", "my", "mine"}.intersection(normalized.split()))
 
 
+def _has_unresolved_third_person_reference(text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", text.casefold())
+    return bool(
+        {
+            "he",
+            "him",
+            "his",
+            "she",
+            "her",
+            "hers",
+            "they",
+            "them",
+            "their",
+            "theirs",
+        }.intersection(normalized.split())
+    )
+
+
 def _experience_speaker(entry: JournalEntry) -> str | None:
     input_value = entry.experience.get("input")
     if not isinstance(input_value, dict):
@@ -474,6 +492,13 @@ def _scope_experiences_to_speaker(
     scoped: list[JournalEntry] = []
     for item in items:
         input_text = _experience_input_text(item)
+
+        # A third-person pronoun is not an identity. Until a separate reference-resolution
+        # step records who it refers to, do not let that evidence become person-specific
+        # knowledge for the current speaker.
+        if _has_unresolved_third_person_reference(input_text):
+            continue
+
         if not _has_first_person_reference(input_text):
             scoped.append(item)
             continue
