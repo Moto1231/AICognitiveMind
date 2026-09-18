@@ -496,7 +496,7 @@ class MemoryStewardTool:
                         ),
                     ),
                     current_speaker=self._current_speaker,
-                    current_context=self._current_context,
+                    current_context=evaluation_context,
                     evaluator=self._scorecard_evaluator,
                 )
                 evidence_items.append(_effective_assessment(assessment))
