@@ -149,7 +149,7 @@ class SpeakerIsolationEngine:
         if "birthday?" in request.input_text.casefold():
             if (
                 "current_speaker: Michael" in request.system_prompt
-                and "Michael's birthday is January 3." in request.system_prompt
+                and "January 3" in request.system_prompt
             ):
                 response_text = "Your birthday is January 3."
             elif "February 7" in request.system_prompt:
@@ -180,6 +180,8 @@ class SpeakerAwareBirthdaySynthesizer:
         del mind, focus, instructions
         if any("michael's birthday is january 3" in item.casefold() for item in evidence):
             return "Michael's birthday is January 3."
+        if any("his birthday is january 3" in item.casefold() for item in evidence):
+            return "An unresolved male person's birthday is January 3."
         if any("my birthday is february 7" in item.casefold() for item in evidence):
             return "The current speaker's birthday is February 7."
         return "No relevant birthday knowledge is available."
@@ -481,6 +483,35 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         result = await core.interact("What is my birthday?")
 
         self.assertEqual(result.response_text, "Your birthday is January 3.")
+        self.assertEqual(
+            (await core.read_working_memory()).context,
+            {"current_speaker": "Michael"},
+        )
+
+    async def test_unresolved_third_person_pronoun_does_not_become_person_specific_knowledge(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=SpeakerIsolationEngine(),
+            knowledge_synthesizer=SpeakerAwareBirthdaySynthesizer(),
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("I'm William.")
+        await core.interact("His birthday is January 3.")
+
+        await core.interact("I'm Michael.")
+        result = await core.interact("What is my birthday?")
+
+        self.assertEqual(result.response_text, "I don't know your birthday.")
         self.assertEqual(
             (await core.read_working_memory()).context,
             {"current_speaker": "Michael"},
