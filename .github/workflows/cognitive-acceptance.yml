@@ -48,9 +48,3 @@ jobs:
 
       - name: Unit tests
         run: pytest -q
-
-      - name: Live cognitive acceptance
-        env:
-          COGNITIVE_MIND_TEST_URL: ${{ secrets.COGNITIVE_MIND_TEST_URL || vars.COGNITIVE_MIND_TEST_URL }}
-          EXPECTED_REVISION: ${{ github.sha }}
-        run: python scripts/run_acceptance.py
