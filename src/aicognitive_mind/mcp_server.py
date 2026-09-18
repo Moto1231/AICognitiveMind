@@ -54,7 +54,7 @@ async def initialize_mind(
     Call this only when the Mind has never been initialized. A second initialization is rejected.
     Identity belongs to the Mind and remains independent of whichever MCP host/model is connected.
     """
-    return await ctx.lifespan.mind_service.initialize(
+    return await ctx.request_context.lifespan_context.mind_service.initialize(
         self_name=self_name,
         foundational_values=tuple(foundational_values),
     )
@@ -67,7 +67,7 @@ async def mind_status(ctx: Context[AppState]) -> dict:
     Use this for administration, diagnostics, and demonstrations that identity/memory remain
     present when the connected reasoning model or MCP host changes.
     """
-    return await ctx.lifespan.mind_service.status()
+    return await ctx.request_context.lifespan_context.mind_service.status()
 
 
 @mcp.tool()
@@ -81,7 +81,7 @@ async def begin_interaction(
     supplies reasoning; the Mind supplies continuity. Do not answer the human as the Mind before
     consulting this tool.
     """
-    return await ctx.lifespan.mind_service.begin_interaction(user_message)
+    return await ctx.request_context.lifespan_context.mind_service.begin_interaction(user_message)
 
 
 @mcp.tool()
@@ -97,7 +97,7 @@ async def complete_interaction(
     independently accepts/rejects those proposals, commits accepted durable memory, and journals
     the complete user/response experience. Pass an empty list when nothing deserves retention.
     """
-    return await ctx.lifespan.mind_service.complete_interaction(
+    return await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,
         response_text=response_text,
         proposed_memories=tuple(proposed_memories),
