@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from mcp.server import Context, MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
