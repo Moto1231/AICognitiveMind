@@ -110,6 +110,35 @@ class NonConsultingEngine:
         )
 
 
+class KnownSpeakerBirthdayEngine:
+    def __init__(self) -> None:
+        self.request: ReasoningRequest | None = None
+
+    async def propose(
+        self,
+        request: ReasoningRequest,
+        tools: tuple[ReasoningTool, ...] = (),
+    ) -> ReasoningProposal:
+        del tools
+        self.request = request
+        can_answer = (
+            "current_speaker: William" in request.system_prompt
+            and "The human's birthday is February 7." in request.system_prompt
+        )
+        return ReasoningProposal(
+            response_text=(
+                "Your birthday is February 7."
+                if can_answer
+                else "I do not have enough identity-bound knowledge."
+            ),
+            diagnostic=DiagnosticObservation(
+                component="reasoning_engine",
+                operation="propose_response",
+                implementation={"name": "known-speaker-birthday-test-engine"},
+            ),
+        )
+
+
 class RecallOnlyEngine:
     def __init__(self) -> None:
         self.recalled: dict[str, object] | None = None
@@ -263,8 +292,10 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("No relevant knowledge is available.", request.system_prompt)
         self.assertEqual(len(await core.read_journal()), 2)
 
-    async def test_synthesized_knowledge_crosses_reasoning_boundary_not_raw_evidence(self) -> None:
-        engine = NonConsultingEngine()
+    async def test_known_speaker_uses_synthesized_knowledge_without_losing_working_identity(
+        self,
+    ) -> None:
+        engine = KnownSpeakerBirthdayEngine()
         synthesizer: KnowledgeSynthesizer = RecordingSynthesizer(
             "The human's birthday is February 7."
         )
@@ -299,11 +330,18 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         await core.initialize("Genesis")
         await working_memory.set_context("current_speaker", "William")
 
-        await core.interact("When is my birthday?")
+        result = await core.interact("When is my birthday?")
 
+        self.assertEqual(result.response_text, "Your birthday is February 7.")
         request = cast(ReasoningRequest, engine.request)
+        self.assertIn("current_speaker: William", request.system_prompt)
         self.assertIn("The human's birthday is February 7.", request.system_prompt)
         self.assertNotIn("I love birthday parties", request.system_prompt)
+        self.assertEqual(
+            (await core.read_working_memory()).context,
+            {"current_speaker": "William"},
+        )
+
         recorder = cast(RecordingSynthesizer, synthesizer)
         self.assertIn(
             "I love birthday parties and my birthday is February 7.",
@@ -313,6 +351,9 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             recorder.instructions,
             MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
         )
+
+        await core.checkpoint()
+        self.assertEqual((await core.read_working_memory()).context, {})
 
     async def test_memory_steward_refuses_direct_identity_change(self) -> None:
         memory = InMemoryMemoryStore()
