@@ -249,6 +249,53 @@ class RecordingScorecardEvaluator:
         )
 
 
+class CurrentSpeakerSourceEvaluator:
+    """Test evaluator proving the live path without defining production trust math."""
+
+    def derive(
+        self,
+        *,
+        proposition: str,
+        prior: EvidenceScorecard,
+        provenance: tuple[EvidenceProvenanceHop, ...],
+        current_speaker: str | None,
+        current_context: dict[str, Any],
+    ) -> EvidenceScorecard:
+        del proposition, current_context
+        source = provenance[0].source if provenance else ""
+        if current_speaker and source.casefold() == current_speaker.casefold():
+            return EvidenceScorecard(confidence=0.9, weight=0.8)
+        return prior.model_copy()
+
+
+class AdjudicatedBirthdayEngine:
+    def __init__(self) -> None:
+        self.request: ReasoningRequest | None = None
+
+    async def propose(
+        self,
+        request: ReasoningRequest,
+        tools: tuple[ReasoningTool, ...] = (),
+    ) -> ReasoningProposal:
+        del tools
+        self.request = request
+        if (
+            "Adjudicated current knowledge:" in request.system_prompt
+            and "January 4" in request.system_prompt
+        ):
+            response_text = "Your birthday is January 4."
+        else:
+            response_text = "I don't know your birthday."
+        return ReasoningProposal(
+            response_text=response_text,
+            diagnostic=DiagnosticObservation(
+                component="reasoning_engine",
+                operation="propose_response",
+                implementation={"name": "adjudicated-birthday-test-engine"},
+            ),
+        )
+
+
 class RecordingSynthesizer:
     def __init__(self, summary: str) -> None:
         self.summary = summary
@@ -629,6 +676,46 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         recorder = cast(RecordingSynthesizer, synthesizer)
         self.assertIn("Michael's birthday is January 3.", recorder.evidence)
         self.assertIn("No, my birthday is January 4.", recorder.evidence)
+
+    async def test_live_stronger_birthday_evidence_becomes_current_knowledge(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
+        engine = AdjudicatedBirthdayEngine()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=engine,
+            knowledge_synthesizer=RecordingSynthesizer(
+                "Conflicting birthday evidence remains preserved."
+            ),
+            scorecard_evaluator=CurrentSpeakerSourceEvaluator(),
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("I'm William.")
+        await core.interact("Michael's birthday is January 3.")
+        await core.interact("I'm Michael.")
+        await core.interact("No, my birthday is January 4.")
+
+        result = await core.interact("What is my birthday?")
+
+        self.assertEqual(result.response_text, "Your birthday is January 4.")
+        self.assertIsNotNone(engine.request)
+        request = cast(ReasoningRequest, engine.request)
+        self.assertIn(
+            "Adjudicated current knowledge: No, my birthday is January 4.",
+            request.system_prompt,
+        )
+        self.assertIn(
+            "Supporting synthesis: Conflicting birthday evidence remains preserved.",
+            request.system_prompt,
+        )
 
     async def test_live_equal_birthday_contradiction_asks_for_clarification(
         self,

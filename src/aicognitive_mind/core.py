@@ -12,6 +12,7 @@ from aicognitive_mind.domain import (
     WorkingMemoryState,
 )
 from aicognitive_mind.engines import ReasoningEngine
+from aicognitive_mind.evidence import EffectiveScorecardEvaluator
 from aicognitive_mind.expression import (
     DirectExpressionRenderer,
     ExpressionRenderer,
@@ -143,6 +144,7 @@ class CognitiveCore:
         engine: ReasoningEngine,
         working_memory: WorkingMemoryStore | None = None,
         knowledge_synthesizer: KnowledgeSynthesizer | None = None,
+        scorecard_evaluator: EffectiveScorecardEvaluator | None = None,
         expression_renderer: ExpressionRenderer | None = None,
         policy: PermissionPolicy | None = None,
     ) -> None:
@@ -154,6 +156,7 @@ class CognitiveCore:
         self._diagnostics = diagnostics
         self._engine = engine
         self._knowledge_synthesizer = knowledge_synthesizer or DirectKnowledgeSynthesizer()
+        self._scorecard_evaluator = scorecard_evaluator
         self._expression_renderer = expression_renderer or DirectExpressionRenderer()
         self._policy = policy or PermissionPolicy()
 
@@ -271,6 +274,7 @@ class CognitiveCore:
             journal=self._journal,
             current_speaker=str(current_speaker),
             current_context=dict(working_state.context),
+            scorecard_evaluator=self._scorecard_evaluator,
             synthesizer=self._knowledge_synthesizer,
             synthesis_instructions=synthesis_foundation.content,
         )

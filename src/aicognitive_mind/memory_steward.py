@@ -451,6 +451,7 @@ class MemoryStewardTool:
             evidence_items.append(current_context)
 
         clarification_question: str | None = None
+        preferred_proposition: str | None = None
         birthday_conflict = _first_birthday_conflict(birthday_evidence)
         if birthday_conflict is not None:
             first, second = birthday_conflict
@@ -459,9 +460,10 @@ class MemoryStewardTool:
                 second.assessment,
             )
             if adjudication.resolved:
+                preferred_proposition = adjudication.preferred_proposition
                 evidence_items.append(
                     "Prototype contradiction adjudication: "
-                    f"preferred={adjudication.preferred_proposition}; "
+                    f"preferred={preferred_proposition}; "
                     f"support_delta={adjudication.support_delta:.3f}"
                 )
             else:
@@ -483,6 +485,11 @@ class MemoryStewardTool:
             evidence=tuple(item for item in evidence if item),
             instructions=self._synthesis_instructions,
         )
+        if preferred_proposition is not None:
+            summary = (
+                f"Adjudicated current knowledge: {preferred_proposition}\n"
+                f"Supporting synthesis: {summary}"
+            )
 
         return MemoryBrief(
             focus=focus,
