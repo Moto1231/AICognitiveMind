@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field
 
-
 PROTOTYPE_CONTRADICTION_EPSILON = 0.05
 
 

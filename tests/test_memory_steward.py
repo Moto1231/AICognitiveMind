@@ -13,6 +13,7 @@ from aicognitive_mind.domain import (
     ReasoningProposal,
     ReasoningRequest,
 )
+from aicognitive_mind.evidence import EvidenceAssessment, adjudicate_contradiction
 from aicognitive_mind.foundation import (
     CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
     CONSCIOUS_EXPRESSION_FOUNDATION_SEED,
@@ -22,7 +23,6 @@ from aicognitive_mind.foundation import (
     MEMORY_STEWARD_SYNTHESIS_FOUNDATION_SEED,
 )
 from aicognitive_mind.knowledge import KnowledgeSynthesizer
-from aicognitive_mind.evidence import EvidenceAssessment, adjudicate_contradiction
 from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
