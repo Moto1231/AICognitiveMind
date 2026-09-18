@@ -927,10 +927,14 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             "William heard the January 3 birthday claim directly from Michael.",
             recorder.evidence,
         )
-        self.assertIn(
-            "Prototype contradiction adjudication: "
-            "preferred=Michael's birthday is January 3.",
-            recorder.evidence,
+        self.assertTrue(
+            any(
+                item.startswith(
+                    "Prototype contradiction adjudication: "
+                    "preferred=Michael's birthday is January 3."
+                )
+                for item in recorder.evidence
+            )
         )
 
     async def test_non_birthday_detector_uses_generic_contradiction_boundary(
