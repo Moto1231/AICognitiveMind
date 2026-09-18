@@ -144,9 +144,9 @@ management function.
   oldest-first deletion policy.
 - Consolidation and forgetting are permitted because mir-ai is bounded, but deletion must be
   evidence-aware rather than merely chronological.
-- The specific numeric scales, scoring formulas, decay functions, and cleanup thresholds are not
-  defined by this ADR. They remain implementation decisions to be developed after the conceptual
-  model is validated.
+- The initial prototype scale and contradiction-support formula are defined by ADR 0008. Aggregate
+  confidence/weight derivation, decay functions, reinforcement rules, and cleanup thresholds remain
+  separate implementation decisions to be developed through validation.
 
 ## Core principle
 
