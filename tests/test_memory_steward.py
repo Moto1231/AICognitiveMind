@@ -630,6 +630,43 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Michael's birthday is January 3.", recorder.evidence)
         self.assertIn("No, my birthday is January 4.", recorder.evidence)
 
+    async def test_live_equal_birthday_contradiction_asks_for_clarification(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=NonConsultingEngine(),
+            knowledge_synthesizer=RecordingSynthesizer(
+                "Conflicting birthday evidence is present."
+            ),
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("I'm William.")
+        await core.interact("Michael's birthday is January 3.")
+        await core.interact("I'm Michael.")
+        await core.interact("No, my birthday is January 4.")
+
+        result = await core.interact("What is my birthday?")
+
+        self.assertEqual(
+            result.response_text,
+            "I have conflicting information about your birthday. "
+            "Is it January 3 or January 4?",
+        )
+        experience = (await journal.read())[-1].experience
+        self.assertEqual(
+            experience["memory_steward"]["recalled_context"]["clarification_question"],
+            result.response_text,
+        )
+
     def test_confidence_weight_support_prefers_materially_stronger_evidence(self) -> None:
         earlier = EvidenceAssessment(
             proposition="Michael's birthday is January 3.",

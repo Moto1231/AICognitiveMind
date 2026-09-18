@@ -278,6 +278,37 @@ class CognitiveCore:
             {"action": "recall", "focus": input_text}
         )
         memory_summary = recalled_context["context"]["summary"]
+        clarification_question = recalled_context["context"].get(
+            "clarification_question"
+        )
+        if isinstance(clarification_question, str) and clarification_question:
+            memory_trace = await memory_steward.complete()
+            journal_entry = await self._journal.append(
+                JournalEntry(
+                    kind=JournalKind.INTERACTION,
+                    experience={
+                        "input": {
+                            "source": "human",
+                            "speaker": current_speaker,
+                            "resolved_subject": working_state.context.get(
+                                "current_subject"
+                            ),
+                            "content": input_text,
+                        },
+                        "memory_steward": memory_trace.model_dump(mode="python"),
+                        "expression": {
+                            "source": "conscious_workspace",
+                            "content": clarification_question,
+                        },
+                    },
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+            return InteractionResult(
+                response_text=clarification_question,
+                occurred_at=journal_entry.occurred_at,
+            )
+
         visible_knowledge, recall_allowed = _scope_recalled_knowledge(
             input_text,
             current_speaker,

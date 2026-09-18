@@ -14,9 +14,11 @@ from aicognitive_mind.domain import (
 )
 from aicognitive_mind.evidence import (
     EffectiveScorecardEvaluator,
+    EvidenceAssessment,
     EvidenceProvenanceHop,
     EvidenceScorecard,
     PriorPreservingScorecardEvaluator,
+    adjudicate_contradiction,
     assess_evidence,
 )
 from aicognitive_mind.knowledge import DirectKnowledgeSynthesizer, KnowledgeSynthesizer
@@ -69,6 +71,7 @@ class MemoryBrief(BaseModel):
     prior_experience: tuple[JournalEntry, ...] = ()
     current_evidence: tuple[ResearchObservation, ...] = ()
     summary: str
+    clarification_question: str | None = None
 
 
 class MemoryRecallTrace(BaseModel):
@@ -76,6 +79,7 @@ class MemoryRecallTrace(BaseModel):
 
     focus: str
     summary: str
+    clarification_question: str | None = None
     durable_memory_count: int = Field(ge=0)
     prior_experience_count: int = Field(ge=0)
     current_evidence_count: int = Field(ge=0)
@@ -91,6 +95,14 @@ class MemoryStewardTrace(BaseModel):
     recalled_context: MemoryRecallTrace
     evidence_considered: tuple[ResearchObservation, ...] = ()
     memory_decisions: tuple[MemoryDecision, ...] = ()
+
+
+class BirthdayEvidence(BaseModel):
+    """Narrow V0.1 contradiction candidate used to prove live adjudication."""
+
+    subject: str
+    value: str
+    assessment: EvidenceAssessment
 
 
 class MemoryStewardNotConsultedError(RuntimeError):
@@ -256,6 +268,7 @@ class MemoryStewardTool:
             recalled_context=MemoryRecallTrace(
                 focus=brief.focus,
                 summary=brief.summary,
+                clarification_question=brief.clarification_question,
                 durable_memory_count=len(brief.durable_memory),
                 prior_experience_count=len(brief.prior_experience),
                 current_evidence_count=len(brief.current_evidence),
@@ -342,6 +355,7 @@ class MemoryStewardTool:
         # synthesized knowledge and is the only recalled content passed into the
         # Conscious Workspace system prompt.
         evidence_items: list[str] = []
+        birthday_evidence: list[BirthdayEvidence] = []
         for memory in memories:
             prior = EvidenceScorecard(
                 confidence=memory.confidence,
@@ -367,6 +381,20 @@ class MemoryStewardTool:
             evidence_items.append(memory.content)
             evidence_items.append(_durable_memory_assessment(memory))
             evidence_items.append(_effective_assessment(assessment))
+            birthday_claim = _birthday_claim(
+                memory.content,
+                speaker=None,
+                resolved_subject=None,
+            )
+            if birthday_claim is not None:
+                subject, value = birthday_claim
+                birthday_evidence.append(
+                    BirthdayEvidence(
+                        subject=subject,
+                        value=value,
+                        assessment=assessment,
+                    )
+                )
 
         for entry in experiences:
             knowledge = _experience_knowledge(entry)
@@ -399,6 +427,20 @@ class MemoryStewardTool:
                     evaluator=self._scorecard_evaluator,
                 )
                 evidence_items.append(_effective_assessment(assessment))
+                birthday_claim = _birthday_claim(
+                    knowledge,
+                    speaker=source,
+                    resolved_subject=resolved_subject,
+                )
+                if birthday_claim is not None:
+                    subject, value = birthday_claim
+                    birthday_evidence.append(
+                        BirthdayEvidence(
+                            subject=subject,
+                            value=value,
+                            assessment=assessment,
+                        )
+                    )
 
         evidence_items.extend(observation.response for observation in self._evidence)
         current_context = _current_context_evidence(
@@ -407,6 +449,32 @@ class MemoryStewardTool:
         )
         if current_context and evidence_items:
             evidence_items.append(current_context)
+
+        clarification_question: str | None = None
+        birthday_conflict = _first_birthday_conflict(birthday_evidence)
+        if birthday_conflict is not None:
+            first, second = birthday_conflict
+            adjudication = adjudicate_contradiction(
+                first.assessment,
+                second.assessment,
+            )
+            if adjudication.resolved:
+                evidence_items.append(
+                    "Prototype contradiction adjudication: "
+                    f"preferred={adjudication.preferred_proposition}; "
+                    f"support_delta={adjudication.support_delta:.3f}"
+                )
+            else:
+                clarification_question = _birthday_clarification_question(
+                    first,
+                    second,
+                    self._current_speaker,
+                )
+                evidence_items.append(
+                    "Prototype contradiction adjudication: unresolved; "
+                    f"support_delta={adjudication.support_delta:.3f}; "
+                    "clarification_required=true"
+                )
 
         evidence = tuple(evidence_items)
         summary = await self._synthesizer.synthesize(
@@ -423,6 +491,7 @@ class MemoryStewardTool:
             prior_experience=experiences,
             current_evidence=tuple(self._evidence),
             summary=summary,
+            clarification_question=clarification_question,
         )
 
     def _require_recall(self) -> MemoryBrief:
@@ -535,6 +604,86 @@ def _has_unresolved_third_person_reference(text: str) -> bool:
             "their",
             "theirs",
         }.intersection(normalized.split())
+    )
+
+
+_BIRTHDAY_VALUE_PATTERN = (
+    r"(January|February|March|April|May|June|July|August|September|"
+    r"October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?"
+)
+
+
+def _birthday_claim(
+    text: str,
+    *,
+    speaker: str | None,
+    resolved_subject: str | None,
+) -> tuple[str, str] | None:
+    explicit = re.search(
+        rf"([A-Za-z][A-Za-z' -]{{0,79}}?)['’]s\s+birthday\s+is\s+{_BIRTHDAY_VALUE_PATTERN}",
+        text,
+        flags=re.IGNORECASE,
+    )
+    subject: str | None = None
+    month: str | None = None
+    day: str | None = None
+    if explicit is not None:
+        subject = " ".join(explicit.group(1).split())
+        month = explicit.group(2)
+        day = explicit.group(3)
+    else:
+        first_person = re.search(
+            rf"\bmy\s+birthday\s+is\s+{_BIRTHDAY_VALUE_PATTERN}",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if first_person is not None and speaker:
+            subject = speaker.strip()
+            month = first_person.group(1)
+            day = first_person.group(2)
+        else:
+            pronoun = re.search(
+                rf"\b(?:his|her|their)\s+birthday\s+is\s+{_BIRTHDAY_VALUE_PATTERN}",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if pronoun is not None and resolved_subject:
+                subject = resolved_subject.strip()
+                month = pronoun.group(1)
+                day = pronoun.group(2)
+
+    if not subject or month is None or day is None:
+        return None
+
+    normalized_value = f"{month.capitalize()} {int(day)}"
+    return subject, normalized_value
+
+
+def _first_birthday_conflict(
+    items: list[BirthdayEvidence],
+) -> tuple[BirthdayEvidence, BirthdayEvidence] | None:
+    for position, first in enumerate(items):
+        for second in items[position + 1 :]:
+            same_subject = first.subject.casefold() == second.subject.casefold()
+            different_value = first.value.casefold() != second.value.casefold()
+            if same_subject and different_value:
+                return first, second
+    return None
+
+
+def _birthday_clarification_question(
+    first: BirthdayEvidence,
+    second: BirthdayEvidence,
+    current_speaker: str | None,
+) -> str:
+    values = sorted({first.value, second.value}, key=str.casefold)
+    choices = " or ".join(values)
+    speaker = (current_speaker or "").strip()
+    if speaker and speaker.casefold() == first.subject.casefold():
+        return f"I have conflicting information about your birthday. Is it {choices}?"
+    return (
+        f"I have conflicting information about {first.subject}'s birthday. "
+        f"Is it {choices}?"
     )
 
 
