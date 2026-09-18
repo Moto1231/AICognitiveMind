@@ -1,8 +1,11 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import cast
+from pathlib import Path
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from aicognitive_mind.config import get_settings
@@ -15,6 +18,7 @@ from aicognitive_mind.domain import (
     JournalEntry,
 )
 from aicognitive_mind.engines import EchoReasoningEngine, OpenAIReasoningEngine
+from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.mongo_storage import (
     MongoDiagnosticStore,
     MongoJournalStore,
@@ -23,6 +27,9 @@ from aicognitive_mind.mongo_storage import (
     MongoRuntime,
 )
 from aicognitive_mind.storage import MindAlreadyInitializedError
+
+
+STATIC_DIR = Path(__file__).with_name("static")
 
 
 class InitializeMindRequest(BaseModel):
@@ -45,15 +52,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await runtime.initialize()
     app.state.runtime = runtime
     app.state.diagnostics = MongoDiagnosticStore(runtime.database)
+    mind_store = MongoMindStore(runtime.database)
+    journal_store = MongoJournalStore(runtime.database)
+    memory_store = MongoMemoryStore(runtime.database)
+    app.state.mcp_service = CognitiveMcpService(
+        mind=mind_store,
+        journal=journal_store,
+        memory=memory_store,
+    )
     engine = (
         OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
         if settings.openai_api_key
         else EchoReasoningEngine()
     )
     app.state.core = CognitiveCore(
-        mind=MongoMindStore(runtime.database),
-        journal=MongoJournalStore(runtime.database),
-        memory=MongoMemoryStore(runtime.database),
+        mind=mind_store,
+        journal=journal_store,
+        memory=memory_store,
         diagnostics=app.state.diagnostics,
         engine=engine,
     )
@@ -62,13 +77,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def portal() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")
 async def health(request: Request) -> dict[str, str]:
     await request.app.state.runtime.ping()
     return {"status": "healthy"}
+
+
+@app.get("/v1/portal/status")
+async def portal_status(request: Request) -> dict[str, Any]:
+    service = cast(CognitiveMcpService, request.app.state.mcp_service)
+    try:
+        return await service.status()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
 
 
 @app.post(
