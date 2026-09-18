@@ -2,6 +2,7 @@ import unittest
 
 from aicognitive_mind.evidence import (
     EvidenceAssessment,
+    EvidenceProvenanceHop,
     EvidenceResolutionAction,
     EvidenceScorecard,
     RecursiveRecallBudget,
@@ -24,6 +25,54 @@ class EvidenceAssessmentTests(unittest.TestCase):
         self.assertAlmostEqual(assessment.support, 0.48)
         self.assertEqual(assessment.prior.confidence, 0.9)
         self.assertEqual(assessment.prior.weight, 0.4)
+
+    def test_provenance_preserves_source_chain_conditions_and_context(self) -> None:
+        assessment = EvidenceAssessment(
+            proposition="Michael's birthday is January 3.",
+            prior=EvidenceScorecard(confidence=0.72, weight=0.55),
+            effective=EvidenceScorecard(confidence=0.81, weight=0.60),
+            provenance=(
+                EvidenceProvenanceHop(
+                    source="William",
+                    obtained_from="Michael",
+                    condition="William is relaying an earlier conversation.",
+                    context="William reports Michael's birthday.",
+                    scorecard=EvidenceScorecard(confidence=0.72, weight=0.55),
+                ),
+                EvidenceProvenanceHop(
+                    source="Michael",
+                    condition="Michael was speaking about his own birthday.",
+                    context="Original first-person source.",
+                    scorecard=EvidenceScorecard(confidence=0.90, weight=0.50),
+                ),
+            ),
+            current_condition="Michael is now present and discussing his birthday.",
+            current_context="Current conscious workspace is resolving a birthday contradiction.",
+        )
+
+        self.assertTrue(assessment.has_upstream_provenance)
+        self.assertEqual(assessment.provenance[0].source, "William")
+        self.assertEqual(assessment.provenance[0].obtained_from, "Michael")
+        self.assertEqual(assessment.provenance[1].source, "Michael")
+        self.assertEqual(assessment.prior.confidence, 0.72)
+        self.assertEqual(assessment.effective.confidence, 0.81)
+
+    def test_direct_evidence_can_have_single_source_without_upstream_chain(self) -> None:
+        assessment = EvidenceAssessment(
+            proposition="My birthday is January 4.",
+            prior=EvidenceScorecard(confidence=0.85, weight=0.50),
+            effective=EvidenceScorecard(confidence=0.90, weight=0.60),
+            provenance=(
+                EvidenceProvenanceHop(
+                    source="Michael",
+                    condition="Direct first-person statement.",
+                    context="Michael is speaking about himself.",
+                ),
+            ),
+        )
+
+        self.assertFalse(assessment.has_upstream_provenance)
+        self.assertEqual(len(assessment.provenance), 1)
 
     def test_materially_stronger_effective_support_is_preferred(self) -> None:
         first = EvidenceAssessment(

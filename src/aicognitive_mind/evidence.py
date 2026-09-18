@@ -17,17 +17,35 @@ class EvidenceScorecard(BaseModel):
         return self.confidence * self.weight
 
 
+class EvidenceProvenanceHop(BaseModel):
+    """One human-readable link in the evidence chain."""
+
+    source: str = Field(min_length=1)
+    obtained_from: str | None = None
+    condition: str | None = None
+    context: str | None = None
+    scorecard: EvidenceScorecard | None = None
+
+
 class EvidenceAssessment(BaseModel):
-    """One proposition with preserved prior and current effective scorecards."""
+    """One proposition with provenance plus prior and current scorecards."""
 
     proposition: str = Field(min_length=1)
     prior: EvidenceScorecard
     effective: EvidenceScorecard
+    provenance: tuple[EvidenceProvenanceHop, ...] = ()
+    current_condition: str | None = None
+    current_context: str | None = None
 
     @property
     def support(self) -> float:
         """Contradiction adjudication uses the current effective scorecard."""
         return self.effective.support
+
+    @property
+    def has_upstream_provenance(self) -> bool:
+        """Whether the evidence chain contains a source-behind-the-source."""
+        return any(hop.obtained_from for hop in self.provenance)
 
 
 class ContradictionAdjudication(BaseModel):
