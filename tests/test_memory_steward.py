@@ -343,6 +343,30 @@ class FavoriteColorEngine:
         )
 
 
+class RabbitHoleSupportEvaluator:
+    """Test evaluator proving newly recalled support can change effective scoring."""
+
+    def derive(
+        self,
+        *,
+        proposition: str,
+        prior: EvidenceScorecard,
+        provenance: tuple[EvidenceProvenanceHop, ...],
+        current_speaker: str | None,
+        current_context: dict[str, Any],
+    ) -> EvidenceScorecard:
+        del provenance, current_speaker
+        recalled = current_context.get("recalled_evidence", ())
+        has_support = any(
+            "William heard the January 3 birthday claim directly from Michael."
+            in str(item)
+            for item in recalled
+        )
+        if has_support and "January 3" in proposition:
+            return EvidenceScorecard(confidence=0.8, weight=0.8)
+        return prior.model_copy()
+
+
 class RecordingSynthesizer:
     def __init__(self, summary: str) -> None:
         self.summary = summary
@@ -811,6 +835,101 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         recorder = cast(RecordingSynthesizer, synthesizer)
         self.assertIn(
             "Michael directly reported birthday information to William.",
+            recorder.evidence,
+        )
+
+    async def test_rabbit_hole_support_can_resolve_tie_before_clarification(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        await journal.append(
+            JournalEntry(
+                kind="interaction",
+                experience={
+                    "input": {
+                        "source": "human",
+                        "speaker": "William",
+                        "content": (
+                            "William heard the January 3 birthday claim directly "
+                            "from Michael."
+                        ),
+                    },
+                    "expression": {
+                        "source": "conscious_workspace",
+                        "content": "Noted.",
+                    },
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        await journal.append(
+            JournalEntry(
+                kind="interaction",
+                experience={
+                    "input": {
+                        "source": "human",
+                        "speaker": "William",
+                        "content": "Michael's birthday is January 3.",
+                    },
+                    "expression": {
+                        "source": "conscious_workspace",
+                        "content": "Noted.",
+                    },
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        await journal.append(
+            JournalEntry(
+                kind="interaction",
+                experience={
+                    "input": {
+                        "source": "human",
+                        "speaker": "Michael",
+                        "content": "My birthday is January 4.",
+                    },
+                    "expression": {
+                        "source": "conscious_workspace",
+                        "content": "Noted.",
+                    },
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        synthesizer: KnowledgeSynthesizer = RecordingSynthesizer(
+            "Conflicting birthday evidence remains preserved."
+        )
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="What is my birthday?",
+            memory=InMemoryMemoryStore(),
+            journal=journal,
+            current_speaker="Michael",
+            current_context={"current_speaker": "Michael"},
+            scorecard_evaluator=RabbitHoleSupportEvaluator(),
+            synthesizer=synthesizer,
+            recall_limit=2,
+        )
+
+        result = await tool.invoke(
+            {"action": "recall", "focus": "What is my birthday?"}
+        )
+
+        context = cast(dict[str, Any], result["context"])
+        self.assertEqual(context["recursive_recall_depth"], 1)
+        self.assertIsNone(context["clarification_question"])
+        self.assertIn(
+            "Adjudicated current knowledge: Michael's birthday is January 3.",
+            context["summary"],
+        )
+        recorder = cast(RecordingSynthesizer, synthesizer)
+        self.assertIn(
+            "William heard the January 3 birthday claim directly from Michael.",
+            recorder.evidence,
+        )
+        self.assertIn(
+            "Prototype contradiction adjudication: "
+            "preferred=Michael's birthday is January 3.",
             recorder.evidence,
         )
 

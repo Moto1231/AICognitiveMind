@@ -420,6 +420,19 @@ class MemoryStewardTool:
         state = recall_state or RecursiveRecallState(
             evidence_items_examined=len(memories) + len(experiences)
         )
+        recalled_evidence = tuple(
+            [memory.content for memory in memories]
+            + [
+                knowledge
+                for entry in experiences
+                if (knowledge := _experience_knowledge(entry))
+            ]
+            + [observation.response for observation in self._evidence]
+        )
+        evaluation_context = dict(self._current_context)
+        if recalled_evidence:
+            evaluation_context["recalled_evidence"] = recalled_evidence
+
         evidence_items: list[str] = []
         propositions: list[PropositionEvidence] = []
         for memory in memories:
@@ -441,7 +454,7 @@ class MemoryStewardTool:
                 prior=prior,
                 provenance=memory_provenance,
                 current_speaker=self._current_speaker,
-                current_context=self._current_context,
+                current_context=evaluation_context,
                 evaluator=self._scorecard_evaluator,
             )
             evidence_items.append(memory.content)
