@@ -74,3 +74,51 @@ Then open `/docs` on the forwarded port to use the API.
 ## Project status
 
 The current code is an architecture skeleton, not a claim of consciousness. It establishes the protected boundaries among identity, memory, stewards, and interchangeable reasoning engines before connecting a live model.
+
+
+## MCP interface
+
+The September 23 demonstration path is MCP-first. The connected MCP host supplies the reasoning
+model; the Cognitive Mind owns identity, memory, stewardship policy, and cognitive history.
+
+The server exposes four tools:
+
+1. `initialize_mind` — one-time genesis for the deployment.
+2. `mind_status` — identity and continuity counters for administration/demonstration.
+3. `begin_interaction` — mandatory recall/context step before the host reasons as the Mind.
+4. `complete_interaction` — Memory Steward review/commit plus append-only interaction journaling.
+
+Install the project and run the MCP server:
+
+```bash
+pip install -e .
+python -m aicognitive_mind.mcp_server
+```
+
+The Streamable HTTP MCP endpoint is:
+
+```text
+http://localhost:8001/mcp
+```
+
+For a Codespace or hosted demo, expose port 8001 through HTTPS and give the resulting `/mcp`
+endpoint to an MCP-compatible host.
+
+The intended host sequence for every conversation turn is:
+
+```text
+human message
+    ↓
+begin_interaction
+    ↓
+connected host/model reasons using recalled Mind context
+    ↓
+complete_interaction
+    ↓
+Memory Steward commits accepted learning + journal experience
+    ↓
+host presents final response
+```
+
+No ChatGPT-, Claude-, Gemini-, or other vendor-specific adapter is part of the Cognitive Mind.
+MCP is the external integration standard.
