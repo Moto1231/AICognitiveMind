@@ -1,0 +1,20 @@
+{
+  "servers": {
+    "digital-genesis": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "aicognitive_mind.mcp_server",
+        "--transport",
+        "stdio"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "MONGODB_URI": "mongodb://mongodb:27017",
+        "MONGODB_DATABASE": "ai_cognitive_mind",
+        "APP_NAME": "AI Cognitive Mind"
+      }
+    }
+  }
+}
