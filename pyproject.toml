@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aicognitive-mind"
-version = "0.4.0"
+version = "0.5.0"
 description = "A model-independent cognitive core with persistent identity and memory"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -28,6 +28,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+aicognitive_mind = ["static/*"]
 
 [tool.ruff]
 line-length = 100
