@@ -29,6 +29,7 @@ from aicognitive_mind.foundation import (
 )
 from aicognitive_mind.knowledge import KnowledgeSynthesizer
 from aicognitive_mind.memory_steward import MemoryStewardTool
+from aicognitive_mind.propositions import PropositionEvidence
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
     InMemoryFoundationStore,
@@ -292,6 +293,52 @@ class AdjudicatedBirthdayEngine:
                 component="reasoning_engine",
                 operation="propose_response",
                 implementation={"name": "adjudicated-birthday-test-engine"},
+            ),
+        )
+
+
+class FavoriteColorDetector:
+    def detect(
+        self,
+        text: str,
+        *,
+        speaker: str | None,
+        resolved_subject: str | None,
+        assessment: EvidenceAssessment,
+    ) -> tuple[PropositionEvidence, ...]:
+        del resolved_subject
+        normalized = text.casefold()
+        subject = speaker
+        if "michael's favorite color is " in normalized:
+            subject = "Michael"
+            value = text.rsplit(" ", 1)[-1].rstrip(".")
+        elif "my favorite color is " in normalized and speaker:
+            value = text.rsplit(" ", 1)[-1].rstrip(".")
+        else:
+            return ()
+        return (
+            PropositionEvidence(
+                subject=subject or "unknown",
+                attribute="favorite color",
+                value=value,
+                assessment=assessment,
+            ),
+        )
+
+
+class FavoriteColorEngine:
+    async def propose(
+        self,
+        request: ReasoningRequest,
+        tools: tuple[ReasoningTool, ...] = (),
+    ) -> ReasoningProposal:
+        del tools
+        return ReasoningProposal(
+            response_text="No clarification was required.",
+            diagnostic=DiagnosticObservation(
+                component="reasoning_engine",
+                operation="propose_response",
+                implementation={"name": "favorite-color-test-engine"},
             ),
         )
 
@@ -676,6 +723,39 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         recorder = cast(RecordingSynthesizer, synthesizer)
         self.assertIn("Michael's birthday is January 3.", recorder.evidence)
         self.assertIn("No, my birthday is January 4.", recorder.evidence)
+
+    async def test_non_birthday_detector_uses_generic_contradiction_boundary(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=FavoriteColorEngine(),
+            knowledge_synthesizer=RecordingSynthesizer(
+                "Conflicting favorite-color evidence is present."
+            ),
+            proposition_detector=FavoriteColorDetector(),
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("I'm William.")
+        await core.interact("Michael's favorite color is blue.")
+        await core.interact("I'm Michael.")
+        await core.interact("My favorite color is red.")
+
+        result = await core.interact("What is my favorite color?")
+
+        self.assertEqual(
+            result.response_text,
+            "I have conflicting information about your favorite color. "
+            "Is it blue or red?",
+        )
 
     async def test_live_stronger_birthday_evidence_becomes_current_knowledge(
         self,
