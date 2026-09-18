@@ -605,7 +605,11 @@ def _experience_knowledge(entry: JournalEntry) -> str:
     """Extract human-provided evidence while preserving any resolved person reference."""
     input_text = _experience_input_text(entry)
     resolved_subject = _experience_resolved_subject(entry)
-    if input_text and resolved_subject is not None and _has_unresolved_third_person_reference(input_text):
+    if (
+        input_text
+        and resolved_subject is not None
+        and _has_unresolved_third_person_reference(input_text)
+    ):
         return f"Resolved subject: {resolved_subject}. {input_text}"
     return input_text or _experience_search_text(entry)
 
