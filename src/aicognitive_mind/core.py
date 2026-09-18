@@ -13,7 +13,6 @@ from aicognitive_mind.domain import (
 )
 from aicognitive_mind.engines import ReasoningEngine
 from aicognitive_mind.evidence import EffectiveScorecardEvaluator
-from aicognitive_mind.propositions import PropositionDetector
 from aicognitive_mind.expression import (
     DirectExpressionRenderer,
     ExpressionRenderer,
@@ -32,6 +31,7 @@ from aicognitive_mind.permissions import (
     CognitiveOperation,
     PermissionPolicy,
 )
+from aicognitive_mind.propositions import PropositionDetector
 from aicognitive_mind.storage import (
     DiagnosticStore,
     FoundationReader,
