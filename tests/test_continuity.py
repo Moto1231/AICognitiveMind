@@ -1,7 +1,7 @@
 import unittest
 
 from aicognitive_mind.core import CognitiveCore
-from aicognitive_mind.domain import CognitiveActor, DurableMemory, JournalKind, MemoryClass
+from aicognitive_mind.domain import CognitiveActor, DurableMemory, JournalEntry, JournalKind, MemoryClass
 from aicognitive_mind.engines import EchoReasoningEngine
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
@@ -71,6 +71,18 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
             [observation.implementation["name"] for observation in observations],
             ["engine-a", "engine-b"],
         )
+
+    def test_legacy_checkpoint_journal_entry_remains_readable(self) -> None:
+        entry = JournalEntry.model_validate(
+            {
+                "kind": "checkpoint",
+                "occurred_at": "2026-09-01T12:00:00Z",
+                "experience": {"summary": "Legacy continuity checkpoint"},
+            }
+        )
+
+        self.assertEqual(entry.kind, JournalKind.CHECKPOINT)
+        self.assertEqual(entry.experience["summary"], "Legacy continuity checkpoint")
 
     async def test_cognitive_documents_have_no_domain_identifiers(self) -> None:
         memory = InMemoryMemoryStore()
