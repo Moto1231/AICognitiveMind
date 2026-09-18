@@ -102,4 +102,13 @@ fi
 
 REVISION="$(curl -fsS "$API_URL/debug/revision" 2>/dev/null || true)"
 log "Cognitive Mind API is healthy: ${REVISION:-revision unavailable}"
+
+EXPECTED_REVISION="$(git rev-parse HEAD)"
+log "Running local cognitive acceptance..."
+if COGNITIVE_MIND_TEST_URL="$API_URL" EXPECTED_REVISION="$EXPECTED_REVISION" python scripts/run_acceptance.py >"$RUNTIME_DIR/acceptance.log" 2>&1; then
+  log "Local cognitive acceptance passed."
+else
+  log "WARNING: Local cognitive acceptance failed. See .runtime/acceptance.log"
+fi
+
 log "Startup checks complete. Runtime logs are in .runtime/."
