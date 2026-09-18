@@ -33,53 +33,15 @@ Nothing in `diagnostics` is part of identity, memory, or persona.
 
 ## Memory Steward Tool V0.1
 
-Every interaction now gives the reasoning engine one interaction-scoped tool named
-`memory_steward`. The Conscious Workspace system prompt requires this sequence:
-
-1. `recall` related memory before reaching a conclusion;
-2. `consider_evidence` for research results materially used in the answer;
-3. compare the user message, recalled context, and current evidence;
-4. `propose_memory` for stable learning that may deserve durable retention;
-5. return the response, after which the Cognitive Core journals the whole experience.
-
-The runtime rejects a response if the reasoning engine skipped recall. The reasoning engine can
-only propose memory. The Conscious Memory Steward accepts or rejects the proposal and is the only
-process in this path allowed to write it. V0.1 accepts semantic, procedural, and reflective memory;
-episodic experience belongs in the append-only journal, while identity and values remain outside
-the Steward's authority.
-
-The implementation remains provider-neutral. A live model adapter receives the system prompt and
-tool schema through the `ReasoningEngine` interface; the deterministic echo adapter exercises the
-same mandatory recall boundary in tests and local development.
-
-## Initial stack
-
-- Python 3.12
-- FastAPI and Pydantic
-- MongoDB with the official asynchronous PyMongo client
-- A reproducible GitHub Codespaces dev container
-- Standard-library unit tests for the core domain
-
-## Run in the Codespace
-
-After rebuilding the dev container:
-
-```bash
-python -m unittest discover -s tests -v
-uvicorn aicognitive_mind.api:app --reload --host 0.0.0.0 --port 8000
-```
-
-Then open `/docs` on the forwarded port to use the API.
-
-## Project status
-
-The current code is an architecture skeleton, not a claim of consciousness. It establishes the protected boundaries among identity, memory, stewards, and interchangeable reasoning engines before connecting a live model.
-
+Every interaction gives the reasoning process a Memory Steward boundary. The reasoning engine can
+propose durable learning; the Mind owns the policy that accepts or rejects it. Identity and values
+remain outside the Steward's V0.1 write authority.
 
 ## MCP interface
 
-The September 23 demonstration path is MCP-first. The connected MCP host supplies the reasoning
-model; the Cognitive Mind owns identity, memory, stewardship policy, and cognitive history.
+MCP is the external integration standard for Digital Genesis. The connected MCP host supplies the
+reasoning model; the Cognitive Mind owns identity, memory, stewardship policy, and cognitive
+history.
 
 The server exposes four tools:
 
@@ -88,23 +50,31 @@ The server exposes four tools:
 3. `begin_interaction` — mandatory recall/context step before the host reasons as the Mind.
 4. `complete_interaction` — Memory Steward review/commit plus append-only interaction journaling.
 
-Install the project and run the MCP server:
+No ChatGPT-, Claude-, Gemini-, or other vendor-specific adapter is part of the Cognitive Mind.
+
+## September 23 demo: VS Code as the MCP host
+
+The workspace includes `.vscode/mcp.json`. In a Codespace, VS Code starts the Cognitive Mind as a
+local stdio MCP server. No port needs to be public and no MCP URL needs to be shared.
+
+The configured process is equivalent to:
 
 ```bash
-pip install -e .
-python -m aicognitive_mind.mcp_server
+python -m aicognitive_mind.mcp_server --transport stdio
 ```
 
-The Streamable HTTP MCP endpoint is:
+In VS Code:
 
-```text
-http://localhost:8001/mcp
-```
+1. Open Copilot Chat.
+2. Confirm the **digital-genesis** MCP server when VS Code asks whether you trust it.
+3. Use Agent/Chat with the Cognitive Mind tools enabled.
+4. Teach the Mind a durable fact.
+5. Change the reasoning model with VS Code's model picker.
+6. Ask the new model for the learned fact.
 
-For a Codespace or hosted demo, expose port 8001 through HTTPS and give the resulting `/mcp`
-endpoint to an MCP-compatible host.
+The model changes. MongoDB-backed identity, durable memory, and cognitive history do not.
 
-The intended host sequence for every conversation turn is:
+The intended host sequence for every turn remains:
 
 ```text
 human message
@@ -120,5 +90,31 @@ Memory Steward commits accepted learning + journal experience
 host presents final response
 ```
 
-No ChatGPT-, Claude-, Gemini-, or other vendor-specific adapter is part of the Cognitive Mind.
-MCP is the external integration standard.
+## Streamable HTTP deployment
+
+For remote MCP hosts, run:
+
+```bash
+python -m aicognitive_mind.mcp_server --transport streamable-http --host 0.0.0.0 --port 8001
+```
+
+The endpoint is `/mcp`. Keep it private unless a deliberate remote deployment has an appropriate
+network and authorization boundary.
+
+## Initial stack
+
+- Python 3.12
+- MCP Python SDK
+- FastAPI and Pydantic
+- MongoDB with the official asynchronous PyMongo client
+- GitHub Codespaces / VS Code
+- Standard-library unit tests plus MCP protocol smoke tests
+
+## Validation
+
+```bash
+python -m unittest discover -s tests -v
+python scripts/mcp_stdio_smoke.py
+```
+
+The project remains an architecture prototype, not a claim of consciousness.

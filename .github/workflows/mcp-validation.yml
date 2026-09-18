@@ -1,10 +1,12 @@
-name: MCP branch validation
+name: MCP validation
 
 on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature/mcp-interface]
+    branches:
+      - feature/mcp-interface
+      - feature/vscode-mcp-host
   workflow_dispatch:
 
 jobs:
@@ -38,7 +40,12 @@ jobs:
       - name: Validate MCP server import
         run: python -c "import aicognitive_mind.mcp_server; print('MCP server import OK')"
 
-      - name: Start MCP server
+      - name: Run MCP stdio continuity smoke test
+        env:
+          MONGODB_URI: mongodb://127.0.0.1:27017
+        run: python scripts/mcp_stdio_smoke.py
+
+      - name: Start MCP HTTP server
         env:
           MONGODB_URI: mongodb://127.0.0.1:27017
           MONGODB_DATABASE: ai_cognitive_mind_ci
@@ -46,7 +53,7 @@ jobs:
           python -m aicognitive_mind.mcp_server > /tmp/mcp-server.log 2>&1 &
           echo $! > /tmp/mcp-server.pid
 
-      - name: Wait for MCP server
+      - name: Wait for MCP HTTP server
         run: |
           python - <<'PY'
           import socket
@@ -56,15 +63,15 @@ jobs:
           while time.time() < deadline:
               try:
                   with socket.create_connection(("127.0.0.1", 8001), timeout=1):
-                      print("MCP server port is open")
+                      print("MCP HTTP server port is open")
                       break
               except OSError:
                   time.sleep(0.5)
           else:
-              raise SystemExit("MCP server did not open port 8001")
+              raise SystemExit("MCP HTTP server did not open port 8001")
           PY
 
-      - name: Run MCP continuity smoke test
+      - name: Run MCP HTTP continuity smoke test
         env:
           MCP_URL: http://127.0.0.1:8001/mcp
         run: python scripts/mcp_smoke.py
