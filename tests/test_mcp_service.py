@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
@@ -11,9 +12,10 @@ from aicognitive_mind.storage import (
 
 class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
+        self.journal = InMemoryJournalStore()
         self.service = CognitiveMcpService(
             mind=InMemoryMindStore(),
-            journal=InMemoryJournalStore(),
+            journal=self.journal,
             memory=InMemoryMemoryStore(),
         )
         await self.service.initialize(
@@ -48,6 +50,25 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(durable), 1)
         self.assertEqual(durable[0]["content"], "Will's birthday is February 7.")
+
+    async def test_recalled_history_is_compact_and_does_not_embed_prior_journal_documents(self) -> None:
+        for turn in range(8):
+            await self.service.complete_interaction(
+                user_message=f"Continuity checkpoint turn {turn}",
+                response_text=f"Recorded continuity checkpoint turn {turn}.",
+                proposed_memories=(),
+            )
+
+        later = await self.service.begin_interaction("continuity checkpoint")
+        prior = later["recalled_context"]["prior_experience"]
+
+        self.assertTrue(prior)
+        self.assertTrue(all("excerpt" in item for item in prior))
+        self.assertTrue(all("experience" not in item for item in prior))
+
+        entries = await self.journal.read()
+        latest_payload = json.dumps(entries[-1].model_dump(mode="json"))
+        self.assertLess(len(latest_payload), 50_000)
 
     async def test_identity_memory_is_not_writable_through_v01_steward(self) -> None:
         completed = await self.service.complete_interaction(
