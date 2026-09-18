@@ -37,6 +37,7 @@ class JournalKind(StrEnum):
     INTERACTION = "interaction"
     REFLECTION = "reflection"
     TENSION = "tension"
+    CHECKPOINT = "checkpoint"
 
 
 class MindIdentity(BaseModel):
