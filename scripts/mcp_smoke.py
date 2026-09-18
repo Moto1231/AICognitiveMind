@@ -4,6 +4,17 @@ import os
 from mcp import Client
 
 
+def structured(result, tool_name: str) -> dict:
+    if result.is_error:
+        text = " | ".join(
+            item.text for item in result.content if hasattr(item, "text")
+        )
+        raise RuntimeError(f"{tool_name} failed: {text}")
+    if result.structured_content is None:
+        raise RuntimeError(f"{tool_name} returned no structured content: {result}")
+    return result.structured_content
+
+
 async def main() -> None:
     url = os.environ.get("MCP_URL", "http://127.0.0.1:8001/mcp")
 
@@ -30,14 +41,14 @@ async def main() -> None:
                 ],
             },
         )
-        if initialized.structured_content["status"] != "initialized":
+        if structured(initialized, "initialize_mind")["status"] != "initialized":
             raise RuntimeError(f"Unexpected initialization result: {initialized}")
 
         first = await client.call_tool(
             "begin_interaction",
             {"user_message": "My birthday is February 7. Remember that."},
         )
-        if first.structured_content["status"] != "ready_to_reason":
+        if structured(first, "begin_interaction")["status"] != "ready_to_reason":
             raise RuntimeError(f"Unexpected begin result: {first}")
 
         completed = await client.call_tool(
@@ -55,7 +66,7 @@ async def main() -> None:
                 ],
             },
         )
-        decisions = completed.structured_content["memory_decisions"]
+        decisions = structured(completed, "complete_interaction")["memory_decisions"]
         if not decisions or not decisions[0]["accepted"]:
             raise RuntimeError(f"Memory was not accepted: {completed}")
 
@@ -63,12 +74,12 @@ async def main() -> None:
             "begin_interaction",
             {"user_message": "When is Will's birthday?"},
         )
-        recalled = later.structured_content["recalled_context"]["durable_memory"]
+        recalled = structured(later, "begin_interaction")["recalled_context"]["durable_memory"]
         if not any(item["content"] == "Will's birthday is February 7." for item in recalled):
             raise RuntimeError(f"Birthday memory not recalled: {later}")
 
         status = await client.call_tool("mind_status", {})
-        if status.structured_content["durable_memory_count"] != 1:
+        if structured(status, "mind_status")["durable_memory_count"] != 1:
             raise RuntimeError(f"Unexpected memory count: {status}")
 
         print("MCP continuity smoke test passed")
