@@ -16,6 +16,27 @@ Prove continuity across a reasoning-engine swap:
 
 The initial implementation deliberately avoids agent frameworks. Reasoning engines are adapters; the Cognitive Core owns identity and memory.
 
+## September 23 demo console
+
+Version 0.4 adds a single-screen pre-sales console served directly by FastAPI.
+
+- **User Mode** is the conversation surface.
+- **Admin Mode** shows Mind identity, durable-memory and journal counts, and the active reasoning implementation.
+- Admin Mode can replace the active reasoning model at runtime without recreating the Cognitive Core or its Mongo-backed cognitive stores.
+- The active model remains visible in the header so an audience can see the switch while the Mind remains continuous.
+- An optional `ADMIN_PIN` protects the model-switch control for demonstrations outside a trusted local environment.
+
+Configure selectable OpenAI models in `.env`:
+
+```dotenv
+OPENAI_API_KEY=...
+OPENAI_MODEL=<default-model>
+OPENAI_MODELS=<default-model>,<second-model>
+ADMIN_PIN=
+```
+
+The configured `OPENAI_MODELS` list is an allow-list for Admin Mode. A deterministic echo engine is also available as a diagnostic adapter.
+
 ## One instance, one mind
 
 This is not a registry or population manager. The deployment contains one root `mind` document. It cannot initialize a second individual.
@@ -59,6 +80,7 @@ same mandatory recall boundary in tests and local development.
 - MongoDB with the official asynchronous PyMongo client
 - A reproducible GitHub Codespaces dev container
 - Standard-library unit tests for the core domain
+- A dependency-free HTML/CSS/JavaScript demo console
 
 ## Run in the Codespace
 
@@ -69,8 +91,8 @@ python -m unittest discover -s tests -v
 uvicorn aicognitive_mind.api:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Then open `/docs` on the forwarded port to use the API.
+Open the forwarded port root URL for the demo console. FastAPI's `/docs` remains available for developer inspection.
 
 ## Project status
 
-The current code is an architecture skeleton, not a claim of consciousness. It establishes the protected boundaries among identity, memory, stewards, and interchangeable reasoning engines before connecting a live model.
+The current code is an architecture prototype, not a claim of consciousness. It establishes protected boundaries among identity, memory, stewards, and interchangeable reasoning engines and now exposes those boundaries through a focused continuity demonstration.
