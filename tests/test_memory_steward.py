@@ -15,6 +15,7 @@ from aicognitive_mind.domain import (
 )
 from aicognitive_mind.evidence import (
     EvidenceAssessment,
+    EvidenceProvenanceHop,
     EvidenceScorecard,
     adjudicate_contradiction,
 )
@@ -217,6 +218,34 @@ class RecallOnlyEngine:
                 operation="propose_response",
                 implementation={"name": "recall-only-test-engine"},
             ),
+        )
+
+
+class RecordingScorecardEvaluator:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def derive(
+        self,
+        *,
+        proposition: str,
+        prior: EvidenceScorecard,
+        provenance: tuple[EvidenceProvenanceHop, ...],
+        current_speaker: str | None,
+        current_context: dict[str, Any],
+    ) -> EvidenceScorecard:
+        self.calls.append(
+            {
+                "proposition": proposition,
+                "prior": prior,
+                "provenance": provenance,
+                "current_speaker": current_speaker,
+                "current_context": current_context,
+            }
+        )
+        return EvidenceScorecard(
+            confidence=min(1.0, prior.confidence + 0.1),
+            weight=min(1.0, prior.weight + 0.2),
         )
 
 
@@ -659,6 +688,54 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(decision.resolved)
         self.assertTrue(decision.clarification_required)
         self.assertAlmostEqual(decision.support_delta, 0.03)
+
+    async def test_live_recall_derives_effective_scorecard_through_evaluator(
+        self,
+    ) -> None:
+        memory = InMemoryMemoryStore()
+        await memory.remember(
+            DurableMemory(
+                memory_class=MemoryClass.SEMANTIC,
+                content="Michael's birthday is January 3.",
+                associations=("Michael", "birthday"),
+                grounding=("William reported it.",),
+                confidence=0.7,
+                weight=0.6,
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        evaluator = RecordingScorecardEvaluator()
+        synthesizer: KnowledgeSynthesizer = RecordingSynthesizer(
+            "Michael's birthday may be January 3."
+        )
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="What is my birthday?",
+            memory=memory,
+            journal=InMemoryJournalStore(),
+            current_speaker="Michael",
+            current_context={
+                "current_speaker": "Michael",
+                "current_subject": "Michael",
+            },
+            scorecard_evaluator=evaluator,
+            synthesizer=synthesizer,
+        )
+
+        await tool.invoke({"action": "recall", "focus": "What is my birthday?"})
+
+        self.assertEqual(len(evaluator.calls), 1)
+        self.assertEqual(evaluator.calls[0]["current_speaker"], "Michael")
+        self.assertEqual(
+            evaluator.calls[0]["current_context"]["current_subject"],
+            "Michael",
+        )
+        recorder = cast(RecordingSynthesizer, synthesizer)
+        self.assertIn(
+            "Current effective scorecard: confidence=0.800; weight=0.800; "
+            "support=0.640; content=Michael's birthday is January 3.",
+            recorder.evidence,
+        )
 
     async def test_live_recall_supplies_scorecard_provenance_and_current_context_to_synthesis(
         self,

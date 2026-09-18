@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -46,6 +47,64 @@ class EvidenceAssessment(BaseModel):
     def has_upstream_provenance(self) -> bool:
         """Whether the evidence chain contains a source-behind-the-source."""
         return any(hop.obtained_from for hop in self.provenance)
+
+
+class EffectiveScorecardEvaluator(Protocol):
+    """Derive the present scorecard without mutating the long-term prior."""
+
+    def derive(
+        self,
+        *,
+        proposition: str,
+        prior: EvidenceScorecard,
+        provenance: tuple[EvidenceProvenanceHop, ...],
+        current_speaker: str | None,
+        current_context: dict[str, Any],
+    ) -> EvidenceScorecard: ...
+
+
+class PriorPreservingScorecardEvaluator:
+    """Conservative prototype: no numeric adjustment without an explicit rule."""
+
+    def derive(
+        self,
+        *,
+        proposition: str,
+        prior: EvidenceScorecard,
+        provenance: tuple[EvidenceProvenanceHop, ...],
+        current_speaker: str | None,
+        current_context: dict[str, Any],
+    ) -> EvidenceScorecard:
+        del proposition, provenance, current_speaker, current_context
+        return prior.model_copy()
+
+
+def assess_evidence(
+    *,
+    proposition: str,
+    prior: EvidenceScorecard,
+    provenance: tuple[EvidenceProvenanceHop, ...] = (),
+    current_speaker: str | None = None,
+    current_context: dict[str, Any] | None = None,
+    evaluator: EffectiveScorecardEvaluator | None = None,
+) -> EvidenceAssessment:
+    """Create the two-stage assessment used by present knowledge synthesis."""
+    scorer = evaluator or PriorPreservingScorecardEvaluator()
+    context = dict(current_context or {})
+    effective = scorer.derive(
+        proposition=proposition,
+        prior=prior,
+        provenance=provenance,
+        current_speaker=current_speaker,
+        current_context=context,
+    )
+    return EvidenceAssessment(
+        proposition=proposition,
+        prior=prior,
+        effective=effective,
+        provenance=provenance,
+        current_context=str(context) if context else None,
+    )
 
 
 class ContradictionAdjudication(BaseModel):

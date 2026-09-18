@@ -12,6 +12,13 @@ from aicognitive_mind.domain import (
     JournalEntry,
     MemoryClass,
 )
+from aicognitive_mind.evidence import (
+    EffectiveScorecardEvaluator,
+    EvidenceProvenanceHop,
+    EvidenceScorecard,
+    PriorPreservingScorecardEvaluator,
+    assess_evidence,
+)
 from aicognitive_mind.knowledge import DirectKnowledgeSynthesizer, KnowledgeSynthesizer
 from aicognitive_mind.storage import JournalStore, MemoryStore
 
@@ -101,6 +108,7 @@ class MemoryStewardTool:
         journal: JournalStore,
         current_speaker: str | None = None,
         current_context: dict[str, Any] | None = None,
+        scorecard_evaluator: EffectiveScorecardEvaluator | None = None,
         synthesizer: KnowledgeSynthesizer | None = None,
         synthesis_instructions: str = "",
         recall_limit: int = 6,
@@ -111,6 +119,7 @@ class MemoryStewardTool:
         self._journal = journal
         self._current_speaker = current_speaker
         self._current_context = dict(current_context or {})
+        self._scorecard_evaluator = scorecard_evaluator or PriorPreservingScorecardEvaluator()
         self._synthesizer = synthesizer or DirectKnowledgeSynthesizer()
         self._synthesis_instructions = synthesis_instructions
         self._recall_limit = recall_limit
@@ -334,8 +343,30 @@ class MemoryStewardTool:
         # Conscious Workspace system prompt.
         evidence_items: list[str] = []
         for memory in memories:
+            prior = EvidenceScorecard(
+                confidence=memory.confidence,
+                weight=memory.weight,
+            )
+            grounding_context = "; ".join(memory.grounding) or None
+            provenance = (
+                EvidenceProvenanceHop(
+                    source="long-term memory",
+                    condition="Recalled durable memory.",
+                    context=grounding_context,
+                    scorecard=prior,
+                ),
+            )
+            assessment = assess_evidence(
+                proposition=memory.content,
+                prior=prior,
+                provenance=provenance,
+                current_speaker=self._current_speaker,
+                current_context=self._current_context,
+                evaluator=self._scorecard_evaluator,
+            )
             evidence_items.append(memory.content)
             evidence_items.append(_durable_memory_assessment(memory))
+            evidence_items.append(_effective_assessment(assessment))
 
         for entry in experiences:
             knowledge = _experience_knowledge(entry)
@@ -344,6 +375,30 @@ class MemoryStewardTool:
             provenance = _experience_provenance(entry)
             if provenance:
                 evidence_items.append(provenance)
+            if knowledge:
+                prior = EvidenceScorecard(confidence=0.5, weight=0.5)
+                source = _experience_speaker(entry) or "human"
+                resolved_subject = _experience_resolved_subject(entry)
+                assessment = assess_evidence(
+                    proposition=knowledge,
+                    prior=prior,
+                    provenance=(
+                        EvidenceProvenanceHop(
+                            source=source,
+                            condition="Recalled journal experience.",
+                            context=(
+                                f"resolved_subject={resolved_subject}"
+                                if resolved_subject is not None
+                                else None
+                            ),
+                            scorecard=prior,
+                        ),
+                    ),
+                    current_speaker=self._current_speaker,
+                    current_context=self._current_context,
+                    evaluator=self._scorecard_evaluator,
+                )
+                evidence_items.append(_effective_assessment(assessment))
 
         evidence_items.extend(observation.response for observation in self._evidence)
         current_context = _current_context_evidence(
@@ -489,6 +544,16 @@ def _durable_memory_assessment(memory: DurableMemory) -> str:
         f"confidence={memory.confidence:.3f}; weight={memory.weight:.3f}; "
         f"support={memory.confidence * memory.weight:.3f}; "
         f"content={memory.content}"
+    )
+
+
+def _effective_assessment(assessment: Any) -> str:
+    return (
+        "Current effective scorecard: "
+        f"confidence={assessment.effective.confidence:.3f}; "
+        f"weight={assessment.effective.weight:.3f}; "
+        f"support={assessment.effective.support:.3f}; "
+        f"content={assessment.proposition}"
     )
 
 
