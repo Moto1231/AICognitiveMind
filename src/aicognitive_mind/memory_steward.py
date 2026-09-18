@@ -99,6 +99,7 @@ class MemoryStewardTool:
         input_text: str,
         memory: MemoryStore,
         journal: JournalStore,
+        current_speaker: str | None = None,
         synthesizer: KnowledgeSynthesizer | None = None,
         synthesis_instructions: str = "",
         recall_limit: int = 6,
@@ -107,6 +108,7 @@ class MemoryStewardTool:
         self._input_text = input_text
         self._memory = memory
         self._journal = journal
+        self._current_speaker = current_speaker
         self._synthesizer = synthesizer or DirectKnowledgeSynthesizer()
         self._synthesis_instructions = synthesis_instructions
         self._recall_limit = recall_limit
@@ -253,7 +255,11 @@ class MemoryStewardTool:
 
     async def _recall(self, requested_focus: str) -> MemoryBrief:
         memories = await self._memory.read()
-        experiences = await self._journal.read()
+        experiences = _scope_experiences_to_speaker(
+            await self._journal.read(),
+            self._input_text,
+            self._current_speaker,
+        )
         focus = f"{self._input_text}\n{requested_focus}"
 
         focus_tokens = _tokens(focus)
@@ -433,6 +439,49 @@ def _rank[T](items: list[T], focus_tokens: set[str], limit: int) -> list[T]:
     ranked = sorted(scored, key=lambda row: (row[0], row[1]), reverse=True)
     related = [item for score, _, item in ranked if score > 0]
     return related[:limit]
+
+
+def _has_first_person_reference(text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", text.casefold())
+    return bool({"i", "me", "my", "mine"}.intersection(normalized.split()))
+
+
+def _experience_speaker(entry: JournalEntry) -> str | None:
+    input_value = entry.experience.get("input")
+    if not isinstance(input_value, dict):
+        return None
+    speaker = input_value.get("speaker")
+    if not isinstance(speaker, str):
+        return None
+    normalized = speaker.strip()
+    return normalized or None
+
+
+def _scope_experiences_to_speaker(
+    items: list[JournalEntry],
+    focus: str,
+    current_speaker: str | None,
+) -> list[JournalEntry]:
+    """Prevent first-person evidence from one speaker being applied to another."""
+    speaker = (current_speaker or "").strip().casefold()
+    if (
+        not speaker
+        or speaker == "unknown"
+        or not _has_first_person_reference(focus)
+    ):
+        return items
+
+    scoped: list[JournalEntry] = []
+    for item in items:
+        input_text = _experience_input_text(item)
+        if not _has_first_person_reference(input_text):
+            scoped.append(item)
+            continue
+
+        evidence_speaker = _experience_speaker(item)
+        if evidence_speaker is not None and evidence_speaker.casefold() == speaker:
+            scoped.append(item)
+    return scoped
 
 
 def _rank_experiences(

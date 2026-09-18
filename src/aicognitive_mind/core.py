@@ -202,7 +202,11 @@ class CognitiveCore:
                     JournalEntry(
                         kind=JournalKind.INTERACTION,
                         experience={
-                            "input": {"source": "human", "content": input_text},
+                            "input": {
+                                "source": "human",
+                                "speaker": explicit_speaker,
+                                "content": input_text,
+                            },
                             "expression": {
                                 "source": "conscious_workspace",
                                 "content": response_text,
@@ -265,6 +269,7 @@ class CognitiveCore:
             input_text=input_text,
             memory=self._memory,
             journal=self._journal,
+            current_speaker=str(current_speaker),
             synthesizer=self._knowledge_synthesizer,
             synthesis_instructions=synthesis_foundation.content,
         )
@@ -311,7 +316,11 @@ class CognitiveCore:
             JournalEntry(
                 kind=JournalKind.INTERACTION,
                 experience={
-                    "input": {"source": "human", "content": input_text},
+                    "input": {
+                        "source": "human",
+                        "speaker": current_speaker,
+                        "content": input_text,
+                    },
                     "memory_steward": memory_trace.model_dump(mode="python"),
                     "expression": {
                         "source": "conscious_workspace",
