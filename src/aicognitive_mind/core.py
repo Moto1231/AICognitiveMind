@@ -126,6 +126,45 @@ def _scope_recalled_knowledge(
     return memory_summary, True
 
 
+def _normalize_clarification_value(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
+
+
+def _match_pending_clarification(
+    input_text: str,
+    pending: object,
+) -> dict[str, str] | None:
+    if not isinstance(pending, dict):
+        return None
+    subject = pending.get("subject")
+    attribute = pending.get("attribute")
+    values = pending.get("values")
+    if not isinstance(subject, str) or not isinstance(attribute, str):
+        return None
+    if not isinstance(values, (list, tuple)):
+        return None
+
+    normalized_input = _normalize_clarification_value(input_text)
+    matches = [
+        value
+        for value in values
+        if isinstance(value, str)
+        and _normalize_clarification_value(value)
+        and _normalize_clarification_value(value) in normalized_input
+    ]
+    if len(matches) != 1:
+        return None
+
+    value = matches[0]
+    proposition = f"{subject}'s {attribute} is {value}."
+    return {
+        "subject": subject,
+        "attribute": attribute,
+        "value": value,
+        "proposition": proposition,
+    }
+
+
 class MindNotInitializedError(LookupError):
     pass
 
@@ -228,6 +267,50 @@ class CognitiveCore:
 
         working_state = await self._working_memory.read()
         current_speaker = working_state.context.get("current_speaker", "unknown")
+        pending_clarification = working_state.context.get("pending_clarification")
+        clarification_resolution = _match_pending_clarification(
+            input_text,
+            pending_clarification,
+        )
+        if clarification_resolution is not None:
+            await self._working_memory.set_context("pending_clarification", None)
+            subject = clarification_resolution["subject"]
+            attribute = clarification_resolution["attribute"]
+            value = clarification_resolution["value"]
+            speaker = str(current_speaker or "unknown")
+            if speaker.casefold() == subject.casefold():
+                response_text = (
+                    f"Got it. I've recorded your clarification: "
+                    f"your {attribute} is {value}."
+                )
+            else:
+                response_text = (
+                    f"Got it. I've recorded the clarification: "
+                    f"{subject}'s {attribute} is {value}."
+                )
+            journal_entry = await self._journal.append(
+                JournalEntry(
+                    kind=JournalKind.INTERACTION,
+                    experience={
+                        "input": {
+                            "source": "human",
+                            "speaker": current_speaker,
+                            "content": input_text,
+                        },
+                        "resolved_clarification": clarification_resolution,
+                        "expression": {
+                            "source": "conscious_workspace",
+                            "content": response_text,
+                        },
+                    },
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+            return InteractionResult(
+                response_text=response_text,
+                occurred_at=journal_entry.occurred_at,
+            )
+
         if _requires_speaker_identity(input_text, current_speaker):
             journal_entry = await self._journal.append(
                 JournalEntry(
@@ -289,7 +372,15 @@ class CognitiveCore:
         clarification_question = recalled_context["context"].get(
             "clarification_question"
         )
+        clarification_details = recalled_context["context"].get(
+            "clarification_request"
+        )
         if isinstance(clarification_question, str) and clarification_question:
+            if isinstance(clarification_details, dict):
+                await self._working_memory.set_context(
+                    "pending_clarification",
+                    clarification_details,
+                )
             memory_trace = await memory_steward.complete()
             journal_entry = await self._journal.append(
                 JournalEntry(

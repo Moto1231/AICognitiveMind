@@ -25,9 +25,11 @@ from aicognitive_mind.evidence import (
 from aicognitive_mind.knowledge import DirectKnowledgeSynthesizer, KnowledgeSynthesizer
 from aicognitive_mind.propositions import (
     BirthdayPropositionDetector,
+    ClarificationRequest,
     PropositionDetector,
     PropositionEvidence,
-    clarification_question,
+    clarification_request,
+    clarification_resolution_for_conflict,
     first_conflict,
 )
 from aicognitive_mind.storage import JournalStore, MemoryStore
@@ -80,6 +82,7 @@ class MemoryBrief(BaseModel):
     current_evidence: tuple[ResearchObservation, ...] = ()
     summary: str
     clarification_question: str | None = None
+    clarification_request: ClarificationRequest | None = None
     supporting_recall_focus: str | None = None
     recursive_recall_depth: int = Field(default=0, ge=0)
     evidence_items_examined: int = Field(default=0, ge=0)
@@ -91,6 +94,7 @@ class MemoryRecallTrace(BaseModel):
     focus: str
     summary: str
     clarification_question: str | None = None
+    clarification_request: ClarificationRequest | None = None
     recursive_recall_depth: int = Field(default=0, ge=0)
     evidence_items_examined: int = Field(default=0, ge=0)
     durable_memory_count: int = Field(ge=0)
@@ -282,6 +286,7 @@ class MemoryStewardTool:
                 focus=brief.focus,
                 summary=brief.summary,
                 clarification_question=brief.clarification_question,
+                clarification_request=brief.clarification_request,
                 recursive_recall_depth=brief.recursive_recall_depth,
                 evidence_items_examined=brief.evidence_items_examined,
                 durable_memory_count=len(brief.durable_memory),
@@ -500,14 +505,27 @@ class MemoryStewardTool:
                     evaluator=self._scorecard_evaluator,
                 )
                 evidence_items.append(_effective_assessment(assessment))
-                propositions.extend(
-                    self._proposition_detector.detect(
-                        knowledge,
-                        speaker=source,
-                        resolved_subject=resolved_subject,
-                        assessment=assessment,
+                clarification_resolution = _experience_clarification_resolution(entry)
+                if clarification_resolution is not None:
+                    subject, attribute, value, _ = clarification_resolution
+                    propositions.append(
+                        PropositionEvidence(
+                            subject=subject,
+                            attribute=attribute,
+                            value=value,
+                            assessment=assessment,
+                            evidence_role="clarification_resolution",
+                        )
                     )
-                )
+                else:
+                    propositions.extend(
+                        self._proposition_detector.detect(
+                            knowledge,
+                            speaker=source,
+                            resolved_subject=resolved_subject,
+                            assessment=assessment,
+                        )
+                    )
 
         evidence_items.extend(observation.response for observation in self._evidence)
         current_context = _current_context_evidence(
@@ -518,36 +536,49 @@ class MemoryStewardTool:
             evidence_items.append(current_context)
 
         clarification_response: str | None = None
+        clarification_details: ClarificationRequest | None = None
         supporting_recall_focus: str | None = None
         preferred_proposition: str | None = None
         contradiction = first_conflict(propositions)
         if contradiction is not None:
             first, second = contradiction
-            adjudication = adjudicate_contradiction(
-                first.assessment,
-                second.assessment,
+            explicit_resolution = clarification_resolution_for_conflict(
+                propositions,
+                first,
+                second,
             )
-            if adjudication.resolved:
-                preferred_proposition = adjudication.preferred_proposition
+            if explicit_resolution is not None:
+                preferred_proposition = explicit_resolution.assessment.proposition
                 evidence_items.append(
                     "Prototype contradiction adjudication: "
                     f"preferred={preferred_proposition}; "
-                    f"support_delta={adjudication.support_delta:.3f}"
+                    "resolved_by=explicit_clarification"
                 )
             else:
-                supporting_recall_focus = f"{first.subject} {first.attribute}"
-                clarification_response = (
-                    clarification_question(
+                adjudication = adjudicate_contradiction(
+                    first.assessment,
+                    second.assessment,
+                )
+                if adjudication.resolved:
+                    preferred_proposition = adjudication.preferred_proposition
+                    evidence_items.append(
+                        "Prototype contradiction adjudication: "
+                        f"preferred={preferred_proposition}; "
+                        f"support_delta={adjudication.support_delta:.3f}"
+                    )
+                else:
+                    supporting_recall_focus = f"{first.subject} {first.attribute}"
+                    clarification_details = clarification_request(
                         first,
                         second,
                         self._current_speaker,
                     )
-                )
-                evidence_items.append(
-                    "Prototype contradiction adjudication: unresolved; "
-                    f"support_delta={adjudication.support_delta:.3f}; "
-                    "clarification_required=true"
-                )
+                    clarification_response = clarification_details.question
+                    evidence_items.append(
+                        "Prototype contradiction adjudication: unresolved; "
+                        f"support_delta={adjudication.support_delta:.3f}; "
+                        "clarification_required=true"
+                    )
 
         evidence = tuple(evidence_items)
         summary = await self._synthesizer.synthesize(
@@ -570,6 +601,7 @@ class MemoryStewardTool:
             current_evidence=tuple(self._evidence),
             summary=summary,
             clarification_question=clarification_response,
+            clarification_request=clarification_details,
             supporting_recall_focus=supporting_recall_focus,
             recursive_recall_depth=state.depth,
             evidence_items_examined=state.evidence_items_examined,
@@ -707,6 +739,29 @@ def _effective_assessment(assessment: Any) -> str:
     )
 
 
+def _experience_clarification_resolution(
+    entry: JournalEntry,
+) -> tuple[str, str, str, str] | None:
+    value = entry.experience.get("resolved_clarification")
+    if not isinstance(value, dict):
+        return None
+    subject = value.get("subject")
+    attribute = value.get("attribute")
+    resolved_value = value.get("value")
+    proposition = value.get("proposition")
+    if not all(
+        isinstance(item, str) and item.strip()
+        for item in (subject, attribute, resolved_value, proposition)
+    ):
+        return None
+    return (
+        subject.strip(),
+        attribute.strip(),
+        resolved_value.strip(),
+        proposition.strip(),
+    )
+
+
 def _experience_provenance(entry: JournalEntry) -> str:
     input_text = _experience_input_text(entry)
     if not input_text:
@@ -719,6 +774,8 @@ def _experience_provenance(entry: JournalEntry) -> str:
         parts.append(f"source={speaker}")
     if subject is not None:
         parts.append(f"resolved_subject={subject}")
+    if _experience_clarification_resolution(entry) is not None:
+        parts.append("clarification_resolution=true")
     parts.append(f"content={input_text}")
     return "; ".join(parts)
 
@@ -855,6 +912,9 @@ def _experience_search_text(entry: JournalEntry) -> str:
                 content = value.get("content")
                 if isinstance(content, str):
                     parts.append(content)
+        clarification = _experience_clarification_resolution(entry)
+        if clarification is not None:
+            parts.append(clarification[3])
     return " ".join(parts) or entry.kind.value
 
 
@@ -876,6 +936,9 @@ def _normalized_experience_input(entry: JournalEntry) -> str:
 
 def _experience_knowledge(entry: JournalEntry) -> str:
     """Extract human-provided evidence while preserving any resolved person reference."""
+    clarification = _experience_clarification_resolution(entry)
+    if clarification is not None:
+        return clarification[3]
     input_text = _experience_input_text(entry)
     resolved_subject = _experience_resolved_subject(entry)
     if (

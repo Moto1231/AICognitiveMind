@@ -1,5 +1,5 @@
 import re
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
@@ -13,6 +13,7 @@ class PropositionEvidence(BaseModel):
     attribute: str
     value: str
     assessment: EvidenceAssessment
+    evidence_role: Literal["claim", "clarification_resolution"] = "claim"
 
 
 class PropositionDetector(Protocol):
@@ -130,20 +131,60 @@ def first_conflict(
     return None
 
 
+class ClarificationRequest(BaseModel):
+    subject: str
+    attribute: str
+    values: tuple[str, ...]
+    question: str
+
+
+def clarification_request(
+    first: PropositionEvidence,
+    second: PropositionEvidence,
+    current_speaker: str | None,
+) -> ClarificationRequest:
+    values = tuple(sorted({first.value, second.value}, key=str.casefold))
+    choices = " or ".join(values)
+    speaker = (current_speaker or "").strip()
+    if speaker and speaker.casefold() == first.subject.casefold():
+        question = (
+            f"I have conflicting information about your {first.attribute}. "
+            f"Is it {choices}?"
+        )
+    else:
+        question = (
+            f"I have conflicting information about {first.subject}'s {first.attribute}. "
+            f"Is it {choices}?"
+        )
+    return ClarificationRequest(
+        subject=first.subject,
+        attribute=first.attribute,
+        values=values,
+        question=question,
+    )
+
+
 def clarification_question(
     first: PropositionEvidence,
     second: PropositionEvidence,
     current_speaker: str | None,
 ) -> str:
-    values = sorted({first.value, second.value}, key=str.casefold)
-    choices = " or ".join(values)
-    speaker = (current_speaker or "").strip()
-    if speaker and speaker.casefold() == first.subject.casefold():
-        return (
-            f"I have conflicting information about your {first.attribute}. "
-            f"Is it {choices}?"
-        )
-    return (
-        f"I have conflicting information about {first.subject}'s {first.attribute}. "
-        f"Is it {choices}?"
-    )
+    return clarification_request(first, second, current_speaker).question
+
+
+def clarification_resolution_for_conflict(
+    items: list[PropositionEvidence],
+    first: PropositionEvidence,
+    second: PropositionEvidence,
+) -> PropositionEvidence | None:
+    conflict_values = {first.value.casefold(), second.value.casefold()}
+    for item in items:
+        if item.evidence_role != "clarification_resolution":
+            continue
+        if item.subject.casefold() != first.subject.casefold():
+            continue
+        if item.attribute.casefold() != first.attribute.casefold():
+            continue
+        if item.value.casefold() in conflict_values:
+            return item
+    return None

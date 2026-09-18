@@ -1047,6 +1047,65 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             result.response_text,
         )
 
+    async def test_clarification_answer_becomes_resolution_evidence(self) -> None:
+        journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
+        engine = AdjudicatedBirthdayEngine()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=engine,
+            knowledge_synthesizer=RecordingSynthesizer(
+                "Conflicting birthday evidence remains preserved."
+            ),
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("I'm William.")
+        await core.interact("Michael's birthday is January 3.")
+        await core.interact("I'm Michael.")
+        await core.interact("My birthday is January 4.")
+
+        first_question = await core.interact("What is my birthday?")
+        self.assertEqual(
+            first_question.response_text,
+            "I have conflicting information about your birthday. "
+            "Is it January 3 or January 4?",
+        )
+        pending = (await core.read_working_memory()).context["pending_clarification"]
+        self.assertEqual(pending["subject"], "Michael")
+        self.assertEqual(pending["attribute"], "birthday")
+
+        clarification = await core.interact("January 4.")
+        self.assertEqual(
+            clarification.response_text,
+            "Got it. I've recorded your clarification: your birthday is January 4.",
+        )
+        self.assertIsNone(
+            (await core.read_working_memory()).context["pending_clarification"]
+        )
+
+        answer = await core.interact("What is my birthday?")
+        self.assertEqual(answer.response_text, "Your birthday is January 4.")
+
+        resolution_entry = next(
+            entry
+            for entry in await journal.read()
+            if entry.experience.get("resolved_clarification") is not None
+        )
+        self.assertEqual(
+            resolution_entry.experience["input"]["content"],
+            "January 4.",
+        )
+        self.assertEqual(
+            resolution_entry.experience["resolved_clarification"]["proposition"],
+            "Michael's birthday is January 4.",
+        )
+
     def test_confidence_weight_support_prefers_materially_stronger_evidence(self) -> None:
         earlier = EvidenceAssessment(
             proposition="Michael's birthday is January 3.",
