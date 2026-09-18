@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import argparse
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 
@@ -105,11 +106,31 @@ async def complete_interaction(
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Digital Genesis Cognitive Mind MCP server")
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "streamable-http"),
+        default="streamable-http",
+        help="MCP transport. Use stdio for local hosts such as VS Code.",
+    )
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--port", type=int, default=8001)
+    args = parser.parse_args()
+
+    transport = args.transport
+    if transport == "stdio":
+        mcp.run(transport="stdio")
+        return
+
     mcp.run(
         transport="streamable-http",
-        host="0.0.0.0",
-        port=8001,
+        host=args.host,
+        port=args.port,
         json_response=True,
         stateless_http=True,
     )
+
+
+if __name__ == "__main__":
+    main()
