@@ -147,11 +147,15 @@ class SpeakerIsolationEngine:
     ) -> ReasoningProposal:
         del tools
         if "birthday?" in request.input_text.casefold():
-            response_text = (
-                "Your birthday is February 7."
-                if "February 7" in request.system_prompt
-                else "I don't know your birthday."
-            )
+            if (
+                "current_speaker: Michael" in request.system_prompt
+                and "Michael's birthday is January 3." in request.system_prompt
+            ):
+                response_text = "Your birthday is January 3."
+            elif "February 7" in request.system_prompt:
+                response_text = "Your birthday is February 7."
+            else:
+                response_text = "I don't know your birthday."
         else:
             response_text = "Noted."
 
@@ -174,6 +178,8 @@ class SpeakerAwareBirthdaySynthesizer:
         instructions: str,
     ) -> str:
         del mind, focus, instructions
+        if any("michael's birthday is january 3" in item.casefold() for item in evidence):
+            return "Michael's birthday is January 3."
         if any("my birthday is february 7" in item.casefold() for item in evidence):
             return "The current speaker's birthday is February 7."
         return "No relevant birthday knowledge is available."
@@ -441,6 +447,43 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             (await core.read_working_memory()).context,
             {"current_speaker": "William"},
+        )
+
+    async def test_explicit_subject_knowledge_survives_a_speaker_change(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=SpeakerIsolationEngine(),
+            knowledge_synthesizer=SpeakerAwareBirthdaySynthesizer(),
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("I'm William.")
+        await core.interact("Michael's birthday is January 3.")
+
+        evidence_entry = next(
+            entry
+            for entry in await journal.read()
+            if entry.experience.get("input", {}).get("content")
+            == "Michael's birthday is January 3."
+        )
+        self.assertEqual(evidence_entry.experience["input"]["speaker"], "William")
+
+        await core.interact("I'm Michael.")
+        result = await core.interact("What is my birthday?")
+
+        self.assertEqual(result.response_text, "Your birthday is January 3.")
+        self.assertEqual(
+            (await core.read_working_memory()).context,
+            {"current_speaker": "Michael"},
         )
 
     async def test_memory_steward_refuses_direct_identity_change(self) -> None:
