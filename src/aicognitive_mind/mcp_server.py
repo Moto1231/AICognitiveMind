@@ -4,7 +4,7 @@ import argparse
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any
 
 from mcp.server.mcpserver import Context, MCPServer
 
