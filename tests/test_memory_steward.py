@@ -660,6 +660,81 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(decision.clarification_required)
         self.assertAlmostEqual(decision.support_delta, 0.03)
 
+    async def test_live_recall_supplies_scorecard_provenance_and_current_context_to_synthesis(
+        self,
+    ) -> None:
+        memory = InMemoryMemoryStore()
+        await memory.remember(
+            DurableMemory(
+                memory_class=MemoryClass.SEMANTIC,
+                content="Michael's birthday is January 3.",
+                associations=("Michael", "birthday"),
+                grounding=("William reported it.",),
+                confidence=0.7,
+                weight=0.6,
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        journal = InMemoryJournalStore()
+        await journal.append(
+            JournalEntry(
+                kind="interaction",
+                experience={
+                    "input": {
+                        "source": "human",
+                        "speaker": "William",
+                        "resolved_subject": "Michael",
+                        "content": "Michael's birthday is January 3.",
+                    },
+                    "expression": {
+                        "source": "conscious_workspace",
+                        "content": "Noted.",
+                    },
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        working_memory = InMemoryWorkingMemoryStore()
+        synthesizer: KnowledgeSynthesizer = RecordingSynthesizer(
+            "Michael's birthday may be January 3."
+        )
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=memory,
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=NonConsultingEngine(),
+            knowledge_synthesizer=synthesizer,
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+        await working_memory.set_context("current_speaker", "Michael")
+        await working_memory.set_context("current_subject", "Michael")
+
+        await core.interact("What is my birthday?")
+
+        recorder = cast(RecordingSynthesizer, synthesizer)
+        self.assertIn(
+            "Long-term prior scorecard: confidence=0.700; weight=0.600; "
+            "support=0.420; content=Michael's birthday is January 3.",
+            recorder.evidence,
+        )
+        self.assertIn(
+            "Experience provenance; source=William; resolved_subject=Michael; "
+            "content=Michael's birthday is January 3.",
+            recorder.evidence,
+        )
+        self.assertTrue(
+            any(
+                item.startswith(
+                    "Current conscious evidence context: current_speaker=Michael;"
+                )
+                and "'current_subject': 'Michael'" in item
+                for item in recorder.evidence
+            )
+        )
+
     async def test_memory_steward_refuses_direct_identity_change(self) -> None:
         memory = InMemoryMemoryStore()
         tool = MemoryStewardTool(

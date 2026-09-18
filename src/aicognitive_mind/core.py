@@ -270,6 +270,7 @@ class CognitiveCore:
             memory=self._memory,
             journal=self._journal,
             current_speaker=str(current_speaker),
+            current_context=dict(working_state.context),
             synthesizer=self._knowledge_synthesizer,
             synthesis_instructions=synthesis_foundation.content,
         )

@@ -100,6 +100,7 @@ class MemoryStewardTool:
         memory: MemoryStore,
         journal: JournalStore,
         current_speaker: str | None = None,
+        current_context: dict[str, Any] | None = None,
         synthesizer: KnowledgeSynthesizer | None = None,
         synthesis_instructions: str = "",
         recall_limit: int = 6,
@@ -109,6 +110,7 @@ class MemoryStewardTool:
         self._memory = memory
         self._journal = journal
         self._current_speaker = current_speaker
+        self._current_context = dict(current_context or {})
         self._synthesizer = synthesizer or DirectKnowledgeSynthesizer()
         self._synthesis_instructions = synthesis_instructions
         self._recall_limit = recall_limit
@@ -330,11 +332,28 @@ class MemoryStewardTool:
         # Individual memories and journal experiences remain evidence. The summary is
         # synthesized knowledge and is the only recalled content passed into the
         # Conscious Workspace system prompt.
-        evidence = tuple(
-            [memory.content for memory in memories]
-            + [_experience_knowledge(entry) for entry in experiences]
-            + [observation.response for observation in self._evidence]
+        evidence_items: list[str] = []
+        for memory in memories:
+            evidence_items.append(memory.content)
+            evidence_items.append(_durable_memory_assessment(memory))
+
+        for entry in experiences:
+            knowledge = _experience_knowledge(entry)
+            if knowledge:
+                evidence_items.append(knowledge)
+            provenance = _experience_provenance(entry)
+            if provenance:
+                evidence_items.append(provenance)
+
+        evidence_items.extend(observation.response for observation in self._evidence)
+        current_context = _current_context_evidence(
+            self._current_speaker,
+            self._current_context,
         )
+        if current_context:
+            evidence_items.append(current_context)
+
+        evidence = tuple(evidence_items)
         summary = await self._synthesizer.synthesize(
             mind=self._mind,
             focus=focus,
@@ -461,6 +480,45 @@ def _has_unresolved_third_person_reference(text: str) -> bool:
             "their",
             "theirs",
         }.intersection(normalized.split())
+    )
+
+
+def _durable_memory_assessment(memory: DurableMemory) -> str:
+    return (
+        "Long-term prior scorecard: "
+        f"confidence={memory.confidence:.3f}; weight={memory.weight:.3f}; "
+        f"support={memory.confidence * memory.weight:.3f}; "
+        f"content={memory.content}"
+    )
+
+
+def _experience_provenance(entry: JournalEntry) -> str:
+    input_text = _experience_input_text(entry)
+    if not input_text:
+        return ""
+
+    speaker = _experience_speaker(entry)
+    subject = _experience_resolved_subject(entry)
+    parts = ["Experience provenance"]
+    if speaker is not None:
+        parts.append(f"source={speaker}")
+    if subject is not None:
+        parts.append(f"resolved_subject={subject}")
+    parts.append(f"content={input_text}")
+    return "; ".join(parts)
+
+
+def _current_context_evidence(
+    current_speaker: str | None,
+    current_context: dict[str, Any],
+) -> str:
+    if not current_context and not current_speaker:
+        return ""
+
+    speaker = (current_speaker or "").strip() or "unknown"
+    return (
+        "Current conscious evidence context: "
+        f"current_speaker={speaker}; context={current_context}"
     )
 
 
