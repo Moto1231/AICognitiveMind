@@ -565,6 +565,37 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             {"current_speaker": "Michael"},
         )
 
+    async def test_conflicting_person_specific_evidence_reaches_synthesis_together(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
+        synthesizer: KnowledgeSynthesizer = RecordingSynthesizer(
+            "Conflicting birthday evidence is present."
+        )
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=NonConsultingEngine(),
+            knowledge_synthesizer=synthesizer,
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("I'm William.")
+        await core.interact("Michael's birthday is January 3.")
+        await core.interact("I'm Michael.")
+        await core.interact("No, my birthday is January 4.")
+
+        await core.interact("What is my birthday?")
+
+        recorder = cast(RecordingSynthesizer, synthesizer)
+        self.assertIn("Michael's birthday is January 3.", recorder.evidence)
+        self.assertIn("No, my birthday is January 4.", recorder.evidence)
+
     async def test_memory_steward_refuses_direct_identity_change(self) -> None:
         memory = InMemoryMemoryStore()
         tool = MemoryStewardTool(
