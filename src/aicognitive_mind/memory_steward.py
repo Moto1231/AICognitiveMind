@@ -12,7 +12,10 @@ from aicognitive_mind.domain import (
     JournalEntry,
     MemoryClass,
 )
-from aicognitive_mind.knowledge import DirectKnowledgeSynthesizer, KnowledgeSynthesizer
+from aicognitive_mind.knowledge import (
+    DirectKnowledgeSynthesizer,
+    KnowledgeSynthesizer,
+)
 from aicognitive_mind.storage import JournalStore, MemoryStore
 
 
