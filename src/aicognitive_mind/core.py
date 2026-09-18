@@ -319,6 +319,7 @@ class CognitiveCore:
                     "input": {
                         "source": "human",
                         "speaker": current_speaker,
+                        "resolved_subject": working_state.context.get("current_subject"),
                         "content": input_text,
                     },
                     "memory_steward": memory_trace.model_dump(mode="python"),

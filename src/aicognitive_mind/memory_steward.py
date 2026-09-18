@@ -475,6 +475,17 @@ def _experience_speaker(entry: JournalEntry) -> str | None:
     return normalized or None
 
 
+def _experience_resolved_subject(entry: JournalEntry) -> str | None:
+    input_value = entry.experience.get("input")
+    if not isinstance(input_value, dict):
+        return None
+    subject = input_value.get("resolved_subject")
+    if not isinstance(subject, str):
+        return None
+    normalized = subject.strip()
+    return normalized or None
+
+
 def _scope_experiences_to_speaker(
     items: list[JournalEntry],
     focus: str,
@@ -493,11 +504,13 @@ def _scope_experiences_to_speaker(
     for item in items:
         input_text = _experience_input_text(item)
 
-        # A third-person pronoun is not an identity. Until a separate reference-resolution
-        # step records who it refers to, do not let that evidence become person-specific
-        # knowledge for the current speaker.
+        # A third-person pronoun is not an identity by itself. It becomes admissible
+        # person-specific evidence only when the originating experience preserved the
+        # subject that working context had already resolved at that moment.
         if _has_unresolved_third_person_reference(input_text):
-            continue
+            resolved_subject = _experience_resolved_subject(item)
+            if resolved_subject is None or resolved_subject.casefold() != speaker:
+                continue
 
         if not _has_first_person_reference(input_text):
             scoped.append(item)
@@ -589,8 +602,11 @@ def _normalized_experience_input(entry: JournalEntry) -> str:
 
 
 def _experience_knowledge(entry: JournalEntry) -> str:
-    """Extract human-provided evidence without exposing journal machinery."""
+    """Extract human-provided evidence while preserving any resolved person reference."""
     input_text = _experience_input_text(entry)
+    resolved_subject = _experience_resolved_subject(entry)
+    if input_text and resolved_subject is not None and _has_unresolved_third_person_reference(input_text):
+        return f"Resolved subject: {resolved_subject}. {input_text}"
     return input_text or _experience_search_text(entry)
 
 

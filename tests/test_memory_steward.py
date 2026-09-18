@@ -180,6 +180,12 @@ class SpeakerAwareBirthdaySynthesizer:
         del mind, focus, instructions
         if any("michael's birthday is january 3" in item.casefold() for item in evidence):
             return "Michael's birthday is January 3."
+        if any(
+            "resolved subject: michael" in item.casefold()
+            and "his birthday is january 3" in item.casefold()
+            for item in evidence
+        ):
+            return "Michael's birthday is January 3."
         if any("his birthday is january 3" in item.casefold() for item in evidence):
             return "An unresolved male person's birthday is January 3."
         if any("my birthday is february 7" in item.casefold() for item in evidence):
@@ -479,6 +485,48 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(evidence_entry.experience["input"]["speaker"], "William")
 
+        await core.interact("I'm Michael.")
+        result = await core.interact("What is my birthday?")
+
+        self.assertEqual(result.response_text, "Your birthday is January 3.")
+        self.assertEqual(
+            (await core.read_working_memory()).context,
+            {"current_speaker": "Michael"},
+        )
+
+    async def test_resolved_third_person_pronoun_survives_working_memory_flush(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        working_memory = InMemoryWorkingMemoryStore()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=SpeakerIsolationEngine(),
+            knowledge_synthesizer=SpeakerAwareBirthdaySynthesizer(),
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("I'm William.")
+        await working_memory.set_context("current_subject", "Michael")
+        await core.interact("His birthday is January 3.")
+
+        evidence_entry = next(
+            entry
+            for entry in await journal.read()
+            if entry.experience.get("input", {}).get("content")
+            == "His birthday is January 3."
+        )
+        self.assertEqual(
+            evidence_entry.experience["input"]["resolved_subject"],
+            "Michael",
+        )
+
+        await core.checkpoint()
         await core.interact("I'm Michael.")
         result = await core.interact("What is my birthday?")
 
