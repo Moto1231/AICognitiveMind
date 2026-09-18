@@ -1092,6 +1092,41 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         answer = await core.interact("What is my birthday?")
         self.assertEqual(answer.response_text, "Your birthday is January 4.")
 
+        memories = await core.read_memory()
+        consolidated = [
+            memory
+            for memory in memories
+            if memory.content == "Michael's birthday is January 4."
+        ]
+        self.assertEqual(len(consolidated), 1)
+        self.assertEqual(consolidated[0].memory_class, MemoryClass.SEMANTIC)
+        self.assertEqual(
+            consolidated[0].associations,
+            ("Michael", "birthday", "January 4"),
+        )
+        self.assertIn(
+            "Explicit human clarification resolved a prior contradiction.",
+            consolidated[0].grounding,
+        )
+        self.assertIn(
+            "Literal clarification: January 4.",
+            consolidated[0].grounding,
+        )
+
+        second_answer = await core.interact("What is my birthday?")
+        self.assertEqual(second_answer.response_text, "Your birthday is January 4.")
+        memories_after_second_recall = await core.read_memory()
+        self.assertEqual(
+            len(
+                [
+                    memory
+                    for memory in memories_after_second_recall
+                    if memory.content == "Michael's birthday is January 4."
+                ]
+            ),
+            1,
+        )
+
         resolution_entry = next(
             entry
             for entry in await journal.read()

@@ -275,6 +275,8 @@ class MemoryStewardTool:
         if self._completed:
             raise RuntimeError("This Memory Steward interaction is already complete")
 
+        await self._consolidate_explicit_resolutions(brief.prior_experience)
+
         for memory in self._pending:
             await self._memory.remember(
                 memory,
@@ -375,6 +377,44 @@ class MemoryStewardTool:
 
         self._brief = initial_brief
         return self._brief
+
+    async def _consolidate_explicit_resolutions(
+        self,
+        experiences: tuple[JournalEntry, ...],
+    ) -> None:
+        existing = [*await self._memory.read(), *self._pending]
+        known_content = {memory.content.casefold() for memory in existing}
+
+        for entry in experiences:
+            resolution = _experience_clarification_resolution(entry)
+            if resolution is None:
+                continue
+
+            subject, attribute, value, proposition = resolution
+            if proposition.casefold() in known_content:
+                continue
+
+            memory = DurableMemory(
+                memory_class=MemoryClass.SEMANTIC,
+                content=proposition,
+                associations=(subject, attribute, value),
+                grounding=(
+                    "Explicit human clarification resolved a prior contradiction.",
+                    f"Literal clarification: {_experience_input_text(entry)}",
+                ),
+            )
+            self._pending.append(memory)
+            self._decisions.append(
+                MemoryDecision(
+                    accepted=True,
+                    reason=(
+                        "Consolidated an explicit clarification resolution into "
+                        "durable semantic memory."
+                    ),
+                    memory=memory,
+                )
+            )
+            known_content.add(proposition.casefold())
 
     async def _consider_memory(self, call: ProposeMemoryCall) -> MemoryDecision:
         if call.memory_class not in {
