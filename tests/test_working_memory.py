@@ -66,6 +66,20 @@ class WorkingMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(_requires_speaker_identity("I like birthday parties.", "unknown"))
         self.assertIn("name", IDENTITY_CLARIFICATION_RESPONSE.casefold())
 
+    def test_known_speaker_cannot_receive_another_persons_first_person_knowledge(
+        self,
+    ) -> None:
+        knowledge = "William's birthday is February 7."
+
+        visible, recall_allowed = _scope_recalled_knowledge(
+            "What is my birthday?",
+            "Michael",
+            knowledge,
+        )
+
+        self.assertNotIn("February 7", visible)
+        self.assertFalse(recall_allowed)
+
     def test_unknown_speaker_cannot_receive_first_person_recalled_knowledge(self) -> None:
         knowledge = "William's birthday is February 7."
 
