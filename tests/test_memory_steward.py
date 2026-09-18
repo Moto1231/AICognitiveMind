@@ -1047,6 +1047,77 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             result.response_text,
         )
 
+    async def test_checkpoint_consolidates_resolution_without_future_recall(
+        self,
+    ) -> None:
+        journal = InMemoryJournalStore()
+        memory = InMemoryMemoryStore()
+        working_memory = InMemoryWorkingMemoryStore()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            foundation=await self._foundation(),
+            journal=journal,
+            memory=memory,
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=NonConsultingEngine(),
+            knowledge_synthesizer=RecordingSynthesizer(
+                "Conflicting birthday evidence remains preserved."
+            ),
+            working_memory=working_memory,
+        )
+        await core.initialize("Genesis")
+
+        await core.interact("I'm William.")
+        await core.interact("Michael's birthday is January 3.")
+        await core.interact("I'm Michael.")
+        await core.interact("My birthday is January 4.")
+        await core.interact("What is my birthday?")
+        await core.interact("January 4.")
+
+        self.assertEqual(await core.read_memory(), [])
+
+        checkpoint_state = await core.checkpoint()
+
+        self.assertEqual(checkpoint_state.context, {})
+        memories = await core.read_memory()
+        self.assertEqual(len(memories), 1)
+        self.assertEqual(memories[0].content, "Michael's birthday is January 4.")
+        checkpoint_entry = (await journal.read())[-1]
+        self.assertEqual(checkpoint_entry.kind, JournalKind.CHECKPOINT)
+        self.assertEqual(
+            checkpoint_entry.experience["consolidated_memory_count"],
+            1,
+        )
+
+        empty_journal = InMemoryJournalStore()
+        synthesizer: KnowledgeSynthesizer = RecordingSynthesizer(
+            "Michael's birthday is January 4."
+        )
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="What is Michael's birthday?",
+            memory=memory,
+            journal=empty_journal,
+            current_speaker="William",
+            synthesizer=synthesizer,
+        )
+        result = await tool.invoke(
+            {"action": "recall", "focus": "Michael birthday"}
+        )
+
+        context = cast(dict[str, Any], result["context"])
+        recalled = cast(list[dict[str, Any]], context["durable_memory"])
+        self.assertEqual(len(recalled), 1)
+        self.assertEqual(
+            recalled[0]["content"],
+            "Michael's birthday is January 4.",
+        )
+        recorder = cast(RecordingSynthesizer, synthesizer)
+        self.assertIn(
+            "Michael's birthday is January 4.",
+            recorder.evidence,
+        )
+
     async def test_clarification_answer_becomes_resolution_evidence(self) -> None:
         journal = InMemoryJournalStore()
         working_memory = InMemoryWorkingMemoryStore()

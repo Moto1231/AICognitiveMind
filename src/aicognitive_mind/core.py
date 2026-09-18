@@ -26,7 +26,10 @@ from aicognitive_mind.knowledge import (
     DirectKnowledgeSynthesizer,
     KnowledgeSynthesizer,
 )
-from aicognitive_mind.memory_steward import MemoryStewardTool
+from aicognitive_mind.memory_steward import (
+    MemoryStewardTool,
+    consolidate_explicit_resolutions,
+)
 from aicognitive_mind.permissions import (
     CognitiveOperation,
     PermissionPolicy,
@@ -483,11 +486,18 @@ class CognitiveCore:
 
     async def checkpoint(self) -> WorkingMemoryState:
         await self.load_mind()
+        decisions = await consolidate_explicit_resolutions(
+            self._memory,
+            tuple(await self._journal.read()),
+        )
         state = await self._working_memory.clear()
         await self._journal.append(
             JournalEntry(
                 kind=JournalKind.CHECKPOINT,
-                experience={"working_memory_flushed": True},
+                experience={
+                    "working_memory_flushed": True,
+                    "consolidated_memory_count": len(decisions),
+                },
             ),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )

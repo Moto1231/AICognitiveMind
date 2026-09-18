@@ -108,6 +108,54 @@ class MemoryDecision(BaseModel):
     memory: DurableMemory | None = None
 
 
+async def consolidate_explicit_resolutions(
+    memory_store: MemoryStore,
+    experiences: tuple[JournalEntry, ...],
+    *,
+    additional_existing: tuple[DurableMemory, ...] = (),
+) -> tuple[MemoryDecision, ...]:
+    """Consolidate explicit human resolutions under Memory Steward authority."""
+    existing = [*await memory_store.read(), *additional_existing]
+    known_content = {memory.content.casefold() for memory in existing}
+    decisions: list[MemoryDecision] = []
+
+    for entry in experiences:
+        resolution = _experience_clarification_resolution(entry)
+        if resolution is None:
+            continue
+
+        subject, attribute, value, proposition = resolution
+        if proposition.casefold() in known_content:
+            continue
+
+        durable = DurableMemory(
+            memory_class=MemoryClass.SEMANTIC,
+            content=proposition,
+            associations=(subject, attribute, value),
+            grounding=(
+                "Explicit human clarification resolved a prior contradiction.",
+                f"Literal clarification: {_experience_input_text(entry)}",
+            ),
+        )
+        await memory_store.remember(
+            durable,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        decisions.append(
+            MemoryDecision(
+                accepted=True,
+                reason=(
+                    "Consolidated an explicit clarification resolution into "
+                    "durable semantic memory."
+                ),
+                memory=durable,
+            )
+        )
+        known_content.add(proposition.casefold())
+
+    return tuple(decisions)
+
+
 class MemoryStewardTrace(BaseModel):
     recalled_context: MemoryRecallTrace
     evidence_considered: tuple[ResearchObservation, ...] = ()
@@ -275,7 +323,12 @@ class MemoryStewardTool:
         if self._completed:
             raise RuntimeError("This Memory Steward interaction is already complete")
 
-        await self._consolidate_explicit_resolutions(brief.prior_experience)
+        consolidation_decisions = await consolidate_explicit_resolutions(
+            self._memory,
+            brief.prior_experience,
+            additional_existing=tuple(self._pending),
+        )
+        self._decisions.extend(consolidation_decisions)
 
         for memory in self._pending:
             await self._memory.remember(
@@ -377,44 +430,6 @@ class MemoryStewardTool:
 
         self._brief = initial_brief
         return self._brief
-
-    async def _consolidate_explicit_resolutions(
-        self,
-        experiences: tuple[JournalEntry, ...],
-    ) -> None:
-        existing = [*await self._memory.read(), *self._pending]
-        known_content = {memory.content.casefold() for memory in existing}
-
-        for entry in experiences:
-            resolution = _experience_clarification_resolution(entry)
-            if resolution is None:
-                continue
-
-            subject, attribute, value, proposition = resolution
-            if proposition.casefold() in known_content:
-                continue
-
-            memory = DurableMemory(
-                memory_class=MemoryClass.SEMANTIC,
-                content=proposition,
-                associations=(subject, attribute, value),
-                grounding=(
-                    "Explicit human clarification resolved a prior contradiction.",
-                    f"Literal clarification: {_experience_input_text(entry)}",
-                ),
-            )
-            self._pending.append(memory)
-            self._decisions.append(
-                MemoryDecision(
-                    accepted=True,
-                    reason=(
-                        "Consolidated an explicit clarification resolution into "
-                        "durable semantic memory."
-                    ),
-                    memory=memory,
-                )
-            )
-            known_content.add(proposition.casefold())
 
     async def _consider_memory(self, call: ProposeMemoryCall) -> MemoryDecision:
         if call.memory_class not in {
