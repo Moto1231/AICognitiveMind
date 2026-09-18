@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Cognitive Mind</title>
+  <link rel="stylesheet" href="/static/demo.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">DG</div>
+        <div>
+          <h1>AI Cognitive Mind</h1>
+          <p>One mind. Interchangeable reasoning.</p>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <div class="engine-pill" title="Current reasoning implementation">
+          <span class="status-dot"></span>
+          <span id="engineBadge">Connecting…</span>
+        </div>
+        <div class="mode-switch" aria-label="Application mode">
+          <button id="userModeButton" class="mode-button active" type="button">User</button>
+          <button id="adminModeButton" class="mode-button" type="button">Admin</button>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section id="userView" class="view">
+        <div class="view-heading">
+          <div>
+            <p class="eyebrow">USER MODE</p>
+            <h2 id="mindGreeting">Your persistent Mind</h2>
+            <p class="subtle">Conversation flows through the active reasoning model. Identity and memory do not.</p>
+          </div>
+          <div class="continuity-chip">
+            <span>Continuity</span>
+            <strong id="continuityState">Checking…</strong>
+          </div>
+        </div>
+
+        <div class="chat-card">
+          <div id="conversation" class="conversation" aria-live="polite">
+            <div class="message system-message">
+              <div class="message-label">COGNITIVE CORE</div>
+              <div class="message-body">
+                This conversation belongs to the Mind, not to the model currently doing the reasoning.
+              </div>
+            </div>
+          </div>
+
+          <form id="chatForm" class="composer">
+            <textarea
+              id="messageInput"
+              rows="2"
+              placeholder="Talk to the Mind…"
+              aria-label="Message"
+              required
+            ></textarea>
+            <button id="sendButton" class="primary-button" type="submit">
+              <span>Send</span>
+              <span aria-hidden="true">→</span>
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <section id="adminView" class="view hidden">
+        <div class="view-heading">
+          <div>
+            <p class="eyebrow">ADMIN MODE</p>
+            <h2>Runtime & continuity</h2>
+            <p class="subtle">Change the reasoning implementation without changing the Mind.</p>
+          </div>
+          <button id="refreshAdminButton" class="secondary-button" type="button">Refresh</button>
+        </div>
+
+        <div class="admin-grid">
+          <article class="panel engine-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">REASONING ENGINE</p>
+                <h3>Active model</h3>
+              </div>
+              <span id="providerBadge" class="mini-badge">—</span>
+            </div>
+
+            <div class="active-model">
+              <span>Currently reasoning with</span>
+              <strong id="activeModel">—</strong>
+            </div>
+
+            <label class="field-label" for="modelSelect">Switch model</label>
+            <select id="modelSelect" class="select-control"></select>
+
+            <button id="switchEngineButton" class="primary-button wide" type="button">
+              Switch Reasoning Model
+            </button>
+
+            <p class="panel-note">
+              Model provenance is diagnostic metadata. Identity, journal, and durable memory remain in the Cognitive Core.
+            </p>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">IDENTITY</p>
+                <h3>The Mind</h3>
+              </div>
+            </div>
+            <dl class="detail-list">
+              <div>
+                <dt>Name</dt>
+                <dd id="adminMindName">—</dd>
+              </div>
+              <div>
+                <dt>Development</dt>
+                <dd id="developmentState">—</dd>
+              </div>
+              <div>
+                <dt>Created</dt>
+                <dd id="createdAt">—</dd>
+              </div>
+            </dl>
+            <div>
+              <p class="field-label">Foundational values</p>
+              <div id="foundationalValues" class="tag-list"></div>
+            </div>
+          </article>
+
+          <article class="panel stat-panel">
+            <p class="eyebrow">DURABLE MEMORY</p>
+            <div class="big-stat" id="memoryCount">—</div>
+            <p>curated memories</p>
+          </article>
+
+          <article class="panel stat-panel">
+            <p class="eyebrow">COGNITIVE HISTORY</p>
+            <div class="big-stat" id="journalCount">—</div>
+            <p>journal experiences</p>
+          </article>
+
+          <article class="panel proof-panel">
+            <p class="eyebrow">SEPTEMBER 23 PROOF</p>
+            <h3>Continuity demonstration</h3>
+            <ol>
+              <li>Teach the Mind something in User Mode.</li>
+              <li>Return here and switch the reasoning model.</li>
+              <li>Go back to User Mode and ask for what it learned.</li>
+            </ol>
+            <p class="proof-line">The model changes. The Mind does not.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="initializeOverlay" class="overlay hidden" role="dialog" aria-modal="true">
+    <form id="initializeForm" class="setup-card">
+      <p class="eyebrow">GENESIS</p>
+      <h2>Initialize this Mind</h2>
+      <p class="subtle">
+        This happens once for the application instance. The resulting identity persists independently of the reasoning model.
+      </p>
+
+      <label class="field-label" for="selfName">Self name</label>
+      <input id="selfName" class="text-control" value="Genesis" maxlength="120" required>
+
+      <label class="field-label" for="foundationalValuesInput">Foundational values</label>
+      <textarea
+        id="foundationalValuesInput"
+        class="text-control"
+        rows="4"
+        placeholder="One value per line"
+      >Understanding before Recommending
+Preserve continuity of identity</textarea>
+
+      <button class="primary-button wide" type="submit">Create Mind</button>
+    </form>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="/static/demo.js"></script>
+</body>
+</html>
