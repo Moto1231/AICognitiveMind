@@ -13,7 +13,11 @@ from aicognitive_mind.domain import (
     ReasoningProposal,
     ReasoningRequest,
 )
-from aicognitive_mind.evidence import EvidenceAssessment, adjudicate_contradiction
+from aicognitive_mind.evidence import (
+    EvidenceAssessment,
+    EvidenceScorecard,
+    adjudicate_contradiction,
+)
 from aicognitive_mind.foundation import (
     CONSCIOUS_EXPRESSION_FOUNDATION_KEY,
     CONSCIOUS_EXPRESSION_FOUNDATION_SEED,
@@ -600,13 +604,13 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
     def test_confidence_weight_support_prefers_materially_stronger_evidence(self) -> None:
         earlier = EvidenceAssessment(
             proposition="Michael's birthday is January 3.",
-            confidence=0.7,
-            weight=0.7,
+            prior=EvidenceScorecard(confidence=0.7, weight=0.7),
+            effective=EvidenceScorecard(confidence=0.7, weight=0.7),
         )
         correction = EvidenceAssessment(
             proposition="Michael's birthday is January 4.",
-            confidence=0.9,
-            weight=0.8,
+            prior=EvidenceScorecard(confidence=0.9, weight=0.8),
+            effective=EvidenceScorecard(confidence=0.9, weight=0.8),
         )
 
         decision = adjudicate_contradiction(earlier, correction)
@@ -622,13 +626,13 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
     def test_near_equal_support_requires_clarification(self) -> None:
         first = EvidenceAssessment(
             proposition="Michael's birthday is January 3.",
-            confidence=0.8,
-            weight=0.5,
+            prior=EvidenceScorecard(confidence=0.8, weight=0.5),
+            effective=EvidenceScorecard(confidence=0.8, weight=0.5),
         )
         second = EvidenceAssessment(
             proposition="Michael's birthday is January 4.",
-            confidence=0.5,
-            weight=0.8,
+            prior=EvidenceScorecard(confidence=0.5, weight=0.8),
+            effective=EvidenceScorecard(confidence=0.5, weight=0.8),
         )
 
         decision = adjudicate_contradiction(first, second)
@@ -641,13 +645,13 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
     def test_support_within_prototype_epsilon_requires_clarification(self) -> None:
         first = EvidenceAssessment(
             proposition="Michael's birthday is January 3.",
-            confidence=0.8,
-            weight=0.6,
+            prior=EvidenceScorecard(confidence=0.8, weight=0.6),
+            effective=EvidenceScorecard(confidence=0.8, weight=0.6),
         )
         second = EvidenceAssessment(
             proposition="Michael's birthday is January 4.",
-            confidence=0.75,
-            weight=0.6,
+            prior=EvidenceScorecard(confidence=0.75, weight=0.6),
+            effective=EvidenceScorecard(confidence=0.75, weight=0.6),
         )
 
         decision = adjudicate_contradiction(first, second)

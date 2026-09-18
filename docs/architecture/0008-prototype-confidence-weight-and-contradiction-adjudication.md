@@ -68,7 +68,8 @@ understanding, subject to governance and any evidence-specific rules. The lower-
 and its supporting evidence remain preserved as contradiction history.
 
 If `delta <= epsilon`, the Memory Steward must treat the contradiction as unresolved rather than
-arbitrarily choosing a winner.
+arbitrarily choosing a winner. ADR 0009 permits bounded recursive recall of supporting evidence
+before the unresolved contradiction is surfaced for clarification.
 
 ### Clarification on unresolved contradiction
 
