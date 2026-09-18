@@ -54,11 +54,17 @@ MemoryStewardCall = Annotated[
 _CALL_ADAPTER = TypeAdapter(MemoryStewardCall)
 
 
+class RecalledExperience(BaseModel):
+    kind: str
+    occurred_at: str
+    excerpt: str
+
+
 class MemoryBrief(BaseModel):
     focus: str
     identity_context: dict[str, Any]
     durable_memory: tuple[DurableMemory, ...] = ()
-    prior_experience: tuple[JournalEntry, ...] = ()
+    prior_experience: tuple[RecalledExperience, ...] = ()
     current_evidence: tuple[ResearchObservation, ...] = ()
     summary: str
 
@@ -134,11 +140,7 @@ class MemoryStewardTool:
                 articles=call.articles,
             )
             self._evidence.append(observation)
-            self._brief = self._build_brief(
-                focus=brief.focus,
-                memories=brief.durable_memory,
-                experiences=brief.prior_experience,
-            )
+            self._brief = self._refresh_brief_with_evidence(brief)
             return {
                 "status": "evidence_considered",
                 "context": self._brief.model_dump(mode="json"),
@@ -231,6 +233,36 @@ class MemoryStewardTool:
         memories: tuple[DurableMemory, ...],
         experiences: tuple[JournalEntry, ...],
     ) -> MemoryBrief:
+        recalled_experiences = tuple(
+            RecalledExperience(
+                kind=entry.kind.value,
+                occurred_at=entry.occurred_at.isoformat(),
+                excerpt=_experience_excerpt(entry),
+            )
+            for entry in experiences
+        )
+        return MemoryBrief(
+            focus=focus,
+            identity_context=self._mind.identity.model_dump(mode="json"),
+            durable_memory=memories,
+            prior_experience=recalled_experiences,
+            current_evidence=tuple(self._evidence),
+            summary=self._summary(memories, recalled_experiences),
+        )
+
+    def _refresh_brief_with_evidence(self, brief: MemoryBrief) -> MemoryBrief:
+        return brief.model_copy(
+            update={
+                "current_evidence": tuple(self._evidence),
+                "summary": self._summary(brief.durable_memory, brief.prior_experience),
+            }
+        )
+
+    def _summary(
+        self,
+        memories: tuple[DurableMemory, ...],
+        experiences: tuple[RecalledExperience, ...],
+    ) -> str:
         parts: list[str] = []
         if memories:
             parts.append(
@@ -239,7 +271,7 @@ class MemoryStewardTool:
         if experiences:
             parts.append(
                 "Related prior experience: "
-                + " | ".join(_experience_excerpt(entry) for entry in experiences)
+                + " | ".join(experience.excerpt for experience in experiences)
             )
         if self._evidence:
             parts.append(
@@ -248,15 +280,7 @@ class MemoryStewardTool:
             )
         if not parts:
             parts.append("No materially related durable memory or prior experience was found.")
-
-        return MemoryBrief(
-            focus=focus,
-            identity_context=self._mind.identity.model_dump(mode="json"),
-            durable_memory=memories,
-            prior_experience=experiences,
-            current_evidence=tuple(self._evidence),
-            summary="\n".join(parts),
-        )
+        return "\n".join(parts)
 
     def _require_recall(self) -> MemoryBrief:
         if self._brief is None:
