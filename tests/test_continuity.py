@@ -72,6 +72,32 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
             ["engine-a", "engine-b"],
         )
 
+    async def test_engine_can_be_replaced_in_place_without_replacing_the_mind(self) -> None:
+        diagnostics = InMemoryDiagnosticStore()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            journal=InMemoryJournalStore(),
+            memory=InMemoryMemoryStore(),
+            diagnostics=diagnostics,
+            engine=EchoReasoningEngine(diagnostic_name="engine-a", prefix="A considered"),
+        )
+        original_mind = await core.initialize("Genesis")
+        first = await core.interact("Before the switch.")
+
+        core.replace_engine(
+            EchoReasoningEngine(diagnostic_name="engine-b", prefix="B considered")
+        )
+        second = await core.interact("After the switch.")
+
+        self.assertEqual(await core.load_mind(), original_mind)
+        self.assertEqual(first.response_text, "A considered: Before the switch.")
+        self.assertEqual(second.response_text, "B considered: After the switch.")
+        observations = await diagnostics.read()
+        self.assertEqual(
+            [observation.implementation["name"] for observation in observations],
+            ["engine-a", "engine-b"],
+        )
+
     async def test_cognitive_documents_have_no_domain_identifiers(self) -> None:
         memory = InMemoryMemoryStore()
         core = CognitiveCore(
