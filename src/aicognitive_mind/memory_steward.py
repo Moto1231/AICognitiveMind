@@ -749,10 +749,13 @@ def _experience_clarification_resolution(
     attribute = value.get("attribute")
     resolved_value = value.get("value")
     proposition = value.get("proposition")
-    if not all(
-        isinstance(item, str) and item.strip()
-        for item in (subject, attribute, resolved_value, proposition)
-    ):
+    if not isinstance(subject, str) or not subject.strip():
+        return None
+    if not isinstance(attribute, str) or not attribute.strip():
+        return None
+    if not isinstance(resolved_value, str) or not resolved_value.strip():
+        return None
+    if not isinstance(proposition, str) or not proposition.strip():
         return None
     return (
         subject.strip(),
