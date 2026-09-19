@@ -720,6 +720,35 @@ function renderJournalDetail(entry) {
     return;
   }
 
+  if (entry.kind === "belief_transition") {
+    el.journalStructuredDetail.append(
+      addJournalBlock(
+        "Semantic Slot",
+        [experience.subject, experience.attribute].filter(Boolean).join(" · "),
+      ),
+      addJournalBlock("Superseded Belief", String(experience.from_value ?? "")),
+      addJournalBlock("Current Belief", String(experience.to_value ?? "")),
+      addJournalBlock(
+        "Deliberation Revision",
+        String(experience.deliberation_revision ?? ""),
+      ),
+      addJournalBlock(
+        "Readiness Basis",
+        (experience.readiness_basis || []).join("\n"),
+      ),
+      addJournalBlock(
+        "Candidate Evidence Preserved",
+        (experience.candidate_evidence || []).join("\n"),
+      ),
+      addJournalBlock(
+        "Superseded Evidence Preserved",
+        (experience.superseded_evidence || []).join("\n"),
+      ),
+      addJournalBlock("Status", displayLabel(experience.status || "committed")),
+    );
+    return;
+  }
+
   if (entry.kind === "memory_revision") {
     const diff = document.createElement("div");
     diff.className = "journal-diff";
