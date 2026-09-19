@@ -83,6 +83,52 @@
               </div>
               <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
+
+            <div class="memory-search">
+              <div class="search-field search-wide">
+                <label for="memorySearch">Search</label>
+                <input id="memorySearch" type="search" placeholder="Content, grounding, or associations">
+              </div>
+              <div class="search-field">
+                <label for="memoryClassFilter">Memory Class</label>
+                <select id="memoryClassFilter">
+                  <option value="">All Classes</option>
+                  <option value="working">Working</option>
+                  <option value="episodic">Episodic</option>
+                  <option value="semantic">Semantic</option>
+                  <option value="procedural">Procedural</option>
+                  <option value="identity">Identity</option>
+                  <option value="reflective">Reflective</option>
+                </select>
+              </div>
+              <div class="search-field">
+                <label for="associationFilter">Association</label>
+                <input id="associationFilter" type="search" placeholder="Association contains…">
+              </div>
+              <div class="search-field">
+                <label for="groundingFilter">Grounding</label>
+                <input id="groundingFilter" type="search" placeholder="Grounding contains…">
+              </div>
+              <div class="search-field">
+                <label for="formedFrom">Formed From</label>
+                <input id="formedFrom" type="date">
+              </div>
+              <div class="search-field">
+                <label for="formedTo">Formed Through</label>
+                <input id="formedTo" type="date">
+              </div>
+              <div class="search-field">
+                <label for="memorySort">Sort</label>
+                <select id="memorySort">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+              </div>
+              <button id="clearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
+            </div>
+            <div class="search-summary">
+              <span id="memoryResultCount">0 Memories</span>
+            </div>
             <div id="memoryList" class="memory-list"></div>
           </article>
         </div>
@@ -119,6 +165,64 @@
               The portal does not select or own a reasoning vendor. The connected MCP host supplies reasoning;
               this system preserves identity, memory, and cognitive history.
             </p>
+          </article>
+
+
+          <article class="panel admin-memory-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">MEMORY ADMINISTRATION</p>
+                <h3>Search & Manage Durable Memory</h3>
+              </div>
+              <span id="adminAuthorizationState" class="mini-status">Checking…</span>
+            </div>
+            <div class="memory-search">
+              <div class="search-field search-wide">
+                <label for="adminMemorySearch">Search</label>
+                <input id="adminMemorySearch" type="search" placeholder="Content, grounding, or associations">
+              </div>
+              <div class="search-field">
+                <label for="adminMemoryClassFilter">Memory Class</label>
+                <select id="adminMemoryClassFilter">
+                  <option value="">All Classes</option>
+                  <option value="working">Working</option>
+                  <option value="episodic">Episodic</option>
+                  <option value="semantic">Semantic</option>
+                  <option value="procedural">Procedural</option>
+                  <option value="identity">Identity</option>
+                  <option value="reflective">Reflective</option>
+                </select>
+              </div>
+              <div class="search-field">
+                <label for="adminAssociationFilter">Association</label>
+                <input id="adminAssociationFilter" type="search" placeholder="Association contains…">
+              </div>
+              <div class="search-field">
+                <label for="adminGroundingFilter">Grounding</label>
+                <input id="adminGroundingFilter" type="search" placeholder="Grounding contains…">
+              </div>
+              <div class="search-field">
+                <label for="adminFormedFrom">Formed From</label>
+                <input id="adminFormedFrom" type="date">
+              </div>
+              <div class="search-field">
+                <label for="adminFormedTo">Formed Through</label>
+                <input id="adminFormedTo" type="date">
+              </div>
+              <div class="search-field">
+                <label for="adminMemorySort">Sort</label>
+                <select id="adminMemorySort">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+              </div>
+              <button id="adminClearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
+            </div>
+            <div class="search-summary">
+              <span id="adminMemoryResultCount">0 Memories</span>
+              <span>Open a memory to edit its persisted record.</span>
+            </div>
+            <div id="adminMemoryList" class="memory-list"></div>
           </article>
 
           <article class="panel admin-summary">
@@ -161,6 +265,40 @@
         <span class="inspector-label">Associations</span>
         <div id="inspectorAssociations" class="record-list"></div>
       </div>
+
+      <div id="memoryEditActions" class="inspector-section hidden">
+        <button id="editMemoryButton" class="primary-button" type="button">Edit Memory</button>
+      </div>
+
+      <form id="memoryEditForm" class="memory-edit-form hidden">
+        <div class="inspector-section">
+          <label class="inspector-label" for="editMemoryContent">Content</label>
+          <textarea id="editMemoryContent" rows="5" required></textarea>
+        </div>
+        <div class="inspector-section">
+          <label class="inspector-label" for="editMemoryClass">Memory Class</label>
+          <select id="editMemoryClass">
+            <option value="working">Working</option>
+            <option value="episodic">Episodic</option>
+            <option value="semantic">Semantic</option>
+            <option value="procedural">Procedural</option>
+            <option value="identity">Identity</option>
+            <option value="reflective">Reflective</option>
+          </select>
+        </div>
+        <div class="inspector-section">
+          <label class="inspector-label" for="editAssociations">Associations</label>
+          <textarea id="editAssociations" rows="4" placeholder="One association per line"></textarea>
+        </div>
+        <div class="inspector-section">
+          <label class="inspector-label" for="editGrounding">Grounding</label>
+          <textarea id="editGrounding" rows="4" placeholder="One grounding source per line"></textarea>
+        </div>
+        <div class="edit-actions">
+          <button id="cancelMemoryEdit" class="secondary-button" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Save Changes</button>
+        </div>
+      </form>
 
       <div class="inspector-section raw-section">
         <span class="inspector-label">Raw Record Returned by the Mind</span>
