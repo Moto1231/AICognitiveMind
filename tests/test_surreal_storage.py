@@ -129,6 +129,87 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(total, 1)
         self.assertEqual(page, [tension])
 
+        reassessment = JournalEntry(
+            kind=JournalKind.TENSION,
+            experience={
+                "phase": "reassessment",
+                "status": "unresolved",
+                "subject": "deployment",
+                "attribute": "date",
+                "competing_values": {
+                    "existing": "October 1",
+                    "proposed": "October 8",
+                },
+                "current_evidence": [
+                    {
+                        "query": "release calendar",
+                        "response": "The release board lists October 8.",
+                        "articles": [],
+                        "appraisal": {
+                            "confidence": 0.9,
+                            "weight": 0.6,
+                            "provenance": [
+                                {
+                                    "source": "release board",
+                                    "context": "current calendar",
+                                    "condition": "published",
+                                }
+                            ],
+                            "basis": [],
+                        },
+                        "semantic_interpretation": {
+                            "subject": "deployment",
+                            "attribute": "date",
+                            "value": "October 8",
+                        },
+                    }
+                ],
+                "deliberation": {
+                    "subject": "deployment",
+                    "attribute": "date",
+                    "existing_value": "October 1",
+                    "proposed_value": "October 8",
+                    "revision": 2,
+                    "trigger": "current_evidence_reassessment",
+                    "current_evidence_considered": 1,
+                    "current_existing_support_count": 0,
+                    "current_proposed_support_count": 1,
+                    "existing_support_count": 1,
+                    "proposed_support_count": 2,
+                    "provenance_relationship": "no_overlap_observed",
+                    "existing_provenance_depth": 1,
+                    "proposed_provenance_depth": 1,
+                    "appraisal_gaps": [],
+                    "context_observations": [],
+                    "investigation_questions": [
+                        "Seek independent corroboration for the existing value."
+                    ],
+                },
+            },
+        )
+        await store.append(
+            reassessment,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        evidence_page, evidence_total = await store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="release board",
+        )
+        self.assertEqual(evidence_total, 1)
+        self.assertEqual(evidence_page, [reassessment])
+
+        phase_page, phase_total = await store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="reassessment",
+        )
+        self.assertEqual(phase_total, 1)
+        self.assertEqual(phase_page, [reassessment])
+
     async def test_memory_searches_full_collection_and_replaces_exact_document(self) -> None:
         store = SurrealMemoryStore(self.runtime.database)
         base = datetime(2026, 9, 18, 12, tzinfo=UTC)
