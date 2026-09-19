@@ -121,6 +121,7 @@ class MongoJournalStore:
                 {"experience.appraisals.proposed.provenance.condition": {"$regex": literal, "$options": "i"}},
                 {"experience.appraisals.proposed.basis": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.provenance_relationship": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.trigger": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.appraisal_gaps": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.context_observations": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.investigation_questions": {"$regex": literal, "$options": "i"}},
