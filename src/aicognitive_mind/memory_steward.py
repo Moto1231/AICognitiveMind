@@ -619,34 +619,46 @@ def _deliberate_tension(
                 "Immediate-source conditions differ; determine whether source condition affects applicability."
             )
 
+    finding = _latest_tension_finding(tension, tuple(relevant_current_evidence))
     questions: list[str] = []
     if appraisal_gaps:
         questions.append(
             "Appraise missing evidence for provenance, Confidence, and Weight before attempting resolution."
         )
-    if provenance_relationship == "overlap_detected":
+
+    if finding is None or finding.provenance_independence == "unknown":
+        if provenance_relationship == "overlap_detected":
+            questions.append(
+                "Trace the shared provenance upstream to determine whether the evidence is independent or repeated reporting."
+            )
+        elif provenance_relationship == "no_overlap_observed":
+            questions.append(
+                "Verify whether the apparently separate provenance chains are genuinely independent."
+            )
+        else:
+            questions.append(
+                "Establish enough provenance to compare the competing evidence responsibly."
+            )
+    elif finding.provenance_independence == "shared_provenance":
         questions.append(
-            "Trace the shared provenance upstream to determine whether the evidence is independent or repeated reporting."
+            "Determine whether shared provenance prevents treating the evidence as independent corroboration."
         )
-    elif provenance_relationship == "no_overlap_observed":
-        questions.append(
-            "Verify whether the apparently separate provenance chains are genuinely independent."
-        )
-    else:
-        questions.append(
-            "Establish enough provenance to compare the competing evidence responsibly."
-        )
-    if context_observations:
-        questions.append(
-            "Determine whether the competing values apply to different contexts or conditions."
-        )
+
+    if finding is None or finding.contextual_relationship == "unknown":
+        if context_observations:
+            questions.append(
+                "Determine whether the competing values apply to different contexts or conditions."
+            )
+
     if existing_support_count <= 1:
         questions.append("Seek independent corroboration for the existing value.")
     if proposed_support_count <= 1:
         questions.append("Seek independent corroboration for the proposed value.")
-    questions.append(
-        "Check whether the competing values can both be valid at different times before treating the tension as contradiction."
-    )
+
+    if finding is None or finding.temporal_relationship == "unknown":
+        questions.append(
+            "Check whether the competing values can both be valid at different times before treating the tension as contradiction."
+        )
 
     revision = (prior_deliberation.revision + 1) if prior_deliberation else 1
     trigger = (
@@ -670,7 +682,7 @@ def _deliberate_tension(
         existing_profile=existing_profile,
         proposed_profile=proposed_profile,
         appraisal_gaps=tuple(appraisal_gaps),
-        finding=_latest_tension_finding(tension, current_evidence),
+        finding=finding,
     )
     return EvidenceDeliberation(
         subject=tension.subject,
@@ -1269,6 +1281,45 @@ class MemoryStewardTool:
             parts.append(
                 "Investigation guidance: " + " | ".join(investigation_questions)
             )
+
+        readiness_notes: list[str] = []
+        for memory in memories:
+            seen_readiness: set[tuple[str, str, str, str]] = set()
+            for artifact in reversed(memory.artifacts):
+                if artifact.kind != _EVIDENCE_DELIBERATION_KIND:
+                    continue
+                payload = artifact.payload
+                key = (
+                    _normalized_semantic_value(payload.get("subject")),
+                    _normalized_semantic_value(payload.get("attribute")),
+                    _normalized_semantic_value(payload.get("existing_value")),
+                    _normalized_semantic_value(payload.get("proposed_value")),
+                )
+                if key in seen_readiness:
+                    continue
+                seen_readiness.add(key)
+                readiness = payload.get("resolution_readiness")
+                if not isinstance(readiness, dict):
+                    continue
+                status = str(readiness.get("status", "blocked"))
+                candidate = readiness.get("candidate_value")
+                if status == "candidate_ready":
+                    readiness_notes.append(
+                        f"Candidate ready for later belief transition: {candidate}"
+                    )
+                elif status == "reframe_required":
+                    readiness_notes.append(
+                        "Belief reframe required: competing values apply to different time/context."
+                    )
+                else:
+                    blockers = readiness.get("blockers", [])
+                    if blockers:
+                        readiness_notes.append(
+                            "Resolution blocked: " + "; ".join(str(item) for item in blockers)
+                        )
+        if readiness_notes:
+            parts.append("Resolution readiness: " + " | ".join(readiness_notes))
+
         if not parts:
             parts.append("No materially related durable memory or prior experience was found.")
         return "\n".join(parts)
