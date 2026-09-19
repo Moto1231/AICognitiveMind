@@ -1116,6 +1116,14 @@ class MemoryStewardTool:
                 ),
                 recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
             )
+        for event in self._transition_events:
+            await self._journal.append(
+                JournalEntry(
+                    kind=JournalKind.BELIEF_TRANSITION,
+                    experience=event,
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+            )
         self._completed = True
         return MemoryStewardTrace(
             recalled_context=brief,
@@ -1672,9 +1680,19 @@ class MemoryStewardTool:
         experiences: tuple[RecalledExperience, ...],
     ) -> str:
         parts: list[str] = []
+        current_beliefs = _latest_current_beliefs(memories)
         if memories:
             parts.append(
                 "Established memory: " + " | ".join(memory.content for memory in memories)
+            )
+        if current_beliefs:
+            parts.append(
+                "Current belief: "
+                + " | ".join(
+                    f"{payload.get('subject')} · {payload.get('attribute')} = {payload.get('to_value')} "
+                    f"(superseded {payload.get('from_value')})"
+                    for payload in current_beliefs.values()
+                )
             )
         if experiences:
             parts.append(
