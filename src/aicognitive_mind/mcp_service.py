@@ -12,7 +12,11 @@ from aicognitive_mind.domain import (
     MemoryClass,
     MindIdentity,
 )
-from aicognitive_mind.memory_steward import MemoryArtifactProposal, MemoryStewardTool
+from aicognitive_mind.memory_steward import (
+    MemoryArtifactProposal,
+    MemoryStewardTool,
+    ResearchObservation,
+)
 from aicognitive_mind.prompts import (
     CONSCIOUS_MEMORY_STEWARD_SYSTEM_PROMPT,
     CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
@@ -118,6 +122,7 @@ class CognitiveMcpService:
         user_message: str,
         response_text: str,
         proposed_memories: tuple[MemoryProposal, ...] = (),
+        current_evidence: tuple[ResearchObservation, ...] = (),
     ) -> dict[str, Any]:
         """Let the Steward review proposed learning, commit accepted memory, and journal the experience."""
         mind = await self._require_mind()
@@ -128,6 +133,14 @@ class CognitiveMcpService:
             journal=self._journal,
         )
         await steward.invoke({"action": "recall", "focus": user_message})
+
+        for evidence in current_evidence:
+            await steward.invoke(
+                {
+                    "action": "consider_evidence",
+                    **evidence.model_dump(mode="json"),
+                }
+            )
 
         decisions: list[dict[str, Any]] = []
         for proposal in proposed_memories:
