@@ -1,6 +1,8 @@
 name: Canonical Atlas
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       operation:
@@ -52,7 +54,7 @@ jobs:
           fi
 
       - name: Check canonical Atlas
-        if: ${{ inputs.operation == 'check' }}
+        if: ${{ github.event_name == 'push' || inputs.operation == 'check' }}
         env:
           MONGODB_URI: ${{ secrets.CANONICAL_MONGODB_URI }}
           MONGODB_DATABASE: ai_cognitive_mind
@@ -60,17 +62,20 @@ jobs:
         run: python scripts/atlas_canonical.py check
 
       - name: Initialize canonical Atlas Mind
-        if: ${{ inputs.operation == 'genesis' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'genesis' }}
         env:
           MONGODB_URI: ${{ secrets.CANONICAL_MONGODB_URI }}
           MONGODB_DATABASE: ai_cognitive_mind
           STORAGE_PROVIDER: mongo
           MIND_SELF_NAME: ${{ inputs.self_name }}
         run: |
-          python scripts/atlas_canonical.py genesis             --self-name "$MIND_SELF_NAME"             --value "Understanding before Recommending"             --value "Preserve continuity of identity"
+          python scripts/atlas_canonical.py genesis \
+            --self-name "$MIND_SELF_NAME" \
+            --value "Understanding before Recommending" \
+            --value "Preserve continuity of identity"
 
       - name: Verify canonical Atlas after genesis
-        if: ${{ inputs.operation == 'genesis' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'genesis' }}
         env:
           MONGODB_URI: ${{ secrets.CANONICAL_MONGODB_URI }}
           MONGODB_DATABASE: ai_cognitive_mind
