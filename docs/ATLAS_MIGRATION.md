@@ -17,6 +17,12 @@ collections are empty. This prevents accidental merging of two identity historie
 MongoDB `_id` values are preserved as storage-level implementation details. They remain
 outside the cognitive domain model.
 
+## Back up before moving
+
+Create and verify a portable backup before changing canonical storage. Follow
+[`MIND_BACKUP.md`](MIND_BACKUP.md), copy the archive out of the source environment, and keep it
+private. The archive contains identity and memory data and is not encrypted.
+
 ## Move the existing Mind to Atlas
 
 Resume or create the Atlas deployment and obtain its private MongoDB connection string.
@@ -35,6 +41,9 @@ python scripts/migrate_mongo.py
 
 The script pings both databases, verifies the one-Mind invariant, verifies that the Atlas target
 is empty, copies all cognitive collections, and checks the copied counts.
+
+If the original database is no longer reachable but a verified portable backup exists, use the
+restore procedure in [`MIND_BACKUP.md`](MIND_BACKUP.md).
 
 ## Use Atlas as the canonical Mind
 
