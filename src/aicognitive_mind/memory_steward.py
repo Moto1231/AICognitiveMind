@@ -248,7 +248,7 @@ class BeliefReframeDecision(BaseModel):
     reason: str
     subject: str
     attribute: str
-    relationship: Literal["temporal", "contextual"] | None = None
+    relationship: Literal["temporal", "contextual", "temporal_contextual"] | None = None
     existing_value: Any = None
     proposed_value: Any = None
     existing_scope: str | None = None
@@ -948,6 +948,83 @@ def _deliberation_closed_by_transition(
     )
 
 
+def _reframe_matches_tension(
+    payload: dict[str, Any],
+    tension: SemanticTension,
+) -> bool:
+    if payload.get("status") != "committed":
+        return False
+    if (
+        _normalized_semantic_value(payload.get("subject"))
+        != _normalized_semantic_value(tension.subject)
+        or _normalized_semantic_value(payload.get("attribute"))
+        != _normalized_semantic_value(tension.attribute)
+    ):
+        return False
+    reframed = {
+        _normalized_semantic_value(payload.get("existing_value")),
+        _normalized_semantic_value(payload.get("proposed_value")),
+    }
+    competing = {
+        _normalized_semantic_value(tension.existing_value),
+        _normalized_semantic_value(tension.proposed_value),
+    }
+    return reframed == competing
+
+
+def _tension_has_committed_reframe(
+    memory: DurableMemory,
+    tension: SemanticTension,
+) -> bool:
+    return any(
+        artifact.kind == _BELIEF_REFRAME_KIND
+        and _reframe_matches_tension(artifact.payload, tension)
+        for artifact in memory.artifacts
+    )
+
+
+def _latest_belief_reframes(
+    memories: tuple[DurableMemory, ...] | list[DurableMemory],
+) -> dict[tuple[str, str, str, str], dict[str, Any]]:
+    reframes: dict[tuple[str, str, str, str], tuple[Any, dict[str, Any]]] = {}
+    for memory in memories:
+        for artifact in memory.artifacts:
+            if artifact.kind != _BELIEF_REFRAME_KIND:
+                continue
+            payload = artifact.payload
+            if payload.get("status") != "committed":
+                continue
+            key = (
+                _normalized_semantic_value(payload.get("subject")),
+                _normalized_semantic_value(payload.get("attribute")),
+                _normalized_semantic_value(payload.get("existing_value")),
+                _normalized_semantic_value(payload.get("proposed_value")),
+            )
+            previous = reframes.get(key)
+            if previous is None or artifact.formed_at > previous[0]:
+                reframes[key] = (artifact.formed_at, payload)
+    return {key: payload for key, (_, payload) in reframes.items()}
+
+
+def _deliberation_closed_by_reframe(
+    deliberation: EvidenceDeliberation,
+    reframes: dict[tuple[str, str, str, str], dict[str, Any]],
+) -> bool:
+    if deliberation.subject is None or deliberation.attribute is None:
+        return False
+    key = (
+        _normalized_semantic_value(deliberation.subject),
+        _normalized_semantic_value(deliberation.attribute),
+        _normalized_semantic_value(deliberation.existing_value),
+        _normalized_semantic_value(deliberation.proposed_value),
+    )
+    reframe = reframes.get(key)
+    return (
+        reframe is not None
+        and int(reframe.get("deliberation_revision", 0)) >= deliberation.revision
+    )
+
+
 def _materialize_artifact(proposal: MemoryArtifactProposal) -> MemoryArtifact:
     payload = proposal.payload
     if proposal.kind == _EVIDENCE_APPRAISAL_KIND:
@@ -983,6 +1060,8 @@ class MemoryStewardTool:
         ] = []
         self._belief_transitions: list[BeliefTransitionDecision] = []
         self._transition_events: list[dict[str, Any]] = []
+        self._belief_reframes: list[BeliefReframeDecision] = []
+        self._reframe_events: list[dict[str, Any]] = []
         self._completed = False
 
     @property
@@ -1037,6 +1116,14 @@ class MemoryStewardTool:
             return {
                 "status": "belief_transition_considered",
                 **transition.model_dump(mode="json"),
+            }
+
+        if isinstance(call, ReframeBeliefCall):
+            reframe = await self._consider_belief_reframe(call)
+            self._belief_reframes.append(reframe)
+            return {
+                "status": "belief_reframe_considered",
+                **reframe.model_dump(mode="json"),
             }
 
         decision = await self._consider_memory(call)
@@ -1154,6 +1241,14 @@ class MemoryStewardTool:
                 ),
                 recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
             )
+        for event in self._reframe_events:
+            await self._journal.append(
+                JournalEntry(
+                    kind=JournalKind.BELIEF_REFRAME,
+                    experience=event,
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+            )
         self._completed = True
         return MemoryStewardTrace(
             recalled_context=brief,
@@ -1161,6 +1256,7 @@ class MemoryStewardTool:
             memory_decisions=tuple(self._decisions),
             tension_reassessments=tuple(self._tension_reassessments),
             belief_transitions=tuple(self._belief_transitions),
+            belief_reframes=tuple(self._belief_reframes),
         )
 
     async def _recall(self, requested_focus: str) -> MemoryBrief:
@@ -1246,7 +1342,10 @@ class MemoryStewardTool:
                         else None
                     ),
                 )
-                if _tension_has_committed_transition(replacement, tension):
+                if (
+                    _tension_has_committed_transition(replacement, tension)
+                    or _tension_has_committed_reframe(replacement, tension)
+                ):
                     continue
 
                 semantic_key = (
