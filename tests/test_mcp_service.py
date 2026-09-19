@@ -297,7 +297,7 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         tension = completed["memory_decisions"][0]["tensions"][0]
         deliberation = tension["deliberation"]
         self.assertEqual(deliberation["revision"], 1)
-        self.assertEqual(deliberation["trigger"], "current_evidence_reassessment")
+        self.assertEqual(deliberation["trigger"], "tension_detected")
         self.assertEqual(deliberation["proposed_support_count"], 2)
         self.assertEqual(deliberation["current_proposed_support_count"], 1)
         self.assertEqual(completed["tension_reassessments"], [])
