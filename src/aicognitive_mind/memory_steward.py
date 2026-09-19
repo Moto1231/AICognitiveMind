@@ -69,6 +69,8 @@ class TensionInvestigationFinding(BaseModel):
         "unknown",
     ] = "unknown"
     basis: tuple[str, ...] = Field(min_length=1)
+    existing_scope: str | None = None
+    proposed_scope: str | None = None
 
 
 class ResearchObservation(BaseModel):
@@ -116,8 +118,20 @@ class TransitionBeliefCall(BaseModel):
     candidate_value: Any
 
 
+class ReframeBeliefCall(BaseModel):
+    action: Literal["reframe_belief"]
+    subject: str = Field(min_length=1)
+    attribute: str = Field(min_length=1)
+    existing_value: Any
+    proposed_value: Any
+
+
 MemoryStewardCall = Annotated[
-    RecallCall | ConsiderEvidenceCall | ProposeMemoryCall | TransitionBeliefCall,
+    RecallCall
+    | ConsiderEvidenceCall
+    | ProposeMemoryCall
+    | TransitionBeliefCall
+    | ReframeBeliefCall,
     Field(discriminator="action"),
 ]
 _CALL_ADAPTER = TypeAdapter(MemoryStewardCall)
@@ -229,12 +243,26 @@ class BeliefTransitionDecision(BaseModel):
     deliberation_revision: int | None = None
 
 
+class BeliefReframeDecision(BaseModel):
+    accepted: bool
+    reason: str
+    subject: str
+    attribute: str
+    relationship: Literal["temporal", "contextual", "temporal_contextual"] | None = None
+    existing_value: Any = None
+    proposed_value: Any = None
+    existing_scope: str | None = None
+    proposed_scope: str | None = None
+    deliberation_revision: int | None = None
+
+
 class MemoryStewardTrace(BaseModel):
     recalled_context: MemoryBrief
     evidence_considered: tuple[ResearchObservation, ...] = ()
     memory_decisions: tuple[MemoryDecision, ...] = ()
     tension_reassessments: tuple[SemanticTension, ...] = ()
     belief_transitions: tuple[BeliefTransitionDecision, ...] = ()
+    belief_reframes: tuple[BeliefReframeDecision, ...] = ()
 
 
 class MemoryStewardNotConsultedError(RuntimeError):
@@ -248,6 +276,8 @@ _EVIDENCE_APPRAISAL_KIND = "evidence_appraisal"
 _EVIDENCE_DELIBERATION_KIND = "evidence_deliberation"
 _BELIEF_TRANSITION_KIND = "belief_transition"
 _BELIEF_STATUS_KIND = "belief_status"
+_BELIEF_REFRAME_KIND = "belief_reframe"
+_SCOPED_BELIEF_KIND = "scoped_belief"
 
 
 def _normalized_semantic_value(value: Any) -> str:
@@ -918,6 +948,83 @@ def _deliberation_closed_by_transition(
     )
 
 
+def _reframe_matches_tension(
+    payload: dict[str, Any],
+    tension: SemanticTension,
+) -> bool:
+    if payload.get("status") != "committed":
+        return False
+    if (
+        _normalized_semantic_value(payload.get("subject"))
+        != _normalized_semantic_value(tension.subject)
+        or _normalized_semantic_value(payload.get("attribute"))
+        != _normalized_semantic_value(tension.attribute)
+    ):
+        return False
+    reframed = {
+        _normalized_semantic_value(payload.get("existing_value")),
+        _normalized_semantic_value(payload.get("proposed_value")),
+    }
+    competing = {
+        _normalized_semantic_value(tension.existing_value),
+        _normalized_semantic_value(tension.proposed_value),
+    }
+    return reframed == competing
+
+
+def _tension_has_committed_reframe(
+    memory: DurableMemory,
+    tension: SemanticTension,
+) -> bool:
+    return any(
+        artifact.kind == _BELIEF_REFRAME_KIND
+        and _reframe_matches_tension(artifact.payload, tension)
+        for artifact in memory.artifacts
+    )
+
+
+def _latest_belief_reframes(
+    memories: tuple[DurableMemory, ...] | list[DurableMemory],
+) -> dict[tuple[str, str, str, str], dict[str, Any]]:
+    reframes: dict[tuple[str, str, str, str], tuple[Any, dict[str, Any]]] = {}
+    for memory in memories:
+        for artifact in memory.artifacts:
+            if artifact.kind != _BELIEF_REFRAME_KIND:
+                continue
+            payload = artifact.payload
+            if payload.get("status") != "committed":
+                continue
+            key = (
+                _normalized_semantic_value(payload.get("subject")),
+                _normalized_semantic_value(payload.get("attribute")),
+                _normalized_semantic_value(payload.get("existing_value")),
+                _normalized_semantic_value(payload.get("proposed_value")),
+            )
+            previous = reframes.get(key)
+            if previous is None or artifact.formed_at > previous[0]:
+                reframes[key] = (artifact.formed_at, payload)
+    return {key: payload for key, (_, payload) in reframes.items()}
+
+
+def _deliberation_closed_by_reframe(
+    deliberation: EvidenceDeliberation,
+    reframes: dict[tuple[str, str, str, str], dict[str, Any]],
+) -> bool:
+    if deliberation.subject is None or deliberation.attribute is None:
+        return False
+    key = (
+        _normalized_semantic_value(deliberation.subject),
+        _normalized_semantic_value(deliberation.attribute),
+        _normalized_semantic_value(deliberation.existing_value),
+        _normalized_semantic_value(deliberation.proposed_value),
+    )
+    reframe = reframes.get(key)
+    return (
+        reframe is not None
+        and int(reframe.get("deliberation_revision", 0)) >= deliberation.revision
+    )
+
+
 def _materialize_artifact(proposal: MemoryArtifactProposal) -> MemoryArtifact:
     payload = proposal.payload
     if proposal.kind == _EVIDENCE_APPRAISAL_KIND:
@@ -953,6 +1060,8 @@ class MemoryStewardTool:
         ] = []
         self._belief_transitions: list[BeliefTransitionDecision] = []
         self._transition_events: list[dict[str, Any]] = []
+        self._belief_reframes: list[BeliefReframeDecision] = []
+        self._reframe_events: list[dict[str, Any]] = []
         self._completed = False
 
     @property
@@ -1007,6 +1116,14 @@ class MemoryStewardTool:
             return {
                 "status": "belief_transition_considered",
                 **transition.model_dump(mode="json"),
+            }
+
+        if isinstance(call, ReframeBeliefCall):
+            reframe = await self._consider_belief_reframe(call)
+            self._belief_reframes.append(reframe)
+            return {
+                "status": "belief_reframe_considered",
+                **reframe.model_dump(mode="json"),
             }
 
         decision = await self._consider_memory(call)
@@ -1124,6 +1241,14 @@ class MemoryStewardTool:
                 ),
                 recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
             )
+        for event in self._reframe_events:
+            await self._journal.append(
+                JournalEntry(
+                    kind=JournalKind.BELIEF_REFRAME,
+                    experience=event,
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+            )
         self._completed = True
         return MemoryStewardTrace(
             recalled_context=brief,
@@ -1131,6 +1256,7 @@ class MemoryStewardTool:
             memory_decisions=tuple(self._decisions),
             tension_reassessments=tuple(self._tension_reassessments),
             belief_transitions=tuple(self._belief_transitions),
+            belief_reframes=tuple(self._belief_reframes),
         )
 
     async def _recall(self, requested_focus: str) -> MemoryBrief:
@@ -1216,7 +1342,10 @@ class MemoryStewardTool:
                         else None
                     ),
                 )
-                if _tension_has_committed_transition(replacement, tension):
+                if (
+                    _tension_has_committed_transition(replacement, tension)
+                    or _tension_has_committed_reframe(replacement, tension)
+                ):
                     continue
 
                 semantic_key = (
@@ -1301,6 +1430,252 @@ class MemoryStewardTool:
             self._reassessment_events.append((tension, evidence_snapshot))
         self._tension_reassessments.extend(reassessed)
         return reassessed
+
+    async def _consider_belief_reframe(
+        self,
+        call: ReframeBeliefCall,
+    ) -> BeliefReframeDecision:
+        memories = await self._working_memories()
+        semantic_key = (
+            _normalized_semantic_value(call.subject),
+            _normalized_semantic_value(call.attribute),
+        )
+        requested_existing = _normalized_semantic_value(call.existing_value)
+        requested_proposed = _normalized_semantic_value(call.proposed_value)
+
+        latest: tuple[int, DurableMemory, EvidenceDeliberation] | None = None
+        for memory in memories:
+            for artifact in memory.artifacts:
+                if artifact.kind != _EVIDENCE_DELIBERATION_KIND:
+                    continue
+                deliberation = EvidenceDeliberation.model_validate(artifact.payload)
+                if deliberation.subject is None or deliberation.attribute is None:
+                    continue
+                if (
+                    _normalized_semantic_value(deliberation.subject),
+                    _normalized_semantic_value(deliberation.attribute),
+                ) != semantic_key:
+                    continue
+                if (
+                    _normalized_semantic_value(deliberation.existing_value)
+                    != requested_existing
+                    or _normalized_semantic_value(deliberation.proposed_value)
+                    != requested_proposed
+                ):
+                    continue
+                if latest is None or deliberation.revision > latest[0]:
+                    latest = (deliberation.revision, memory, deliberation)
+
+        if latest is None:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason="No matching deliberation exists for this belief reframe.",
+                subject=call.subject,
+                attribute=call.attribute,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+            )
+
+        revision, reframe_memory, deliberation = latest
+        readiness = deliberation.resolution_readiness
+        finding = deliberation.tension_finding
+        if readiness is None or readiness.status != "reframe_required" or finding is None:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason=(
+                    "The latest matching deliberation does not require a belief reframe."
+                ),
+                subject=call.subject,
+                attribute=call.attribute,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                deliberation_revision=revision,
+            )
+
+        existing_scope = finding.existing_scope
+        proposed_scope = finding.proposed_scope
+        if not existing_scope or not proposed_scope:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason=(
+                    "The evidence establishes that reframing is required but does not yet provide explicit scopes for both values."
+                ),
+                subject=call.subject,
+                attribute=call.attribute,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                deliberation_revision=revision,
+            )
+
+        temporal = finding.temporal_relationship == "changed_over_time"
+        contextual = finding.contextual_relationship == "different_contexts"
+        if temporal and contextual:
+            relationship = "temporal_contextual"
+        elif temporal:
+            relationship = "temporal"
+        elif contextual:
+            relationship = "contextual"
+        else:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason="The evidence no longer supports temporal or contextual reframing.",
+                subject=call.subject,
+                attribute=call.attribute,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                deliberation_revision=revision,
+            )
+
+        existing_reframes = _latest_belief_reframes(memories)
+        reframe_key = (
+            semantic_key[0],
+            semantic_key[1],
+            requested_existing,
+            requested_proposed,
+        )
+        committed = existing_reframes.get(reframe_key)
+        if (
+            committed is not None
+            and int(committed.get("deliberation_revision", 0)) >= revision
+        ):
+            return BeliefReframeDecision(
+                accepted=False,
+                reason="This tension has already been reframed at this deliberation revision.",
+                subject=call.subject,
+                attribute=call.attribute,
+                relationship=relationship,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                existing_scope=str(committed.get("existing_scope", existing_scope)),
+                proposed_scope=str(committed.get("proposed_scope", proposed_scope)),
+                deliberation_revision=int(
+                    committed.get("deliberation_revision", revision)
+                ),
+            )
+
+        existing_evidence: list[str] = []
+        proposed_evidence: list[str] = []
+        staged_replacements: list[tuple[DurableMemory, DurableMemory]] = []
+
+        for memory in memories:
+            interpretations = _semantic_interpretations(memory.artifacts)
+            scoped_payload: dict[str, Any] | None = None
+            for signature, payload in interpretations.items():
+                if signature[:2] != semantic_key:
+                    continue
+                if signature[2] == requested_existing:
+                    existing_evidence.append(memory.content)
+                    scoped_payload = {
+                        "subject": call.subject,
+                        "attribute": call.attribute,
+                        "value": payload.get("value"),
+                        "scope": existing_scope,
+                        "relationship": relationship,
+                        "status": "valid_in_scope",
+                        "deliberation_revision": revision,
+                    }
+                    break
+                if signature[2] == requested_proposed:
+                    proposed_evidence.append(memory.content)
+                    scoped_payload = {
+                        "subject": call.subject,
+                        "attribute": call.attribute,
+                        "value": payload.get("value"),
+                        "scope": proposed_scope,
+                        "relationship": relationship,
+                        "status": "valid_in_scope",
+                        "deliberation_revision": revision,
+                    }
+                    break
+
+            artifacts = list(memory.artifacts)
+            if scoped_payload is not None:
+                artifacts.append(
+                    MemoryArtifact(
+                        kind=_SCOPED_BELIEF_KIND,
+                        payload=scoped_payload,
+                    )
+                )
+
+            if memory == reframe_memory:
+                artifacts.append(
+                    MemoryArtifact(
+                        kind=_BELIEF_REFRAME_KIND,
+                        payload={
+                            "status": "committed",
+                            "subject": call.subject,
+                            "attribute": call.attribute,
+                            "relationship": relationship,
+                            "existing_value": call.existing_value,
+                            "existing_scope": existing_scope,
+                            "proposed_value": call.proposed_value,
+                            "proposed_scope": proposed_scope,
+                            "deliberation_revision": revision,
+                            "basis": list(finding.basis),
+                        },
+                    )
+                )
+
+            if tuple(artifacts) != memory.artifacts:
+                staged_replacements.append(
+                    (
+                        memory,
+                        memory.model_copy(update={"artifacts": tuple(artifacts)}),
+                    )
+                )
+
+        if not existing_evidence or not proposed_evidence:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason=(
+                    "Reframe-required deliberation could not be mapped back to both durable evidence sets."
+                ),
+                subject=call.subject,
+                attribute=call.attribute,
+                relationship=relationship,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                existing_scope=existing_scope,
+                proposed_scope=proposed_scope,
+                deliberation_revision=revision,
+            )
+
+        for original, replacement in staged_replacements:
+            self._stage_replacement(original, replacement)
+
+        decision = BeliefReframeDecision(
+            accepted=True,
+            reason=(
+                "Belief reframe accepted; both values remain valid within their evidence-backed scopes."
+            ),
+            subject=call.subject,
+            attribute=call.attribute,
+            relationship=relationship,
+            existing_value=call.existing_value,
+            proposed_value=call.proposed_value,
+            existing_scope=existing_scope,
+            proposed_scope=proposed_scope,
+            deliberation_revision=revision,
+        )
+        self._reframe_events.append(
+            {
+                "source": "conscious_memory_steward",
+                "status": "committed",
+                "subject": call.subject,
+                "attribute": call.attribute,
+                "relationship": relationship,
+                "existing_value": call.existing_value,
+                "existing_scope": existing_scope,
+                "proposed_value": call.proposed_value,
+                "proposed_scope": proposed_scope,
+                "deliberation_revision": revision,
+                "basis": list(finding.basis),
+                "existing_evidence": existing_evidence,
+                "proposed_evidence": proposed_evidence,
+            }
+        )
+        return decision
+
 
     async def _consider_belief_transition(
         self,
@@ -1681,6 +2056,7 @@ class MemoryStewardTool:
     ) -> str:
         parts: list[str] = []
         current_beliefs = _latest_current_beliefs(memories)
+        current_reframes = _latest_belief_reframes(memories)
         if memories:
             parts.append(
                 "Established memory: " + " | ".join(memory.content for memory in memories)
@@ -1692,6 +2068,16 @@ class MemoryStewardTool:
                     f"{payload.get('subject')} · {payload.get('attribute')} = {payload.get('to_value')} "
                     f"(superseded {payload.get('from_value')})"
                     for payload in current_beliefs.values()
+                )
+            )
+        if current_reframes:
+            parts.append(
+                "Scoped belief: "
+                + " | ".join(
+                    f"{payload.get('subject')} · {payload.get('attribute')} = "
+                    f"{payload.get('existing_value')} [{payload.get('existing_scope')}] ; "
+                    f"{payload.get('proposed_value')} [{payload.get('proposed_scope')}]"
+                    for payload in current_reframes.values()
                 )
             )
         if experiences:
@@ -1712,7 +2098,10 @@ class MemoryStewardTool:
                     continue
                 payload = artifact.payload
                 deliberation = EvidenceDeliberation.model_validate(payload)
-                if _deliberation_closed_by_transition(deliberation, current_beliefs):
+                if (
+                    _deliberation_closed_by_transition(deliberation, current_beliefs)
+                    or _deliberation_closed_by_reframe(deliberation, current_reframes)
+                ):
                     continue
                 key = (
                     _normalized_semantic_value(payload.get("subject")),
@@ -1739,7 +2128,10 @@ class MemoryStewardTool:
                     continue
                 payload = artifact.payload
                 deliberation = EvidenceDeliberation.model_validate(payload)
-                if _deliberation_closed_by_transition(deliberation, current_beliefs):
+                if (
+                    _deliberation_closed_by_transition(deliberation, current_beliefs)
+                    or _deliberation_closed_by_reframe(deliberation, current_reframes)
+                ):
                     continue
                 key = (
                     _normalized_semantic_value(payload.get("subject")),

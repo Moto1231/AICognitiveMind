@@ -720,6 +720,39 @@ function renderJournalDetail(entry) {
     return;
   }
 
+  if (entry.kind === "belief_reframe") {
+    el.journalStructuredDetail.append(
+      addJournalBlock(
+        "Semantic Slot",
+        [experience.subject, experience.attribute].filter(Boolean).join(" · "),
+      ),
+      addJournalBlock("Relationship", displayLabel(experience.relationship || "")),
+      addJournalBlock(
+        "Existing Scoped Belief",
+        `${String(experience.existing_value ?? "")} [${experience.existing_scope || "—"}]`,
+      ),
+      addJournalBlock(
+        "Proposed Scoped Belief",
+        `${String(experience.proposed_value ?? "")} [${experience.proposed_scope || "—"}]`,
+      ),
+      addJournalBlock(
+        "Deliberation Revision",
+        String(experience.deliberation_revision ?? ""),
+      ),
+      addJournalBlock("Evidence Basis", (experience.basis || []).join("\n")),
+      addJournalBlock(
+        "Existing Evidence Preserved",
+        (experience.existing_evidence || []).join("\n"),
+      ),
+      addJournalBlock(
+        "Proposed Evidence Preserved",
+        (experience.proposed_evidence || []).join("\n"),
+      ),
+      addJournalBlock("Status", displayLabel(experience.status || "committed")),
+    );
+    return;
+  }
+
   if (entry.kind === "belief_transition") {
     el.journalStructuredDetail.append(
       addJournalBlock(

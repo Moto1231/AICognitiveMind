@@ -2,6 +2,7 @@ import json
 import unittest
 
 from aicognitive_mind.mcp_service import (
+    BeliefReframeProposal,
     BeliefTransitionProposal,
     CognitiveMcpService,
     MemoryProposal,
@@ -750,6 +751,8 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
                         basis=(
                             "The ownership change record gives an effective-date transition from Alice to Bob.",
                         ),
+                        existing_scope="before September 1",
+                        proposed_scope="on or after September 1",
                     ),
                 ),
             ),
@@ -772,6 +775,356 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             "Check whether the competing values can both be valid at different times",
             later["recalled_context"]["summary"],
         )
+
+        reframed = await self.service.complete_interaction(
+            user_message="Represent the ownership change with its established time scopes.",
+            response_text="Ownership is now represented as a scoped temporal belief.",
+            proposed_memories=(),
+            belief_reframes=(
+                BeliefReframeProposal(
+                    subject="service",
+                    attribute="owner",
+                    existing_value="Alice",
+                    proposed_value="Bob",
+                ),
+            ),
+        )
+        decision = reframed["belief_reframe_decisions"][0]
+        self.assertTrue(decision["accepted"])
+        self.assertEqual(decision["relationship"], "temporal")
+        self.assertEqual(decision["existing_scope"], "before September 1")
+        self.assertEqual(decision["proposed_scope"], "on or after September 1")
+
+        memories = await self.memory.read()
+        self.assertEqual(len(memories), 2)
+        alice = next(memory for memory in memories if memory.content.endswith("Alice."))
+        bob = next(memory for memory in memories if memory.content.endswith("Bob."))
+        alice_scopes = [
+            artifact.payload
+            for artifact in alice.artifacts
+            if artifact.kind == "scoped_belief"
+        ]
+        bob_scopes = [
+            artifact.payload
+            for artifact in bob.artifacts
+            if artifact.kind == "scoped_belief"
+        ]
+        self.assertEqual(alice_scopes[-1]["status"], "valid_in_scope")
+        self.assertEqual(alice_scopes[-1]["scope"], "before September 1")
+        self.assertEqual(bob_scopes[-1]["scope"], "on or after September 1")
+        self.assertFalse(
+            any(
+                artifact.kind == "belief_status"
+                for memory in memories
+                for artifact in memory.artifacts
+            )
+        )
+
+        reframe_entries = [
+            entry for entry in await self.journal.read()
+            if entry.kind.value == "belief_reframe"
+        ]
+        self.assertEqual(len(reframe_entries), 1)
+        self.assertEqual(reframe_entries[0].experience["relationship"], "temporal")
+
+        duplicate = await self.service.complete_interaction(
+            user_message="Reframe the same ownership history again.",
+            response_text="That scoped belief is already committed.",
+            proposed_memories=(),
+            belief_reframes=(
+                BeliefReframeProposal(
+                    subject="service",
+                    attribute="owner",
+                    existing_value="Alice",
+                    proposed_value="Bob",
+                ),
+            ),
+        )
+        self.assertFalse(duplicate["belief_reframe_decisions"][0]["accepted"])
+        self.assertIn("already been reframed", duplicate["belief_reframe_decisions"][0]["reason"])
+        self.assertEqual(
+            len([
+                entry for entry in await self.journal.read()
+                if entry.kind.value == "belief_reframe"
+            ]),
+            1,
+        )
+
+        recalled = await self.service.begin_interaction("Who owns the service?")
+        summary = recalled["recalled_context"]["summary"]
+        self.assertIn(
+            "Scoped belief: service · owner = Alice [before September 1] ; Bob [on or after September 1]",
+            summary,
+        )
+        self.assertNotIn("Belief reframe required", summary)
+        self.assertNotIn("Resolution readiness:", summary)
+
+    async def test_belief_reframe_rejects_missing_scopes_without_mutation(self) -> None:
+        await self.service.complete_interaction(
+            user_message="The service region is east.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The service region is east.",
+                    grounding=("historical record",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "service",
+                                "attribute": "region",
+                                "value": "east",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.8,
+                                "weight": 0.8,
+                                "provenance": [
+                                    {
+                                        "source": "historical record",
+                                        "context": "service region",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        await self.service.complete_interaction(
+            user_message="The service region is west.",
+            response_text="That creates a tension.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The service region is west.",
+                    grounding=("current record",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "service",
+                                "attribute": "region",
+                                "value": "west",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.9,
+                                "weight": 0.9,
+                                "provenance": [
+                                    {
+                                        "source": "current record",
+                                        "context": "service region",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        await self.service.complete_interaction(
+            user_message="The values changed over time.",
+            response_text="A temporal reframe is required, but the exact scopes are not established.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="region history",
+                    response="The history confirms a change from east to west but gives no effective date.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.9,
+                        weight=0.8,
+                        provenance=(
+                            ProvenanceHop(
+                                source="region history",
+                                context="service region",
+                                condition="incomplete timeline",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="service",
+                        attribute="region",
+                        value="west",
+                    ),
+                    tension_finding=TensionInvestigationFinding(
+                        subject="service",
+                        attribute="region",
+                        existing_value="east",
+                        proposed_value="west",
+                        provenance_independence="verified_independent",
+                        temporal_relationship="changed_over_time",
+                        contextual_relationship="same_context",
+                        basis=("The region changed, but the effective boundary is unknown.",),
+                    ),
+                ),
+            ),
+        )
+
+        rejected = await self.service.complete_interaction(
+            user_message="Reframe the service region.",
+            response_text="The reframe cannot be committed until both scopes are established.",
+            proposed_memories=(),
+            belief_reframes=(
+                BeliefReframeProposal(
+                    subject="service",
+                    attribute="region",
+                    existing_value="east",
+                    proposed_value="west",
+                ),
+            ),
+        )
+        self.assertFalse(rejected["belief_reframe_decisions"][0]["accepted"])
+        self.assertIn("does not yet provide explicit scopes", rejected["belief_reframe_decisions"][0]["reason"])
+        self.assertFalse(
+            any(
+                artifact.kind in {"belief_reframe", "scoped_belief"}
+                for memory in await self.memory.read()
+                for artifact in memory.artifacts
+            )
+        )
+
+    async def test_contextual_belief_reframe_preserves_simultaneously_valid_values(self) -> None:
+        await self.service.complete_interaction(
+            user_message="Customer A uses approval route Alpha.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The invoice approval route is Alpha.",
+                    grounding=("Customer A configuration",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Alpha",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.9,
+                                "weight": 0.8,
+                                "provenance": [
+                                    {
+                                        "source": "Customer A configuration",
+                                        "context": "Customer A",
+                                        "condition": "active",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        await self.service.complete_interaction(
+            user_message="Customer B uses approval route Beta.",
+            response_text="That creates a semantic tension until context is resolved.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The invoice approval route is Beta.",
+                    grounding=("Customer B configuration",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Beta",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.9,
+                                "weight": 0.8,
+                                "provenance": [
+                                    {
+                                        "source": "Customer B configuration",
+                                        "context": "Customer B",
+                                        "condition": "active",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        assessed = await self.service.complete_interaction(
+            user_message="The routes are customer-specific.",
+            response_text="Both routes are valid in different customer contexts.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="customer configurations",
+                    response="Customer A is Alpha and Customer B is Beta.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.95,
+                        weight=0.9,
+                        provenance=(
+                            ProvenanceHop(
+                                source="configuration comparison",
+                                context="customer implementations",
+                                condition="verified",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="invoice",
+                        attribute="approval_route",
+                        value="Beta",
+                    ),
+                    tension_finding=TensionInvestigationFinding(
+                        subject="invoice",
+                        attribute="approval_route",
+                        existing_value="Alpha",
+                        proposed_value="Beta",
+                        provenance_independence="verified_independent",
+                        temporal_relationship="same_timeframe",
+                        contextual_relationship="different_contexts",
+                        basis=("The routes belong to distinct customer configurations.",),
+                        existing_scope="Customer A",
+                        proposed_scope="Customer B",
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual(
+            assessed["tension_reassessments"][0]["deliberation"]["resolution_readiness"]["status"],
+            "reframe_required",
+        )
+
+        committed = await self.service.complete_interaction(
+            user_message="Reframe the approval route by customer.",
+            response_text="Both routes are now represented in their customer scopes.",
+            proposed_memories=(),
+            belief_reframes=(
+                BeliefReframeProposal(
+                    subject="invoice",
+                    attribute="approval_route",
+                    existing_value="Alpha",
+                    proposed_value="Beta",
+                ),
+            ),
+        )
+        decision = committed["belief_reframe_decisions"][0]
+        self.assertTrue(decision["accepted"])
+        self.assertEqual(decision["relationship"], "contextual")
+
+        recalled = await self.service.begin_interaction("What is the invoice approval route?")
+        self.assertIn("Alpha [Customer A] ; Beta [Customer B]", recalled["recalled_context"]["summary"])
 
     async def _prepare_candidate_ready_deployment(self) -> None:
         await self.service.complete_interaction(
