@@ -1,10 +1,12 @@
 const state = {
   status: null,
   memories: [],
+  journals: [],
   mode: "mind",
   adminPin: sessionStorage.getItem("acm_admin_pin") || "",
   adminAuthorized: false,
   activeMemory: null,
+  activeJournal: null,
 };
 
 const el = {
@@ -51,6 +53,21 @@ const el = {
   adminMemorySort: document.getElementById("adminMemorySort"),
   adminClearMemoryFilters: document.getElementById("adminClearMemoryFilters"),
   adminMemoryResultCount: document.getElementById("adminMemoryResultCount"),
+  journalRefreshButton: document.getElementById("journalRefreshButton"),
+  journalSearch: document.getElementById("journalSearch"),
+  journalKindFilter: document.getElementById("journalKindFilter"),
+  journalFrom: document.getElementById("journalFrom"),
+  journalTo: document.getElementById("journalTo"),
+  journalSort: document.getElementById("journalSort"),
+  clearJournalFilters: document.getElementById("clearJournalFilters"),
+  journalResultCount: document.getElementById("journalResultCount"),
+  journalTimeline: document.getElementById("journalTimeline"),
+  journalInspector: document.getElementById("journalInspector"),
+  closeJournalInspector: document.getElementById("closeJournalInspector"),
+  journalInspectorKind: document.getElementById("journalInspectorKind"),
+  journalInspectorOccurredAt: document.getElementById("journalInspectorOccurredAt"),
+  journalStructuredDetail: document.getElementById("journalStructuredDetail"),
+  journalInspectorRaw: document.getElementById("journalInspectorRaw"),
   initializeOverlay: document.getElementById("initializeOverlay"),
   initializeForm: document.getElementById("initializeForm"),
   initializeName: document.getElementById("initializeName"),
@@ -182,6 +199,7 @@ async function enterAdminMode() {
     if (!allowed) return;
     setMode("admin");
     renderMemoryLists();
+    renderJournalList();
   } catch (error) {
     toast(error.message, true);
   }
@@ -432,6 +450,193 @@ function renderMemoryLists() {
   renderMemoryList(filters.admin, "admin");
 }
 
+
+function journalMatches(entry) {
+  const search = el.journalSearch.value.trim().toLowerCase();
+  const kind = el.journalKindFilter.value;
+  const searchable = `${entry.title || ""} ${entry.preview || ""} ${entry.search_text || ""}`.toLowerCase();
+
+  if (search && !searchable.includes(search)) return false;
+  if (kind && entry.kind !== kind) return false;
+
+  const occurred = new Date(entry.occurred_at);
+  if (el.journalFrom.value) {
+    const from = new Date(`${el.journalFrom.value}T00:00:00`);
+    if (occurred < from) return false;
+  }
+  if (el.journalTo.value) {
+    const to = new Date(`${el.journalTo.value}T23:59:59.999`);
+    if (occurred > to) return false;
+  }
+  return true;
+}
+
+function filteredJournals() {
+  const results = state.journals.filter(journalMatches);
+  results.sort((left, right) => {
+    const delta = new Date(left.occurred_at) - new Date(right.occurred_at);
+    return el.journalSort.value === "oldest" ? delta : -delta;
+  });
+  return results;
+}
+
+function renderJournalList() {
+  if (!el.journalTimeline) return;
+  const entries = filteredJournals();
+  el.journalTimeline.innerHTML = "";
+  el.journalResultCount.textContent =
+    `${entries.length.toLocaleString()} ${entries.length === 1 ? "Experience" : "Experiences"}`;
+
+  if (!entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = state.journals.length
+      ? "No journal experiences match the current filters."
+      : "No journal experiences have been recorded yet.";
+    el.journalTimeline.appendChild(empty);
+    return;
+  }
+
+  for (const entry of entries) {
+    const item = document.createElement("article");
+    item.className = "journal-entry";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    item.setAttribute("aria-label", `Inspect ${entry.title} journal experience`);
+    item.addEventListener("click", () => openJournalInspector(entry));
+    item.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openJournalInspector(entry);
+      }
+    });
+
+    const meta = document.createElement("div");
+    meta.className = "journal-entry-meta";
+    const kind = document.createElement("span");
+    kind.textContent = displayLabel(entry.kind);
+    const occurred = document.createElement("span");
+    occurred.textContent = new Date(entry.occurred_at).toLocaleString();
+    meta.append(kind, occurred);
+
+    const title = document.createElement("div");
+    title.className = "journal-entry-title";
+    title.textContent = entry.title || displayLabel(entry.kind);
+
+    const preview = document.createElement("div");
+    preview.className = "journal-entry-preview";
+    preview.textContent = entry.preview || "No compact preview is available for this historical entry.";
+
+    item.append(meta, title, preview);
+    el.journalTimeline.appendChild(item);
+  }
+}
+
+function addJournalBlock(label, content) {
+  const block = document.createElement("div");
+  block.className = "journal-block";
+  const heading = document.createElement("span");
+  heading.className = "journal-block-label";
+  heading.textContent = label;
+  const value = document.createElement("div");
+  value.className = "journal-block-content";
+  value.textContent = content || "—";
+  block.append(heading, value);
+  return block;
+}
+
+function renderJournalDetail(entry) {
+  el.journalStructuredDetail.innerHTML = "";
+  const experience = entry.experience || {};
+
+  if (entry.kind === "interaction") {
+    el.journalStructuredDetail.append(
+      addJournalBlock("Human Input", experience.input?.content || ""),
+      addJournalBlock("Conscious Response", experience.expression?.content || ""),
+    );
+    return;
+  }
+
+  if (entry.kind === "memory_revision") {
+    const diff = document.createElement("div");
+    diff.className = "journal-diff";
+    diff.append(
+      addJournalBlock("Before", experience.before?.content || JSON.stringify(experience.before || {}, null, 2)),
+      addJournalBlock("After", experience.after?.content || JSON.stringify(experience.after || {}, null, 2)),
+    );
+    el.journalStructuredDetail.append(diff);
+
+    if (experience.source || experience.channel) {
+      el.journalStructuredDetail.append(
+        addJournalBlock(
+          "Revision Source",
+          [experience.source, experience.channel].filter(Boolean).map(displayLabel).join(" · "),
+        ),
+      );
+    }
+    return;
+  }
+
+  if (entry.kind === "initialization") {
+    el.journalStructuredDetail.append(
+      addJournalBlock("Self Name", experience.self_name || ""),
+      addJournalBlock(
+        "Foundational Values",
+        (experience.foundational_values || []).join("\n"),
+      ),
+    );
+    return;
+  }
+
+  el.journalStructuredDetail.append(
+    addJournalBlock("Experience", JSON.stringify(experience, null, 2)),
+  );
+}
+
+async function openJournalInspector(summary) {
+  try {
+    const entry = await api("/v1/portal/journal/detail", {
+      method: "POST",
+      body: JSON.stringify({
+        kind: summary.kind,
+        occurred_at: summary.occurred_at,
+      }),
+    });
+    state.activeJournal = entry;
+    el.journalInspectorKind.textContent = displayLabel(entry.kind);
+    el.journalInspectorOccurredAt.textContent = new Date(entry.occurred_at).toLocaleString();
+    renderJournalDetail(entry);
+    el.journalInspectorRaw.textContent = JSON.stringify(entry, null, 2);
+    el.journalInspector.classList.remove("hidden");
+    el.closeJournalInspector.focus();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function closeJournalInspector() {
+  state.activeJournal = null;
+  el.journalInspector.classList.add("hidden");
+}
+
+function clearJournalFilters() {
+  el.journalSearch.value = "";
+  el.journalKindFilter.value = "";
+  el.journalFrom.value = "";
+  el.journalTo.value = "";
+  el.journalSort.value = "newest";
+  renderJournalList();
+}
+
+async function refreshJournal() {
+  try {
+    state.journals = await api("/v1/portal/journal");
+    renderJournalList();
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
 function clearFilters(config) {
   config.search.value = "";
   config.memoryClass.value = "";
@@ -445,13 +650,16 @@ function clearFilters(config) {
 
 async function refresh() {
   try {
-    const [status, memories] = await Promise.all([
+    const [status, memories, journals] = await Promise.all([
       api("/v1/portal/status"),
       api("/v1/mind/memory"),
+      api("/v1/portal/journal"),
     ]);
     renderStatus(status);
     state.memories = memories;
+    state.journals = journals;
     renderMemoryLists();
+    renderJournalList();
     el.initializeOverlay.classList.add("hidden");
   } catch (error) {
     if (error.status === 404) {
@@ -506,6 +714,7 @@ el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
 el.refreshButton.addEventListener("click", () => refresh());
 el.adminRefreshButton.addEventListener("click", () => refresh());
+el.journalRefreshButton.addEventListener("click", refreshJournal);
 el.initializeForm.addEventListener("submit", initializeMind);
 el.closeMemoryInspector.addEventListener("click", closeMemoryInspector);
 el.memoryInspector.addEventListener("click", event => {
@@ -516,12 +725,31 @@ el.cancelMemoryEdit.addEventListener("click", cancelMemoryEdit);
 el.memoryEditForm.addEventListener("submit", saveMemoryEdit);
 el.clearMemoryFilters.addEventListener("click", () => clearFilters(filters.mind));
 el.adminClearMemoryFilters.addEventListener("click", () => clearFilters(filters.admin));
+el.clearJournalFilters.addEventListener("click", clearJournalFilters);
+for (const control of [
+  el.journalSearch,
+  el.journalKindFilter,
+  el.journalFrom,
+  el.journalTo,
+  el.journalSort,
+]) {
+  control.addEventListener("input", renderJournalList);
+  control.addEventListener("change", renderJournalList);
+}
+el.closeJournalInspector.addEventListener("click", closeJournalInspector);
+el.journalInspector.addEventListener("click", event => {
+  if (event.target === el.journalInspector) closeJournalInspector();
+});
 bindFilterEvents(filters.mind);
 bindFilterEvents(filters.admin);
 
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && !el.memoryInspector.classList.contains("hidden")) {
+  if (event.key !== "Escape") return;
+  if (!el.memoryInspector.classList.contains("hidden")) {
     closeMemoryInspector();
+  }
+  if (!el.journalInspector.classList.contains("hidden")) {
+    closeJournalInspector();
   }
 });
 
