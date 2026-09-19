@@ -131,6 +131,15 @@ class MemoryBrief(BaseModel):
     summary: str
 
 
+class DeliberationEvidence(BaseModel):
+    """Compact current-evidence contribution retained with deliberation history."""
+
+    query: str = Field(min_length=1)
+    response_excerpt: str = Field(min_length=1, max_length=500)
+    appraisal: EvidenceAppraisal | None = None
+    semantic_interpretation: SemanticInterpretation
+
+
 class EvidenceSideProfile(BaseModel):
     value: Any
     support_count: int = Field(ge=1)
@@ -166,6 +175,7 @@ class EvidenceDeliberation(BaseModel):
     current_evidence_considered: int = Field(default=0, ge=0)
     current_existing_support_count: int = Field(default=0, ge=0)
     current_proposed_support_count: int = Field(default=0, ge=0)
+    current_evidence_history: tuple[DeliberationEvidence, ...] = ()
     existing_support_count: int = Field(ge=1)
     proposed_support_count: int = Field(ge=1)
     provenance_relationship: Literal[
@@ -340,6 +350,35 @@ def _provenance_sources(appraisal: EvidenceAppraisal | None) -> set[str]:
         for hop in appraisal.provenance
         if hop.source.strip()
     }
+
+
+def _compact_deliberation_evidence(
+    observation: ResearchObservation,
+) -> DeliberationEvidence | None:
+    if observation.semantic_interpretation is None:
+        return None
+    excerpt = observation.response
+    if len(excerpt) > 500:
+        excerpt = f"{excerpt[:497]}..."
+    return DeliberationEvidence(
+        query=observation.query,
+        response_excerpt=excerpt,
+        appraisal=observation.appraisal,
+        semantic_interpretation=observation.semantic_interpretation,
+    )
+
+
+def _deliberation_evidence_key(
+    evidence: DeliberationEvidence,
+) -> tuple[str, str, str, str, tuple[str, ...]]:
+    interpretation = evidence.semantic_interpretation
+    return (
+        _normalized_semantic_value(interpretation.subject),
+        _normalized_semantic_value(interpretation.attribute),
+        _normalized_semantic_value(interpretation.value),
+        _normalized_semantic_value(evidence.response_excerpt),
+        tuple(sorted(_provenance_sources(evidence.appraisal))),
+    )
 
 
 def _finding_matches_tension(
@@ -551,8 +590,6 @@ def _deliberate_tension(
     if include_pending_proposed:
         proposed_appraisals.append(tension.proposed_appraisal)
 
-    current_existing_support_count = 0
-    current_proposed_support_count = 0
     relevant_current_evidence: list[ResearchObservation] = []
     for observation in current_evidence:
         signature = _semantic_signature_from_interpretation(
@@ -560,15 +597,56 @@ def _deliberate_tension(
         )
         if signature is None or signature[:2] != semantic_key:
             continue
+        if signature[2] not in {existing_value, proposed_value}:
+            continue
         relevant_current_evidence.append(observation)
+
+    prior_evidence = list(
+        prior_deliberation.current_evidence_history
+        if prior_deliberation
+        else ()
+    )
+    merged_evidence: list[DeliberationEvidence] = []
+    seen_evidence: set[tuple[str, str, str, str, tuple[str, ...]]] = set()
+    for evidence in [
+        *prior_evidence,
+        *(
+            compact
+            for observation in relevant_current_evidence
+            if (compact := _compact_deliberation_evidence(observation)) is not None
+        ),
+    ]:
+        key = _deliberation_evidence_key(evidence)
+        if key in seen_evidence:
+            continue
+        seen_evidence.add(key)
+        merged_evidence.append(evidence)
+
+    for evidence in merged_evidence:
+        signature = _semantic_signature_from_interpretation(
+            evidence.semantic_interpretation
+        )
+        if signature is None:
+            continue
+        if signature[2] == existing_value:
+            existing_support_count += 1
+            existing_appraisals.append(evidence.appraisal)
+        elif signature[2] == proposed_value:
+            proposed_support_count += 1
+            proposed_appraisals.append(evidence.appraisal)
+
+    current_existing_support_count = 0
+    current_proposed_support_count = 0
+    for observation in relevant_current_evidence:
+        signature = _semantic_signature_from_interpretation(
+            observation.semantic_interpretation
+        )
+        if signature is None:
+            continue
         if signature[2] == existing_value:
             current_existing_support_count += 1
-            existing_support_count += 1
-            existing_appraisals.append(observation.appraisal)
         elif signature[2] == proposed_value:
             current_proposed_support_count += 1
-            proposed_support_count += 1
-            proposed_appraisals.append(observation.appraisal)
 
     # A tension requires at least one item on each side.
     existing_support_count = max(existing_support_count, 1)
@@ -698,6 +776,7 @@ def _deliberate_tension(
         current_evidence_considered=len(relevant_current_evidence),
         current_existing_support_count=current_existing_support_count,
         current_proposed_support_count=current_proposed_support_count,
+        current_evidence_history=tuple(merged_evidence),
         existing_support_count=existing_support_count,
         proposed_support_count=proposed_support_count,
         provenance_relationship=provenance_relationship,
