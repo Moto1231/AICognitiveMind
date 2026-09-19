@@ -7,7 +7,7 @@ from aicognitive_mind.body.domain import (
     Percept,
     SensoryModality,
 )
-from aicognitive_mind.body.eyes import OpenCvVisionSensor
+from aicognitive_mind.body.eyes import BrowserVisionIngress
 from aicognitive_mind.body.runtime import BodyRuntime
 
 __all__ = [
@@ -15,7 +15,7 @@ __all__ = [
     "DeviceStatus",
     "ExpressionIntent",
     "ExpressionModality",
-    "OpenCvVisionSensor",
+    "BrowserVisionIngress",
     "Percept",
     "SensoryModality",
 ]

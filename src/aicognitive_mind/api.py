@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from aicognitive_mind.body import BodyRuntime, BrowserVisionIngress, DeviceStatus, Percept
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
@@ -52,6 +53,13 @@ class AdminMemoryRevisionRequest(BaseModel):
 class JournalDetailRequest(BaseModel):
     kind: JournalKind
     occurred_at: datetime
+
+
+class BrowserVisionObservationRequest(BaseModel):
+    image_data_url: str = Field(min_length=32, max_length=8_000_000)
+    width: int = Field(gt=0, le=10_000)
+    height: int = Field(gt=0, le=10_000)
+    source: str = Field(default="browser-camera", min_length=1, max_length=120)
 
 
 def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
@@ -230,6 +238,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         journal=storage.journal,
         memory=storage.memory,
     )
+    browser_eyes = BrowserVisionIngress()
+    app.state.browser_eyes = browser_eyes
+    app.state.body = BodyRuntime(vision=browser_eyes)
     engine = (
         OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
         if settings.openai_api_key
@@ -254,6 +265,49 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/", include_in_schema=False)
 async def portal() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/body/eyes", include_in_schema=False)
+async def eyes_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "eyes.html")
+
+
+@app.post("/v1/body/eyes/observe", response_model=Percept)
+async def receive_browser_observation(
+    body: BrowserVisionObservationRequest,
+    request: Request,
+) -> Percept:
+    eyes = cast(BrowserVisionIngress, request.app.state.browser_eyes)
+    try:
+        return eyes.accept(
+            image_data_url=body.image_data_url,
+            width=body.width,
+            height=body.height,
+            source=body.source,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/v1/body/eyes/status")
+async def eyes_status(request: Request) -> DeviceStatus:
+    eyes = cast(BrowserVisionIngress, request.app.state.browser_eyes)
+    return await eyes.status()
+
+
+@app.get("/v1/body/eyes/see", response_model=Percept)
+async def body_see(request: Request) -> Percept:
+    runtime = cast(BodyRuntime, request.app.state.body)
+    try:
+        return await runtime.see()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
 
 @app.get("/health")

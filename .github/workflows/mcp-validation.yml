@@ -43,9 +43,6 @@ jobs:
       - name: Validate canonical Surreal migration utility
         run: python scripts/surreal_canonical.py --help
 
-      - name: Validate Eyes V0.1 CLI
-        run: cognitive-eyes --help
-
       - name: Run MCP stdio continuity smoke test on SurrealDB
         env:
           STORAGE_PROVIDER: surreal

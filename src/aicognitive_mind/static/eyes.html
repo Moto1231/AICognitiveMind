@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Cognitive Mind — Eyes V0.1</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #111; color: #eee; }
+    h1 { margin-bottom: .25rem; }
+    p { color: #bbb; }
+    video, canvas { width: 100%; max-width: 720px; border-radius: 12px; background: #222; }
+    canvas { display: none; margin-top: 1rem; }
+    .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
+    button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
+    #status { white-space: pre-wrap; padding: 1rem; background: #1d1d1d; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Eyes V0.1</h1>
+  <p>The camera stays attached to this device. The browser sends one transient JPEG frame to the remote Body runtime.</p>
+
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+
+  <div class="controls">
+    <button id="start">Start camera</button>
+    <button id="capture" disabled>Capture one frame</button>
+    <button id="stop" disabled>Stop camera</button>
+  </div>
+
+  <div id="status">Eyes are waiting.</div>
+
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const startButton = document.getElementById("start");
+    const captureButton = document.getElementById("capture");
+    const stopButton = document.getElementById("stop");
+    const statusBox = document.getElementById("status");
+    let stream = null;
+
+    function setStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+        captureButton.disabled = false;
+        stopButton.disabled = false;
+        startButton.disabled = true;
+        setStatus("Camera attached through the browser. Ready to capture.");
+      } catch (error) {
+        setStatus("Camera access failed: " + error.message);
+      }
+    }
+
+    function stopCamera() {
+      if (stream) {
+        for (const track of stream.getTracks()) track.stop();
+        stream = null;
+      }
+      video.srcObject = null;
+      captureButton.disabled = true;
+      stopButton.disabled = true;
+      startButton.disabled = false;
+      setStatus("Camera stopped.");
+    }
+
+    async function captureFrame() {
+      if (!stream || !video.videoWidth || !video.videoHeight) {
+        setStatus("Camera is not ready.");
+        return;
+      }
+
+      const maxWidth = 960;
+      const scale = Math.min(1, maxWidth / video.videoWidth);
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+
+      const context = canvas.getContext("2d");
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+      setStatus("Sending one transient frame to the Body...");
+
+      const ingressResponse = await fetch("/v1/body/eyes/observe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_data_url: imageDataUrl,
+          width: canvas.width,
+          height: canvas.height,
+          source: "browser-camera"
+        })
+      });
+
+      if (!ingressResponse.ok) {
+        const detail = await ingressResponse.text();
+        setStatus("Body rejected the frame: " + detail);
+        return;
+      }
+
+      const seeResponse = await fetch("/v1/body/eyes/see");
+      if (!seeResponse.ok) {
+        const detail = await seeResponse.text();
+        setStatus("Frame arrived, but BodyRuntime.see() failed: " + detail);
+        return;
+      }
+
+      const percept = await seeResponse.json();
+      canvas.style.display = "block";
+      setStatus(
+        "BODY CAN SEE\n" +
+        "source: " + percept.source + "\n" +
+        "observed_at: " + percept.observed_at + "\n" +
+        "frame: " + percept.metadata.width + "x" + percept.metadata.height + "\n" +
+        "storage: transient only"
+      );
+    }
+
+    startButton.addEventListener("click", startCamera);
+    captureButton.addEventListener("click", captureFrame);
+    stopButton.addEventListener("click", stopCamera);
+    window.addEventListener("beforeunload", stopCamera);
+  </script>
+</body>
+</html>

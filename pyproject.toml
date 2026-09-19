@@ -22,12 +22,8 @@ dependencies = [
 [project.scripts]
 cognitive-mind = "aicognitive_mind.reference_host:main"
 cognitive-mind-init = "aicognitive_mind.initialize_cli:main"
-cognitive-eyes = "aicognitive_mind.body.eyes_cli:main"
 
 [project.optional-dependencies]
-eyes = [
-    "opencv-python>=4.14,<6",
-]
 dev = [
     "httpx>=0.28,<1",
     "mypy>=1.14,<2",
