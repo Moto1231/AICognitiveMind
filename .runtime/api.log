@@ -1,0 +1,41 @@
+INFO:     Will watch for changes in these directories: ['/workspaces/AICognitiveMind']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [194] using WatchFiles
+INFO:     Started server process [214]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:57362 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57378 - "GET /debug/revision HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57394 - "GET /debug/revision HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57398 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57406 - "POST /v1/mind/checkpoint HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57422 - "POST /v1/mind/interactions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57434 - "POST /v1/mind/interactions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57436 - "GET /v1/mind/working-memory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57444 - "POST /v1/mind/checkpoint HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57446 - "POST /v1/mind/interactions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51220 - "GET / HTTP/1.1" 404 Not Found
+WARNING:  WatchFiles detected changes in 'tests/test_working_memory.py', 'src/aicognitive_mind/knowledge.py', 'src/aicognitive_mind/config.py', 'tests/test_memory_steward.py', 'tests/test_foundation.py', 'src/aicognitive_mind/evidence.py', 'src/aicognitive_mind/propositions.py', 'src/aicognitive_mind/domain.py', 'src/aicognitive_mind/memory_steward.py', 'src/aicognitive_mind/api.py', 'scripts/run_acceptance.py', 'src/aicognitive_mind/working_memory.py', 'src/aicognitive_mind/expression.py', 'tests/test_continuity.py', 'src/aicognitive_mind/core.py', 'src/aicognitive_mind/prompts.py', 'tests/test_evidence.py', 'src/aicognitive_mind/storage.py', 'src/aicognitive_mind/engines.py', 'src/aicognitive_mind/foundation.py', 'src/aicognitive_mind/mongo_storage.py', 'tests/test_memory_trace.py', 'tests/test_expression.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [214]
+WARNING:  WatchFiles detected changes in 'tests/test_mcp_service.py', 'src/aicognitive_mind/mcp_service.py', 'scripts/mcp_stdio_smoke.py', 'src/aicognitive_mind/mcp_server.py', 'scripts/mcp_smoke.py', 'src/aicognitive_mind/engines.py'. Reloading...
+INFO:     Started server process [17604]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [17604]
+INFO:     Started server process [17684]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests/test_continuity.py', 'src/aicognitive_mind/domain.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [17684]
+INFO:     Started server process [27310]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
