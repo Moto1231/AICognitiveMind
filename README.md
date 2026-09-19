@@ -82,11 +82,19 @@ The cognitive model contains no application-level primary keys, foreign keys, mi
 
 Nothing in `diagnostics` is part of identity, memory, or persona.
 
+## Canonical Atlas Mind
+
+Atlas is the canonical persistent MongoDB deployment. The current plan is a **clean Atlas genesis**:
+the previous MongoDB is retained privately as backup/reference material and is not automatically
+migrated or merged into the new Mind.
+
+See [`docs/ATLAS_CANONICAL.md`](docs/ATLAS_CANONICAL.md).
+
 ## Portable Mind backup
 
-Before moving canonical storage, create a verified portable backup of the exact MongoDB documents
-that hold identity and cognitive history. The backup utility preserves BSON values and `_id`s,
-checks integrity, refuses identity merges, and rolls back a failed partial restore.
+The repository includes a verified portable backup capability for identity and cognitive-history
+documents. The backup utility preserves BSON values and `_id`s, checks integrity, refuses identity
+merges, and rolls back a failed partial restore.
 
 See [`docs/MIND_BACKUP.md`](docs/MIND_BACKUP.md).
 

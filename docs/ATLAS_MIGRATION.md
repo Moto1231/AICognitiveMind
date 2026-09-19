@@ -1,6 +1,12 @@
 # Canonical MongoDB / Atlas Migration
 
-The Cognitive Mind must be moved, not reinitialized, when persistent storage changes.
+> **Current project decision:** this migration path is **not** the active storage plan.
+> The canonical Atlas deployment starts clean, while the previous MongoDB remains private
+> backup/reference material. See [ATLAS_CANONICAL.md](ATLAS_CANONICAL.md).
+>
+> Keep this document and the migration utility only as a recovery/maintenance capability.
+
+The Cognitive Mind must be moved, not reinitialized, when a future storage migration is intentionally chosen.
 
 ## Safety rule
 
@@ -23,7 +29,9 @@ Create and verify a portable backup before changing canonical storage. Follow
 [`MIND_BACKUP.md`](MIND_BACKUP.md), copy the archive out of the source environment, and keep it
 private. The archive contains identity and memory data and is not encrypted.
 
-## Move the existing Mind to Atlas
+## Move an existing Mind to Atlas
+
+Use this section only when an explicit future decision is made to migrate an existing Mind.
 
 Resume or create the Atlas deployment and obtain its private MongoDB connection string.
 
@@ -45,9 +53,9 @@ is empty, copies all cognitive collections, and checks the copied counts.
 If the original database is no longer reachable but a verified portable backup exists, use the
 restore procedure in [`MIND_BACKUP.md`](MIND_BACKUP.md).
 
-## Use Atlas as the canonical Mind
+## Use Atlas after an intentional migration
 
-After the migration succeeds, the normal host configuration becomes:
+After a migration succeeds, the normal host configuration becomes:
 
 ```bash
 export MONGODB_URI="$TARGET_MONGODB_URI"
