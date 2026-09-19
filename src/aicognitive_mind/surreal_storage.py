@@ -29,6 +29,7 @@ class SurrealRuntime:
         database_name: str,
         username: str | None = None,
         password: str | None = None,
+        auth_level: str = "database",
     ) -> None:
         resolved_username = username.strip() if username and username.strip() else None
         resolved_password = password if password else None
@@ -37,16 +38,28 @@ class SurrealRuntime:
         self.database: Any = AsyncSurreal(uri)
         self._namespace = namespace
         self._database_name = database_name
+        resolved_auth_level = auth_level.strip().lower()
+        if resolved_auth_level not in {"root", "namespace", "database"}:
+            raise ValueError(
+                "SurrealDB auth level must be one of: root, namespace, database"
+            )
         self._username = resolved_username
         self._password = resolved_password
+        self._auth_level = resolved_auth_level
 
     async def initialize(self) -> None:
         await self.database.connect()
-        if self._username is not None and self._password is not None:
-            await self.database.signin(
-                {"username": self._username, "password": self._password}
-            )
         await self.database.use(self._namespace, self._database_name)
+        if self._username is not None and self._password is not None:
+            credentials: dict[str, str] = {
+                "username": self._username,
+                "password": self._password,
+            }
+            if self._auth_level in {"namespace", "database"}:
+                credentials["namespace"] = self._namespace
+            if self._auth_level == "database":
+                credentials["database"] = self._database_name
+            await self.database.signin(credentials)
         await self.ping()
 
     async def ping(self) -> None:
