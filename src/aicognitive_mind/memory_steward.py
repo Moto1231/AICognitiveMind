@@ -1431,6 +1431,252 @@ class MemoryStewardTool:
         self._tension_reassessments.extend(reassessed)
         return reassessed
 
+    async def _consider_belief_reframe(
+        self,
+        call: ReframeBeliefCall,
+    ) -> BeliefReframeDecision:
+        memories = await self._working_memories()
+        semantic_key = (
+            _normalized_semantic_value(call.subject),
+            _normalized_semantic_value(call.attribute),
+        )
+        requested_existing = _normalized_semantic_value(call.existing_value)
+        requested_proposed = _normalized_semantic_value(call.proposed_value)
+
+        latest: tuple[int, DurableMemory, EvidenceDeliberation] | None = None
+        for memory in memories:
+            for artifact in memory.artifacts:
+                if artifact.kind != _EVIDENCE_DELIBERATION_KIND:
+                    continue
+                deliberation = EvidenceDeliberation.model_validate(artifact.payload)
+                if deliberation.subject is None or deliberation.attribute is None:
+                    continue
+                if (
+                    _normalized_semantic_value(deliberation.subject),
+                    _normalized_semantic_value(deliberation.attribute),
+                ) != semantic_key:
+                    continue
+                if (
+                    _normalized_semantic_value(deliberation.existing_value)
+                    != requested_existing
+                    or _normalized_semantic_value(deliberation.proposed_value)
+                    != requested_proposed
+                ):
+                    continue
+                if latest is None or deliberation.revision > latest[0]:
+                    latest = (deliberation.revision, memory, deliberation)
+
+        if latest is None:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason="No matching deliberation exists for this belief reframe.",
+                subject=call.subject,
+                attribute=call.attribute,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+            )
+
+        revision, reframe_memory, deliberation = latest
+        readiness = deliberation.resolution_readiness
+        finding = deliberation.tension_finding
+        if readiness is None or readiness.status != "reframe_required" or finding is None:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason=(
+                    "The latest matching deliberation does not require a belief reframe."
+                ),
+                subject=call.subject,
+                attribute=call.attribute,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                deliberation_revision=revision,
+            )
+
+        existing_scope = finding.existing_scope
+        proposed_scope = finding.proposed_scope
+        if not existing_scope or not proposed_scope:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason=(
+                    "The evidence establishes that reframing is required but does not yet provide explicit scopes for both values."
+                ),
+                subject=call.subject,
+                attribute=call.attribute,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                deliberation_revision=revision,
+            )
+
+        temporal = finding.temporal_relationship == "changed_over_time"
+        contextual = finding.contextual_relationship == "different_contexts"
+        if temporal and contextual:
+            relationship = "temporal_contextual"
+        elif temporal:
+            relationship = "temporal"
+        elif contextual:
+            relationship = "contextual"
+        else:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason="The evidence no longer supports temporal or contextual reframing.",
+                subject=call.subject,
+                attribute=call.attribute,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                deliberation_revision=revision,
+            )
+
+        existing_reframes = _latest_belief_reframes(memories)
+        reframe_key = (
+            semantic_key[0],
+            semantic_key[1],
+            requested_existing,
+            requested_proposed,
+        )
+        committed = existing_reframes.get(reframe_key)
+        if (
+            committed is not None
+            and int(committed.get("deliberation_revision", 0)) >= revision
+        ):
+            return BeliefReframeDecision(
+                accepted=False,
+                reason="This tension has already been reframed at this deliberation revision.",
+                subject=call.subject,
+                attribute=call.attribute,
+                relationship=relationship,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                existing_scope=str(committed.get("existing_scope", existing_scope)),
+                proposed_scope=str(committed.get("proposed_scope", proposed_scope)),
+                deliberation_revision=int(
+                    committed.get("deliberation_revision", revision)
+                ),
+            )
+
+        existing_evidence: list[str] = []
+        proposed_evidence: list[str] = []
+        staged_replacements: list[tuple[DurableMemory, DurableMemory]] = []
+
+        for memory in memories:
+            interpretations = _semantic_interpretations(memory.artifacts)
+            scoped_payload: dict[str, Any] | None = None
+            for signature, payload in interpretations.items():
+                if signature[:2] != semantic_key:
+                    continue
+                if signature[2] == requested_existing:
+                    existing_evidence.append(memory.content)
+                    scoped_payload = {
+                        "subject": call.subject,
+                        "attribute": call.attribute,
+                        "value": payload.get("value"),
+                        "scope": existing_scope,
+                        "relationship": relationship,
+                        "status": "valid_in_scope",
+                        "deliberation_revision": revision,
+                    }
+                    break
+                if signature[2] == requested_proposed:
+                    proposed_evidence.append(memory.content)
+                    scoped_payload = {
+                        "subject": call.subject,
+                        "attribute": call.attribute,
+                        "value": payload.get("value"),
+                        "scope": proposed_scope,
+                        "relationship": relationship,
+                        "status": "valid_in_scope",
+                        "deliberation_revision": revision,
+                    }
+                    break
+
+            artifacts = list(memory.artifacts)
+            if scoped_payload is not None:
+                artifacts.append(
+                    MemoryArtifact(
+                        kind=_SCOPED_BELIEF_KIND,
+                        payload=scoped_payload,
+                    )
+                )
+
+            if memory == reframe_memory:
+                artifacts.append(
+                    MemoryArtifact(
+                        kind=_BELIEF_REFRAME_KIND,
+                        payload={
+                            "status": "committed",
+                            "subject": call.subject,
+                            "attribute": call.attribute,
+                            "relationship": relationship,
+                            "existing_value": call.existing_value,
+                            "existing_scope": existing_scope,
+                            "proposed_value": call.proposed_value,
+                            "proposed_scope": proposed_scope,
+                            "deliberation_revision": revision,
+                            "basis": list(finding.basis),
+                        },
+                    )
+                )
+
+            if tuple(artifacts) != memory.artifacts:
+                staged_replacements.append(
+                    (
+                        memory,
+                        memory.model_copy(update={"artifacts": tuple(artifacts)}),
+                    )
+                )
+
+        if not existing_evidence or not proposed_evidence:
+            return BeliefReframeDecision(
+                accepted=False,
+                reason=(
+                    "Reframe-required deliberation could not be mapped back to both durable evidence sets."
+                ),
+                subject=call.subject,
+                attribute=call.attribute,
+                relationship=relationship,
+                existing_value=call.existing_value,
+                proposed_value=call.proposed_value,
+                existing_scope=existing_scope,
+                proposed_scope=proposed_scope,
+                deliberation_revision=revision,
+            )
+
+        for original, replacement in staged_replacements:
+            self._stage_replacement(original, replacement)
+
+        decision = BeliefReframeDecision(
+            accepted=True,
+            reason=(
+                "Belief reframe accepted; both values remain valid within their evidence-backed scopes."
+            ),
+            subject=call.subject,
+            attribute=call.attribute,
+            relationship=relationship,
+            existing_value=call.existing_value,
+            proposed_value=call.proposed_value,
+            existing_scope=existing_scope,
+            proposed_scope=proposed_scope,
+            deliberation_revision=revision,
+        )
+        self._reframe_events.append(
+            {
+                "source": "conscious_memory_steward",
+                "status": "committed",
+                "subject": call.subject,
+                "attribute": call.attribute,
+                "relationship": relationship,
+                "existing_value": call.existing_value,
+                "existing_scope": existing_scope,
+                "proposed_value": call.proposed_value,
+                "proposed_scope": proposed_scope,
+                "deliberation_revision": revision,
+                "basis": list(finding.basis),
+                "existing_evidence": existing_evidence,
+                "proposed_evidence": proposed_evidence,
+            }
+        )
+        return decision
+
+
     async def _consider_belief_transition(
         self,
         call: TransitionBeliefCall,
