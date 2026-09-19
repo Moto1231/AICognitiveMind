@@ -9,7 +9,11 @@ from typing import Any
 from mcp.server.mcpserver import Context, MCPServer
 
 from aicognitive_mind.config import get_settings
-from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
+from aicognitive_mind.mcp_service import (
+    BeliefTransitionProposal,
+    CognitiveMcpService,
+    MemoryProposal,
+)
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.persistence import StorageRuntime, create_storage
 
@@ -87,6 +91,7 @@ async def complete_interaction(
     proposed_memories: list[MemoryProposal],
     ctx: Context[AppState],
     current_evidence: list[ResearchObservation] | None = None,
+    belief_transitions: list[BeliefTransitionProposal] | None = None,
 ) -> dict[str, Any]:
     """Mandatory final step after reasoning and before presenting the final answer.
 
@@ -98,14 +103,16 @@ async def complete_interaction(
     also include its semantic interpretation (subject / attribute / value) so the Memory Steward
     can re-deliberate that tension. If research establishes whether the competing values are
     independent and apply to the same time/context, include a tension_finding as well. These
-    dimensions are not collapsed into one score, and candidate readiness does not itself rewrite
-    durable belief.
+    dimensions are not collapsed into one score. When recall or re-deliberation reports
+    candidate_ready, the host may explicitly include that exact subject / attribute / candidate
+    value in belief_transitions. The Steward revalidates readiness before changing current belief.
     """
     return await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,
         response_text=response_text,
         proposed_memories=tuple(proposed_memories),
         current_evidence=tuple(current_evidence or ()),
+        belief_transitions=tuple(belief_transitions or ()),
     )
 
 

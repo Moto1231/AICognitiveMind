@@ -39,6 +39,7 @@ class JournalKind(StrEnum):
     TENSION = "tension"
     CHECKPOINT = "checkpoint"
     MEMORY_REVISION = "memory_revision"
+    BELIEF_TRANSITION = "belief_transition"
 
 
 class MindIdentity(BaseModel):

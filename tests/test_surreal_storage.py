@@ -265,6 +265,99 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(finding_total, 1)
         self.assertEqual(finding_page, [reassessment])
 
+    async def test_belief_transition_searches_journal_and_memory_artifacts(self) -> None:
+        journal = SurrealJournalStore(self.runtime.database)
+        memory_store = SurrealMemoryStore(self.runtime.database)
+
+        transition_entry = JournalEntry(
+            kind=JournalKind.BELIEF_TRANSITION,
+            experience={
+                "source": "conscious_memory_steward",
+                "subject": "deployment",
+                "attribute": "date",
+                "from_value": "October 1",
+                "to_value": "October 8",
+                "deliberation_revision": 2,
+                "readiness_basis": ["candidate evidence is independently corroborated"],
+                "candidate_evidence": ["The deployment date is October 8."],
+                "superseded_evidence": ["The deployment date is October 1."],
+                "status": "committed",
+            },
+        )
+        await journal.append(
+            transition_entry,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        page, total = await journal.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="October 8",
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(page, [transition_entry])
+
+        memory = DurableMemory(
+            memory_class=MemoryClass.SEMANTIC,
+            content="The deployment date is October 8.",
+            grounding=("project lead update",),
+            artifacts=(
+                MemoryArtifact(
+                    kind="semantic_interpretation",
+                    payload={
+                        "subject": "deployment",
+                        "attribute": "date",
+                        "value": "October 8",
+                    },
+                ),
+                MemoryArtifact(
+                    kind="belief_status",
+                    payload={
+                        "subject": "deployment",
+                        "attribute": "date",
+                        "value": "October 8",
+                        "status": "current",
+                        "current_value": "October 8",
+                        "deliberation_revision": 2,
+                    },
+                ),
+                MemoryArtifact(
+                    kind="belief_transition",
+                    payload={
+                        "status": "committed",
+                        "subject": "deployment",
+                        "attribute": "date",
+                        "from_value": "October 1",
+                        "to_value": "October 8",
+                        "deliberation_revision": 2,
+                        "readiness_basis": ["candidate evidence is independently corroborated"],
+                    },
+                ),
+            ),
+        )
+        await memory_store.remember(
+            memory,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        memory_page, memory_total = await memory_store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="superseded",
+        )
+        self.assertEqual(memory_total, 0)
+
+        current_page, current_total = await memory_store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="current",
+        )
+        self.assertEqual(current_total, 1)
+        self.assertEqual(current_page, [memory])
+
     async def test_memory_searches_full_collection_and_replaces_exact_document(self) -> None:
         store = SurrealMemoryStore(self.runtime.database)
         base = datetime(2026, 9, 18, 12, tzinfo=UTC)
