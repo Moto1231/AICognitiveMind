@@ -10,36 +10,29 @@ from mcp.server.mcpserver import Context, MCPServer
 
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
-from aicognitive_mind.mongo_storage import (
-    MongoJournalStore,
-    MongoMemoryStore,
-    MongoMindStore,
-    MongoRuntime,
-)
+from aicognitive_mind.persistence import StorageRuntime, create_storage
 
 
 @dataclass
 class AppState:
-    runtime: MongoRuntime
+    runtime: StorageRuntime
     mind_service: CognitiveMcpService
 
 
 @asynccontextmanager
 async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
-    settings = get_settings()
-    runtime = MongoRuntime(settings.mongodb_uri, settings.mongodb_database)
-    await runtime.initialize()
+    storage = await create_storage(get_settings())
     try:
         yield AppState(
-            runtime=runtime,
+            runtime=storage.runtime,
             mind_service=CognitiveMcpService(
-                mind=MongoMindStore(runtime.database),
-                journal=MongoJournalStore(runtime.database),
-                memory=MongoMemoryStore(runtime.database),
+                mind=storage.mind,
+                journal=storage.journal,
+                memory=storage.memory,
             ),
         )
     finally:
-        await runtime.close()
+        await storage.runtime.close()
 
 
 mcp = MCPServer("Digital Genesis Cognitive Mind", lifespan=lifespan)
