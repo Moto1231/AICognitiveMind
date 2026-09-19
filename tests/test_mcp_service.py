@@ -1520,7 +1520,6 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def _prepare_candidate_ready_deployment(self) -> None:
-    async def _prepare_candidate_ready_deployment(self) -> None:
         await self.service.complete_interaction(
             user_message="The deployment date is October 1.",
             response_text="Recorded.",
