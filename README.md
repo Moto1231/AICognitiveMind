@@ -17,6 +17,28 @@ belief-governance model, what has been proven, and the current priority:
 The Cognitive Mind is already usable through MCP. The next milestone is to connect the existing
 Mind to the everyday reasoning host rather than adding another cognitive subsystem first.
 
+## Mind and Body
+
+The project now has two parallel workstreams that belong to the same whole:
+
+```text
+Mind
+  +
+Body
+```
+
+The **Mind** owns identity, memory, belief, reasoning, governance, and continuity.
+
+The **Body** owns eyes, ears, mouth, face, sensors, and physical/computer interfaces.
+
+The Body does not own durable memory or identity. Raw sensory input remains transient until the Mind
+interprets it and normal memory governance decides whether anything should persist.
+
+Body foundation documentation lives in
+[`docs/body/0001-foundation.md`](docs/body/0001-foundation.md).
+
+Mind and Body development proceed in parallel through narrow integration contracts.
+
 ## First milestone
 
 Prove continuity across a reasoning-engine swap:
