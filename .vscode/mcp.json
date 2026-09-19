@@ -11,6 +11,7 @@
       ],
       "cwd": "${workspaceFolder}",
       "env": {
+        "STORAGE_PROVIDER": "mongo",
         "MONGODB_URI": "mongodb://mongodb:27017",
         "MONGODB_DATABASE": "ai_cognitive_mind",
         "APP_NAME": "AI Cognitive Mind"
