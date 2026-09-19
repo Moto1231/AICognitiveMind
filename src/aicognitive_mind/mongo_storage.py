@@ -198,6 +198,83 @@ class MongoMemoryStore:
         cursor = self._collection.find({}, {"_id": 0}).sort("formed_at", ASCENDING)
         return [DurableMemory.model_validate(document) async for document in cursor]
 
+    def _portal_filter(
+        self,
+        *,
+        memory_class: str | None = None,
+        search: str | None = None,
+        association: str | None = None,
+        grounding: str | None = None,
+        formed_from: datetime | None = None,
+        formed_to: datetime | None = None,
+    ) -> dict[str, Any]:
+        query: dict[str, Any] = {}
+        if memory_class:
+            query["memory_class"] = memory_class
+
+        if formed_from or formed_to:
+            formed: dict[str, datetime] = {}
+            if formed_from:
+                formed["$gte"] = formed_from
+            if formed_to:
+                formed["$lte"] = formed_to
+            query["formed_at"] = formed
+
+        clauses: list[dict[str, Any]] = []
+        if search:
+            literal = re.escape(search)
+            clauses.append({
+                "$or": [
+                    {"content": {"$regex": literal, "$options": "i"}},
+                    {"associations": {"$regex": literal, "$options": "i"}},
+                    {"grounding": {"$regex": literal, "$options": "i"}},
+                ]
+            })
+        if association:
+            clauses.append({
+                "associations": {"$regex": re.escape(association), "$options": "i"}
+            })
+        if grounding:
+            clauses.append({
+                "grounding": {"$regex": re.escape(grounding), "$options": "i"}
+            })
+        if clauses:
+            query["$and"] = clauses
+
+        return query
+
+    async def read_page(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        newest_first: bool,
+        memory_class: str | None = None,
+        search: str | None = None,
+        association: str | None = None,
+        grounding: str | None = None,
+        formed_from: datetime | None = None,
+        formed_to: datetime | None = None,
+    ) -> tuple[list[DurableMemory], int]:
+        query = self._portal_filter(
+            memory_class=memory_class,
+            search=search,
+            association=association,
+            grounding=grounding,
+            formed_from=formed_from,
+            formed_to=formed_to,
+        )
+        direction = DESCENDING if newest_first else ASCENDING
+        cursor = (
+            self._collection.find(query, {"_id": 0})
+            .sort("formed_at", direction)
+            .skip(offset)
+            .limit(limit)
+        )
+        memories = [DurableMemory.model_validate(document) async for document in cursor]
+        total = await self._collection.count_documents(query)
+        return memories, total
+
     async def replace_exact(
         self,
         original: DurableMemory,
