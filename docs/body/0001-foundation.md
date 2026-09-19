@@ -117,7 +117,7 @@ These can proceed independently and in parallel:
 - ears — microphone / speech-input adapter;
 - mouth — speech-output adapter;
 - face — avatar renderer;
-- Mind/Body perception bridge.
+- Mind/Body perception bridge — implemented in [0008 — Mind ↔ Body Integration V0.1](0008-mind-body-integration-v0.1.md).
 
 The Face workstream is now governed by [0003 — Avatar Contract](0003-avatar-contract.md):
 VRM 1.0 assets rendered in-browser with Three.js and @pixiv/three-vrm, with Blender
@@ -137,3 +137,10 @@ bridge to local speakers; no local application runtime is required.
 [0007 — Ears V0.1](0007-ears-v0.1.md) implements transient microphone input through the browser
 hardware bridge. Raw audio becomes an AUDIO `Percept` and is consumed through
 `BodyRuntime.hear()`; no transcription or durable storage occurs in the Body.
+
+
+## Implemented Mind ↔ Body loop
+
+[0008 — Mind ↔ Body Integration V0.1](0008-mind-body-integration-v0.1.md) connects transient
+Eyes/Ears percepts to Mind-side interpretation, the existing CognitiveCore and Memory Steward,
+then returns conscious expression through Mouth and Face.
