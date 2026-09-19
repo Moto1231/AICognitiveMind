@@ -479,3 +479,12 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 @media (max-width: 560px) {
   .journal-search { grid-template-columns: 1fr; }
 }
+
+.journal-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+.journal-pagination .secondary-button {
+  min-width: 160px;
+}
