@@ -73,7 +73,12 @@ class PortalTests(unittest.TestCase):
         self.assertIn("openJournalInspector", script_text)
         self.assertIn('entry.kind === "tension"', script_text)
         self.assertIn('entry.kind === "belief_transition"', script_text)
+        self.assertIn('entry.kind === "belief_reframe"', script_text)
         self.assertIn("Superseded Belief", script_text)
+        self.assertIn("Existing Scoped Belief", script_text)
+        self.assertIn("Proposed Scoped Belief", script_text)
+        self.assertIn('value="belief_transition">Belief Transition', markup)
+        self.assertIn('value="belief_reframe">Belief Reframe', markup)
         self.assertIn("Current Belief", script_text)
         self.assertIn("Existing Value", script_text)
         self.assertIn("Proposed Value", script_text)
@@ -322,6 +327,35 @@ class PortalTests(unittest.TestCase):
         self.assertIn("October 8", summary["preview"])
         self.assertIn("deployment", summary["search_text"])
         self.assertIn("independently corroborated", summary["search_text"])
+        self.assertIn("committed", summary["search_text"])
+
+    def test_belief_reframe_summary_exposes_scoped_values(self) -> None:
+        entry = JournalEntry(
+            kind=JournalKind.BELIEF_REFRAME,
+            experience={
+                "source": "conscious_memory_steward",
+                "status": "committed",
+                "subject": "service",
+                "attribute": "owner",
+                "relationship": "temporal",
+                "existing_value": "Alice",
+                "existing_scope": "before September 1",
+                "proposed_value": "Bob",
+                "proposed_scope": "on or after September 1",
+                "deliberation_revision": 2,
+                "basis": ["The ownership record establishes the effective-date change."],
+                "existing_evidence": ["The service owner is Alice."],
+                "proposed_evidence": ["The service owner is Bob."],
+            },
+        )
+
+        summary = _journal_summary(entry)
+
+        self.assertEqual(summary["title"], "Belief Reframe")
+        self.assertIn("Alice [before September 1]", summary["preview"])
+        self.assertIn("Bob [on or after September 1]", summary["preview"])
+        self.assertIn("temporal", summary["search_text"])
+        self.assertIn("ownership record", summary["search_text"])
         self.assertIn("committed", summary["search_text"])
 
     def test_memory_revision_summary_exposes_before_and_after_text(self) -> None:
