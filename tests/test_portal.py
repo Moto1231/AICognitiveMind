@@ -45,6 +45,9 @@ class PortalTests(unittest.TestCase):
         self.assertIn("renderMemoryArtifacts", script_text)
         self.assertIn("formatEvidenceAppraisal", script_text)
         self.assertIn("formatEvidenceDeliberation", script_text)
+        self.assertIn("formatResolutionReadiness", script_text)
+        self.assertIn("Resolution Readiness:", script_text)
+        self.assertIn("Candidate Side:", script_text)
         self.assertIn("formatResearchEvidence", script_text)
         self.assertIn("Current Evidence Used", script_text)
         self.assertIn("Revision:", script_text)
@@ -210,6 +213,16 @@ class PortalTests(unittest.TestCase):
                             "attribute": "date",
                             "value": "October 8",
                         },
+                        "tension_finding": {
+                            "subject": "deployment",
+                            "attribute": "date",
+                            "existing_value": "October 1",
+                            "proposed_value": "October 8",
+                            "provenance_independence": "verified_independent",
+                            "temporal_relationship": "same_timeframe",
+                            "contextual_relationship": "same_context",
+                            "basis": ["release board is independently maintained"],
+                        },
                     }
                 ],
                 "deliberation": {
@@ -232,6 +245,35 @@ class PortalTests(unittest.TestCase):
                     "investigation_questions": [
                         "Seek independent corroboration for the existing value."
                     ],
+                    "resolution_readiness": {
+                        "status": "candidate_ready",
+                        "candidate_side": "proposed",
+                        "candidate_value": "October 8",
+                        "existing": {
+                            "value": "October 1",
+                            "support_count": 1,
+                            "appraised_support_count": 1,
+                            "distinct_immediate_sources": 1,
+                            "confidence_floor": 0.55,
+                            "confidence_ceiling": 0.55,
+                            "weight_floor": 0.4,
+                            "weight_ceiling": 0.4,
+                        },
+                        "proposed": {
+                            "value": "October 8",
+                            "support_count": 2,
+                            "appraised_support_count": 2,
+                            "distinct_immediate_sources": 2,
+                            "confidence_floor": 0.8,
+                            "confidence_ceiling": 0.9,
+                            "weight_floor": 0.7,
+                            "weight_ceiling": 0.75,
+                        },
+                        "blockers": [],
+                        "basis": [
+                            "Candidate evidence has independent corroboration."
+                        ],
+                    },
                 },
             },
         )
@@ -241,6 +283,9 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(summary["title"], "Tension Reassessment")
         self.assertIn("release board", summary["search_text"])
         self.assertIn("current_evidence_reassessment", summary["search_text"])
+        self.assertIn("candidate_ready", summary["search_text"])
+        self.assertIn("proposed", summary["search_text"])
+        self.assertIn("verified_independent", summary["search_text"])
         self.assertIn("October 8", summary["preview"])
 
     def test_memory_revision_summary_exposes_before_and_after_text(self) -> None:
