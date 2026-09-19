@@ -180,6 +180,13 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(decision["accepted"])
         self.assertEqual(len(decision["tensions"]), 1)
         self.assertEqual(decision["tensions"][0]["status"], "unresolved")
+        deliberation = decision["tensions"][0]["deliberation"]
+        self.assertEqual(deliberation["provenance_relationship"], "unknown")
+        self.assertTrue(deliberation["investigation_questions"])
+
+        later = await self.service.begin_interaction("What birthday should I rely on?")
+        self.assertIn("Investigation guidance:", later["recalled_context"]["summary"])
+        self.assertIn("investigation guidance", later["next_step"])
 
         journal = await self.journal.read()
         tension_entries = [entry for entry in journal if entry.kind.value == "tension"]

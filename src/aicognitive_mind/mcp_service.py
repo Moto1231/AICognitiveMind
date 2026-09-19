@@ -111,8 +111,10 @@ class CognitiveMcpService:
             "recalled_context": recalled["context"],
             "conscious_workspace_contract": CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
             "next_step": (
-                "Reason as this Mind using the recalled context. Before presenting the final "
-                "answer, call complete_interaction with the response text and only stable "
+                "Reason as this Mind using the recalled context. If unresolved evidence includes "
+                "investigation guidance, pursue the material questions that can change or clarify "
+                "the conclusion and submit useful findings as current_evidence. Before presenting "
+                "the final answer, call complete_interaction with the response text and only stable "
                 "memory proposals that should influence future interactions."
             ),
         }

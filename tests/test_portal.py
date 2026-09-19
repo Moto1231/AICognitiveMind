@@ -44,6 +44,9 @@ class PortalTests(unittest.TestCase):
         self.assertIn("memory.associations", script_text)
         self.assertIn("renderMemoryArtifacts", script_text)
         self.assertIn("formatEvidenceAppraisal", script_text)
+        self.assertIn("formatEvidenceDeliberation", script_text)
+        self.assertIn("Evidence Deliberation", script_text)
+        self.assertIn("Investigation Questions:", script_text)
         self.assertIn("Confidence:", script_text)
         self.assertIn("Weight:", script_text)
         self.assertIn("Existing Appraisal", script_text)
@@ -136,6 +139,21 @@ class PortalTests(unittest.TestCase):
                     "existing": "The user's birthday is February 7.",
                     "proposed": "The user's birthday is February 8.",
                 },
+                "deliberation": {
+                    "existing_support_count": 1,
+                    "proposed_support_count": 1,
+                    "provenance_relationship": "unknown",
+                    "existing_provenance_depth": 0,
+                    "proposed_provenance_depth": 0,
+                    "appraisal_gaps": [
+                        "existing evidence has no appraisal",
+                        "proposed evidence has no appraisal",
+                    ],
+                    "context_observations": [],
+                    "investigation_questions": [
+                        "Establish enough provenance to compare the competing evidence responsibly."
+                    ],
+                },
             },
         )
 
@@ -146,6 +164,8 @@ class PortalTests(unittest.TestCase):
         self.assertIn("February 8", summary["preview"])
         self.assertIn("birthday", summary["search_text"])
         self.assertIn("The user's birthday is February 8.", summary["search_text"])
+        self.assertIn("Establish enough provenance", summary["search_text"])
+        self.assertIn("unknown", summary["search_text"])
 
     def test_memory_revision_summary_exposes_before_and_after_text(self) -> None:
         entry = JournalEntry(

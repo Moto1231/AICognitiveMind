@@ -119,6 +119,10 @@ class MongoJournalStore:
                 {"experience.appraisals.proposed.provenance.context": {"$regex": literal, "$options": "i"}},
                 {"experience.appraisals.proposed.provenance.condition": {"$regex": literal, "$options": "i"}},
                 {"experience.appraisals.proposed.basis": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.provenance_relationship": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.appraisal_gaps": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.context_observations": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.investigation_questions": {"$regex": literal, "$options": "i"}},
             ]
         return query
 
@@ -154,6 +158,7 @@ class MongoJournalStore:
             "experience.competing_values": 1,
             "experience.evidence": 1,
             "experience.appraisals": 1,
+            "experience.deliberation": 1,
             "experience.status": 1,
         }
         direction = DESCENDING if newest_first else ASCENDING
@@ -256,6 +261,10 @@ class MongoMemoryStore:
                     {"artifacts.payload.provenance.context": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.provenance.condition": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.basis": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.provenance_relationship": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.appraisal_gaps": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.context_observations": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.investigation_questions": {"$regex": literal, "$options": "i"}},
                 ]
             })
         if association:

@@ -89,6 +89,15 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
             f"{subject} · {attribute}: {existing_value} ↔ {proposed_value}".strip()
         )
         evidence = experience.get("evidence", {})
+        deliberation = experience.get("deliberation") or {}
+        guidance = " ".join(
+            str(value)
+            for value in (
+                *deliberation.get("appraisal_gaps", []),
+                *deliberation.get("context_observations", []),
+                *deliberation.get("investigation_questions", []),
+            )
+        )
         summary["search_text"] = " ".join(
             value
             for value in (
@@ -98,6 +107,8 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
                 proposed_value,
                 str(evidence.get("existing", "")),
                 str(evidence.get("proposed", "")),
+                str(deliberation.get("provenance_relationship", "")),
+                guidance,
             )
             if value
         )

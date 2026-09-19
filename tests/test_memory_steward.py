@@ -353,6 +353,220 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(appraisal["provenance"][1]["source"], "original witness")
         self.assertNotIn("combined_score", appraisal)
 
+    async def test_tension_deliberation_detects_shared_provenance_without_selecting_winner(self) -> None:
+        memory = InMemoryMemoryStore()
+        journal = InMemoryJournalStore()
+        await memory.remember(
+            DurableMemory.model_validate(
+                {
+                    "memory_class": "semantic",
+                    "content": "The deployment date is October 1.",
+                    "grounding": ["published-status"],
+                    "artifacts": [
+                        {
+                            "kind": "semantic_interpretation",
+                            "payload": {
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        },
+                        {
+                            "kind": "evidence_appraisal",
+                            "payload": {
+                                "confidence": 0.8,
+                                "weight": 0.7,
+                                "provenance": [
+                                    {
+                                        "source": "status report",
+                                        "context": "weekly publication",
+                                        "condition": "written summary",
+                                    },
+                                    {
+                                        "source": "project lead",
+                                        "context": "release planning",
+                                        "condition": "first-party statement",
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                }
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        await memory.remember(
+            DurableMemory.model_validate(
+                {
+                    "memory_class": "semantic",
+                    "content": "The approved release calendar lists October 1.",
+                    "grounding": ["release-calendar"],
+                    "artifacts": [
+                        {
+                            "kind": "semantic_interpretation",
+                            "payload": {
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        },
+                        {
+                            "kind": "evidence_appraisal",
+                            "payload": {
+                                "confidence": 0.75,
+                                "weight": 0.65,
+                                "provenance": [
+                                    {
+                                        "source": "release calendar",
+                                        "context": "approved planning artifact",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        },
+                    ],
+                }
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="The deployment date is October 8.",
+            memory=memory,
+            journal=journal,
+        )
+        await tool.invoke({"action": "recall", "focus": "deployment date"})
+        decision = await tool.invoke(
+            {
+                "action": "propose_memory",
+                "memory_class": "semantic",
+                "content": "The deployment date is October 8.",
+                "grounding": ["meeting-notes"],
+                "artifacts": [
+                    {
+                        "kind": "semantic_interpretation",
+                        "payload": {
+                            "subject": "deployment",
+                            "attribute": "date",
+                            "value": "October 8",
+                        },
+                    },
+                    {
+                        "kind": "evidence_appraisal",
+                        "payload": {
+                            "confidence": 0.9,
+                            "weight": 0.6,
+                            "provenance": [
+                                {
+                                    "source": "meeting notes",
+                                    "context": "status meeting",
+                                    "condition": "written notes",
+                                },
+                                {
+                                    "source": "project lead",
+                                    "context": "status meeting",
+                                    "condition": "first-party statement",
+                                },
+                            ],
+                        },
+                    },
+                ],
+            }
+        )
+
+        tension = decision["tensions"][0]
+        deliberation = tension["deliberation"]
+        self.assertEqual(tension["status"], "unresolved")
+        self.assertEqual(deliberation["existing_support_count"], 2)
+        self.assertEqual(deliberation["proposed_support_count"], 1)
+        self.assertEqual(deliberation["provenance_relationship"], "overlap_detected")
+        self.assertEqual(deliberation["existing_provenance_depth"], 2)
+        self.assertEqual(deliberation["proposed_provenance_depth"], 2)
+        self.assertTrue(deliberation["context_observations"])
+        self.assertTrue(
+            any("shared provenance" in question for question in deliberation["investigation_questions"])
+        )
+        self.assertNotIn("winner", deliberation)
+        self.assertTrue(
+            any(
+                artifact["kind"] == "evidence_deliberation"
+                for artifact in decision["memory"]["artifacts"]
+            )
+        )
+
+    async def test_recall_carries_missing_appraisal_investigation_forward(self) -> None:
+        memory = InMemoryMemoryStore()
+        journal = InMemoryJournalStore()
+        await memory.remember(
+            DurableMemory.model_validate(
+                {
+                    "memory_class": "semantic",
+                    "content": "The deployment date is October 1.",
+                    "grounding": ["historical note"],
+                    "artifacts": [
+                        {
+                            "kind": "semantic_interpretation",
+                            "payload": {
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        }
+                    ],
+                }
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="The deployment date is October 8.",
+            memory=memory,
+            journal=journal,
+        )
+        await tool.invoke({"action": "recall", "focus": "deployment date"})
+        decision = await tool.invoke(
+            {
+                "action": "propose_memory",
+                "memory_class": "semantic",
+                "content": "The deployment date is October 8.",
+                "grounding": ["current statement"],
+                "artifacts": [
+                    {
+                        "kind": "semantic_interpretation",
+                        "payload": {
+                            "subject": "deployment",
+                            "attribute": "date",
+                            "value": "October 8",
+                        },
+                    }
+                ],
+            }
+        )
+        await tool.complete()
+
+        deliberation = decision["tensions"][0]["deliberation"]
+        self.assertEqual(deliberation["provenance_relationship"], "unknown")
+        self.assertEqual(len(deliberation["appraisal_gaps"]), 2)
+        self.assertTrue(
+            any("Appraise missing evidence" in question for question in deliberation["investigation_questions"])
+        )
+
+        recalled_tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="What do we know about the deployment date?",
+            memory=memory,
+            journal=journal,
+        )
+        recalled = await recalled_tool.invoke(
+            {"action": "recall", "focus": "deployment date"}
+        )
+        summary = recalled["context"]["summary"]
+        self.assertIn("Investigation guidance:", summary)
+        self.assertIn("Appraise missing evidence", summary)
+
     async def test_semantic_tension_carries_both_evidence_appraisals_without_resolution(self) -> None:
         memory = InMemoryMemoryStore()
         journal = InMemoryJournalStore()
