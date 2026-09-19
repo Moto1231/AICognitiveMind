@@ -17,16 +17,21 @@ class PortalTests(unittest.TestCase):
         self.assertIn("Administration", markup)
         self.assertIn("MCP", markup)
         self.assertIn("MEMORY INSPECTOR", markup)
-        self.assertIn("Raw record returned by the Mind", markup)
+        self.assertIn("Raw Record Returned by the Mind", markup)
 
         script_text = script.read_text(encoding="utf-8")
         self.assertIn("JSON.stringify(memory, null, 2)", script_text)
         self.assertIn("memory.grounding", script_text)
         self.assertIn("memory.associations", script_text)
+        self.assertIn("adminMemorySearch", script_text)
+        self.assertIn("saveMemoryEdit", script_text)
+        self.assertIn("memoryMatches", script_text)
 
         paths = {route.path for route in app.routes}
         self.assertIn("/", paths)
         self.assertIn("/v1/portal/status", paths)
+        self.assertIn("/v1/admin/status", paths)
+        self.assertIn("/v1/admin/memory", paths)
 
 
 if __name__ == "__main__":
