@@ -13,6 +13,7 @@ from aicognitive_mind.memory_steward import (
     ProvenanceHop,
     ResearchObservation,
     SemanticInterpretation,
+    SemanticScope,
     TensionInvestigationFinding,
 )
 from aicognitive_mind.domain import MemoryClass
@@ -991,6 +992,220 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_semantic_scope_controls_equivalence_and_tension(self) -> None:
+        customer_a = SemanticScope(kind="contextual", label="Customer A")
+        customer_b = SemanticScope(kind="contextual", label="Customer B")
+
+        await self.service.complete_interaction(
+            user_message="Customer A uses route Alpha.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="Customer A approval route is Alpha.",
+                    grounding=("Customer A configuration",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Alpha",
+                                "scope": customer_a.model_dump(mode="json"),
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        corroborating = await self.service.complete_interaction(
+            user_message="Customer A still uses Alpha.",
+            response_text="That corroborates the Customer A proposition.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The active Customer A route remains Alpha.",
+                    grounding=("Customer A active configuration",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Alpha",
+                                "scope": customer_a.model_dump(mode="json"),
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual(corroborating["memory_decisions"][0]["tensions"], [])
+        corroborating_memory = corroborating["memory_decisions"][0]["memory"]
+        self.assertTrue(
+            any(
+                artifact["kind"] == "semantic_equivalence"
+                for artifact in corroborating_memory["artifacts"]
+            )
+        )
+
+        different_scope = await self.service.complete_interaction(
+            user_message="Customer B uses route Beta.",
+            response_text="That is a distinct scoped proposition.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="Customer B approval route is Beta.",
+                    grounding=("Customer B configuration",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Beta",
+                                "scope": customer_b.model_dump(mode="json"),
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual(different_scope["memory_decisions"][0]["tensions"], [])
+        distinct_memory = different_scope["memory_decisions"][0]["memory"]
+        self.assertTrue(
+            any(
+                artifact["kind"] == "semantic_scope_distinction"
+                for artifact in distinct_memory["artifacts"]
+            )
+        )
+
+        same_scope_conflict = await self.service.complete_interaction(
+            user_message="Customer A uses route Gamma.",
+            response_text="That conflicts with the existing Customer A proposition.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="Customer A approval route is Gamma.",
+                    grounding=("Customer A change report",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Gamma",
+                                "scope": customer_a.model_dump(mode="json"),
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        tensions = same_scope_conflict["memory_decisions"][0]["tensions"]
+        self.assertEqual(len(tensions), 1)
+        self.assertEqual(tensions[0]["existing_value"], "Alpha")
+        self.assertEqual(tensions[0]["proposed_value"], "Gamma")
+        self.assertEqual(tensions[0]["scope"]["label"], "Customer A")
+
+        wrong_scope_research = await self.service.complete_interaction(
+            user_message="I found Customer B evidence.",
+            response_text="That evidence belongs to Customer B and does not re-deliberate Customer A.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="Customer B route",
+                    response="Customer B also reports Gamma.",
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="invoice",
+                        attribute="approval_route",
+                        value="Gamma",
+                        scope=customer_b,
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual(wrong_scope_research["tension_reassessments"], [])
+
+        matching_scope_research = await self.service.complete_interaction(
+            user_message="I found Customer A evidence.",
+            response_text="That evidence belongs to the active Customer A tension.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="Customer A route",
+                    response="Customer A independently reports Gamma.",
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="invoice",
+                        attribute="approval_route",
+                        value="Gamma",
+                        scope=customer_a,
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual(len(matching_scope_research["tension_reassessments"]), 1)
+        self.assertEqual(
+            matching_scope_research["tension_reassessments"][0]["scope"]["label"],
+            "Customer A",
+        )
+
+    async def test_identical_text_is_allowed_when_semantic_scope_differs(self) -> None:
+        await self.service.complete_interaction(
+            user_message="Record Customer A routing.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The approval route is Alpha.",
+                    grounding=("Customer A configuration",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Alpha",
+                                "scope": {
+                                    "kind": "contextual",
+                                    "label": "Customer A",
+                                },
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        second = await self.service.complete_interaction(
+            user_message="Record Customer C routing.",
+            response_text="Recorded separately because the scope differs.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The approval route is Alpha.",
+                    grounding=("Customer C configuration",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Alpha",
+                                "scope": {
+                                    "kind": "contextual",
+                                    "label": "Customer C",
+                                },
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        self.assertTrue(second["memory_decisions"][0]["accepted"])
+        self.assertEqual(second["memory_decisions"][0]["tensions"], [])
+        self.assertEqual(len(await self.memory.read()), 2)
+
     async def test_contextual_belief_reframe_preserves_simultaneously_valid_values(self) -> None:
         await self.service.complete_interaction(
             user_message="Customer A uses approval route Alpha.",
@@ -1125,6 +1340,184 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
 
         recalled = await self.service.begin_interaction("What is the invoice approval route?")
         self.assertIn("Alpha [Customer A] ; Beta [Customer B]", recalled["recalled_context"]["summary"])
+
+        customer_a_support = await self.service.complete_interaction(
+            user_message="Customer A continues to use Alpha.",
+            response_text="That corroborates Alpha within Customer A only.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="Customer A still uses approval route Alpha.",
+                    grounding=("Customer A validation",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Alpha",
+                                "scope": {
+                                    "kind": "contextual",
+                                    "label": "Customer A",
+                                },
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual(customer_a_support["memory_decisions"][0]["tensions"], [])
+        self.assertTrue(
+            any(
+                artifact["kind"] == "semantic_equivalence"
+                for artifact in customer_a_support["memory_decisions"][0]["memory"]["artifacts"]
+            )
+        )
+
+        customer_a_change = await self.service.complete_interaction(
+            user_message="Customer A changed to Gamma.",
+            response_text="That creates a Customer A tension only.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="Customer A now uses approval route Gamma.",
+                    grounding=("Customer A change report",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "invoice",
+                                "attribute": "approval_route",
+                                "value": "Gamma",
+                                "scope": {
+                                    "kind": "contextual",
+                                    "label": "Customer A",
+                                },
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        tensions = customer_a_change["memory_decisions"][0]["tensions"]
+        self.assertEqual(len(tensions), 1)
+        self.assertEqual(tensions[0]["existing_value"], "Alpha")
+        self.assertEqual(tensions[0]["proposed_value"], "Gamma")
+        self.assertEqual(tensions[0]["scope"]["label"], "Customer A")
+
+    async def test_scoped_candidate_transition_closes_only_that_scope(self) -> None:
+        scope = SemanticScope(kind="contextual", label="Customer A")
+        for value, confidence, weight, source in (
+            ("October 1", 0.55, 0.4, "Customer A old plan"),
+            ("October 8", 0.8, 0.7, "Customer A new plan"),
+        ):
+            result = await self.service.complete_interaction(
+                user_message=f"Customer A deployment date is {value}.",
+                response_text="Recorded.",
+                proposed_memories=(
+                    MemoryProposal(
+                        memory_class=MemoryClass.SEMANTIC,
+                        content=f"Customer A deployment date is {value}.",
+                        grounding=(source,),
+                        artifacts=(
+                            MemoryArtifactProposal(
+                                kind="semantic_interpretation",
+                                payload={
+                                    "subject": "deployment",
+                                    "attribute": "date",
+                                    "value": value,
+                                    "scope": scope.model_dump(mode="json"),
+                                },
+                            ),
+                            MemoryArtifactProposal(
+                                kind="evidence_appraisal",
+                                payload={
+                                    "confidence": confidence,
+                                    "weight": weight,
+                                    "provenance": [
+                                        {
+                                            "source": source,
+                                            "context": "Customer A",
+                                            "condition": "published",
+                                        }
+                                    ],
+                                },
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        self.assertEqual(len(result["memory_decisions"][0]["tensions"]), 1)
+        self.assertEqual(result["memory_decisions"][0]["tensions"][0]["scope"]["label"], "Customer A")
+
+        assessed = await self.service.complete_interaction(
+            user_message="Verify the Customer A deployment date.",
+            response_text="October 8 is candidate-ready within Customer A.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="Customer A release board",
+                    response="The independent Customer A release board lists October 8.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.9,
+                        weight=0.75,
+                        provenance=(
+                            ProvenanceHop(
+                                source="Customer A release board",
+                                context="Customer A",
+                                condition="published",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="deployment",
+                        attribute="date",
+                        value="October 8",
+                        scope=scope,
+                    ),
+                    tension_finding=TensionInvestigationFinding(
+                        subject="deployment",
+                        attribute="date",
+                        existing_value="October 1",
+                        proposed_value="October 8",
+                        scope=scope,
+                        provenance_independence="verified_independent",
+                        temporal_relationship="same_timeframe",
+                        contextual_relationship="same_context",
+                        basis=(
+                            "The Customer A release board is maintained independently.",
+                            "Both values apply to the same Customer A release decision.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        readiness = assessed["tension_reassessments"][0]["deliberation"]["resolution_readiness"]
+        self.assertEqual(readiness["status"], "candidate_ready")
+        self.assertEqual(readiness["candidate_value"], "October 8")
+
+        transitioned = await self.service.complete_interaction(
+            user_message="Adopt Customer A October 8.",
+            response_text="October 8 is now the current Customer A deployment-date belief.",
+            proposed_memories=(),
+            belief_transitions=(
+                BeliefTransitionProposal(
+                    subject="deployment",
+                    attribute="date",
+                    candidate_value="October 8",
+                    scope=scope,
+                ),
+            ),
+        )
+        decision = transitioned["belief_transition_decisions"][0]
+        self.assertTrue(decision["accepted"])
+        self.assertEqual(decision["scope"]["label"], "Customer A")
+
+        recalled = await self.service.begin_interaction("What is Customer A's deployment date?")
+        self.assertIn(
+            "Current belief: deployment · date = October 8 [Customer A] (superseded October 1)",
+            recalled["recalled_context"]["summary"],
+        )
 
     async def _prepare_candidate_ready_deployment(self) -> None:
         await self.service.complete_interaction(

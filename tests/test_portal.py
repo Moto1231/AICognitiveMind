@@ -81,6 +81,7 @@ class PortalTests(unittest.TestCase):
         self.assertIn('value="belief_reframe">Belief Reframe', markup)
         self.assertIn("Current Belief", script_text)
         self.assertIn("Existing Value", script_text)
+        self.assertIn("Semantic Scope", script_text)
         self.assertIn("Proposed Value", script_text)
         self.assertIn("loadMoreJournals", script_text)
         self.assertIn("journalPageSize: 25", script_text)
@@ -296,6 +297,50 @@ class PortalTests(unittest.TestCase):
         self.assertIn("proposed", summary["search_text"])
         self.assertIn("verified_independent", summary["search_text"])
         self.assertIn("October 8", summary["preview"])
+
+    def test_scoped_tension_summary_exposes_scope(self) -> None:
+        entry = JournalEntry(
+            kind=JournalKind.TENSION,
+            experience={
+                "phase": "detected",
+                "status": "unresolved",
+                "subject": "invoice",
+                "attribute": "approval_route",
+                "scope": {"kind": "contextual", "label": "Customer A"},
+                "competing_values": {
+                    "existing": "Alpha",
+                    "proposed": "Gamma",
+                },
+                "evidence": {
+                    "existing": "Customer A uses Alpha.",
+                    "proposed": "Customer A uses Gamma.",
+                },
+                "deliberation": {
+                    "subject": "invoice",
+                    "attribute": "approval_route",
+                    "scope": {"kind": "contextual", "label": "Customer A"},
+                    "existing_value": "Alpha",
+                    "proposed_value": "Gamma",
+                    "existing_support_count": 1,
+                    "proposed_support_count": 1,
+                    "provenance_relationship": "unknown",
+                    "existing_provenance_depth": 0,
+                    "proposed_provenance_depth": 0,
+                    "appraisal_gaps": [
+                        "existing evidence has incomplete appraisal",
+                        "proposed evidence has incomplete appraisal",
+                    ],
+                    "context_observations": [],
+                    "investigation_questions": [],
+                },
+            },
+        )
+
+        summary = _journal_summary(entry)
+
+        self.assertEqual(summary["title"], "Semantic Tension")
+        self.assertIn("Customer A", summary["preview"])
+        self.assertIn("Customer A", summary["search_text"])
 
     def test_belief_transition_summary_exposes_current_and_superseded_values(self) -> None:
         entry = JournalEntry(

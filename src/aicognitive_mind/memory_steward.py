@@ -40,10 +40,16 @@ class EvidenceAppraisal(BaseModel):
     basis: tuple[str, ...] = ()
 
 
+class SemanticScope(BaseModel):
+    kind: Literal["temporal", "contextual", "temporal_contextual", "other"]
+    label: str = Field(min_length=1)
+
+
 class SemanticInterpretation(BaseModel):
     subject: str = Field(min_length=1)
     attribute: str = Field(min_length=1)
     value: Any
+    scope: SemanticScope | None = None
 
 
 class TensionInvestigationFinding(BaseModel):
@@ -53,6 +59,7 @@ class TensionInvestigationFinding(BaseModel):
     attribute: str = Field(min_length=1)
     existing_value: Any
     proposed_value: Any
+    scope: SemanticScope | None = None
     provenance_independence: Literal[
         "verified_independent",
         "shared_provenance",
@@ -116,6 +123,7 @@ class TransitionBeliefCall(BaseModel):
     subject: str = Field(min_length=1)
     attribute: str = Field(min_length=1)
     candidate_value: Any
+    scope: SemanticScope | None = None
 
 
 class ReframeBeliefCall(BaseModel):
@@ -191,6 +199,7 @@ class EvidenceDeliberation(BaseModel):
     attribute: str | None = None
     existing_value: Any = None
     proposed_value: Any = None
+    scope: SemanticScope | None = None
     revision: int = Field(default=1, ge=1)
     trigger: Literal["tension_detected", "current_evidence_reassessment"] = "tension_detected"
     current_evidence_considered: int = Field(default=0, ge=0)
@@ -218,6 +227,7 @@ class SemanticTension(BaseModel):
     attribute: str
     proposed_value: Any
     existing_value: Any
+    scope: SemanticScope | None = None
     proposed_evidence_content: str
     existing_evidence_content: str
     proposed_appraisal: EvidenceAppraisal | None = None
@@ -240,6 +250,7 @@ class BeliefTransitionDecision(BaseModel):
     attribute: str
     from_value: Any = None
     to_value: Any = None
+    scope: SemanticScope | None = None
     deliberation_revision: int | None = None
 
 
@@ -271,6 +282,7 @@ class MemoryStewardNotConsultedError(RuntimeError):
 
 _SEMANTIC_INTERPRETATION_KIND = "semantic_interpretation"
 _SEMANTIC_EQUIVALENCE_KIND = "semantic_equivalence"
+_SEMANTIC_SCOPE_DISTINCTION_KIND = "semantic_scope_distinction"
 _SEMANTIC_TENSION_KIND = "semantic_tension"
 _EVIDENCE_APPRAISAL_KIND = "evidence_appraisal"
 _EVIDENCE_DELIBERATION_KIND = "evidence_deliberation"
@@ -295,7 +307,39 @@ def _normalized_semantic_value(value: Any) -> str:
     return " ".join(str(value).casefold().split())
 
 
-def _semantic_signature_from_payload(payload: dict[str, Any]) -> tuple[str, str, str] | None:
+def _semantic_scope_from_payload(payload: dict[str, Any]) -> SemanticScope | None:
+    raw = payload.get("scope")
+    if raw is None:
+        return None
+    if isinstance(raw, SemanticScope):
+        return raw
+    if isinstance(raw, dict):
+        return SemanticScope.model_validate(raw)
+    return None
+
+
+def _semantic_scope_key(scope: SemanticScope | None) -> str:
+    if scope is None:
+        return ""
+    return (
+        f"{_normalized_semantic_value(scope.kind)}:"
+        f"{_normalized_semantic_value(scope.label)}"
+    )
+
+
+def _scope_from_scoped_belief_payload(payload: dict[str, Any]) -> SemanticScope | None:
+    label = payload.get("scope")
+    relationship = payload.get("relationship")
+    if not isinstance(label, str) or not label.strip():
+        return None
+    if relationship not in {"temporal", "contextual", "temporal_contextual"}:
+        relationship = "other"
+    return SemanticScope(kind=relationship, label=label)
+
+
+def _semantic_signature_from_payload(
+    payload: dict[str, Any],
+) -> tuple[str, str, str, str] | None:
     subject = payload.get("subject")
     attribute = payload.get("attribute")
     if not isinstance(subject, str) or not subject.strip():
@@ -304,37 +348,91 @@ def _semantic_signature_from_payload(payload: dict[str, Any]) -> tuple[str, str,
         return None
     if "value" not in payload:
         return None
+    scope = _semantic_scope_from_payload(payload)
     return (
         _normalized_semantic_value(subject),
         _normalized_semantic_value(attribute),
         _normalized_semantic_value(payload["value"]),
+        _semantic_scope_key(scope),
     )
 
 
-def _semantic_key_from_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
-    subject = payload.get("subject")
-    attribute = payload.get("attribute")
-    if not isinstance(subject, str) or not subject.strip():
+def _semantic_slot_from_signature(
+    signature: tuple[str, str, str, str],
+) -> tuple[str, str, str]:
+    return (signature[0], signature[1], signature[3])
+
+
+def _semantic_key_from_payload(
+    payload: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    signature = _semantic_signature_from_payload(payload)
+    if signature is None:
         return None
-    if not isinstance(attribute, str) or not attribute.strip():
-        return None
-    return (
-        _normalized_semantic_value(subject),
-        _normalized_semantic_value(attribute),
-    )
+    return _semantic_slot_from_signature(signature)
 
 
 def _semantic_interpretations(
     artifacts: tuple[MemoryArtifact, ...] | tuple[MemoryArtifactProposal, ...],
-) -> dict[tuple[str, str, str], dict[str, Any]]:
-    interpretations: dict[tuple[str, str, str], dict[str, Any]] = {}
+) -> dict[tuple[str, str, str, str], dict[str, Any]]:
+    base_interpretations: list[dict[str, Any]] = []
+    scoped_overrides: list[dict[str, Any]] = []
+
     for artifact in artifacts:
-        if artifact.kind != _SEMANTIC_INTERPRETATION_KIND:
+        if artifact.kind == _SEMANTIC_INTERPRETATION_KIND:
+            interpretation = SemanticInterpretation.model_validate(artifact.payload)
+            base_interpretations.append(interpretation.model_dump(mode="json"))
             continue
-        signature = _semantic_signature_from_payload(artifact.payload)
+        if artifact.kind == _SCOPED_BELIEF_KIND:
+            payload = artifact.payload
+            if payload.get("status") != "valid_in_scope":
+                continue
+            scope = _scope_from_scoped_belief_payload(payload)
+            if scope is None:
+                continue
+            scoped_overrides.append(
+                SemanticInterpretation(
+                    subject=str(payload.get("subject", "")),
+                    attribute=str(payload.get("attribute", "")),
+                    value=payload.get("value"),
+                    scope=scope,
+                ).model_dump(mode="json")
+            )
+
+    overridden_base_keys = {
+        signature[:3]
+        for payload in scoped_overrides
+        if (signature := _semantic_signature_from_payload(payload)) is not None
+    }
+
+    interpretations: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for payload in base_interpretations:
+        signature = _semantic_signature_from_payload(payload)
+        if signature is None:
+            continue
+        if signature[3] == "" and signature[:3] in overridden_base_keys:
+            continue
+        interpretations[signature] = payload
+
+    for payload in scoped_overrides:
+        signature = _semantic_signature_from_payload(payload)
         if signature is not None:
-            interpretations[signature] = artifact.payload
+            interpretations[signature] = payload
+
     return interpretations
+
+
+def _semantic_signature_from_interpretation(
+    interpretation: SemanticInterpretation | None,
+) -> tuple[str, str, str, str] | None:
+    if interpretation is None:
+        return None
+    return (
+        _normalized_semantic_value(interpretation.subject),
+        _normalized_semantic_value(interpretation.attribute),
+        _normalized_semantic_value(interpretation.value),
+        _semantic_scope_key(interpretation.scope),
+    )
 
 
 def _evidence_appraisal_from_artifacts(
@@ -344,18 +442,6 @@ def _evidence_appraisal_from_artifacts(
         if artifact.kind == _EVIDENCE_APPRAISAL_KIND:
             return EvidenceAppraisal.model_validate(artifact.payload)
     return None
-
-
-def _semantic_signature_from_interpretation(
-    interpretation: SemanticInterpretation | None,
-) -> tuple[str, str, str] | None:
-    if interpretation is None:
-        return None
-    return (
-        _normalized_semantic_value(interpretation.subject),
-        _normalized_semantic_value(interpretation.attribute),
-        _normalized_semantic_value(interpretation.value),
-    )
 
 
 def _deliberation_matches_tension(
@@ -373,6 +459,8 @@ def _deliberation_matches_tension(
         == _normalized_semantic_value(tension.existing_value)
         and _normalized_semantic_value(deliberation.proposed_value)
         == _normalized_semantic_value(tension.proposed_value)
+        and _semantic_scope_key(deliberation.scope)
+        == _semantic_scope_key(tension.scope)
     )
 
 
@@ -420,12 +508,13 @@ def _compact_deliberation_evidence(
 
 def _deliberation_evidence_key(
     evidence: DeliberationEvidence,
-) -> tuple[str, str, str, str, tuple[str, ...]]:
+) -> tuple[str, str, str, str, str, tuple[str, ...]]:
     interpretation = evidence.semantic_interpretation
     return (
         _normalized_semantic_value(interpretation.subject),
         _normalized_semantic_value(interpretation.attribute),
         _normalized_semantic_value(interpretation.value),
+        _semantic_scope_key(interpretation.scope),
         _normalized_semantic_value(evidence.response_excerpt),
         tuple(sorted(_provenance_sources(evidence.appraisal))),
     )
@@ -444,6 +533,8 @@ def _finding_matches_tension(
         == _normalized_semantic_value(tension.existing_value)
         and _normalized_semantic_value(finding.proposed_value)
         == _normalized_semantic_value(tension.proposed_value)
+        and _semantic_scope_key(finding.scope)
+        == _semantic_scope_key(tension.scope)
     )
 
 
@@ -613,9 +704,10 @@ def _deliberate_tension(
     include_pending_proposed: bool = False,
     prior_deliberation: EvidenceDeliberation | None = None,
 ) -> EvidenceDeliberation:
-    semantic_key = (
+    semantic_slot = (
         _normalized_semantic_value(tension.subject),
         _normalized_semantic_value(tension.attribute),
+        _semantic_scope_key(tension.scope),
     )
     existing_value = _normalized_semantic_value(tension.existing_value)
     proposed_value = _normalized_semantic_value(tension.proposed_value)
@@ -628,7 +720,7 @@ def _deliberate_tension(
     for memory in existing_memories:
         appraisal = _evidence_appraisal_from_artifacts(memory.artifacts)
         for signature in _semantic_interpretations(memory.artifacts):
-            if signature[:2] != semantic_key:
+            if _semantic_slot_from_signature(signature) != semantic_slot:
                 continue
             if signature[2] == existing_value:
                 existing_support_count += 1
@@ -645,7 +737,7 @@ def _deliberate_tension(
         signature = _semantic_signature_from_interpretation(
             observation.semantic_interpretation
         )
-        if signature is None or signature[:2] != semantic_key:
+        if signature is None or _semantic_slot_from_signature(signature) != semantic_slot:
             continue
         if signature[2] not in {existing_value, proposed_value}:
             continue
@@ -657,7 +749,7 @@ def _deliberate_tension(
         else ()
     )
     merged_evidence: list[DeliberationEvidence] = []
-    seen_evidence: set[tuple[str, str, str, str, tuple[str, ...]]] = set()
+    seen_evidence: set[tuple[str, str, str, str, str, tuple[str, ...]]] = set()
     for evidence in [
         *prior_evidence,
         *(
@@ -676,7 +768,7 @@ def _deliberate_tension(
         signature = _semantic_signature_from_interpretation(
             evidence.semantic_interpretation
         )
-        if signature is None:
+        if signature is None or _semantic_slot_from_signature(signature) != semantic_slot:
             continue
         if signature[2] == existing_value:
             existing_support_count += 1
@@ -691,7 +783,7 @@ def _deliberate_tension(
         signature = _semantic_signature_from_interpretation(
             observation.semantic_interpretation
         )
-        if signature is None:
+        if signature is None or _semantic_slot_from_signature(signature) != semantic_slot:
             continue
         if signature[2] == existing_value:
             current_existing_support_count += 1
@@ -821,6 +913,7 @@ def _deliberate_tension(
         attribute=tension.attribute,
         existing_value=tension.existing_value,
         proposed_value=tension.proposed_value,
+        scope=tension.scope,
         revision=revision,
         trigger=trigger,
         current_evidence_considered=len(relevant_current_evidence),
@@ -848,16 +941,18 @@ def _deliberate_tension(
 
 def _belief_status_for_signature(
     memory: DurableMemory,
-    signature: tuple[str, str, str],
+    signature: tuple[str, str, str, str],
 ) -> str | None:
     for artifact in reversed(memory.artifacts):
         if artifact.kind != _BELIEF_STATUS_KIND:
             continue
         payload = artifact.payload
+        candidate_scope = _semantic_scope_from_payload(payload)
         candidate = (
             _normalized_semantic_value(payload.get("subject")),
             _normalized_semantic_value(payload.get("attribute")),
             _normalized_semantic_value(payload.get("value")),
+            _semantic_scope_key(candidate_scope),
         )
         if candidate == signature:
             status = payload.get("status")
@@ -877,6 +972,8 @@ def _transition_matches_tension(
         or _normalized_semantic_value(payload.get("attribute"))
         != _normalized_semantic_value(tension.attribute)
     ):
+        return False
+    if _semantic_scope_key(_semantic_scope_from_payload(payload)) != _semantic_scope_key(tension.scope):
         return False
     transitioned = {
         _normalized_semantic_value(payload.get("from_value")),
@@ -902,8 +999,8 @@ def _tension_has_committed_transition(
 
 def _latest_current_beliefs(
     memories: tuple[DurableMemory, ...] | list[DurableMemory],
-) -> dict[tuple[str, str], dict[str, Any]]:
-    beliefs: dict[tuple[str, str], tuple[Any, dict[str, Any]]] = {}
+) -> dict[tuple[str, str, str], dict[str, Any]]:
+    beliefs: dict[tuple[str, str, str], tuple[Any, dict[str, Any]]] = {}
     for memory in memories:
         for artifact in memory.artifacts:
             if artifact.kind != _BELIEF_TRANSITION_KIND:
@@ -914,6 +1011,7 @@ def _latest_current_beliefs(
             key = (
                 _normalized_semantic_value(payload.get("subject")),
                 _normalized_semantic_value(payload.get("attribute")),
+                _semantic_scope_key(_semantic_scope_from_payload(payload)),
             )
             previous = beliefs.get(key)
             if previous is None or artifact.formed_at > previous[0]:
@@ -921,15 +1019,21 @@ def _latest_current_beliefs(
     return {key: payload for key, (_, payload) in beliefs.items()}
 
 
+def _scope_suffix_from_payload(payload: dict[str, Any]) -> str:
+    scope = _semantic_scope_from_payload(payload)
+    return f" [{scope.label}]" if scope is not None else ""
+
+
 def _deliberation_closed_by_transition(
     deliberation: EvidenceDeliberation,
-    beliefs: dict[tuple[str, str], dict[str, Any]],
+    beliefs: dict[tuple[str, str, str], dict[str, Any]],
 ) -> bool:
     if deliberation.subject is None or deliberation.attribute is None:
         return False
     key = (
         _normalized_semantic_value(deliberation.subject),
         _normalized_semantic_value(deliberation.attribute),
+        _semantic_scope_key(deliberation.scope),
     )
     transition = beliefs.get(key)
     if transition is None:
@@ -1029,6 +1133,8 @@ def _materialize_artifact(proposal: MemoryArtifactProposal) -> MemoryArtifact:
     payload = proposal.payload
     if proposal.kind == _EVIDENCE_APPRAISAL_KIND:
         payload = EvidenceAppraisal.model_validate(payload).model_dump(mode="json")
+    elif proposal.kind == _SEMANTIC_INTERPRETATION_KIND:
+        payload = SemanticInterpretation.model_validate(payload).model_dump(mode="json")
     return MemoryArtifact(kind=proposal.kind, payload=payload)
 
 
@@ -1160,6 +1266,11 @@ class MemoryStewardTool:
                         "status": tension.status,
                         "subject": tension.subject,
                         "attribute": tension.attribute,
+                        "scope": (
+                            tension.scope.model_dump(mode="json")
+                            if tension.scope
+                            else None
+                        ),
                         "competing_values": {
                             "existing": tension.existing_value,
                             "proposed": tension.proposed_value,
@@ -1203,6 +1314,11 @@ class MemoryStewardTool:
                         "status": tension.status,
                         "subject": tension.subject,
                         "attribute": tension.attribute,
+                        "scope": (
+                            tension.scope.model_dump(mode="json")
+                            if tension.scope
+                            else None
+                        ),
                         "competing_values": {
                             "existing": tension.existing_value,
                             "proposed": tension.proposed_value,
@@ -1327,6 +1443,11 @@ class MemoryStewardTool:
                     attribute=str(payload["attribute"]),
                     proposed_value=payload["proposed_value"],
                     existing_value=payload["existing_value"],
+                    scope=(
+                        SemanticScope.model_validate(payload["scope"])
+                        if payload.get("scope")
+                        else None
+                    ),
                     proposed_evidence_content=memory.content,
                     existing_evidence_content=str(
                         payload.get("existing_evidence_content", "")
@@ -1348,9 +1469,10 @@ class MemoryStewardTool:
                 ):
                     continue
 
-                semantic_key = (
+                semantic_slot = (
                     _normalized_semantic_value(tension.subject),
                     _normalized_semantic_value(tension.attribute),
+                    _semantic_scope_key(tension.scope),
                 )
                 relevant = tuple(
                     observation
@@ -1360,7 +1482,7 @@ class MemoryStewardTool:
                             observation.semantic_interpretation
                         ))
                         is not None
-                        and signature[:2] == semantic_key
+                        and _semantic_slot_from_signature(signature) == semantic_slot
                         and signature[2]
                         in {
                             _normalized_semantic_value(tension.existing_value),
@@ -1407,9 +1529,10 @@ class MemoryStewardTool:
                     self._stage_replacement(memory, replacement)
 
         for tension in reassessed:
-            semantic_key = (
+            semantic_slot = (
                 _normalized_semantic_value(tension.subject),
                 _normalized_semantic_value(tension.attribute),
+                _semantic_scope_key(tension.scope),
             )
             evidence_snapshot = tuple(
                 observation
@@ -1419,7 +1542,7 @@ class MemoryStewardTool:
                         observation.semantic_interpretation
                     ))
                     is not None
-                    and signature[:2] == semantic_key
+                    and _semantic_slot_from_signature(signature) == semantic_slot
                     and signature[2]
                     in {
                         _normalized_semantic_value(tension.existing_value),
@@ -1682,14 +1805,15 @@ class MemoryStewardTool:
         call: TransitionBeliefCall,
     ) -> BeliefTransitionDecision:
         memories = await self._working_memories()
-        semantic_key = (
+        semantic_slot = (
             _normalized_semantic_value(call.subject),
             _normalized_semantic_value(call.attribute),
+            _semantic_scope_key(call.scope),
         )
         requested_value = _normalized_semantic_value(call.candidate_value)
 
         latest_by_pair: dict[
-            tuple[str, str, str, str],
+            tuple[str, str, str, str, str],
             tuple[int, DurableMemory, EvidenceDeliberation],
         ] = {}
         for memory in memories:
@@ -1702,11 +1826,13 @@ class MemoryStewardTool:
                 if (
                     _normalized_semantic_value(deliberation.subject),
                     _normalized_semantic_value(deliberation.attribute),
-                ) != semantic_key:
+                    _semantic_scope_key(deliberation.scope),
+                ) != semantic_slot:
                     continue
                 pair = (
-                    semantic_key[0],
-                    semantic_key[1],
+                    semantic_slot[0],
+                    semantic_slot[1],
+                    semantic_slot[2],
                     _normalized_semantic_value(deliberation.existing_value),
                     _normalized_semantic_value(deliberation.proposed_value),
                 )
@@ -1736,6 +1862,7 @@ class MemoryStewardTool:
                 subject=call.subject,
                 attribute=call.attribute,
                 to_value=call.candidate_value,
+                scope=call.scope,
             )
 
         revision, transition_memory, deliberation = max(
@@ -1747,7 +1874,7 @@ class MemoryStewardTool:
             raise RuntimeError("Candidate-ready deliberation lost its readiness assessment")
 
         current_beliefs = _latest_current_beliefs(memories)
-        current = current_beliefs.get(semantic_key)
+        current = current_beliefs.get(semantic_slot)
         if (
             current is not None
             and _normalized_semantic_value(current.get("to_value")) == requested_value
@@ -1760,6 +1887,7 @@ class MemoryStewardTool:
                 attribute=call.attribute,
                 from_value=current.get("from_value"),
                 to_value=current.get("to_value"),
+                scope=call.scope,
                 deliberation_revision=int(current.get("deliberation_revision", revision)),
             )
 
@@ -1774,6 +1902,7 @@ class MemoryStewardTool:
                 subject=call.subject,
                 attribute=call.attribute,
                 to_value=call.candidate_value,
+                scope=call.scope,
             )
 
         from_normalized = _normalized_semantic_value(from_value)
@@ -1786,7 +1915,7 @@ class MemoryStewardTool:
             status: str | None = None
             matched_value: Any = None
             for signature, payload in interpretations.items():
-                if signature[:2] != semantic_key:
+                if _semantic_slot_from_signature(signature) != semantic_slot:
                     continue
                 if signature[2] == requested_value:
                     status = "current"
@@ -1808,6 +1937,11 @@ class MemoryStewardTool:
                             "subject": call.subject,
                             "attribute": call.attribute,
                             "value": matched_value,
+                            "scope": (
+                                call.scope.model_dump(mode="json")
+                                if call.scope
+                                else None
+                            ),
                             "status": status,
                             "current_value": call.candidate_value,
                             "deliberation_revision": revision,
@@ -1825,6 +1959,11 @@ class MemoryStewardTool:
                             "attribute": call.attribute,
                             "from_value": from_value,
                             "to_value": call.candidate_value,
+                            "scope": (
+                                call.scope.model_dump(mode="json")
+                                if call.scope
+                                else None
+                            ),
                             "deliberation_revision": revision,
                             "readiness_basis": list(readiness.basis),
                         },
@@ -1849,6 +1988,7 @@ class MemoryStewardTool:
                 attribute=call.attribute,
                 from_value=from_value,
                 to_value=call.candidate_value,
+                scope=call.scope,
                 deliberation_revision=revision,
             )
 
@@ -1864,6 +2004,7 @@ class MemoryStewardTool:
             attribute=call.attribute,
             from_value=from_value,
             to_value=call.candidate_value,
+            scope=call.scope,
             deliberation_revision=revision,
         )
         self._transition_events.append(
@@ -1873,6 +2014,11 @@ class MemoryStewardTool:
                 "attribute": call.attribute,
                 "from_value": from_value,
                 "to_value": call.candidate_value,
+                "scope": (
+                    call.scope.model_dump(mode="json")
+                    if call.scope
+                    else None
+                ),
                 "deliberation_revision": revision,
                 "readiness_basis": list(readiness.basis),
                 "candidate_evidence": candidate_evidence,
@@ -1899,14 +2045,34 @@ class MemoryStewardTool:
             )
 
         existing = await self._working_memories()
-        if any(memory.content.casefold() == call.content.casefold() for memory in existing):
-            return MemoryDecision(
-                accepted=False,
-                reason="An exact durable memory already exists; the repeated experience remains in the journal.",
-            )
-
         proposed_interpretations = _semantic_interpretations(call.artifacts)
+
+        exact_content_matches = [
+            memory
+            for memory in existing
+            if memory.content.casefold() == call.content.casefold()
+        ]
+        if exact_content_matches:
+            if not proposed_interpretations:
+                return MemoryDecision(
+                    accepted=False,
+                    reason="An exact durable memory already exists; the repeated experience remains in the journal.",
+                )
+            if any(
+                set(proposed_interpretations).intersection(
+                    _semantic_interpretations(memory.artifacts)
+                )
+                for memory in exact_content_matches
+            ):
+                return MemoryDecision(
+                    accepted=False,
+                    reason="Equivalent durable evidence with the same semantic scope already exists; the repeated experience remains in the journal.",
+                )
+
         equivalent_evidence: list[tuple[DurableMemory, dict[str, Any]]] = []
+        scope_distinctions: list[
+            tuple[DurableMemory, dict[str, Any], dict[str, Any]]
+        ] = []
         tensions: list[SemanticTension] = []
         for memory in existing:
             existing_interpretations = _semantic_interpretations(memory.artifacts)
@@ -1915,9 +2081,15 @@ class MemoryStewardTool:
                     equivalent_evidence.append((memory, proposed_payload))
                     continue
 
-                proposed_key = proposed_signature[:2]
                 for existing_signature, existing_payload in existing_interpretations.items():
-                    if existing_signature[:2] != proposed_key:
+                    if existing_signature[:2] != proposed_signature[:2]:
+                        continue
+                    if existing_signature[3] != proposed_signature[3]:
+                        distinction = (memory, proposed_payload, existing_payload)
+                        if distinction not in scope_distinctions:
+                            scope_distinctions.append(distinction)
+                        continue
+                    if existing_signature[2] == proposed_signature[2]:
                         continue
                     if _belief_status_for_signature(memory, existing_signature) == "superseded":
                         continue
@@ -1926,12 +2098,30 @@ class MemoryStewardTool:
                         attribute=str(proposed_payload["attribute"]),
                         proposed_value=proposed_payload["value"],
                         existing_value=existing_payload["value"],
+                        scope=_semantic_scope_from_payload(proposed_payload),
                         proposed_evidence_content=call.content,
                         existing_evidence_content=memory.content,
                         proposed_appraisal=_evidence_appraisal_from_artifacts(call.artifacts),
                         existing_appraisal=_evidence_appraisal_from_artifacts(memory.artifacts),
                     )
-                    if tension not in tensions:
+                    tension_key = (
+                        _normalized_semantic_value(tension.subject),
+                        _normalized_semantic_value(tension.attribute),
+                        _normalized_semantic_value(tension.existing_value),
+                        _normalized_semantic_value(tension.proposed_value),
+                        _semantic_scope_key(tension.scope),
+                    )
+                    if not any(
+                        (
+                            _normalized_semantic_value(existing_tension.subject),
+                            _normalized_semantic_value(existing_tension.attribute),
+                            _normalized_semantic_value(existing_tension.existing_value),
+                            _normalized_semantic_value(existing_tension.proposed_value),
+                            _semantic_scope_key(existing_tension.scope),
+                        )
+                        == tension_key
+                        for existing_tension in tensions
+                    ):
                         tensions.append(tension)
 
         tensions = [
@@ -1961,6 +2151,21 @@ class MemoryStewardTool:
                     },
                 )
             )
+        for matched_memory, proposed_meaning, existing_meaning in scope_distinctions:
+            artifacts.append(
+                MemoryArtifact(
+                    kind=_SEMANTIC_SCOPE_DISTINCTION_KIND,
+                    payload={
+                        "subject": proposed_meaning.get("subject"),
+                        "attribute": proposed_meaning.get("attribute"),
+                        "proposed_value": proposed_meaning.get("value"),
+                        "proposed_scope": proposed_meaning.get("scope"),
+                        "existing_value": existing_meaning.get("value"),
+                        "existing_scope": existing_meaning.get("scope"),
+                        "distinct_evidence_content": matched_memory.content,
+                    },
+                )
+            )
         for tension in tensions:
             artifacts.append(
                 MemoryArtifact(
@@ -1971,6 +2176,11 @@ class MemoryStewardTool:
                         "attribute": tension.attribute,
                         "proposed_value": tension.proposed_value,
                         "existing_value": tension.existing_value,
+                        "scope": (
+                            tension.scope.model_dump(mode="json")
+                            if tension.scope
+                            else None
+                        ),
                         "existing_evidence_content": tension.existing_evidence_content,
                         "proposed_appraisal": (
                             tension.proposed_appraisal.model_dump(mode="json")
@@ -2008,7 +2218,12 @@ class MemoryStewardTool:
                 "was selected as authoritative."
             )
         elif equivalent_evidence:
-            reason = "Accepted as distinct corroborating evidence for an already interpreted proposition."
+            reason = "Accepted as distinct corroborating evidence for an already interpreted proposition in the same semantic scope."
+        elif scope_distinctions:
+            reason = (
+                "Accepted as a distinct scoped proposition; related evidence exists under a different semantic scope, "
+                "so it was not treated as automatic corroboration or contradiction."
+            )
         else:
             reason = "Accepted by the Conscious Memory Steward for commit with this experience."
         return MemoryDecision(
@@ -2065,7 +2280,8 @@ class MemoryStewardTool:
             parts.append(
                 "Current belief: "
                 + " | ".join(
-                    f"{payload.get('subject')} · {payload.get('attribute')} = {payload.get('to_value')} "
+                    f"{payload.get('subject')} · {payload.get('attribute')} = {payload.get('to_value')}"
+                    f"{_scope_suffix_from_payload(payload)} "
                     f"(superseded {payload.get('from_value')})"
                     for payload in current_beliefs.values()
                 )

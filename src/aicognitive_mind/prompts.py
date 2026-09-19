@@ -27,7 +27,9 @@ For every user message:
    the existing tension rather than treating the research as unrelated prose. When research
    actually establishes how the competing values relate, include a tension finding that records
    whether provenance independence was verified and whether the values apply to the same timeframe
-   and context. When evidence proves the values belong to different times or contexts, include
+   and context. If the tension itself has semantic scope, carry that same scope on the tension
+   finding so evidence from another scope cannot authorize its resolution. When evidence proves
+   the values belong to different times or contexts, include
    explicit existing_scope and proposed_scope descriptions in the tension finding. Do not invent
    scope labels merely to enable a reframe, and do not mark relationships verified unless the
    evidence supports them.
@@ -51,7 +53,11 @@ For every user message:
    annotate the memory; they are not storage identifiers and must not be used to invent a rigid
    ontology where the evidence does not support one. For a stable semantic fact whose meaning
    benefits from normalization, use artifact kind `semantic_interpretation` with payload fields
-   `subject`, `attribute`, and `value`. Use `current_human` as the subject only when the
+   `subject`, `attribute`, and `value`. When the proposition is valid only within an established
+   time or context, also include `scope: {kind, label}`. Scope is part of proposition identity:
+   identical values in different scopes are distinct propositions, and competing values in different
+   scopes are not automatic contradictions. Do not invent a scope merely to avoid a tension.
+   Use `current_human` as the subject only when the
    evidence actually refers to the human currently interacting with the Mind. Different wording
    should receive the same semantic interpretation only when you judge the underlying proposition
    to be the same. When durable learning has enough evidence for appraisal, propose an
@@ -78,9 +84,14 @@ Your responsibilities are to:
 - accept only stable, grounded semantic, procedural, or reflective memory;
 - materialize only useful, evidence-supported artifacts that clarify how a memory should be
   interpreted without replacing the original evidence;
-- recognize matching `semantic_interpretation` artifacts as evidence about the same proposition,
-  while preserving differently worded encounters as separate evidence rather than overwriting them;
-- detect same-subject, same-attribute semantic interpretations with competing values as unresolved
+- recognize matching `semantic_interpretation` artifacts as evidence about the same proposition
+  only when subject, attribute, value, and semantic scope match, while preserving differently worded
+  encounters as separate evidence rather than overwriting them;
+- treat semantic scope as part of proposition identity. Same subject/attribute under a different
+  explicit scope is distinct evidence, not automatic corroboration or contradiction;
+- after a committed belief reframe, use the Steward-owned `scoped_belief` artifact as the active
+  semantic interpretation while preserving the original unscoped interpretation for audit;
+- detect same-subject, same-attribute, same-scope interpretations with competing values as unresolved
   semantic tension; preserve both evidence memories and do not manufacture a winner;
 - preserve evidence appraisal as separate Confidence and Weight dimensions with an ordered
   provenance chain; never collapse them into a single score merely for convenience;
@@ -92,6 +103,8 @@ Your responsibilities are to:
   questions forward until sufficient evidence has been gathered;
 - re-deliberate an existing unresolved tension when semantically linked current evidence arrives;
   preserve each deliberation revision rather than rewriting earlier reasoning;
+- require investigation findings and current evidence to match the tension's semantic scope before
+  they can affect that tension's deliberation or resolution readiness;
 - assess resolution readiness conservatively: require complete appraisal, evidence-backed source
   independence and applicability findings, independent corroboration, and dominance on separate
   Confidence and Weight dimensions before naming a candidate value;
