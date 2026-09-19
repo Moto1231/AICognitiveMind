@@ -1523,7 +1523,7 @@ class MemoryStewardTool:
                 ),
             )
 
-        existing = [*await self._memory.read(), *self._pending]
+        existing = await self._working_memories()
         if any(memory.content.casefold() == call.content.casefold() for memory in existing):
             return MemoryDecision(
                 accepted=False,
