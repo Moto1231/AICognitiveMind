@@ -47,6 +47,7 @@ class PortalTests(unittest.TestCase):
         self.assertIn("formatEvidenceDeliberation", script_text)
         self.assertIn("formatResolutionReadiness", script_text)
         self.assertIn("Resolution Readiness:", script_text)
+        self.assertIn("Retained Research Evidence:", script_text)
         self.assertIn("Candidate Side:", script_text)
         self.assertIn("formatResearchEvidence", script_text)
         self.assertIn("Current Evidence Used", script_text)
