@@ -618,6 +618,11 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             refined_deliberation["resolution_readiness"]["proposed"]["support_count"],
             3,
         )
+        self.assertEqual(len(refined_deliberation["current_evidence_history"]), 2)
+        self.assertEqual(
+            refined_deliberation["current_evidence_history"][0]["response_excerpt"],
+            "The independently maintained release board lists October 8.",
+        )
 
         memories = await self.memory.read()
         self.assertEqual(len(memories), 2)
