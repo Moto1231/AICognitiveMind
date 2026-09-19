@@ -334,6 +334,12 @@ function formatEvidenceDeliberation(deliberation) {
   const questions = (deliberation.investigation_questions || [])
     .map((question, index) => `${index + 1}. ${question}`)
     .join("\n");
+  const evidenceHistory = (deliberation.current_evidence_history || [])
+    .map((item, index) => {
+      const meaning = item.semantic_interpretation || {};
+      return `${index + 1}. ${item.response_excerpt} [${meaning.subject || "?"} · ${meaning.attribute || "?"} = ${meaning.value ?? "?"}]`;
+    })
+    .join("\n");
   return [
     `Revision: ${deliberation.revision ?? 1}`,
     `Trigger: ${displayLabel(deliberation.trigger || "tension_detected")}`,
@@ -348,6 +354,7 @@ function formatEvidenceDeliberation(deliberation) {
     gaps ? `Appraisal Gaps:\n${gaps}` : "Appraisal Gaps: None",
     contexts ? `Context Observations:\n${contexts}` : "Context Observations: None",
     questions ? `Investigation Questions:\n${questions}` : "Investigation Questions: None",
+    evidenceHistory ? `Retained Research Evidence:\n${evidenceHistory}` : "Retained Research Evidence: None",
     `Tension Finding:\n${deliberation.tension_finding ? JSON.stringify(deliberation.tension_finding, null, 2) : "None"}`,
     `Resolution Readiness:\n${formatResolutionReadiness(deliberation.resolution_readiness)}`,
   ].join("\n");
