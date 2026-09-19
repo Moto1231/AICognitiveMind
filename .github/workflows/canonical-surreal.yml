@@ -42,6 +42,7 @@ jobs:
           SURREALDB_URI: ${{ secrets.CANONICAL_SURREALDB_URI }}
           SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}
           SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
+          SURREALDB_AUTH_LEVEL: database
         run: |
           test -n "$SURREALDB_URI" || (echo "Missing CANONICAL_SURREALDB_URI" && exit 1)
           test -n "$SURREALDB_USERNAME" || (echo "Missing CANONICAL_SURREALDB_USERNAME" && exit 1)
@@ -56,6 +57,7 @@ jobs:
           SURREALDB_DATABASE: ai_cognitive_mind
           SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}
           SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
+          SURREALDB_AUTH_LEVEL: database
         run: python scripts/surreal_canonical.py check
 
       - name: Require Atlas source secret
@@ -74,6 +76,7 @@ jobs:
           SURREALDB_DATABASE: ai_cognitive_mind
           SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}
           SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
+          SURREALDB_AUTH_LEVEL: database
           MONGODB_URI: ${{ secrets.CANONICAL_MONGODB_URI }}
           MONGODB_DATABASE: ai_cognitive_mind
         run: python scripts/surreal_canonical.py migrate-from-atlas
@@ -87,4 +90,5 @@ jobs:
           SURREALDB_DATABASE: ai_cognitive_mind
           SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}
           SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
+          SURREALDB_AUTH_LEVEL: database
         run: python scripts/surreal_canonical.py check
