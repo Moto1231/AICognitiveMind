@@ -2048,14 +2048,34 @@ class MemoryStewardTool:
             )
 
         existing = await self._working_memories()
-        if any(memory.content.casefold() == call.content.casefold() for memory in existing):
-            return MemoryDecision(
-                accepted=False,
-                reason="An exact durable memory already exists; the repeated experience remains in the journal.",
-            )
-
         proposed_interpretations = _semantic_interpretations(call.artifacts)
+
+        exact_content_matches = [
+            memory
+            for memory in existing
+            if memory.content.casefold() == call.content.casefold()
+        ]
+        if exact_content_matches:
+            if not proposed_interpretations:
+                return MemoryDecision(
+                    accepted=False,
+                    reason="An exact durable memory already exists; the repeated experience remains in the journal.",
+                )
+            if any(
+                set(proposed_interpretations).intersection(
+                    _semantic_interpretations(memory.artifacts)
+                )
+                for memory in exact_content_matches
+            ):
+                return MemoryDecision(
+                    accepted=False,
+                    reason="Equivalent durable evidence with the same semantic scope already exists; the repeated experience remains in the journal.",
+                )
+
         equivalent_evidence: list[tuple[DurableMemory, dict[str, Any]]] = []
+        scope_distinctions: list[
+            tuple[DurableMemory, dict[str, Any], dict[str, Any]]
+        ] = []
         tensions: list[SemanticTension] = []
         for memory in existing:
             existing_interpretations = _semantic_interpretations(memory.artifacts)
@@ -2064,9 +2084,15 @@ class MemoryStewardTool:
                     equivalent_evidence.append((memory, proposed_payload))
                     continue
 
-                proposed_key = proposed_signature[:2]
                 for existing_signature, existing_payload in existing_interpretations.items():
-                    if existing_signature[:2] != proposed_key:
+                    if existing_signature[:2] != proposed_signature[:2]:
+                        continue
+                    if existing_signature[3] != proposed_signature[3]:
+                        distinction = (memory, proposed_payload, existing_payload)
+                        if distinction not in scope_distinctions:
+                            scope_distinctions.append(distinction)
+                        continue
+                    if existing_signature[2] == proposed_signature[2]:
                         continue
                     if _belief_status_for_signature(memory, existing_signature) == "superseded":
                         continue
@@ -2075,6 +2101,7 @@ class MemoryStewardTool:
                         attribute=str(proposed_payload["attribute"]),
                         proposed_value=proposed_payload["value"],
                         existing_value=existing_payload["value"],
+                        scope=_semantic_scope_from_payload(proposed_payload),
                         proposed_evidence_content=call.content,
                         existing_evidence_content=memory.content,
                         proposed_appraisal=_evidence_appraisal_from_artifacts(call.artifacts),
@@ -2110,6 +2137,21 @@ class MemoryStewardTool:
                     },
                 )
             )
+        for matched_memory, proposed_meaning, existing_meaning in scope_distinctions:
+            artifacts.append(
+                MemoryArtifact(
+                    kind=_SEMANTIC_SCOPE_DISTINCTION_KIND,
+                    payload={
+                        "subject": proposed_meaning.get("subject"),
+                        "attribute": proposed_meaning.get("attribute"),
+                        "proposed_value": proposed_meaning.get("value"),
+                        "proposed_scope": proposed_meaning.get("scope"),
+                        "existing_value": existing_meaning.get("value"),
+                        "existing_scope": existing_meaning.get("scope"),
+                        "distinct_evidence_content": matched_memory.content,
+                    },
+                )
+            )
         for tension in tensions:
             artifacts.append(
                 MemoryArtifact(
@@ -2120,6 +2162,11 @@ class MemoryStewardTool:
                         "attribute": tension.attribute,
                         "proposed_value": tension.proposed_value,
                         "existing_value": tension.existing_value,
+                        "scope": (
+                            tension.scope.model_dump(mode="json")
+                            if tension.scope
+                            else None
+                        ),
                         "existing_evidence_content": tension.existing_evidence_content,
                         "proposed_appraisal": (
                             tension.proposed_appraisal.model_dump(mode="json")
@@ -2157,7 +2204,12 @@ class MemoryStewardTool:
                 "was selected as authoritative."
             )
         elif equivalent_evidence:
-            reason = "Accepted as distinct corroborating evidence for an already interpreted proposition."
+            reason = "Accepted as distinct corroborating evidence for an already interpreted proposition in the same semantic scope."
+        elif scope_distinctions:
+            reason = (
+                "Accepted as a distinct scoped proposition; related evidence exists under a different semantic scope, "
+                "so it was not treated as automatic corroboration or contradiction."
+            )
         else:
             reason = "Accepted by the Conscious Memory Steward for commit with this experience."
         return MemoryDecision(
