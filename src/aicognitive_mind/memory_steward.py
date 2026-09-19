@@ -178,6 +178,7 @@ class EvidenceDeliberation(BaseModel):
     appraisal_gaps: tuple[str, ...] = ()
     context_observations: tuple[str, ...] = ()
     investigation_questions: tuple[str, ...] = ()
+    tension_finding: TensionInvestigationFinding | None = None
     resolution_readiness: ResolutionReadiness | None = None
 
 
@@ -619,7 +620,10 @@ def _deliberate_tension(
                 "Immediate-source conditions differ; determine whether source condition affects applicability."
             )
 
-    finding = _latest_tension_finding(tension, tuple(relevant_current_evidence))
+    finding = (
+        _latest_tension_finding(tension, tuple(relevant_current_evidence))
+        or (prior_deliberation.tension_finding if prior_deliberation else None)
+    )
     questions: list[str] = []
     if appraisal_gaps:
         questions.append(
@@ -708,6 +712,7 @@ def _deliberate_tension(
         appraisal_gaps=tuple(appraisal_gaps),
         context_observations=tuple(context_observations),
         investigation_questions=unique_questions,
+        tension_finding=finding,
         resolution_readiness=readiness,
     )
 
