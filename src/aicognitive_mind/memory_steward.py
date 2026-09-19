@@ -40,10 +40,16 @@ class EvidenceAppraisal(BaseModel):
     basis: tuple[str, ...] = ()
 
 
+class SemanticScope(BaseModel):
+    kind: Literal["temporal", "contextual", "temporal_contextual", "other"]
+    label: str = Field(min_length=1)
+
+
 class SemanticInterpretation(BaseModel):
     subject: str = Field(min_length=1)
     attribute: str = Field(min_length=1)
     value: Any
+    scope: SemanticScope | None = None
 
 
 class TensionInvestigationFinding(BaseModel):
@@ -53,6 +59,7 @@ class TensionInvestigationFinding(BaseModel):
     attribute: str = Field(min_length=1)
     existing_value: Any
     proposed_value: Any
+    scope: SemanticScope | None = None
     provenance_independence: Literal[
         "verified_independent",
         "shared_provenance",
@@ -116,6 +123,7 @@ class TransitionBeliefCall(BaseModel):
     subject: str = Field(min_length=1)
     attribute: str = Field(min_length=1)
     candidate_value: Any
+    scope: SemanticScope | None = None
 
 
 class ReframeBeliefCall(BaseModel):
@@ -191,6 +199,7 @@ class EvidenceDeliberation(BaseModel):
     attribute: str | None = None
     existing_value: Any = None
     proposed_value: Any = None
+    scope: SemanticScope | None = None
     revision: int = Field(default=1, ge=1)
     trigger: Literal["tension_detected", "current_evidence_reassessment"] = "tension_detected"
     current_evidence_considered: int = Field(default=0, ge=0)
@@ -218,6 +227,7 @@ class SemanticTension(BaseModel):
     attribute: str
     proposed_value: Any
     existing_value: Any
+    scope: SemanticScope | None = None
     proposed_evidence_content: str
     existing_evidence_content: str
     proposed_appraisal: EvidenceAppraisal | None = None
@@ -240,6 +250,7 @@ class BeliefTransitionDecision(BaseModel):
     attribute: str
     from_value: Any = None
     to_value: Any = None
+    scope: SemanticScope | None = None
     deliberation_revision: int | None = None
 
 
@@ -271,6 +282,7 @@ class MemoryStewardNotConsultedError(RuntimeError):
 
 _SEMANTIC_INTERPRETATION_KIND = "semantic_interpretation"
 _SEMANTIC_EQUIVALENCE_KIND = "semantic_equivalence"
+_SEMANTIC_SCOPE_DISTINCTION_KIND = "semantic_scope_distinction"
 _SEMANTIC_TENSION_KIND = "semantic_tension"
 _EVIDENCE_APPRAISAL_KIND = "evidence_appraisal"
 _EVIDENCE_DELIBERATION_KIND = "evidence_deliberation"
@@ -295,7 +307,39 @@ def _normalized_semantic_value(value: Any) -> str:
     return " ".join(str(value).casefold().split())
 
 
-def _semantic_signature_from_payload(payload: dict[str, Any]) -> tuple[str, str, str] | None:
+def _semantic_scope_from_payload(payload: dict[str, Any]) -> SemanticScope | None:
+    raw = payload.get("scope")
+    if raw is None:
+        return None
+    if isinstance(raw, SemanticScope):
+        return raw
+    if isinstance(raw, dict):
+        return SemanticScope.model_validate(raw)
+    return None
+
+
+def _semantic_scope_key(scope: SemanticScope | None) -> str:
+    if scope is None:
+        return ""
+    return (
+        f"{_normalized_semantic_value(scope.kind)}:"
+        f"{_normalized_semantic_value(scope.label)}"
+    )
+
+
+def _scope_from_scoped_belief_payload(payload: dict[str, Any]) -> SemanticScope | None:
+    label = payload.get("scope")
+    relationship = payload.get("relationship")
+    if not isinstance(label, str) or not label.strip():
+        return None
+    if relationship not in {"temporal", "contextual", "temporal_contextual"}:
+        relationship = "other"
+    return SemanticScope(kind=relationship, label=label)
+
+
+def _semantic_signature_from_payload(
+    payload: dict[str, Any],
+) -> tuple[str, str, str, str] | None:
     subject = payload.get("subject")
     attribute = payload.get("attribute")
     if not isinstance(subject, str) or not subject.strip():
@@ -304,37 +348,91 @@ def _semantic_signature_from_payload(payload: dict[str, Any]) -> tuple[str, str,
         return None
     if "value" not in payload:
         return None
+    scope = _semantic_scope_from_payload(payload)
     return (
         _normalized_semantic_value(subject),
         _normalized_semantic_value(attribute),
         _normalized_semantic_value(payload["value"]),
+        _semantic_scope_key(scope),
     )
 
 
-def _semantic_key_from_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
-    subject = payload.get("subject")
-    attribute = payload.get("attribute")
-    if not isinstance(subject, str) or not subject.strip():
+def _semantic_slot_from_signature(
+    signature: tuple[str, str, str, str],
+) -> tuple[str, str, str]:
+    return (signature[0], signature[1], signature[3])
+
+
+def _semantic_key_from_payload(
+    payload: dict[str, Any],
+) -> tuple[str, str, str] | None:
+    signature = _semantic_signature_from_payload(payload)
+    if signature is None:
         return None
-    if not isinstance(attribute, str) or not attribute.strip():
-        return None
-    return (
-        _normalized_semantic_value(subject),
-        _normalized_semantic_value(attribute),
-    )
+    return _semantic_slot_from_signature(signature)
 
 
 def _semantic_interpretations(
     artifacts: tuple[MemoryArtifact, ...] | tuple[MemoryArtifactProposal, ...],
-) -> dict[tuple[str, str, str], dict[str, Any]]:
-    interpretations: dict[tuple[str, str, str], dict[str, Any]] = {}
+) -> dict[tuple[str, str, str, str], dict[str, Any]]:
+    base_interpretations: list[dict[str, Any]] = []
+    scoped_overrides: list[dict[str, Any]] = []
+
     for artifact in artifacts:
-        if artifact.kind != _SEMANTIC_INTERPRETATION_KIND:
+        if artifact.kind == _SEMANTIC_INTERPRETATION_KIND:
+            interpretation = SemanticInterpretation.model_validate(artifact.payload)
+            base_interpretations.append(interpretation.model_dump(mode="json"))
             continue
-        signature = _semantic_signature_from_payload(artifact.payload)
+        if artifact.kind == _SCOPED_BELIEF_KIND:
+            payload = artifact.payload
+            if payload.get("status") != "valid_in_scope":
+                continue
+            scope = _scope_from_scoped_belief_payload(payload)
+            if scope is None:
+                continue
+            scoped_overrides.append(
+                SemanticInterpretation(
+                    subject=str(payload.get("subject", "")),
+                    attribute=str(payload.get("attribute", "")),
+                    value=payload.get("value"),
+                    scope=scope,
+                ).model_dump(mode="json")
+            )
+
+    overridden_base_keys = {
+        signature[:3]
+        for payload in scoped_overrides
+        if (signature := _semantic_signature_from_payload(payload)) is not None
+    }
+
+    interpretations: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for payload in base_interpretations:
+        signature = _semantic_signature_from_payload(payload)
+        if signature is None:
+            continue
+        if signature[3] == "" and signature[:3] in overridden_base_keys:
+            continue
+        interpretations[signature] = payload
+
+    for payload in scoped_overrides:
+        signature = _semantic_signature_from_payload(payload)
         if signature is not None:
-            interpretations[signature] = artifact.payload
+            interpretations[signature] = payload
+
     return interpretations
+
+
+def _semantic_signature_from_interpretation(
+    interpretation: SemanticInterpretation | None,
+) -> tuple[str, str, str, str] | None:
+    if interpretation is None:
+        return None
+    return (
+        _normalized_semantic_value(interpretation.subject),
+        _normalized_semantic_value(interpretation.attribute),
+        _normalized_semantic_value(interpretation.value),
+        _semantic_scope_key(interpretation.scope),
+    )
 
 
 def _evidence_appraisal_from_artifacts(
@@ -1029,6 +1127,8 @@ def _materialize_artifact(proposal: MemoryArtifactProposal) -> MemoryArtifact:
     payload = proposal.payload
     if proposal.kind == _EVIDENCE_APPRAISAL_KIND:
         payload = EvidenceAppraisal.model_validate(payload).model_dump(mode="json")
+    elif proposal.kind == _SEMANTIC_INTERPRETATION_KIND:
+        payload = SemanticInterpretation.model_validate(payload).model_dump(mode="json")
     return MemoryArtifact(kind=proposal.kind, payload=payload)
 
 
