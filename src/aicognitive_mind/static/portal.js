@@ -55,6 +55,12 @@ async function api(path, options = {}) {
   return payload;
 }
 
+function displayLabel(value) {
+  return String(value || "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, character => character.toUpperCase());
+}
+
 function toast(message, error = false) {
   el.toast.textContent = message;
   el.toast.classList.toggle("error", error);
@@ -77,11 +83,11 @@ function renderStatus(status) {
   const mind = status.mind;
   const integration = status.integration;
 
-  el.connectionLabel.textContent = `${integration.protocol} · Mind online`;
+  el.connectionLabel.textContent = `${integration.protocol} · Mind Online`;
   el.mindName.textContent = mind.identity.self_name;
   el.continuityLabel.textContent = "Persistent";
   el.selfName.textContent = mind.identity.self_name;
-  el.developmentState.textContent = mind.developmental_state;
+  el.developmentState.textContent = displayLabel(mind.developmental_state);
   el.createdAt.textContent = new Date(mind.created_at).toLocaleString();
   el.memoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.journalCount.textContent = Number(status.journal_experience_count).toLocaleString();
@@ -131,7 +137,7 @@ function renderRecordValues(container, values) {
 
 function openMemoryInspector(memory) {
   el.inspectorContent.textContent = memory.content;
-  el.inspectorClass.textContent = memory.memory_class;
+  el.inspectorClass.textContent = displayLabel(memory.memory_class);
   el.inspectorFormedAt.textContent = new Date(memory.formed_at).toLocaleString();
   renderRecordValues(el.inspectorGrounding, memory.grounding);
   renderRecordValues(el.inspectorAssociations, memory.associations);
@@ -172,7 +178,7 @@ function renderMemories(memories) {
     const meta = document.createElement("div");
     meta.className = "memory-meta";
     const klass = document.createElement("span");
-    klass.textContent = memory.memory_class;
+    klass.textContent = displayLabel(memory.memory_class);
     const formed = document.createElement("span");
     formed.textContent = new Date(memory.formed_at).toLocaleString();
     meta.append(klass, formed);
@@ -195,8 +201,8 @@ async function refresh() {
     el.initializeOverlay.classList.add("hidden");
   } catch (error) {
     if (error.status === 404) {
-      el.connectionLabel.textContent = "Mind not initialized";
-      el.continuityLabel.textContent = "Awaiting genesis";
+      el.connectionLabel.textContent = "Mind Not Initialized";
+      el.continuityLabel.textContent = "Awaiting Genesis";
       el.initializeOverlay.classList.remove("hidden");
       return;
     }
