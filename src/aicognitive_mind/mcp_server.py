@@ -10,6 +10,7 @@ from mcp.server.mcpserver import Context, MCPServer
 
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.mcp_service import (
+    BeliefReframeProposal,
     BeliefTransitionProposal,
     CognitiveMcpService,
     MemoryProposal,
@@ -92,6 +93,7 @@ async def complete_interaction(
     ctx: Context[AppState],
     current_evidence: list[ResearchObservation] | None = None,
     belief_transitions: list[BeliefTransitionProposal] | None = None,
+    belief_reframes: list[BeliefReframeProposal] | None = None,
 ) -> dict[str, Any]:
     """Mandatory final step after reasoning and before presenting the final answer.
 
@@ -106,6 +108,9 @@ async def complete_interaction(
     dimensions are not collapsed into one score. When recall or re-deliberation reports
     candidate_ready, the host may explicitly include that exact subject / attribute / candidate
     value in belief_transitions. The Steward revalidates readiness before changing current belief.
+    When readiness is reframe_required and the tension finding contains explicit scopes for both
+    values, the host may submit that exact pair in belief_reframes. The Steward revalidates the
+    finding and preserves both values as scoped beliefs rather than selecting a winner.
     """
     return await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,
@@ -113,6 +118,7 @@ async def complete_interaction(
         proposed_memories=tuple(proposed_memories),
         current_evidence=tuple(current_evidence or ()),
         belief_transitions=tuple(belief_transitions or ()),
+        belief_reframes=tuple(belief_reframes or ()),
     )
 
 
