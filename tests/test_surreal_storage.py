@@ -450,6 +450,69 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(memory_total, 1)
         self.assertEqual(memory_page, [memory])
 
+    async def test_semantic_scope_is_searchable_in_journal_and_memory(self) -> None:
+        journal = SurrealJournalStore(self.runtime.database)
+        memory_store = SurrealMemoryStore(self.runtime.database)
+
+        tension = JournalEntry(
+            kind=JournalKind.TENSION,
+            experience={
+                "phase": "detected",
+                "status": "unresolved",
+                "subject": "invoice",
+                "attribute": "approval_route",
+                "scope": {"kind": "contextual", "label": "Customer A"},
+                "competing_values": {
+                    "existing": "Alpha",
+                    "proposed": "Gamma",
+                },
+            },
+        )
+        await journal.append(
+            tension,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        page, total = await journal.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="Customer A",
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(page, [tension])
+
+        memory = DurableMemory(
+            memory_class=MemoryClass.SEMANTIC,
+            content="Customer A approval route is Alpha.",
+            grounding=("Customer A configuration",),
+            artifacts=(
+                MemoryArtifact(
+                    kind="semantic_interpretation",
+                    payload={
+                        "subject": "invoice",
+                        "attribute": "approval_route",
+                        "value": "Alpha",
+                        "scope": {
+                            "kind": "contextual",
+                            "label": "Customer A",
+                        },
+                    },
+                ),
+            ),
+        )
+        await memory_store.remember(
+            memory,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        memory_page, memory_total = await memory_store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="Customer A",
+        )
+        self.assertEqual(memory_total, 1)
+        self.assertEqual(memory_page, [memory])
+
     async def test_memory_searches_full_collection_and_replaces_exact_document(self) -> None:
         store = SurrealMemoryStore(self.runtime.database)
         base = datetime(2026, 9, 18, 12, tzinfo=UTC)
