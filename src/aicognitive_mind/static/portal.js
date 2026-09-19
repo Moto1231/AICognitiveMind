@@ -592,6 +592,28 @@ function renderJournalDetail(entry) {
     return;
   }
 
+  if (entry.kind === "tension") {
+    const values = experience.competing_values || {};
+    const evidence = experience.evidence || {};
+    const diff = document.createElement("div");
+    diff.className = "journal-diff";
+    diff.append(
+      addJournalBlock("Existing Value", String(values.existing ?? "")),
+      addJournalBlock("Proposed Value", String(values.proposed ?? "")),
+    );
+    el.journalStructuredDetail.append(
+      addJournalBlock(
+        "Semantic Slot",
+        [experience.subject, experience.attribute].filter(Boolean).join(" · "),
+      ),
+      diff,
+      addJournalBlock("Existing Evidence", evidence.existing || ""),
+      addJournalBlock("Proposed Evidence", evidence.proposed || ""),
+      addJournalBlock("Status", displayLabel(experience.status || "unresolved")),
+    );
+    return;
+  }
+
   if (entry.kind === "memory_revision") {
     const diff = document.createElement("div");
     diff.className = "journal-diff";
