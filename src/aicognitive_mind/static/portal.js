@@ -28,6 +28,14 @@ const el = {
   initializeForm: document.getElementById("initializeForm"),
   initializeName: document.getElementById("initializeName"),
   initializeValues: document.getElementById("initializeValues"),
+  memoryInspector: document.getElementById("memoryInspector"),
+  closeMemoryInspector: document.getElementById("closeMemoryInspector"),
+  inspectorContent: document.getElementById("inspectorContent"),
+  inspectorClass: document.getElementById("inspectorClass"),
+  inspectorFormedAt: document.getElementById("inspectorFormedAt"),
+  inspectorGrounding: document.getElementById("inspectorGrounding"),
+  inspectorAssociations: document.getElementById("inspectorAssociations"),
+  inspectorRaw: document.getElementById("inspectorRaw"),
   toast: document.getElementById("toast"),
 };
 
@@ -103,6 +111,39 @@ function renderStatus(status) {
   }
 }
 
+function renderRecordValues(container, values) {
+  container.innerHTML = "";
+  if (!values || !values.length) {
+    const empty = document.createElement("div");
+    empty.className = "record-empty";
+    empty.textContent = "None";
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const value of values) {
+    const item = document.createElement("div");
+    item.className = "record-value";
+    item.textContent = value;
+    container.appendChild(item);
+  }
+}
+
+function openMemoryInspector(memory) {
+  el.inspectorContent.textContent = memory.content;
+  el.inspectorClass.textContent = memory.memory_class;
+  el.inspectorFormedAt.textContent = new Date(memory.formed_at).toLocaleString();
+  renderRecordValues(el.inspectorGrounding, memory.grounding);
+  renderRecordValues(el.inspectorAssociations, memory.associations);
+  el.inspectorRaw.textContent = JSON.stringify(memory, null, 2);
+  el.memoryInspector.classList.remove("hidden");
+  el.closeMemoryInspector.focus();
+}
+
+function closeMemoryInspector() {
+  el.memoryInspector.classList.add("hidden");
+}
+
 function renderMemories(memories) {
   state.memories = memories;
   el.memoryList.innerHTML = "";
@@ -117,6 +158,16 @@ function renderMemories(memories) {
   for (const memory of [...memories].reverse()) {
     const item = document.createElement("article");
     item.className = "memory-item";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    item.setAttribute("aria-label", `Inspect ${memory.memory_class} memory`);
+    item.addEventListener("click", () => openMemoryInspector(memory));
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openMemoryInspector(memory);
+      }
+    });
 
     const meta = document.createElement("div");
     meta.className = "memory-meta";
@@ -182,5 +233,14 @@ el.adminTab.addEventListener("click", () => setMode("admin"));
 el.refreshButton.addEventListener("click", () => refresh());
 el.adminRefreshButton.addEventListener("click", () => refresh());
 el.initializeForm.addEventListener("submit", initializeMind);
+el.closeMemoryInspector.addEventListener("click", closeMemoryInspector);
+el.memoryInspector.addEventListener("click", (event) => {
+  if (event.target === el.memoryInspector) closeMemoryInspector();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !el.memoryInspector.classList.contains("hidden")) {
+    closeMemoryInspector();
+  }
+});
 
 refresh();
