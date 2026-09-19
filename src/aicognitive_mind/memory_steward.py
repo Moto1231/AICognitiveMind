@@ -348,7 +348,6 @@ def _deliberate_tension(
     existing_support_count = max(existing_support_count, 1)
     proposed_support_count = max(proposed_support_count, 1)
 
-    all_appraisals = [*existing_appraisals, *proposed_appraisals]
     appraisal_gaps: list[str] = []
     if any(appraisal is None for appraisal in existing_appraisals) or not existing_appraisals:
         appraisal_gaps.append("existing evidence has incomplete appraisal")
@@ -488,6 +487,9 @@ class MemoryStewardTool:
         self._pending_tensions: list[SemanticTension] = []
         self._pending_replacements: list[tuple[DurableMemory, DurableMemory]] = []
         self._tension_reassessments: list[SemanticTension] = []
+        self._reassessment_events: list[
+            tuple[SemanticTension, tuple[ResearchObservation, ...]]
+        ] = []
         self._completed = False
 
     @property
@@ -598,21 +600,10 @@ class MemoryStewardTool:
                 ),
                 recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
             )
-        for tension in self._tension_reassessments:
+        for tension, evidence_snapshot in self._reassessment_events:
             relevant_evidence = [
                 observation.model_dump(mode="json")
-                for observation in self._evidence
-                if (
-                    (signature := _semantic_signature_from_interpretation(
-                        observation.semantic_interpretation
-                    ))
-                    is not None
-                    and signature[:2]
-                    == (
-                        _normalized_semantic_value(tension.subject),
-                        _normalized_semantic_value(tension.attribute),
-                    )
-                )
+                for observation in evidence_snapshot
             ]
             await self._journal.append(
                 JournalEntry(
@@ -793,10 +784,38 @@ class MemoryStewardTool:
                 reassessed.append(updated)
                 changed = True
 
-            if changed and memory not in self._pending:
-                self._stage_replacement(memory, replacement)
+            if changed:
+                if memory in self._pending:
+                    self._pending = [
+                        replacement if pending == memory else pending
+                        for pending in self._pending
+                    ]
+                else:
+                    self._stage_replacement(memory, replacement)
 
-        self._tension_reassessments = reassessed
+        for tension in reassessed:
+            semantic_key = (
+                _normalized_semantic_value(tension.subject),
+                _normalized_semantic_value(tension.attribute),
+            )
+            evidence_snapshot = tuple(
+                observation
+                for observation in self._evidence
+                if (
+                    (signature := _semantic_signature_from_interpretation(
+                        observation.semantic_interpretation
+                    ))
+                    is not None
+                    and signature[:2] == semantic_key
+                    and signature[2]
+                    in {
+                        _normalized_semantic_value(tension.existing_value),
+                        _normalized_semantic_value(tension.proposed_value),
+                    }
+                )
+            )
+            self._reassessment_events.append((tension, evidence_snapshot))
+        self._tension_reassessments.extend(reassessed)
         return reassessed
 
     async def _consider_memory(self, call: ProposeMemoryCall) -> MemoryDecision:
@@ -854,6 +873,7 @@ class MemoryStewardTool:
                     "deliberation": _deliberate_tension(
                         tension=tension,
                         existing_memories=existing,
+                        current_evidence=tuple(self._evidence),
                         include_pending_proposed=True,
                     )
                 }
@@ -984,19 +1004,23 @@ class MemoryStewardTool:
             )
         investigation_questions: list[str] = []
         for memory in memories:
-            latest_artifact = next(
-                (
-                    artifact
-                    for artifact in reversed(memory.artifacts)
-                    if artifact.kind == _EVIDENCE_DELIBERATION_KIND
-                ),
-                None,
-            )
-            if latest_artifact is None:
-                continue
-            for question in latest_artifact.payload.get("investigation_questions", []):
-                if isinstance(question, str) and question not in investigation_questions:
-                    investigation_questions.append(question)
+            seen_deliberations: set[tuple[str, str, str, str]] = set()
+            for artifact in reversed(memory.artifacts):
+                if artifact.kind != _EVIDENCE_DELIBERATION_KIND:
+                    continue
+                payload = artifact.payload
+                key = (
+                    _normalized_semantic_value(payload.get("subject")),
+                    _normalized_semantic_value(payload.get("attribute")),
+                    _normalized_semantic_value(payload.get("existing_value")),
+                    _normalized_semantic_value(payload.get("proposed_value")),
+                )
+                if key in seen_deliberations:
+                    continue
+                seen_deliberations.add(key)
+                for question in payload.get("investigation_questions", []):
+                    if isinstance(question, str) and question not in investigation_questions:
+                        investigation_questions.append(question)
         if investigation_questions:
             parts.append(
                 "Investigation guidance: " + " | ".join(investigation_questions)
