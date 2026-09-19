@@ -10,6 +10,7 @@ from mcp.server.mcpserver import Context, MCPServer
 
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
+from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.persistence import StorageRuntime, create_storage
 
 
@@ -85,17 +86,21 @@ async def complete_interaction(
     response_text: str,
     proposed_memories: list[MemoryProposal],
     ctx: Context[AppState],
+    current_evidence: list[ResearchObservation] | None = None,
 ) -> dict[str, Any]:
     """Mandatory final step after reasoning and before presenting the final answer.
 
     The connected model proposes only stable learning worth preserving. The Memory Steward
     independently accepts/rejects those proposals, commits accepted durable memory, and journals
     the complete user/response experience. Pass an empty list when nothing deserves retention.
+    When current external evidence materially informed reasoning, include it with its separate
+    provenance / confidence / weight appraisal. These dimensions are not collapsed into one score.
     """
     return await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,
         response_text=response_text,
         proposed_memories=tuple(proposed_memories),
+        current_evidence=tuple(current_evidence or ()),
     )
 
 
