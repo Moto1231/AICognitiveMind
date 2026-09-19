@@ -1711,6 +1711,9 @@ class MemoryStewardTool:
                 if artifact.kind != _EVIDENCE_DELIBERATION_KIND:
                     continue
                 payload = artifact.payload
+                deliberation = EvidenceDeliberation.model_validate(payload)
+                if _deliberation_closed_by_transition(deliberation, current_beliefs):
+                    continue
                 key = (
                     _normalized_semantic_value(payload.get("subject")),
                     _normalized_semantic_value(payload.get("attribute")),
@@ -1735,6 +1738,9 @@ class MemoryStewardTool:
                 if artifact.kind != _EVIDENCE_DELIBERATION_KIND:
                     continue
                 payload = artifact.payload
+                deliberation = EvidenceDeliberation.model_validate(payload)
+                if _deliberation_closed_by_transition(deliberation, current_beliefs):
+                    continue
                 key = (
                     _normalized_semantic_value(payload.get("subject")),
                     _normalized_semantic_value(payload.get("attribute")),
