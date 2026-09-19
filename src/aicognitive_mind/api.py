@@ -119,6 +119,7 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
                 str(readiness.get("candidate_value", "")),
                 str(readiness.get("blockers", "")),
                 str(readiness.get("basis", "")),
+                str(deliberation.get("tension_finding", "")),
                 guidance,
                 str(current_evidence),
             )
