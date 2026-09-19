@@ -38,6 +38,18 @@ The `Canonical Surreal` workflow expects:
 
 The existing `CANONICAL_MONGODB_URI` secret is used only as the Atlas migration source.
 
+The runtime uses `SURREALDB_AUTH_LEVEL=database` for the canonical deployment. A suitable
+SurrealQL definition, after selecting the canonical namespace and database, is:
+
+```sql
+DEFINE USER cognitive_mind_service
+ON DATABASE
+PASSWORD 'REPLACE_WITH_A_STRONG_PASSWORD'
+ROLES EDITOR;
+```
+
+Store the actual password only in the GitHub secret. Do not commit it to the repository.
+
 ## Safe migration contract
 
 `scripts/surreal_canonical.py migrate-from-atlas`:
@@ -58,7 +70,8 @@ This is intentionally a one-home migration, not dual-write synchronization.
 
 1. Create the persistent Surreal Cloud instance.
 2. Configure namespace `mir_ai` and database `ai_cognitive_mind`.
-3. Create backend credentials for the instance.
+3. Create a database-scoped system user for `mir_ai / ai_cognitive_mind`, preferably with the
+   `EDITOR` role. The canonical workflow authenticates at database scope rather than root.
 4. Add the three canonical Surreal GitHub secrets.
 5. Run `Canonical Surreal → check`.
 6. Run `Canonical Surreal → migrate-from-atlas`.

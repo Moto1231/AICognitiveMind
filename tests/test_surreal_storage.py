@@ -1,5 +1,6 @@
 import unittest
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from aicognitive_mind.config import Settings
 from aicognitive_mind.domain import (
@@ -31,6 +32,52 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.runtime.close()
+
+
+    async def test_runtime_uses_database_scoped_credentials(self) -> None:
+        class FakeDatabase:
+            def __init__(self) -> None:
+                self.credentials = None
+                self.used = None
+
+            async def connect(self) -> None:
+                return None
+
+            async def use(self, namespace: str, database: str) -> None:
+                self.used = (namespace, database)
+
+            async def signin(self, credentials: dict[str, str]) -> None:
+                self.credentials = credentials
+
+            async def version(self) -> str:
+                return "test"
+
+            async def close(self) -> None:
+                return None
+
+        fake = FakeDatabase()
+        with patch("aicognitive_mind.surreal_storage.AsyncSurreal", return_value=fake):
+            runtime = SurrealRuntime(
+                "wss://example.invalid",
+                "mir_ai",
+                "ai_cognitive_mind",
+                "cognitive_mind_service",
+                "secret",
+                "database",
+            )
+            await runtime.initialize()
+            await runtime.close()
+
+        self.assertEqual(fake.used, ("mir_ai", "ai_cognitive_mind"))
+        self.assertEqual(
+            fake.credentials,
+            {
+                "namespace": "mir_ai",
+                "database": "ai_cognitive_mind",
+                "username": "cognitive_mind_service",
+                "password": "secret",
+            },
+        )
 
     async def test_mind_round_trips_and_remains_singleton(self) -> None:
         store = SurrealMindStore(self.runtime.database)
