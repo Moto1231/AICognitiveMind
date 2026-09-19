@@ -444,19 +444,6 @@ def _evidence_appraisal_from_artifacts(
     return None
 
 
-def _semantic_signature_from_interpretation(
-    interpretation: SemanticInterpretation | None,
-) -> tuple[str, str, str, str] | None:
-    if interpretation is None:
-        return None
-    return (
-        _normalized_semantic_value(interpretation.subject),
-        _normalized_semantic_value(interpretation.attribute),
-        _normalized_semantic_value(interpretation.value),
-        _semantic_scope_key(interpretation.scope),
-    )
-
-
 def _deliberation_matches_tension(
     deliberation: EvidenceDeliberation,
     tension: SemanticTension,
@@ -1692,7 +1679,7 @@ class MemoryStewardTool:
             interpretations = _semantic_interpretations(memory.artifacts)
             scoped_payload: dict[str, Any] | None = None
             for signature, payload in interpretations.items():
-                if _semantic_slot_from_signature(signature) != semantic_slot:
+                if signature[:2] != semantic_key:
                     continue
                 if signature[2] == requested_existing:
                     existing_evidence.append(memory.content)
