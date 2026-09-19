@@ -488,3 +488,12 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 .journal-pagination .secondary-button {
   min-width: 160px;
 }
+
+.memory-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+.memory-pagination .secondary-button {
+  min-width: 160px;
+}
