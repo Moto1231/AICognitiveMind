@@ -1039,6 +1039,7 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             any(entry.kind.value == "belief_transition" for entry in await self.journal.read())
         )
 
+    async def test_belief_transition_rejects_wrong_candidate_value(self) -> None:
         await self._prepare_candidate_ready_deployment()
         wrong = await self.service.complete_interaction(
             user_message="Adopt October 15.",
@@ -1053,6 +1054,13 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         self.assertFalse(wrong["belief_transition_decisions"][0]["accepted"])
+        self.assertFalse(
+            any(
+                artifact.kind in {"belief_status", "belief_transition"}
+                for memory in await self.memory.read()
+                for artifact in memory.artifacts
+            )
+        )
 
     async def test_duplicate_transition_is_rejected_and_new_tension_uses_current_belief(self) -> None:
         await self._prepare_candidate_ready_deployment()
