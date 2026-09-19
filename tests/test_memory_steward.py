@@ -396,6 +396,41 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
         )
 
+        await memory.remember(
+            DurableMemory.model_validate(
+                {
+                    "memory_class": "semantic",
+                    "content": "The approved release calendar lists October 1.",
+                    "grounding": ["release-calendar"],
+                    "artifacts": [
+                        {
+                            "kind": "semantic_interpretation",
+                            "payload": {
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        },
+                        {
+                            "kind": "evidence_appraisal",
+                            "payload": {
+                                "confidence": 0.75,
+                                "weight": 0.65,
+                                "provenance": [
+                                    {
+                                        "source": "release calendar",
+                                        "context": "approved planning artifact",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        },
+                    ],
+                }
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
         tool = MemoryStewardTool(
             mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
             input_text="The deployment date is October 8.",
@@ -444,7 +479,7 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         tension = decision["tensions"][0]
         deliberation = tension["deliberation"]
         self.assertEqual(tension["status"], "unresolved")
-        self.assertEqual(deliberation["existing_support_count"], 1)
+        self.assertEqual(deliberation["existing_support_count"], 2)
         self.assertEqual(deliberation["proposed_support_count"], 1)
         self.assertEqual(deliberation["provenance_relationship"], "overlap_detected")
         self.assertEqual(deliberation["existing_provenance_depth"], 2)
