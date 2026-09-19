@@ -88,6 +88,66 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         recalled = later["recalled_context"]["durable_memory"]
         self.assertEqual(recalled[0]["artifacts"][0]["payload"]["value"], "February 7")
 
+
+    async def test_mcp_interaction_surfaces_and_journals_semantic_tension(self) -> None:
+        await self.service.complete_interaction(
+            user_message="My birthday is February 7.",
+            response_text="I'll remember that.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The user's birthday is February 7.",
+                    grounding=("direct-user-statement",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "current_human",
+                                "attribute": "birthday",
+                                "value": "February 7",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        completed = await self.service.complete_interaction(
+            user_message="Actually, my birthday is February 8.",
+            response_text="I have conflicting birthday evidence and will preserve both.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The user's birthday is February 8.",
+                    grounding=("direct-user-statement",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "current_human",
+                                "attribute": "birthday",
+                                "value": "February 8",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        decision = completed["memory_decisions"][0]
+        self.assertTrue(decision["accepted"])
+        self.assertEqual(len(decision["tensions"]), 1)
+        self.assertEqual(decision["tensions"][0]["status"], "unresolved")
+
+        journal = await self.journal.read()
+        tension_entries = [entry for entry in journal if entry.kind.value == "tension"]
+        self.assertEqual(len(tension_entries), 1)
+        self.assertEqual(
+            tension_entries[0].experience["competing_values"]["existing"],
+            "February 7",
+        )
+        self.assertEqual(journal[-1].kind.value, "interaction")
+
     async def test_recalled_history_is_compact_and_does_not_embed_prior_journal_documents(self) -> None:
         for turn in range(8):
             await self.service.complete_interaction(
