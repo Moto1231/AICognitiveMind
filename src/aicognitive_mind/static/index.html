@@ -132,6 +132,43 @@
     </main>
   </div>
 
+  <div id="memoryInspector" class="inspector-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="memoryInspectorTitle">
+    <aside class="inspector">
+      <div class="inspector-heading">
+        <div>
+          <p class="eyebrow">MEMORY INSPECTOR</p>
+          <h2 id="memoryInspectorTitle">Exact durable memory</h2>
+        </div>
+        <button id="closeMemoryInspector" class="icon-button" type="button" aria-label="Close memory inspector">×</button>
+      </div>
+
+      <div class="inspector-section">
+        <span class="inspector-label">Content</span>
+        <div id="inspectorContent" class="exact-content"></div>
+      </div>
+
+      <dl class="inspector-details">
+        <div><dt>Memory class</dt><dd id="inspectorClass">—</dd></div>
+        <div><dt>Formed at</dt><dd id="inspectorFormedAt">—</dd></div>
+      </dl>
+
+      <div class="inspector-section">
+        <span class="inspector-label">Grounding</span>
+        <div id="inspectorGrounding" class="record-list"></div>
+      </div>
+
+      <div class="inspector-section">
+        <span class="inspector-label">Associations</span>
+        <div id="inspectorAssociations" class="record-list"></div>
+      </div>
+
+      <div class="inspector-section raw-section">
+        <span class="inspector-label">Raw record returned by the Mind</span>
+        <pre id="inspectorRaw" class="raw-record"></pre>
+      </div>
+    </aside>
+  </div>
+
   <div id="initializeOverlay" class="overlay hidden">
     <form id="initializeForm" class="setup-card">
       <p class="eyebrow">GENESIS</p>
