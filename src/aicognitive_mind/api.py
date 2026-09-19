@@ -94,6 +94,7 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         evidence = experience.get("evidence", {})
         deliberation = experience.get("deliberation") or {}
         current_evidence = experience.get("current_evidence", [])
+        readiness = deliberation.get("resolution_readiness") or {}
         guidance = " ".join(
             str(value)
             for value in (
@@ -113,6 +114,11 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
                 str(evidence.get("proposed", "")),
                 str(deliberation.get("provenance_relationship", "")),
                 str(deliberation.get("trigger", "")),
+                str(readiness.get("status", "")),
+                str(readiness.get("candidate_side", "")),
+                str(readiness.get("candidate_value", "")),
+                str(readiness.get("blockers", "")),
+                str(readiness.get("basis", "")),
                 guidance,
                 str(current_evidence),
             )
