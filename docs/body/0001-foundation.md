@@ -118,3 +118,8 @@ These can proceed independently and in parallel:
 - mouth — speech-output adapter;
 - face — avatar renderer;
 - Mind/Body perception bridge.
+
+The Face workstream is now governed by [0003 — Avatar Contract](0003-avatar-contract.md):
+VRM 1.0 assets rendered in-browser with Three.js and @pixiv/three-vrm, with Blender
+as the primary authoring/customization tool. The avatar belongs to the Body and remains
+replaceable without altering Mind identity.
