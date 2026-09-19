@@ -108,7 +108,7 @@ class MongoJournalStore:
             ]
         return query
 
-    async def read_summary_page(
+    async def query_page(
         self,
         *,
         offset: int,
@@ -243,7 +243,7 @@ class MongoMemoryStore:
 
         return query
 
-    async def read_page(
+    async def query_page(
         self,
         *,
         offset: int,
