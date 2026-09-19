@@ -358,6 +358,98 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current_total, 1)
         self.assertEqual(current_page, [memory])
 
+    async def test_belief_reframe_searches_scopes_and_memory_artifacts(self) -> None:
+        journal = SurrealJournalStore(self.runtime.database)
+        memory_store = SurrealMemoryStore(self.runtime.database)
+
+        reframe_entry = JournalEntry(
+            kind=JournalKind.BELIEF_REFRAME,
+            experience={
+                "source": "conscious_memory_steward",
+                "status": "committed",
+                "subject": "service",
+                "attribute": "owner",
+                "relationship": "temporal",
+                "existing_value": "Alice",
+                "existing_scope": "before September 1",
+                "proposed_value": "Bob",
+                "proposed_scope": "on or after September 1",
+                "deliberation_revision": 2,
+                "basis": ["ownership changed on September 1"],
+                "existing_evidence": ["The service owner is Alice."],
+                "proposed_evidence": ["The service owner is Bob."],
+            },
+        )
+        await journal.append(
+            reframe_entry,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        page, total = await journal.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="before September 1",
+        )
+        self.assertEqual(total, 1)
+        self.assertEqual(page, [reframe_entry])
+
+        memory = DurableMemory(
+            memory_class=MemoryClass.SEMANTIC,
+            content="The service owner is Alice.",
+            grounding=("original assignment",),
+            artifacts=(
+                MemoryArtifact(
+                    kind="semantic_interpretation",
+                    payload={
+                        "subject": "service",
+                        "attribute": "owner",
+                        "value": "Alice",
+                    },
+                ),
+                MemoryArtifact(
+                    kind="scoped_belief",
+                    payload={
+                        "subject": "service",
+                        "attribute": "owner",
+                        "value": "Alice",
+                        "scope": "before September 1",
+                        "relationship": "temporal",
+                        "status": "valid_in_scope",
+                        "deliberation_revision": 2,
+                    },
+                ),
+                MemoryArtifact(
+                    kind="belief_reframe",
+                    payload={
+                        "status": "committed",
+                        "subject": "service",
+                        "attribute": "owner",
+                        "relationship": "temporal",
+                        "existing_value": "Alice",
+                        "existing_scope": "before September 1",
+                        "proposed_value": "Bob",
+                        "proposed_scope": "on or after September 1",
+                        "deliberation_revision": 2,
+                        "basis": ["ownership changed on September 1"],
+                    },
+                ),
+            ),
+        )
+        await memory_store.remember(
+            memory,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        memory_page, memory_total = await memory_store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="before September 1",
+        )
+        self.assertEqual(memory_total, 1)
+        self.assertEqual(memory_page, [memory])
+
     async def test_memory_searches_full_collection_and_replaces_exact_document(self) -> None:
         store = SurrealMemoryStore(self.runtime.database)
         base = datetime(2026, 9, 18, 12, tzinfo=UTC)
