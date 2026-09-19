@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     mongodb_database: str = "ai_cognitive_mind"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.6-terra"
+    admin_pin: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
