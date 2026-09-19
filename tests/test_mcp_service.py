@@ -827,6 +827,29 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(reframe_entries), 1)
         self.assertEqual(reframe_entries[0].experience["relationship"], "temporal")
 
+        duplicate = await self.service.complete_interaction(
+            user_message="Reframe the same ownership history again.",
+            response_text="That scoped belief is already committed.",
+            proposed_memories=(),
+            belief_reframes=(
+                BeliefReframeProposal(
+                    subject="service",
+                    attribute="owner",
+                    existing_value="Alice",
+                    proposed_value="Bob",
+                ),
+            ),
+        )
+        self.assertFalse(duplicate["belief_reframe_decisions"][0]["accepted"])
+        self.assertIn("already been reframed", duplicate["belief_reframe_decisions"][0]["reason"])
+        self.assertEqual(
+            len([
+                entry for entry in await self.journal.read()
+                if entry.kind.value == "belief_reframe"
+            ]),
+            1,
+        )
+
         recalled = await self.service.begin_interaction("Who owns the service?")
         summary = recalled["recalled_context"]["summary"]
         self.assertIn(
