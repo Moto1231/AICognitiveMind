@@ -1,7 +1,11 @@
 import json
 import unittest
 
-from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
+from aicognitive_mind.mcp_service import (
+    BeliefTransitionProposal,
+    CognitiveMcpService,
+    MemoryProposal,
+)
 from aicognitive_mind.memory_steward import (
     EvidenceAppraisal,
     MemoryArtifactProposal,
@@ -768,6 +772,358 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             "Check whether the competing values can both be valid at different times",
             later["recalled_context"]["summary"],
         )
+
+    async def _prepare_candidate_ready_deployment(self) -> None:
+        await self.service.complete_interaction(
+            user_message="The deployment date is October 1.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 1.",
+                    grounding=("approved plan",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.55,
+                                "weight": 0.4,
+                                "provenance": [
+                                    {
+                                        "source": "approved plan",
+                                        "context": "release decision",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        await self.service.complete_interaction(
+            user_message="The deployment date is October 8.",
+            response_text="That creates an unresolved tension.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 8.",
+                    grounding=("project lead update",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 8",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.8,
+                                "weight": 0.7,
+                                "provenance": [
+                                    {
+                                        "source": "project lead",
+                                        "context": "release decision",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        completed = await self.service.complete_interaction(
+            user_message="I verified the deployment evidence.",
+            response_text="October 8 is candidate-ready.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="release board",
+                    response="The independently maintained release board lists October 8.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.9,
+                        weight=0.75,
+                        provenance=(
+                            ProvenanceHop(
+                                source="release board",
+                                context="release decision",
+                                condition="published",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="deployment",
+                        attribute="date",
+                        value="October 8",
+                    ),
+                    tension_finding=TensionInvestigationFinding(
+                        subject="deployment",
+                        attribute="date",
+                        existing_value="October 1",
+                        proposed_value="October 8",
+                        provenance_independence="verified_independent",
+                        temporal_relationship="same_timeframe",
+                        contextual_relationship="same_context",
+                        basis=(
+                            "The release board is independently maintained.",
+                            "Both values describe the same release decision and timeframe.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        readiness = completed["tension_reassessments"][0]["deliberation"]["resolution_readiness"]
+        self.assertEqual(readiness["status"], "candidate_ready")
+        self.assertEqual(readiness["candidate_value"], "October 8")
+
+    async def test_candidate_ready_belief_transition_supersedes_without_erasing_evidence(self) -> None:
+        await self._prepare_candidate_ready_deployment()
+
+        completed = await self.service.complete_interaction(
+            user_message="Adopt the candidate-ready deployment date.",
+            response_text="The current belief is now October 8.",
+            proposed_memories=(),
+            belief_transitions=(
+                BeliefTransitionProposal(
+                    subject="deployment",
+                    attribute="date",
+                    candidate_value="October 8",
+                ),
+            ),
+        )
+
+        decision = completed["belief_transition_decisions"][0]
+        self.assertTrue(decision["accepted"])
+        self.assertEqual(decision["from_value"], "October 1")
+        self.assertEqual(decision["to_value"], "October 8")
+
+        memories = await self.memory.read()
+        self.assertEqual(
+            {memory.content for memory in memories},
+            {
+                "The deployment date is October 1.",
+                "The deployment date is October 8.",
+            },
+        )
+        old_memory = next(memory for memory in memories if memory.content.endswith("October 1."))
+        new_memory = next(memory for memory in memories if memory.content.endswith("October 8."))
+
+        old_status = [
+            artifact.payload
+            for artifact in old_memory.artifacts
+            if artifact.kind == "belief_status"
+        ]
+        new_status = [
+            artifact.payload
+            for artifact in new_memory.artifacts
+            if artifact.kind == "belief_status"
+        ]
+        transitions = [
+            artifact.payload
+            for artifact in new_memory.artifacts
+            if artifact.kind == "belief_transition"
+        ]
+
+        self.assertEqual(old_status[-1]["status"], "superseded")
+        self.assertEqual(old_status[-1]["current_value"], "October 8")
+        self.assertEqual(new_status[-1]["status"], "current")
+        self.assertEqual(len(transitions), 1)
+        self.assertEqual(transitions[0]["from_value"], "October 1")
+        self.assertEqual(transitions[0]["to_value"], "October 8")
+        self.assertEqual(transitions[0]["status"], "committed")
+
+        transition_entries = [
+            entry
+            for entry in await self.journal.read()
+            if entry.kind.value == "belief_transition"
+        ]
+        self.assertEqual(len(transition_entries), 1)
+        self.assertEqual(transition_entries[0].experience["to_value"], "October 8")
+        self.assertIn(
+            "The deployment date is October 1.",
+            transition_entries[0].experience["superseded_evidence"],
+        )
+        self.assertIn(
+            "The deployment date is October 8.",
+            transition_entries[0].experience["candidate_evidence"],
+        )
+
+        later = await self.service.begin_interaction("What is the deployment date?")
+        summary = later["recalled_context"]["summary"]
+        self.assertIn(
+            "Current belief: deployment · date = October 8 (superseded October 1)",
+            summary,
+        )
+        self.assertNotIn("Candidate ready for later belief transition", summary)
+        self.assertNotIn("Seek independent corroboration", summary)
+
+    async def test_belief_transition_rejects_blocked_or_wrong_candidate_without_mutation(self) -> None:
+        await self.service.complete_interaction(
+            user_message="The deployment date is October 1.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 1.",
+                    grounding=("approved plan",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        await self.service.complete_interaction(
+            user_message="The deployment date is October 8.",
+            response_text="The values are unresolved.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 8.",
+                    grounding=("status statement",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 8",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        rejected = await self.service.complete_interaction(
+            user_message="Switch the belief now.",
+            response_text="The transition is not authorized.",
+            proposed_memories=(),
+            belief_transitions=(
+                BeliefTransitionProposal(
+                    subject="deployment",
+                    attribute="date",
+                    candidate_value="October 8",
+                ),
+            ),
+        )
+        self.assertFalse(rejected["belief_transition_decisions"][0]["accepted"])
+
+        memories = await self.memory.read()
+        self.assertFalse(
+            any(
+                artifact.kind in {"belief_status", "belief_transition"}
+                for memory in memories
+                for artifact in memory.artifacts
+            )
+        )
+        self.assertFalse(
+            any(entry.kind.value == "belief_transition" for entry in await self.journal.read())
+        )
+
+        await self._prepare_candidate_ready_deployment()
+        wrong = await self.service.complete_interaction(
+            user_message="Adopt October 15.",
+            response_text="That candidate is not authorized.",
+            proposed_memories=(),
+            belief_transitions=(
+                BeliefTransitionProposal(
+                    subject="deployment",
+                    attribute="date",
+                    candidate_value="October 15",
+                ),
+            ),
+        )
+        self.assertFalse(wrong["belief_transition_decisions"][0]["accepted"])
+
+    async def test_duplicate_transition_is_rejected_and_new_tension_uses_current_belief(self) -> None:
+        await self._prepare_candidate_ready_deployment()
+        await self.service.complete_interaction(
+            user_message="Adopt October 8.",
+            response_text="October 8 is now current.",
+            proposed_memories=(),
+            belief_transitions=(
+                BeliefTransitionProposal(
+                    subject="deployment",
+                    attribute="date",
+                    candidate_value="October 8",
+                ),
+            ),
+        )
+
+        duplicate = await self.service.complete_interaction(
+            user_message="Adopt October 8 again.",
+            response_text="It is already current.",
+            proposed_memories=(),
+            belief_transitions=(
+                BeliefTransitionProposal(
+                    subject="deployment",
+                    attribute="date",
+                    candidate_value="October 8",
+                ),
+            ),
+        )
+        self.assertFalse(duplicate["belief_transition_decisions"][0]["accepted"])
+        self.assertIn("already the current belief", duplicate["belief_transition_decisions"][0]["reason"])
+
+        new_evidence = await self.service.complete_interaction(
+            user_message="The deployment date is October 15.",
+            response_text="That creates a new tension against the current belief.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 15.",
+                    grounding=("new statement",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 15",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.6,
+                                "weight": 0.5,
+                                "provenance": [
+                                    {
+                                        "source": "new statement",
+                                        "context": "release decision",
+                                        "condition": "unverified",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        tensions = new_evidence["memory_decisions"][0]["tensions"]
+        self.assertEqual(len(tensions), 1)
+        self.assertEqual(tensions[0]["existing_value"], "October 8")
+        self.assertEqual(tensions[0]["proposed_value"], "October 15")
 
     async def test_recalled_history_is_compact_and_does_not_embed_prior_journal_documents(self) -> None:
         for turn in range(8):
