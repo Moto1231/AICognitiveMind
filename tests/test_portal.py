@@ -72,6 +72,9 @@ class PortalTests(unittest.TestCase):
         self.assertIn("renderJournalList", script_text)
         self.assertIn("openJournalInspector", script_text)
         self.assertIn('entry.kind === "tension"', script_text)
+        self.assertIn('entry.kind === "belief_transition"', script_text)
+        self.assertIn("Superseded Belief", script_text)
+        self.assertIn("Current Belief", script_text)
         self.assertIn("Existing Value", script_text)
         self.assertIn("Proposed Value", script_text)
         self.assertIn("loadMoreJournals", script_text)
@@ -288,6 +291,38 @@ class PortalTests(unittest.TestCase):
         self.assertIn("proposed", summary["search_text"])
         self.assertIn("verified_independent", summary["search_text"])
         self.assertIn("October 8", summary["preview"])
+
+    def test_belief_transition_summary_exposes_current_and_superseded_values(self) -> None:
+        entry = JournalEntry(
+            kind=JournalKind.BELIEF_TRANSITION,
+            experience={
+                "source": "conscious_memory_steward",
+                "subject": "deployment",
+                "attribute": "date",
+                "from_value": "October 1",
+                "to_value": "October 8",
+                "deliberation_revision": 2,
+                "readiness_basis": [
+                    "Candidate evidence is independently corroborated."
+                ],
+                "candidate_evidence": [
+                    "The deployment date is October 8."
+                ],
+                "superseded_evidence": [
+                    "The deployment date is October 1."
+                ],
+                "status": "committed",
+            },
+        )
+
+        summary = _journal_summary(entry)
+
+        self.assertEqual(summary["title"], "Belief Transition")
+        self.assertIn("October 1", summary["preview"])
+        self.assertIn("October 8", summary["preview"])
+        self.assertIn("deployment", summary["search_text"])
+        self.assertIn("independently corroborated", summary["search_text"])
+        self.assertIn("committed", summary["search_text"])
 
     def test_memory_revision_summary_exposes_before_and_after_text(self) -> None:
         entry = JournalEntry(
