@@ -346,6 +346,7 @@ async function saveMemoryEdit(event) {
     content: el.editMemoryContent.value.trim(),
     associations: splitLines(el.editAssociations.value),
     grounding: splitLines(el.editGrounding.value),
+    artifacts: original.artifacts || [],
   };
 
   if (!replacement.content) {
