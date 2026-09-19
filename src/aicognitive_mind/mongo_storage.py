@@ -112,3 +112,16 @@ class MongoMemoryStore:
     async def read(self) -> list[DurableMemory]:
         cursor = self._collection.find({}, {"_id": 0}).sort("formed_at", ASCENDING)
         return [DurableMemory.model_validate(document) async for document in cursor]
+
+    async def replace_exact(
+        self,
+        original: DurableMemory,
+        replacement: DurableMemory,
+        recorded_by: CognitiveActor,
+    ) -> DurableMemory | None:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
+        result = await self._collection.replace_one(
+            original.model_dump(mode="python"),
+            replacement.model_dump(mode="python"),
+        )
+        return replacement if result.matched_count == 1 else None
