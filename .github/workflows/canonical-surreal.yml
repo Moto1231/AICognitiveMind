@@ -1,0 +1,90 @@
+name: Canonical Surreal
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Canonical Surreal operation"
+        required: true
+        default: check
+        type: choice
+        options:
+          - check
+          - migrate-from-atlas
+
+concurrency:
+  group: canonical-surreal
+  cancel-in-progress: false
+
+jobs:
+  surreal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Require canonical Surreal secrets
+        env:
+          SURREALDB_URI: ${{ secrets.CANONICAL_SURREALDB_URI }}
+          SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}
+          SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
+        run: |
+          test -n "$SURREALDB_URI" || (echo "Missing CANONICAL_SURREALDB_URI" && exit 1)
+          test -n "$SURREALDB_USERNAME" || (echo "Missing CANONICAL_SURREALDB_USERNAME" && exit 1)
+          test -n "$SURREALDB_PASSWORD" || (echo "Missing CANONICAL_SURREALDB_PASSWORD" && exit 1)
+
+      - name: Check canonical Surreal
+        if: ${{ inputs.operation == 'check' }}
+        env:
+          STORAGE_PROVIDER: surreal
+          SURREALDB_URI: ${{ secrets.CANONICAL_SURREALDB_URI }}
+          SURREALDB_NAMESPACE: mir_ai
+          SURREALDB_DATABASE: ai_cognitive_mind
+          SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}
+          SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
+        run: python scripts/surreal_canonical.py check
+
+      - name: Require Atlas source secret
+        if: ${{ inputs.operation == 'migrate-from-atlas' }}
+        env:
+          MONGODB_URI: ${{ secrets.CANONICAL_MONGODB_URI }}
+        run: |
+          test -n "$MONGODB_URI" || (echo "Missing CANONICAL_MONGODB_URI" && exit 1)
+
+      - name: Migrate canonical Atlas Mind to Surreal
+        if: ${{ inputs.operation == 'migrate-from-atlas' }}
+        env:
+          STORAGE_PROVIDER: surreal
+          SURREALDB_URI: ${{ secrets.CANONICAL_SURREALDB_URI }}
+          SURREALDB_NAMESPACE: mir_ai
+          SURREALDB_DATABASE: ai_cognitive_mind
+          SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}
+          SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
+          MONGODB_URI: ${{ secrets.CANONICAL_MONGODB_URI }}
+          MONGODB_DATABASE: ai_cognitive_mind
+        run: python scripts/surreal_canonical.py migrate-from-atlas
+
+      - name: Verify canonical Surreal after migration
+        if: ${{ inputs.operation == 'migrate-from-atlas' }}
+        env:
+          STORAGE_PROVIDER: surreal
+          SURREALDB_URI: ${{ secrets.CANONICAL_SURREALDB_URI }}
+          SURREALDB_NAMESPACE: mir_ai
+          SURREALDB_DATABASE: ai_cognitive_mind
+          SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}
+          SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
+        run: python scripts/surreal_canonical.py check
