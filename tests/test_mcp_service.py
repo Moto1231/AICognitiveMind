@@ -1109,6 +1109,48 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tensions[0]["proposed_value"], "Gamma")
         self.assertEqual(tensions[0]["scope"]["label"], "Customer A")
 
+        wrong_scope_research = await self.service.complete_interaction(
+            user_message="I found Customer B evidence.",
+            response_text="That evidence belongs to Customer B and does not re-deliberate Customer A.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="Customer B route",
+                    response="Customer B also reports Gamma.",
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="invoice",
+                        attribute="approval_route",
+                        value="Gamma",
+                        scope=customer_b,
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual(wrong_scope_research["tension_reassessments"], [])
+
+        matching_scope_research = await self.service.complete_interaction(
+            user_message="I found Customer A evidence.",
+            response_text="That evidence belongs to the active Customer A tension.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="Customer A route",
+                    response="Customer A independently reports Gamma.",
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="invoice",
+                        attribute="approval_route",
+                        value="Gamma",
+                        scope=customer_a,
+                    ),
+                ),
+            ),
+        )
+        self.assertEqual(len(matching_scope_research["tension_reassessments"]), 1)
+        self.assertEqual(
+            matching_scope_research["tension_reassessments"][0]["scope"]["label"],
+            "Customer A",
+        )
+
     async def test_identical_text_is_allowed_when_semantic_scope_differs(self) -> None:
         await self.service.complete_interaction(
             user_message="Record Customer A routing.",
@@ -1363,6 +1405,121 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tensions[0]["proposed_value"], "Gamma")
         self.assertEqual(tensions[0]["scope"]["label"], "Customer A")
 
+    async def test_scoped_candidate_transition_closes_only_that_scope(self) -> None:
+        scope = SemanticScope(kind="contextual", label="Customer A")
+        for value, confidence, weight, source in (
+            ("October 1", 0.55, 0.4, "Customer A old plan"),
+            ("October 8", 0.8, 0.7, "Customer A new plan"),
+        ):
+            result = await self.service.complete_interaction(
+                user_message=f"Customer A deployment date is {value}.",
+                response_text="Recorded.",
+                proposed_memories=(
+                    MemoryProposal(
+                        memory_class=MemoryClass.SEMANTIC,
+                        content=f"Customer A deployment date is {value}.",
+                        grounding=(source,),
+                        artifacts=(
+                            MemoryArtifactProposal(
+                                kind="semantic_interpretation",
+                                payload={
+                                    "subject": "deployment",
+                                    "attribute": "date",
+                                    "value": value,
+                                    "scope": scope.model_dump(mode="json"),
+                                },
+                            ),
+                            MemoryArtifactProposal(
+                                kind="evidence_appraisal",
+                                payload={
+                                    "confidence": confidence,
+                                    "weight": weight,
+                                    "provenance": [
+                                        {
+                                            "source": source,
+                                            "context": "Customer A",
+                                            "condition": "published",
+                                        }
+                                    ],
+                                },
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        self.assertEqual(len(result["memory_decisions"][0]["tensions"]), 1)
+        self.assertEqual(result["memory_decisions"][0]["tensions"][0]["scope"]["label"], "Customer A")
+
+        assessed = await self.service.complete_interaction(
+            user_message="Verify the Customer A deployment date.",
+            response_text="October 8 is candidate-ready within Customer A.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="Customer A release board",
+                    response="The independent Customer A release board lists October 8.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.9,
+                        weight=0.75,
+                        provenance=(
+                            ProvenanceHop(
+                                source="Customer A release board",
+                                context="Customer A",
+                                condition="published",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="deployment",
+                        attribute="date",
+                        value="October 8",
+                        scope=scope,
+                    ),
+                    tension_finding=TensionInvestigationFinding(
+                        subject="deployment",
+                        attribute="date",
+                        existing_value="October 1",
+                        proposed_value="October 8",
+                        scope=scope,
+                        provenance_independence="verified_independent",
+                        temporal_relationship="same_timeframe",
+                        contextual_relationship="same_context",
+                        basis=(
+                            "The Customer A release board is maintained independently.",
+                            "Both values apply to the same Customer A release decision.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        readiness = assessed["tension_reassessments"][0]["deliberation"]["resolution_readiness"]
+        self.assertEqual(readiness["status"], "candidate_ready")
+        self.assertEqual(readiness["candidate_value"], "October 8")
+
+        transitioned = await self.service.complete_interaction(
+            user_message="Adopt Customer A October 8.",
+            response_text="October 8 is now the current Customer A deployment-date belief.",
+            proposed_memories=(),
+            belief_transitions=(
+                BeliefTransitionProposal(
+                    subject="deployment",
+                    attribute="date",
+                    candidate_value="October 8",
+                    scope=scope,
+                ),
+            ),
+        )
+        decision = transitioned["belief_transition_decisions"][0]
+        self.assertTrue(decision["accepted"])
+        self.assertEqual(decision["scope"]["label"], "Customer A")
+
+        recalled = await self.service.begin_interaction("What is Customer A's deployment date?")
+        self.assertIn(
+            "Current belief: deployment · date = October 8 [Customer A] (superseded October 1)",
+            recalled["recalled_context"]["summary"],
+        )
+
+    async def _prepare_candidate_ready_deployment(self) -> None:
     async def _prepare_candidate_ready_deployment(self) -> None:
         await self.service.complete_interaction(
             user_message="The deployment date is October 1.",
