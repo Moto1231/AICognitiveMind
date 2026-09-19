@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from datetime import datetime
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, cast
@@ -46,6 +47,49 @@ class InteractionRequest(BaseModel):
 class AdminMemoryRevisionRequest(BaseModel):
     original: DurableMemory
     replacement: DurableMemory
+
+
+class JournalDetailRequest(BaseModel):
+    kind: JournalKind
+    occurred_at: datetime
+
+
+def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
+    experience = entry.experience
+    summary: dict[str, Any] = {
+        "kind": entry.kind,
+        "occurred_at": entry.occurred_at,
+        "title": entry.kind.value.replace("_", " ").title(),
+        "search_text": "",
+        "preview": "",
+    }
+
+    if entry.kind == JournalKind.INTERACTION:
+        input_text = str(experience.get("input", {}).get("content", ""))
+        response_text = str(experience.get("expression", {}).get("content", ""))
+        summary["title"] = "Interaction"
+        summary["preview"] = input_text or response_text
+        summary["search_text"] = f"{input_text} {response_text}".strip()
+    elif entry.kind == JournalKind.MEMORY_REVISION:
+        before = experience.get("before", {})
+        after = experience.get("after", {})
+        before_content = str(before.get("content", ""))
+        after_content = str(after.get("content", ""))
+        summary["title"] = "Memory Revision"
+        summary["preview"] = after_content or before_content
+        summary["search_text"] = f"{before_content} {after_content}".strip()
+    elif entry.kind == JournalKind.INITIALIZATION:
+        self_name = str(experience.get("self_name", ""))
+        values = " ".join(str(value) for value in experience.get("foundational_values", []))
+        summary["title"] = "Initialization"
+        summary["preview"] = self_name
+        summary["search_text"] = f"{self_name} {values}".strip()
+    else:
+        keys = ", ".join(str(key) for key in experience)
+        summary["preview"] = keys
+        summary["search_text"] = keys
+
+    return summary
 
 
 def require_admin(request: Request) -> None:
@@ -126,6 +170,29 @@ async def portal_status(request: Request) -> dict[str, Any]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+
+@app.get("/v1/portal/journal")
+async def portal_journal(request: Request) -> list[dict[str, Any]]:
+    journal_store = cast(MongoJournalStore, request.app.state.journal_store)
+    entries = await journal_store.read()
+    return [_journal_summary(entry) for entry in entries]
+
+
+@app.post("/v1/portal/journal/detail", response_model=JournalEntry)
+async def portal_journal_detail(
+    body: JournalDetailRequest,
+    request: Request,
+) -> JournalEntry:
+    journal_store = cast(MongoJournalStore, request.app.state.journal_store)
+    entries = await journal_store.read()
+    for entry in entries:
+        if entry.kind == body.kind and entry.occurred_at == body.occurred_at:
+            return entry
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Journal experience was not found",
+    )
 
 
 @app.get("/v1/admin/status")
