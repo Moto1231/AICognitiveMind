@@ -10,6 +10,7 @@ from aicognitive_mind.domain import (
     CognitiveMind,
     DurableMemory,
     JournalEntry,
+    MemoryArtifact,
     MemoryClass,
 )
 from aicognitive_mind.storage import JournalStore, MemoryStore
@@ -39,12 +40,18 @@ class ConsiderEvidenceCall(BaseModel):
     articles: tuple[ArticleReference, ...] = ()
 
 
+class MemoryArtifactProposal(BaseModel):
+    kind: str = Field(min_length=1, max_length=120)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class ProposeMemoryCall(BaseModel):
     action: Literal["propose_memory"]
     memory_class: MemoryClass
     content: str = Field(min_length=1)
     associations: tuple[str, ...] = ()
     grounding: tuple[str, ...] = Field(min_length=1)
+    artifacts: tuple[MemoryArtifactProposal, ...] = ()
 
 
 MemoryStewardCall = Annotated[
@@ -214,11 +221,19 @@ class MemoryStewardTool:
             )
 
         associations = call.associations or tuple(_derived_associations(call.content))
+        artifacts = tuple(
+            MemoryArtifact(
+                kind=artifact.kind,
+                payload=artifact.payload,
+            )
+            for artifact in call.artifacts
+        )
         memory = DurableMemory(
             memory_class=call.memory_class,
             content=call.content,
             associations=associations,
             grounding=call.grounding,
+            artifacts=artifacts,
         )
         self._pending.append(memory)
         return MemoryDecision(
