@@ -1,7 +1,7 @@
+import unittest
 from types import SimpleNamespace
 from typing import Any
-
-import pytest
+from unittest.mock import patch
 
 import aicognitive_mind.initialize_cli as initialize_cli
 
@@ -32,36 +32,46 @@ class FakeJournalStore:
         return entry
 
 
-@pytest.mark.asyncio
-async def test_initialize_once_creates_identity_and_closes_runtime(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    runtime = FakeRuntime()
-    mind = FakeMindStore()
-    journal = FakeJournalStore()
-    storage = SimpleNamespace(
-        runtime=runtime,
-        mind=mind,
-        journal=journal,
-        memory=object(),
-    )
+class InitializeCliTests(unittest.IsolatedAsyncioTestCase):
+    async def test_initialize_once_creates_identity_and_closes_runtime(self) -> None:
+        runtime = FakeRuntime()
+        mind = FakeMindStore()
+        journal = FakeJournalStore()
+        storage = SimpleNamespace(
+            runtime=runtime,
+            mind=mind,
+            journal=journal,
+            memory=object(),
+        )
 
-    async def fake_create_storage(_settings: Any) -> Any:
-        return storage
+        async def fake_create_storage(_settings: Any) -> Any:
+            return storage
 
-    monkeypatch.setattr(initialize_cli, "create_storage", fake_create_storage)
+        with patch.object(initialize_cli, "create_storage", fake_create_storage):
+            result = await initialize_cli.initialize_once(
+                object(),
+                "AICognitiveMind",
+                (
+                    "Understanding before Recommending",
+                    "Preserve continuity of identity",
+                ),
+            )
 
-    result = await initialize_cli.initialize_once(
-        object(),
-        "AICognitiveMind",
-        ("Understanding before Recommending", "Preserve continuity of identity"),
-    )
+        self.assertEqual(result["status"], "initialized")
+        self.assertEqual(
+            result["mind"]["identity"]["self_name"],
+            "AICognitiveMind",
+        )
+        self.assertEqual(
+            result["mind"]["identity"]["foundational_values"],
+            [
+                "Understanding before Recommending",
+                "Preserve continuity of identity",
+            ],
+        )
+        self.assertEqual(len(journal.entries), 1)
+        self.assertTrue(runtime.closed)
 
-    assert result["status"] == "initialized"
-    assert result["mind"]["identity"]["self_name"] == "AICognitiveMind"
-    assert result["mind"]["identity"]["foundational_values"] == [
-        "Understanding before Recommending",
-        "Preserve continuity of identity",
-    ]
-    assert len(journal.entries) == 1
-    assert runtime.closed is True
+
+if __name__ == "__main__":
+    unittest.main()
