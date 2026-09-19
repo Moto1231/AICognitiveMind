@@ -7,6 +7,7 @@ from aicognitive_mind.body.domain import (
     Percept,
     SensoryModality,
 )
+from aicognitive_mind.body.ears import BrowserAudioIngress
 from aicognitive_mind.body.eyes import BrowserVisionIngress
 from aicognitive_mind.body.face import BrowserAvatarOutput
 from aicognitive_mind.body.mouth import BrowserVoiceOutput
@@ -14,6 +15,7 @@ from aicognitive_mind.body.runtime import BodyRuntime
 
 __all__ = [
     "BodyRuntime",
+    "BrowserAudioIngress",
     "BrowserAvatarOutput",
     "DeviceStatus",
     "ExpressionIntent",
