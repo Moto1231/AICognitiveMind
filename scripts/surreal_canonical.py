@@ -115,6 +115,7 @@ async def _check(settings: Settings) -> None:
         settings.surrealdb_database,
         settings.surrealdb_username,
         settings.surrealdb_password,
+        settings.surrealdb_auth_level,
     )
     await runtime.initialize()
     try:
@@ -149,6 +150,7 @@ async def _migrate_from_atlas(settings: Settings) -> None:
         settings.surrealdb_database,
         settings.surrealdb_username,
         settings.surrealdb_password,
+        settings.surrealdb_auth_level,
     )
     await runtime.initialize()
 
