@@ -84,6 +84,7 @@ class FaceV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/body/face", paths)
         self.assertIn("/v1/body/face/expression", paths)
         self.assertIn("/v1/body/face/status", paths)
+        self.assertIn("/v1/body/face/avatar", paths)
         self.assertIn("/v1/body/face/next", paths)
 
         markup = Path("src/aicognitive_mind/static/face.html").read_text(encoding="utf-8")
@@ -95,6 +96,8 @@ class FaceV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('sendExpression("happy")', markup)
         self.assertIn("/v1/body/face/expression", markup)
         self.assertIn("/v1/body/face/next", markup)
+        self.assertIn("/v1/body/face/avatar", markup)
+        self.assertIn("loadGenesis()", markup)
         self.assertIn("FACE RECEIVED EXPRESSION INTENT", markup)
 
 

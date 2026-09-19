@@ -31,16 +31,17 @@
 <body>
   <main>
     <h1>Face V0.1</h1>
-    <p>Load an owned VRM avatar, then send expressions through the Body's ExpressionIntent boundary.</p>
+    <p>Genesis is the Body's owned starter avatar. A replacement VRM can still be loaded at any time.</p>
 
     <div class="controls">
+      <button id="genesis">Load Genesis</button>
       <input id="avatarFile" type="file" accept=".vrm,model/gltf-binary">
       <button id="neutral" disabled>Neutral</button>
       <button id="happy" disabled>Happy</button>
     </div>
 
     <div id="stage"></div>
-    <div id="status">Choose a VRM 1.0 avatar to attach the Face.</div>
+    <div id="status">Loading Genesis...</div>
   </main>
 
   <script type="module">
@@ -50,6 +51,7 @@
     import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 
     const stage = document.getElementById("stage");
+    const genesisButton = document.getElementById("genesis");
     const avatarFile = document.getElementById("avatarFile");
     const neutralButton = document.getElementById("neutral");
     const happyButton = document.getElementById("happy");
@@ -101,6 +103,8 @@
         URL.revokeObjectURL(currentObjectUrl);
         currentObjectUrl = null;
       }
+      neutralButton.disabled = true;
+      happyButton.disabled = true;
     }
 
     function expressionExists(name) {
@@ -137,6 +141,54 @@
       setStatus("VRM does not define expression: " + expression);
     }
 
+    function attachLoadedAvatar(gltf, label) {
+      const vrm = gltf.userData.vrm;
+      if (!vrm) {
+        setStatus("The selected resource did not contain a VRM avatar.");
+        return;
+      }
+
+      VRMUtils.removeUnnecessaryVertices(gltf.scene);
+      VRMUtils.combineSkeletons(gltf.scene);
+      VRMUtils.combineMorphs(vrm);
+      VRMUtils.rotateVRM0(vrm);
+
+      vrm.scene.traverse((object) => {
+        object.frustumCulled = false;
+      });
+
+      currentVrm = vrm;
+      scene.add(vrm.scene);
+      neutralButton.disabled = false;
+      happyButton.disabled = false;
+
+      const expressions = Object.keys(vrm.expressionManager?.expressionMap || {});
+      setStatus(
+        "FACE ATTACHED\n" +
+        "avatar: " + label + "\n" +
+        "expressions: " + (expressions.join(", ") || "none reported")
+      );
+    }
+
+    function loadAvatar(url, label) {
+      detachCurrentAvatar();
+      setStatus("Loading " + label + "...");
+
+      loader.load(
+        url,
+        (gltf) => attachLoadedAvatar(gltf, label),
+        undefined,
+        (error) => {
+          console.error(error);
+          setStatus("Could not load VRM avatar: " + error.message);
+        }
+      );
+    }
+
+    function loadGenesis() {
+      loadAvatar("/v1/body/face/avatar", "Genesis");
+    }
+
     async function sendExpression(expression) {
       const response = await fetch("/v1/body/face/expression", {
         method: "POST",
@@ -160,46 +212,19 @@
       }
     }
 
+    genesisButton.addEventListener("click", loadGenesis);
+
     avatarFile.addEventListener("change", () => {
       const file = avatarFile.files?.[0];
       if (!file) return;
 
       detachCurrentAvatar();
-      neutralButton.disabled = true;
-      happyButton.disabled = true;
-      setStatus("Loading VRM avatar...");
-
       currentObjectUrl = URL.createObjectURL(file);
+      setStatus("Loading " + file.name + "...");
+
       loader.load(
         currentObjectUrl,
-        (gltf) => {
-          const vrm = gltf.userData.vrm;
-          if (!vrm) {
-            setStatus("The selected file did not contain a VRM avatar.");
-            return;
-          }
-
-          VRMUtils.removeUnnecessaryVertices(gltf.scene);
-          VRMUtils.combineSkeletons(gltf.scene);
-          VRMUtils.combineMorphs(vrm);
-          VRMUtils.rotateVRM0(vrm);
-
-          vrm.scene.traverse((object) => {
-            object.frustumCulled = false;
-          });
-
-          currentVrm = vrm;
-          scene.add(vrm.scene);
-          neutralButton.disabled = false;
-          happyButton.disabled = false;
-
-          const expressions = Object.keys(vrm.expressionManager?.expressionMap || {});
-          setStatus(
-            "FACE ATTACHED\n" +
-            "avatar: " + file.name + "\n" +
-            "expressions: " + (expressions.join(", ") || "none reported")
-          );
-        },
+        (gltf) => attachLoadedAvatar(gltf, file.name),
         undefined,
         (error) => {
           console.error(error);
@@ -224,6 +249,7 @@
     resize();
     animate();
     setInterval(pollExpressionIntent, 250);
+    loadGenesis();
   </script>
 </body>
 </html>

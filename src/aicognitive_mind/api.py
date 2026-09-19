@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,7 @@ from aicognitive_mind.body import (
     ExpressionModality,
     Percept,
 )
+from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
@@ -353,6 +354,15 @@ async def set_face_expression(
             detail=str(exc),
         ) from exc
     return intent
+
+
+@app.get("/v1/body/face/avatar", include_in_schema=False)
+async def default_face_avatar() -> Response:
+    return Response(
+        content=build_genesis_vrm(),
+        media_type="model/gltf-binary",
+        headers={"Content-Disposition": 'inline; filename="genesis.vrm"'},
+    )
 
 
 @app.get("/v1/body/face/status")
