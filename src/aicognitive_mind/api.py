@@ -78,6 +78,29 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         summary["title"] = "Memory Revision"
         summary["preview"] = after_content or before_content
         summary["search_text"] = f"{before_content} {after_content}".strip()
+    elif entry.kind == JournalKind.TENSION:
+        subject = str(experience.get("subject", ""))
+        attribute = str(experience.get("attribute", ""))
+        values = experience.get("competing_values", {})
+        existing_value = str(values.get("existing", ""))
+        proposed_value = str(values.get("proposed", ""))
+        summary["title"] = "Semantic Tension"
+        summary["preview"] = (
+            f"{subject} · {attribute}: {existing_value} ↔ {proposed_value}".strip()
+        )
+        evidence = experience.get("evidence", {})
+        summary["search_text"] = " ".join(
+            value
+            for value in (
+                subject,
+                attribute,
+                existing_value,
+                proposed_value,
+                str(evidence.get("existing", "")),
+                str(evidence.get("proposed", "")),
+            )
+            if value
+        )
     elif entry.kind == JournalKind.INITIALIZATION:
         self_name = str(experience.get("self_name", ""))
         values = " ".join(str(value) for value in experience.get("foundational_values", []))
