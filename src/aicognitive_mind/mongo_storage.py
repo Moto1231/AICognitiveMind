@@ -148,6 +148,8 @@ class MongoJournalStore:
                 {"experience.deliberation.tension_finding.temporal_relationship": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.tension_finding.contextual_relationship": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.tension_finding.basis": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.tension_finding.existing_scope": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.tension_finding.proposed_scope": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.current_evidence_history.query": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.current_evidence_history.response_excerpt": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.current_evidence_history.appraisal.provenance.source": {"$regex": literal, "$options": "i"}},
@@ -168,6 +170,8 @@ class MongoJournalStore:
                 {"experience.current_evidence.tension_finding.temporal_relationship": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.tension_finding.contextual_relationship": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.tension_finding.basis": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.tension_finding.existing_scope": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.tension_finding.proposed_scope": {"$regex": literal, "$options": "i"}},
             ]
         return query
 
@@ -348,6 +352,8 @@ class MongoMemoryStore:
                     {"artifacts.payload.tension_finding.temporal_relationship": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.tension_finding.contextual_relationship": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.tension_finding.basis": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.tension_finding.existing_scope": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.tension_finding.proposed_scope": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.current_evidence_history.query": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.current_evidence_history.response_excerpt": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.current_evidence_history.appraisal.provenance.source": {"$regex": literal, "$options": "i"}},
