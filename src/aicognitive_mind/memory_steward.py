@@ -230,7 +230,6 @@ def _deliberate_tension(
     *,
     tension: SemanticTension,
     existing_memories: list[DurableMemory],
-    proposed_artifacts: tuple[MemoryArtifactProposal, ...],
 ) -> EvidenceDeliberation:
     semantic_key = (
         _normalized_semantic_value(tension.subject),
@@ -539,7 +538,6 @@ class MemoryStewardTool:
                     "deliberation": _deliberate_tension(
                         tension=tension,
                         existing_memories=existing,
-                        proposed_artifacts=call.artifacts,
                     )
                 }
             )
