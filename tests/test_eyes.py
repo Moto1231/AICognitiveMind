@@ -1,132 +1,90 @@
 import base64
 import unittest
-from unittest.mock import patch
+from pathlib import Path
 
-from aicognitive_mind.body.domain import SensoryModality
-from aicognitive_mind.body.eyes import OpenCvVisionSensor
-
-
-class FakeEncoded:
-    def __init__(self, payload: bytes) -> None:
-        self._payload = payload
-
-    def tobytes(self) -> bytes:
-        return self._payload
+from aicognitive_mind.api import app
+from aicognitive_mind.body import BodyRuntime, BrowserVisionIngress, SensoryModality
 
 
-class FakeFrame:
-    shape = (480, 640, 3)
-
-
-class FakeCapture:
-    def __init__(self, *, opened: bool = True, reads_ok: bool = True) -> None:
-        self.opened = opened
-        self.reads_ok = reads_ok
-        self.released = False
-
-    def isOpened(self) -> bool:
-        return self.opened
-
-    def read(self):
-        if self.reads_ok:
-            return True, FakeFrame()
-        return False, None
-
-    def release(self) -> None:
-        self.released = True
-
-
-class FakeCv2:
-    CAP_DSHOW = 700
-    IMWRITE_JPEG_QUALITY = 1
-
-    def __init__(self, capture: FakeCapture) -> None:
-        self.capture = capture
-        self.video_capture_calls = []
-
-    def VideoCapture(self, *args):
-        self.video_capture_calls.append(args)
-        return self.capture
-
-    def imencode(self, extension, frame, args):
-        self.last_encode = (extension, frame, args)
-        return True, FakeEncoded(b"jpeg-bytes")
+def jpeg_data_url(payload: bytes = b"jpeg-bytes") -> str:
+    return "data:image/jpeg;base64," + base64.b64encode(payload).decode("ascii")
 
 
 class EyesV01Tests(unittest.IsolatedAsyncioTestCase):
-    async def test_status_reports_available_camera(self) -> None:
-        capture = FakeCapture()
-        cv2 = FakeCv2(capture)
-        eyes = OpenCvVisionSensor(camera_index=0)
+    async def test_browser_frame_becomes_transient_visual_percept(self) -> None:
+        eyes = BrowserVisionIngress()
 
-        with patch("aicognitive_mind.body.eyes._load_cv2", return_value=cv2):
-            status = await eyes.status()
-
-        self.assertTrue(status.available)
-        self.assertEqual(status.device, "eyes")
-        self.assertIn("camera:0", status.detail or "")
-        self.assertTrue(capture.released)
-
-    async def test_observe_returns_transient_in_memory_jpeg(self) -> None:
-        capture = FakeCapture()
-        cv2 = FakeCv2(capture)
-        eyes = OpenCvVisionSensor(
-            camera_index=0,
-            warmup_frames=2,
-            jpeg_quality=87,
+        percept = eyes.accept(
+            image_data_url=jpeg_data_url(),
+            width=640,
+            height=480,
         )
-
-        with patch("aicognitive_mind.body.eyes._load_cv2", return_value=cv2):
-            percept = await eyes.observe()
 
         self.assertEqual(percept.modality, SensoryModality.VISION)
-        self.assertEqual(percept.source, "camera:0")
-        self.assertEqual(percept.summary, "Visual frame captured.")
-        self.assertTrue(
-            (percept.content_ref or "").startswith("data:image/jpeg;base64,")
-        )
-        encoded = (percept.content_ref or "").split(",", 1)[1]
-        self.assertEqual(base64.b64decode(encoded), b"jpeg-bytes")
+        self.assertEqual(percept.source, "browser-camera")
+        self.assertEqual(percept.summary, "Visual frame received from browser camera.")
         self.assertEqual(percept.metadata["width"], 640)
         self.assertEqual(percept.metadata["height"], 480)
-        self.assertEqual(percept.metadata["channels"], 3)
-        self.assertEqual(percept.metadata["jpeg_quality"], 87)
+        self.assertEqual(percept.metadata["byte_length"], len(b"jpeg-bytes"))
         self.assertTrue(percept.metadata["transient"])
-        self.assertTrue(capture.released)
+        self.assertEqual(percept.metadata["transport"], "browser")
 
-    async def test_unavailable_camera_is_reported_without_raising(self) -> None:
-        capture = FakeCapture(opened=False)
-        cv2 = FakeCv2(capture)
-        eyes = OpenCvVisionSensor(camera_index=0)
+    async def test_body_see_consumes_browser_frame_once(self) -> None:
+        eyes = BrowserVisionIngress()
+        runtime = BodyRuntime(vision=eyes)
+        eyes.accept(
+            image_data_url=jpeg_data_url(),
+            width=320,
+            height=240,
+        )
 
-        with patch("aicognitive_mind.body.eyes._load_cv2", return_value=cv2):
-            status = await eyes.status()
+        ready = await eyes.status()
+        self.assertTrue(ready.available)
 
-        self.assertFalse(status.available)
-        self.assertIn("could not be opened", status.detail or "")
+        seen = await runtime.see()
+        self.assertEqual(seen.source, "browser-camera")
 
-    async def test_observe_fails_explicitly_when_frame_cannot_be_read(self) -> None:
-        capture = FakeCapture(reads_ok=False)
-        cv2 = FakeCv2(capture)
-        eyes = OpenCvVisionSensor(camera_index=0, warmup_frames=0)
+        waiting = await eyes.status()
+        self.assertFalse(waiting.available)
+        with self.assertRaisesRegex(RuntimeError, "No browser camera observation is ready"):
+            await runtime.see()
 
-        with (
-            patch("aicognitive_mind.body.eyes._load_cv2", return_value=cv2),
-            self.assertRaisesRegex(RuntimeError, "could not capture a frame"),
-        ):
-            await eyes.observe()
+    async def test_invalid_browser_frame_is_rejected(self) -> None:
+        eyes = BrowserVisionIngress()
 
-        self.assertTrue(capture.released)
+        with self.assertRaisesRegex(ValueError, "JPEG data URLs only"):
+            eyes.accept(
+                image_data_url="data:image/png;base64,AAAA",
+                width=10,
+                height=10,
+            )
 
-    def test_invalid_configuration_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            OpenCvVisionSensor(camera_index=-1)
-        with self.assertRaises(ValueError):
-            OpenCvVisionSensor(warmup_frames=-1)
-        with self.assertRaises(ValueError):
-            OpenCvVisionSensor(jpeg_quality=0)
-        with self.assertRaises(ValueError):
-            OpenCvVisionSensor(jpeg_quality=101)
+        with self.assertRaisesRegex(ValueError, "invalid base64"):
+            eyes.accept(
+                image_data_url="data:image/jpeg;base64,not-valid-***",
+                width=10,
+                height=10,
+            )
+
+        with self.assertRaisesRegex(ValueError, "dimensions must be positive"):
+            eyes.accept(
+                image_data_url=jpeg_data_url(),
+                width=0,
+                height=10,
+            )
+
+    def test_browser_eyes_routes_and_page_exist(self) -> None:
+        paths = {route.path for route in app.routes}
+        self.assertIn("/body/eyes", paths)
+        self.assertIn("/v1/body/eyes/observe", paths)
+        self.assertIn("/v1/body/eyes/status", paths)
+        self.assertIn("/v1/body/eyes/see", paths)
+
+        page = Path("src/aicognitive_mind/static/eyes.html").read_text(encoding="utf-8")
+        self.assertIn("navigator.mediaDevices.getUserMedia", page)
+        self.assertIn("/v1/body/eyes/observe", page)
+        self.assertIn("/v1/body/eyes/see", page)
+        self.assertIn("BODY CAN SEE", page)
 
 
 if __name__ == "__main__":
