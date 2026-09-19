@@ -1,7 +1,6 @@
 import base64
 import binascii
 import hmac
-
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time
