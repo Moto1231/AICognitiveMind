@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Cognitive Mind — Live Body</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
+    h1 { margin-bottom: .25rem; }
+    p { color: #b9bcc4; }
+    #stage { width: 100%; height: min(58vh, 620px); min-height: 400px; background: #181a20; border-radius: 14px; overflow: hidden; }
+    #stage canvas { display: block; width: 100%; height: 100%; }
+    .controls { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
+    button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    video { width: 220px; border-radius: 10px; background: #181a20; }
+    #cameraPanel { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    #status { white-space: pre-wrap; background: #181a20; padding: 1rem; border-radius: 10px; margin-top: 1rem; min-height: 6rem; }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+        "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main>
+    <h1>Live Body V0.1</h1>
+    <p>One circuit: sense through the browser, interpret in the Mind, reason with memory, express through Face and Mouth.</p>
+
+    <div id="stage"></div>
+
+    <div id="cameraPanel">
+      <video id="video" autoplay playsinline muted></video>
+      <div>
+        <div class="controls">
+          <button id="see">See through camera</button>
+          <button id="listen">Listen for 5 seconds</button>
+          <button id="stopListen" disabled>Stop listening</button>
+        </div>
+        <div class="controls">
+          <button id="stopCamera" disabled>Release camera</button>
+          <button id="stopSpeech">Stop speech</button>
+        </div>
+      </div>
+    </div>
+
+    <canvas id="captureCanvas" hidden></canvas>
+    <div id="status">Attaching Genesis...</div>
+  </main>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+
+    const stage = document.getElementById("stage");
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("captureCanvas");
+    const seeButton = document.getElementById("see");
+    const listenButton = document.getElementById("listen");
+    const stopListenButton = document.getElementById("stopListen");
+    const stopCameraButton = document.getElementById("stopCamera");
+    const stopSpeechButton = document.getElementById("stopSpeech");
+    const statusBox = document.getElementById("status");
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    stage.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 30);
+    camera.position.set(0, 1.35, 2.7);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.25, 0);
+    controls.enableDamping = true;
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 2.0));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
+    keyLight.position.set(1.5, 2.5, 2.0);
+    scene.add(keyLight);
+
+    const loader = new GLTFLoader();
+    loader.register((parser) => new VRMLoaderPlugin(parser));
+
+    const clock = new THREE.Clock();
+    let currentVrm = null;
+    let cameraStream = null;
+    let microphoneStream = null;
+    let recorder = null;
+    let audioChunks = [];
+    let audioStartedAt = 0;
+    let listenTimer = null;
+    let voices = [];
+
+    function setStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    function resize() {
+      const width = stage.clientWidth;
+      const height = stage.clientHeight;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    function loadVoices() {
+      voices = window.speechSynthesis?.getVoices?.() || [];
+    }
+
+    function attachAvatar(gltf) {
+      const vrm = gltf.userData.vrm;
+      if (!vrm) {
+        setStatus("Genesis did not load as a VRM avatar.");
+        return;
+      }
+      VRMUtils.removeUnnecessaryVertices(gltf.scene);
+      VRMUtils.combineSkeletons(gltf.scene);
+      VRMUtils.combineMorphs(vrm);
+      VRMUtils.rotateVRM0(vrm);
+      vrm.scene.traverse((object) => { object.frustumCulled = false; });
+      currentVrm = vrm;
+      scene.add(vrm.scene);
+      setStatus("LIVE BODY READY\nGenesis attached. Eyes, Ears, Face, and Mouth are connected.");
+    }
+
+    function applyFaceIntent(intent) {
+      if (!currentVrm?.expressionManager || !intent) return;
+      const manager = currentVrm.expressionManager;
+      const expression = String(intent.metadata?.expression || "neutral");
+      const weight = Number(intent.metadata?.weight ?? 1.0);
+      manager.resetValues();
+      if (manager.getExpression(expression)) {
+        manager.setValue(expression, Math.max(0, Math.min(1, weight)));
+      }
+      manager.update();
+    }
+
+    function speakIntent(intent) {
+      if (!intent?.text || !window.speechSynthesis) return;
+      loadVoices();
+      const metadata = intent.metadata || {};
+      const utterance = new SpeechSynthesisUtterance(intent.text);
+      utterance.rate = Number(metadata.rate ?? 1);
+      utterance.pitch = Number(metadata.pitch ?? 1);
+      utterance.volume = Number(metadata.volume ?? 1);
+      if (metadata.voice_name) {
+        const voice = voices.find((item) => item.name === metadata.voice_name);
+        if (voice) utterance.voice = voice;
+      }
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    }
+
+    async function consumeExpressionOutputs() {
+      const [faceResponse, mouthResponse] = await Promise.all([
+        fetch("/v1/body/face/next", { cache: "no-store" }),
+        fetch("/v1/body/mouth/next", { cache: "no-store" })
+      ]);
+
+      if (faceResponse.ok) {
+        const faceIntent = await faceResponse.json();
+        if (faceIntent) applyFaceIntent(faceIntent);
+      }
+      if (mouthResponse.ok) {
+        const mouthIntent = await mouthResponse.json();
+        if (mouthIntent) speakIntent(mouthIntent);
+      }
+    }
+
+    async function showMindResult(result) {
+      setStatus(
+        "MIND ↔ BODY LOOP COMPLETE\n\n" +
+        "Perception:\n" + result.interpretation + "\n\n" +
+        "Mind response:\n" + result.response_text
+      );
+      await consumeExpressionOutputs();
+    }
+
+    async function ensureCamera() {
+      if (cameraStream) return;
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      video.srcObject = cameraStream;
+      await video.play();
+      stopCameraButton.disabled = false;
+    }
+
+    function releaseCamera() {
+      if (cameraStream) {
+        for (const track of cameraStream.getTracks()) track.stop();
+        cameraStream = null;
+      }
+      video.srcObject = null;
+      stopCameraButton.disabled = true;
+    }
+
+    async function seeThroughBody() {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setStatus("This browser does not expose camera access.");
+          return;
+        }
+        await ensureCamera();
+
+        const maxWidth = 960;
+        const scale = Math.min(1, maxWidth / video.videoWidth);
+        canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+        canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+        canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        setStatus("Eyes captured a frame. Sending sensation to the Mind...");
+
+        const ingress = await fetch("/v1/body/eyes/observe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image_data_url: canvas.toDataURL("image/jpeg", 0.85),
+            width: canvas.width,
+            height: canvas.height,
+            source: "browser-camera"
+          })
+        });
+        if (!ingress.ok) throw new Error(await ingress.text());
+
+        const response = await fetch("/v1/mind/body/see", { method: "POST" });
+        if (!response.ok) throw new Error(await response.text());
+        await showMindResult(await response.json());
+      } catch (error) {
+        setStatus("Visual Mind↔Body loop failed: " + error.message);
+      }
+    }
+
+    function preferredAudioMimeType() {
+      const candidates = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus"
+      ];
+      return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    }
+
+    function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    function releaseMicrophone() {
+      if (microphoneStream) {
+        for (const track of microphoneStream.getTracks()) track.stop();
+        microphoneStream = null;
+      }
+      if (listenTimer) {
+        clearTimeout(listenTimer);
+        listenTimer = null;
+      }
+      listenButton.disabled = false;
+      stopListenButton.disabled = true;
+    }
+
+    async function submitAudio(blob, durationMs) {
+      setStatus("Ears captured sound. Sending sensation to the Mind...");
+      const ingress = await fetch("/v1/body/ears/observe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audio_data_url: await blobToDataUrl(blob),
+          duration_ms: durationMs,
+          source: "browser-microphone"
+        })
+      });
+      if (!ingress.ok) throw new Error(await ingress.text());
+
+      const response = await fetch("/v1/mind/body/hear", { method: "POST" });
+      if (!response.ok) throw new Error(await response.text());
+      await showMindResult(await response.json());
+    }
+
+    async function listenThroughBody() {
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        setStatus("This browser does not expose microphone recording.");
+        return;
+      }
+
+      try {
+        microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const mimeType = preferredAudioMimeType();
+        recorder = mimeType
+          ? new MediaRecorder(microphoneStream, { mimeType })
+          : new MediaRecorder(microphoneStream);
+
+        audioChunks = [];
+        recorder.addEventListener("dataavailable", (event) => {
+          if (event.data.size > 0) audioChunks.push(event.data);
+        });
+        recorder.addEventListener("stop", async () => {
+          const durationMs = Math.max(1, Math.min(30_000, Math.round(performance.now() - audioStartedAt)));
+          const blob = new Blob(
+            audioChunks,
+            { type: recorder.mimeType || audioChunks[0]?.type || "audio/webm" }
+          );
+          releaseMicrophone();
+          try {
+            await submitAudio(blob, durationMs);
+          } catch (error) {
+            setStatus("Auditory Mind↔Body loop failed: " + error.message);
+          }
+        }, { once: true });
+
+        recorder.start();
+        audioStartedAt = performance.now();
+        listenButton.disabled = true;
+        stopListenButton.disabled = false;
+        setStatus("LISTENING\nSpeak now. The clip will stop after 5 seconds.");
+        listenTimer = setTimeout(() => {
+          if (recorder?.state === "recording") recorder.stop();
+        }, 5_000);
+      } catch (error) {
+        releaseMicrophone();
+        setStatus("Microphone access failed: " + error.message);
+      }
+    }
+
+    function stopListening() {
+      if (recorder?.state === "recording") recorder.stop();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      if (currentVrm) currentVrm.update(delta);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    seeButton.addEventListener("click", seeThroughBody);
+    listenButton.addEventListener("click", listenThroughBody);
+    stopListenButton.addEventListener("click", stopListening);
+    stopCameraButton.addEventListener("click", releaseCamera);
+    stopSpeechButton.addEventListener("click", () => window.speechSynthesis?.cancel());
+
+    if (window.speechSynthesis) {
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    window.addEventListener("resize", resize);
+    window.addEventListener("beforeunload", () => {
+      releaseCamera();
+      releaseMicrophone();
+      window.speechSynthesis?.cancel();
+    });
+
+    resize();
+    animate();
+    loader.load(
+      "/v1/body/face/avatar",
+      attachAvatar,
+      undefined,
+      (error) => setStatus("Could not attach Genesis: " + error.message)
+    );
+  </script>
+</body>
+</html>
