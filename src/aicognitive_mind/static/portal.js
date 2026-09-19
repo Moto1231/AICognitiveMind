@@ -337,7 +337,8 @@ function formatEvidenceDeliberation(deliberation) {
   const evidenceHistory = (deliberation.current_evidence_history || [])
     .map((item, index) => {
       const meaning = item.semantic_interpretation || {};
-      return `${index + 1}. ${item.response_excerpt} [${meaning.subject || "?"} · ${meaning.attribute || "?"} = ${meaning.value ?? "?"}]`;
+      const scope = meaning.scope?.label ? ` · scope=${meaning.scope.label}` : "";
+      return `${index + 1}. ${item.response_excerpt} [${meaning.subject || "?"} · ${meaning.attribute || "?"} = ${meaning.value ?? "?"}${scope}]`;
     })
     .join("\n");
   return [
@@ -348,6 +349,7 @@ function formatEvidenceDeliberation(deliberation) {
     `Current Evidence Supporting Proposed: ${deliberation.current_proposed_support_count ?? 0}`,
     `Existing Support: ${deliberation.existing_support_count ?? 0}`,
     `Proposed Support: ${deliberation.proposed_support_count ?? 0}`,
+    `Semantic Scope: ${deliberation.scope?.label || "Unscoped"}`,
     `Provenance Relationship: ${displayLabel(deliberation.provenance_relationship || "unknown")}`,
     `Existing Provenance Depth: ${deliberation.existing_provenance_depth ?? 0}`,
     `Proposed Provenance Depth: ${deliberation.proposed_provenance_depth ?? 0}`,
@@ -664,7 +666,7 @@ function formatResearchEvidence(observations) {
   return observations.map((observation, index) => {
     const interpretation = observation.semantic_interpretation;
     const meaning = interpretation
-      ? `\nMeaning: ${interpretation.subject} · ${interpretation.attribute} = ${interpretation.value}`
+      ? `\nMeaning: ${interpretation.subject} · ${interpretation.attribute} = ${interpretation.value}${interpretation.scope?.label ? ` [${interpretation.scope.label}]` : ""}`
       : "";
     const appraisal = observation.appraisal
       ? `\n${formatEvidenceAppraisal(observation.appraisal)}`
