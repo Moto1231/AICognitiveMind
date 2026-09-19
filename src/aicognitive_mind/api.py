@@ -116,10 +116,10 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         to_value = str(experience.get("to_value", ""))
         scope = experience.get("scope") or {}
         scope_label = str(scope.get("label", "")) if isinstance(scope, dict) else ""
+        scope_suffix = f" [{scope_label}]" if scope_label else ""
         summary["title"] = "Belief Transition"
         summary["preview"] = (
-            f"{subject} · {attribute}: {from_value} → {to_value}"
-            f"{f' [{scope_label}]' if scope_label else ''}".strip()
+            f"{subject} · {attribute}: {from_value} → {to_value}{scope_suffix}".strip()
         )
         summary["search_text"] = " ".join(
             str(value)
@@ -146,12 +146,12 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         phase = str(experience.get("phase", "detected"))
         scope = experience.get("scope") or {}
         scope_label = str(scope.get("label", "")) if isinstance(scope, dict) else ""
+        scope_suffix = f" [{scope_label}]" if scope_label else ""
         summary["title"] = (
             "Tension Reassessment" if phase == "reassessment" else "Semantic Tension"
         )
         summary["preview"] = (
-            f"{subject} · {attribute}: {existing_value} ↔ {proposed_value}"
-            f"{f' [{scope_label}]' if scope_label else ''}".strip()
+            f"{subject} · {attribute}: {existing_value} ↔ {proposed_value}{scope_suffix}".strip()
         )
         evidence = experience.get("evidence", {})
         deliberation = experience.get("deliberation") or {}
