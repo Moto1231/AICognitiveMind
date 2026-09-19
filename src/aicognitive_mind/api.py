@@ -1,3 +1,6 @@
+import base64
+import binascii
+import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time
@@ -248,6 +251,29 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
     return summary
 
 
+def app_access_authorized(authorization: str | None) -> bool:
+    settings = get_settings()
+    expected_password = settings.app_access_password
+    if not expected_password:
+        return True
+    if not authorization or not authorization.startswith("Basic "):
+        return False
+
+    try:
+        decoded = base64.b64decode(
+            authorization.removeprefix("Basic ").strip(),
+            validate=True,
+        ).decode("utf-8")
+        username, password = decoded.split(":", 1)
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return False
+
+    return hmac.compare_digest(username, settings.app_access_username) and hmac.compare_digest(
+        password,
+        expected_password,
+    )
+
+
 def require_admin(request: Request) -> None:
     configured_pin = get_settings().admin_pin
     if configured_pin and request.headers.get("x-admin-pin") != configured_pin:
@@ -323,6 +349,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
+    # Render must be able to probe health without credentials. All user-facing
+    # pages and APIs are protected when APP_ACCESS_PASSWORD is configured.
+    if request.url.path == "/health" or app_access_authorized(
+        request.headers.get("authorization")
+    ):
+        return await call_next(request)
+
+    return Response(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        headers={"WWW-Authenticate": 'Basic realm="AICognitiveMind"'},
+    )
 
 
 @app.get("/", include_in_schema=False)
