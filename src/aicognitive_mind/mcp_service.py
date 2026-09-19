@@ -12,7 +12,7 @@ from aicognitive_mind.domain import (
     MemoryClass,
     MindIdentity,
 )
-from aicognitive_mind.memory_steward import MemoryStewardTool
+from aicognitive_mind.memory_steward import MemoryArtifactProposal, MemoryStewardTool
 from aicognitive_mind.prompts import (
     CONSCIOUS_MEMORY_STEWARD_SYSTEM_PROMPT,
     CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
@@ -25,6 +25,7 @@ class MemoryProposal(BaseModel):
     content: str = Field(min_length=1)
     associations: tuple[str, ...] = ()
     grounding: tuple[str, ...] = Field(min_length=1)
+    artifacts: tuple[MemoryArtifactProposal, ...] = ()
 
 
 class CognitiveMcpService:
