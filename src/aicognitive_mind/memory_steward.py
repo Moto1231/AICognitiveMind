@@ -69,6 +69,8 @@ class TensionInvestigationFinding(BaseModel):
         "unknown",
     ] = "unknown"
     basis: tuple[str, ...] = Field(min_length=1)
+    existing_scope: str | None = None
+    proposed_scope: str | None = None
 
 
 class ResearchObservation(BaseModel):
@@ -116,8 +118,20 @@ class TransitionBeliefCall(BaseModel):
     candidate_value: Any
 
 
+class ReframeBeliefCall(BaseModel):
+    action: Literal["reframe_belief"]
+    subject: str = Field(min_length=1)
+    attribute: str = Field(min_length=1)
+    existing_value: Any
+    proposed_value: Any
+
+
 MemoryStewardCall = Annotated[
-    RecallCall | ConsiderEvidenceCall | ProposeMemoryCall | TransitionBeliefCall,
+    RecallCall
+    | ConsiderEvidenceCall
+    | ProposeMemoryCall
+    | TransitionBeliefCall
+    | ReframeBeliefCall,
     Field(discriminator="action"),
 ]
 _CALL_ADAPTER = TypeAdapter(MemoryStewardCall)
@@ -229,12 +243,26 @@ class BeliefTransitionDecision(BaseModel):
     deliberation_revision: int | None = None
 
 
+class BeliefReframeDecision(BaseModel):
+    accepted: bool
+    reason: str
+    subject: str
+    attribute: str
+    relationship: Literal["temporal", "contextual"] | None = None
+    existing_value: Any = None
+    proposed_value: Any = None
+    existing_scope: str | None = None
+    proposed_scope: str | None = None
+    deliberation_revision: int | None = None
+
+
 class MemoryStewardTrace(BaseModel):
     recalled_context: MemoryBrief
     evidence_considered: tuple[ResearchObservation, ...] = ()
     memory_decisions: tuple[MemoryDecision, ...] = ()
     tension_reassessments: tuple[SemanticTension, ...] = ()
     belief_transitions: tuple[BeliefTransitionDecision, ...] = ()
+    belief_reframes: tuple[BeliefReframeDecision, ...] = ()
 
 
 class MemoryStewardNotConsultedError(RuntimeError):
@@ -248,6 +276,8 @@ _EVIDENCE_APPRAISAL_KIND = "evidence_appraisal"
 _EVIDENCE_DELIBERATION_KIND = "evidence_deliberation"
 _BELIEF_TRANSITION_KIND = "belief_transition"
 _BELIEF_STATUS_KIND = "belief_status"
+_BELIEF_REFRAME_KIND = "belief_reframe"
+_SCOPED_BELIEF_KIND = "scoped_belief"
 
 
 def _normalized_semantic_value(value: Any) -> str:
