@@ -16,6 +16,7 @@ from aicognitive_mind.memory_steward import (
     MemoryArtifactProposal,
     MemoryStewardTool,
     ResearchObservation,
+    SemanticScope,
 )
 from aicognitive_mind.prompts import (
     CONSCIOUS_MEMORY_STEWARD_SYSTEM_PROMPT,
@@ -36,6 +37,7 @@ class BeliefTransitionProposal(BaseModel):
     subject: str = Field(min_length=1)
     attribute: str = Field(min_length=1)
     candidate_value: Any
+    scope: SemanticScope | None = None
 
 
 class BeliefReframeProposal(BaseModel):
