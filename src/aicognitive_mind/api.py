@@ -11,11 +11,13 @@ from pydantic import BaseModel, Field
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
+    CognitiveActor,
     CognitiveMind,
     DiagnosticObservation,
     DurableMemory,
     InteractionResult,
     JournalEntry,
+    JournalKind,
 )
 from aicognitive_mind.engines import EchoReasoningEngine, OpenAIReasoningEngine
 from aicognitive_mind.mcp_service import CognitiveMcpService
@@ -41,6 +43,20 @@ class InteractionRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+class AdminMemoryRevisionRequest(BaseModel):
+    original: DurableMemory
+    replacement: DurableMemory
+
+
+def require_admin(request: Request) -> None:
+    configured_pin = get_settings().admin_pin
+    if configured_pin and request.headers.get("x-admin-pin") != configured_pin:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Administrator authorization was not accepted",
+        )
+
+
 def get_core(request: Request) -> CognitiveCore:
     return cast(CognitiveCore, request.app.state.core)
 
@@ -55,6 +71,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     mind_store = MongoMindStore(runtime.database)
     journal_store = MongoJournalStore(runtime.database)
     memory_store = MongoMemoryStore(runtime.database)
+    app.state.mind_store = mind_store
+    app.state.journal_store = journal_store
+    app.state.memory_store = memory_store
     app.state.mcp_service = CognitiveMcpService(
         mind=mind_store,
         journal=journal_store,
@@ -96,12 +115,61 @@ async def health(request: Request) -> dict[str, str]:
 async def portal_status(request: Request) -> dict[str, Any]:
     service = cast(CognitiveMcpService, request.app.state.mcp_service)
     try:
-        return await service.status()
+        result = await service.status()
+        result["administration"] = {
+            "pin_required": bool(get_settings().admin_pin),
+            "memory_editing": True,
+        }
+        return result
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+
+@app.get("/v1/admin/status")
+async def admin_status(request: Request) -> dict[str, bool]:
+    require_admin(request)
+    return {"authorized": True, "memory_editing": True}
+
+
+@app.put("/v1/admin/memory", response_model=DurableMemory)
+async def revise_memory(
+    body: AdminMemoryRevisionRequest,
+    request: Request,
+) -> DurableMemory:
+    require_admin(request)
+    memory_store = cast(MongoMemoryStore, request.app.state.memory_store)
+    journal_store = cast(MongoJournalStore, request.app.state.journal_store)
+
+    replacement = body.replacement.model_copy(
+        update={"formed_at": body.original.formed_at}
+    )
+    revised = await memory_store.replace_exact(
+        body.original,
+        replacement,
+        recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+    )
+    if revised is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The durable memory changed before this revision could be applied",
+        )
+
+    await journal_store.append(
+        JournalEntry(
+            kind=JournalKind.MEMORY_REVISION,
+            experience={
+                "source": "human_administrator",
+                "channel": "portal",
+                "before": body.original.model_dump(mode="python"),
+                "after": revised.model_dump(mode="python"),
+            },
+        ),
+        recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+    )
+    return revised
 
 
 @app.post(
