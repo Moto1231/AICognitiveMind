@@ -48,6 +48,13 @@ class MemoryStore(Protocol):
 
     async def read(self) -> list[DurableMemory]: ...
 
+    async def replace_exact(
+        self,
+        original: DurableMemory,
+        replacement: DurableMemory,
+        recorded_by: CognitiveActor,
+    ) -> DurableMemory | None: ...
+
 
 class InMemoryMindStore:
     def __init__(self) -> None:
@@ -110,3 +117,17 @@ class InMemoryMemoryStore:
 
     async def read(self) -> list[DurableMemory]:
         return deepcopy(self._memories)
+
+    async def replace_exact(
+        self,
+        original: DurableMemory,
+        replacement: DurableMemory,
+        recorded_by: CognitiveActor,
+    ) -> DurableMemory | None:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
+        for index, existing in enumerate(self._memories):
+            if existing == original:
+                stored = deepcopy(replacement)
+                self._memories[index] = stored
+                return deepcopy(stored)
+        return None
