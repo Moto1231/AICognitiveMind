@@ -290,7 +290,10 @@ async def revise_memory(
     journal_store = cast(MongoJournalStore, request.app.state.journal_store)
 
     replacement = body.replacement.model_copy(
-        update={"formed_at": body.original.formed_at}
+        update={
+            "formed_at": body.original.formed_at,
+            "artifacts": body.original.artifacts,
+        }
     )
     revised = await memory_store.replace_exact(
         body.original,
