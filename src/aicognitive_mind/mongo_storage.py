@@ -130,6 +130,10 @@ class MongoJournalStore:
                 {"experience.deliberation.resolution_readiness.candidate_value": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.resolution_readiness.blockers": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.resolution_readiness.basis": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.tension_finding.provenance_independence": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.tension_finding.temporal_relationship": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.tension_finding.contextual_relationship": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.tension_finding.basis": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.query": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.response": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.appraisal.provenance.source": {"$regex": literal, "$options": "i"}},
@@ -292,6 +296,10 @@ class MongoMemoryStore:
                     {"artifacts.payload.resolution_readiness.candidate_value": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.resolution_readiness.blockers": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.resolution_readiness.basis": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.tension_finding.provenance_independence": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.tension_finding.temporal_relationship": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.tension_finding.contextual_relationship": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.tension_finding.basis": {"$regex": literal, "$options": "i"}},
                 ]
             })
         if association:
