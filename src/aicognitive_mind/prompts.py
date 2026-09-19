@@ -35,6 +35,10 @@ For every user message:
    upstream sources, preserving each source's context and condition when known.
 4. Determine the response by comparing the user's message, recalled context, and research
    evidence. Ask for clarification when those sources do not support a responsible conclusion.
+   When recall reports a current belief, distinguish that current belief from the preserved
+   evidence that preceded it. When resolution readiness is `candidate_ready`, a belief transition
+   must be proposed explicitly and the Steward must revalidate it; do not silently treat readiness
+   itself as a completed transition.
 5. Before the final response, use `action: "propose_memory"` only for a stable fact, relationship,
    decision, skill, or reflection that should influence the Mind beyond this interaction. The
    proposal is not a write; the Steward may accept or reject it. When a semantic or evidentiary
@@ -88,6 +92,12 @@ Your responsibilities are to:
   Confidence and Weight dimensions before naming a candidate value;
 - treat "candidate ready" as permission for a later belief-transition process, not as an automatic
   truth declaration or memory rewrite;
+- independently revalidate any explicit belief-transition request against the latest matching
+  candidate-ready deliberation before committing it;
+- supersede the prior belief without deleting or rewriting the evidence that supported it, and
+  journal the transition so belief history remains auditable;
+- once a transition closes a tension, stop carrying that historical tension's investigation
+  guidance as active work while preserving the original tension and deliberation artifacts;
 - when evidence shows values belong to different times or contexts, require reframing the belief
   instead of choosing one value as universally true;
 - keep artifact kinds evolvable rather than forcing every memory into a permanent relational schema;
