@@ -130,3 +130,10 @@ replaceable without altering Mind identity.
 [0006 — Mouth V0.1](0006-mouth-v0.1.md) implements transient VOICE `ExpressionIntent` output
 through the remote Body runtime and browser speech synthesis. The browser remains a hardware
 bridge to local speakers; no local application runtime is required.
+
+
+## Implemented Ears slice
+
+[0007 — Ears V0.1](0007-ears-v0.1.md) implements transient microphone input through the browser
+hardware bridge. Raw audio becomes an AUDIO `Percept` and is consumed through
+`BodyRuntime.hear()`; no transcription or durable storage occurs in the Body.

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from aicognitive_mind.body import (
     BodyRuntime,
+    BrowserAudioIngress,
     BrowserAvatarOutput,
     BrowserVisionIngress,
     BrowserVoiceOutput,
@@ -70,6 +71,12 @@ class BrowserVisionObservationRequest(BaseModel):
     width: int = Field(gt=0, le=10_000)
     height: int = Field(gt=0, le=10_000)
     source: str = Field(default="browser-camera", min_length=1, max_length=120)
+
+
+class BrowserAudioObservationRequest(BaseModel):
+    audio_data_url: str = Field(min_length=32, max_length=12_000_000)
+    duration_ms: int = Field(gt=0, le=30_000)
+    source: str = Field(default="browser-microphone", min_length=1, max_length=120)
 
 
 class FaceExpressionRequest(BaseModel):
@@ -263,13 +270,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory=storage.memory,
     )
     browser_eyes = BrowserVisionIngress()
+    browser_ears = BrowserAudioIngress()
     browser_face = BrowserAvatarOutput()
     browser_mouth = BrowserVoiceOutput()
     app.state.browser_eyes = browser_eyes
+    app.state.browser_ears = browser_ears
     app.state.browser_face = browser_face
     app.state.browser_mouth = browser_mouth
     app.state.body = BodyRuntime(
         vision=browser_eyes,
+        audio=browser_ears,
         voice=browser_mouth,
         avatar=browser_face,
     )
@@ -335,6 +345,48 @@ async def body_see(request: Request) -> Percept:
     runtime = cast(BodyRuntime, request.app.state.body)
     try:
         return await runtime.see()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/body/ears", include_in_schema=False)
+async def ears_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "ears.html")
+
+
+@app.post("/v1/body/ears/observe", response_model=Percept)
+async def receive_browser_audio_observation(
+    body: BrowserAudioObservationRequest,
+    request: Request,
+) -> Percept:
+    ears = cast(BrowserAudioIngress, request.app.state.browser_ears)
+    try:
+        return ears.accept(
+            audio_data_url=body.audio_data_url,
+            duration_ms=body.duration_ms,
+            source=body.source,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@app.get("/v1/body/ears/status")
+async def ears_status(request: Request) -> DeviceStatus:
+    ears = cast(BrowserAudioIngress, request.app.state.browser_ears)
+    return await ears.status()
+
+
+@app.get("/v1/body/ears/hear", response_model=Percept)
+async def body_hear(request: Request) -> Percept:
+    runtime = cast(BodyRuntime, request.app.state.body)
+    try:
+        return await runtime.hear()
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
