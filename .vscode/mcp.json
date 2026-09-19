@@ -11,9 +11,10 @@
       ],
       "cwd": "${workspaceFolder}",
       "env": {
-        "STORAGE_PROVIDER": "mongo",
-        "MONGODB_URI": "mongodb://mongodb:27017",
-        "MONGODB_DATABASE": "ai_cognitive_mind",
+        "STORAGE_PROVIDER": "surreal",
+        "SURREALDB_URI": "surrealkv://.surreal/cognitive_mind",
+        "SURREALDB_NAMESPACE": "mir_ai",
+        "SURREALDB_DATABASE": "ai_cognitive_mind",
         "APP_NAME": "AI Cognitive Mind"
       }
     }
