@@ -37,6 +37,10 @@ interprets it and normal memory governance decides whether anything should persi
 Body foundation documentation lives in
 [`docs/body/0001-foundation.md`](docs/body/0001-foundation.md).
 
+The integrated Mind + Body runtime can be deployed independently of Codespaces using the Render
+Blueprint in `render.yaml`. See
+[`docs/REMOTE_RUNTIME_RENDER.md`](docs/REMOTE_RUNTIME_RENDER.md).
+
 Mind and Body development proceed in parallel through narrow integration contracts.
 
 ## Development workflow
@@ -50,8 +54,9 @@ branch → pull request → GitHub Actions validation → merge
 A fresh GitHub-hosted Ubuntu runner performs the normal test/build work for each pull request.
 Codespaces are now an interactive exception rather than the default development machine.
 
-Use the local Windows machine when Body work requires actual camera, microphone, speakers, display,
-or OS device APIs.
+Body hardware remains on the user's machine, but the application runtime does not. Browser APIs
+bridge the local camera, microphone, speakers, and display to the remote HTTPS runtime. No local
+Python application process is required for Body testing.
 
 See [`docs/DEVELOPMENT_WORKFLOW.md`](docs/DEVELOPMENT_WORKFLOW.md).
 
