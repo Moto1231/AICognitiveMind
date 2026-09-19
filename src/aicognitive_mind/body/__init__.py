@@ -8,10 +8,12 @@ from aicognitive_mind.body.domain import (
     SensoryModality,
 )
 from aicognitive_mind.body.eyes import BrowserVisionIngress
+from aicognitive_mind.body.face import BrowserAvatarOutput
 from aicognitive_mind.body.runtime import BodyRuntime
 
 __all__ = [
     "BodyRuntime",
+    "BrowserAvatarOutput",
     "DeviceStatus",
     "ExpressionIntent",
     "ExpressionModality",
