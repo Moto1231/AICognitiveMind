@@ -92,6 +92,54 @@ class MemoryStewardNotConsultedError(RuntimeError):
     pass
 
 
+_SEMANTIC_INTERPRETATION_KIND = "semantic_interpretation"
+_SEMANTIC_EQUIVALENCE_KIND = "semantic_equivalence"
+
+
+def _normalized_semantic_value(value: Any) -> str:
+    if isinstance(value, str):
+        return " ".join(value.casefold().split())
+    if isinstance(value, (int, float, bool)) or value is None:
+        return str(value).casefold()
+    if isinstance(value, list):
+        return "[" + ",".join(_normalized_semantic_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(
+            f"{str(key).casefold()}:{_normalized_semantic_value(value[key])}"
+            for key in sorted(value, key=lambda item: str(item).casefold())
+        ) + "}"
+    return " ".join(str(value).casefold().split())
+
+
+def _semantic_signature_from_payload(payload: dict[str, Any]) -> tuple[str, str, str] | None:
+    subject = payload.get("subject")
+    attribute = payload.get("attribute")
+    if not isinstance(subject, str) or not subject.strip():
+        return None
+    if not isinstance(attribute, str) or not attribute.strip():
+        return None
+    if "value" not in payload:
+        return None
+    return (
+        _normalized_semantic_value(subject),
+        _normalized_semantic_value(attribute),
+        _normalized_semantic_value(payload["value"]),
+    )
+
+
+def _semantic_interpretations(
+    artifacts: tuple[MemoryArtifact, ...] | tuple[MemoryArtifactProposal, ...],
+) -> dict[tuple[str, str, str], dict[str, Any]]:
+    interpretations: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for artifact in artifacts:
+        if artifact.kind != _SEMANTIC_INTERPRETATION_KIND:
+            continue
+        signature = _semantic_signature_from_payload(artifact.payload)
+        if signature is not None:
+            interpretations[signature] = artifact.payload
+    return interpretations
+
+
 class MemoryStewardTool:
     """Interaction-scoped doorway to an independent Conscious Memory Steward."""
 
@@ -217,28 +265,53 @@ class MemoryStewardTool:
         if any(memory.content.casefold() == call.content.casefold() for memory in existing):
             return MemoryDecision(
                 accepted=False,
-                reason="An equivalent durable memory already exists.",
+                reason="An exact durable memory already exists; the repeated experience remains in the journal.",
             )
 
+        proposed_interpretations = _semantic_interpretations(call.artifacts)
+        equivalent_evidence: list[tuple[DurableMemory, dict[str, Any]]] = []
+        for memory in existing:
+            existing_interpretations = _semantic_interpretations(memory.artifacts)
+            for signature, payload in proposed_interpretations.items():
+                if signature in existing_interpretations:
+                    equivalent_evidence.append((memory, payload))
+
         associations = call.associations or tuple(_derived_associations(call.content))
-        artifacts = tuple(
+        artifacts = [
             MemoryArtifact(
                 kind=artifact.kind,
                 payload=artifact.payload,
             )
             for artifact in call.artifacts
-        )
+        ]
+        if equivalent_evidence:
+            matched_memory, matched_meaning = equivalent_evidence[0]
+            artifacts.append(
+                MemoryArtifact(
+                    kind=_SEMANTIC_EQUIVALENCE_KIND,
+                    payload={
+                        "meaning": matched_meaning,
+                        "equivalent_evidence_content": matched_memory.content,
+                    },
+                )
+            )
+
         memory = DurableMemory(
             memory_class=call.memory_class,
             content=call.content,
             associations=associations,
             grounding=call.grounding,
-            artifacts=artifacts,
+            artifacts=tuple(artifacts),
         )
         self._pending.append(memory)
+        reason = (
+            "Accepted as distinct corroborating evidence for an already interpreted proposition."
+            if equivalent_evidence
+            else "Accepted by the Conscious Memory Steward for commit with this experience."
+        )
         return MemoryDecision(
             accepted=True,
-            reason="Accepted by the Conscious Memory Steward for commit with this experience.",
+            reason=reason,
             memory=memory,
         )
 
