@@ -19,11 +19,28 @@ def structured(result, tool_name: str) -> dict:
 
 async def main() -> None:
     database = f"ai_cognitive_mind_stdio_ci_{uuid.uuid4().hex}"
+    provider = os.environ.get("STORAGE_PROVIDER", "surreal")
     env = {
-        "MONGODB_URI": os.environ.get("MONGODB_URI", "mongodb://127.0.0.1:27017"),
-        "MONGODB_DATABASE": database,
+        "STORAGE_PROVIDER": provider,
         "APP_NAME": "AI Cognitive Mind CI",
     }
+    if provider == "surreal":
+        env.update(
+            {
+                "SURREALDB_URI": os.environ.get("SURREALDB_URI", "mem://"),
+                "SURREALDB_NAMESPACE": os.environ.get("SURREALDB_NAMESPACE", "ci"),
+                "SURREALDB_DATABASE": database,
+            }
+        )
+    else:
+        env.update(
+            {
+                "MONGODB_URI": os.environ.get(
+                    "MONGODB_URI", "mongodb://127.0.0.1:27017"
+                ),
+                "MONGODB_DATABASE": database,
+            }
+        )
     params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "aicognitive_mind.mcp_server", "--transport", "stdio"],

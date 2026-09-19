@@ -73,7 +73,9 @@ This is not a registry or population manager. The deployment contains one root `
 
 The cognitive model contains no application-level primary keys, foreign keys, mind IDs, host IDs, or journal-entry IDs. MongoDB creates a private `_id` for physical storage, but the Cognitive Core does not assign it, expose it, or use it as part of cognition.
 
-## MongoDB document shape
+## Canonical storage: SurrealDB
+
+SurrealDB is the architectural and runtime default for the Cognitive Mind.
 
 - `mind` contains the whole current identity and developmental state.
 - `journal` contains whole cognitive experiences in chronological order.
@@ -82,13 +84,13 @@ The cognitive model contains no application-level primary keys, foreign keys, mi
 
 Nothing in `diagnostics` is part of identity, memory, or persona.
 
-## Canonical Atlas Mind
+MongoDB/Atlas remains supported as a temporary bridge and backup/reference implementation while
+the canonical SurrealDB deployment is brought online. New runtime wiring, MCP continuity smoke
+tests, and default configuration target SurrealDB. MongoDB must not silently become the canonical
+store merely because it is already available.
 
-Atlas is the canonical persistent MongoDB deployment. The current plan is a **clean Atlas genesis**:
-the previous MongoDB is retained privately as backup/reference material and is not automatically
-migrated or merged into the new Mind.
-
-See [`docs/ATLAS_CANONICAL.md`](docs/ATLAS_CANONICAL.md).
+The Atlas genesis remains preserved as migration/reference state until its contents have been
+deliberately transferred or retired.
 
 ## Portable Mind backup
 
@@ -129,8 +131,10 @@ After installing the package, run:
 
 ```bash
 export OPENAI_API_KEY="..."
-export MONGODB_URI="mongodb://127.0.0.1:27017"
-export MONGODB_DATABASE="ai_cognitive_mind"
+export STORAGE_PROVIDER="surreal"
+export SURREALDB_URI="surrealkv://.surreal/cognitive_mind"
+export SURREALDB_NAMESPACE="mir_ai"
+export SURREALDB_DATABASE="ai_cognitive_mind"
 cognitive-mind
 ```
 
@@ -156,8 +160,8 @@ Memory Steward review + journal commit
 human-facing response
 ```
 
-The host does not initialize a new Mind automatically. Its MongoDB target must point to the
-canonical existing Mind so changing host processes or reasoning models does not create a new
+The host does not initialize a new Mind automatically. Its configured SurrealDB target must point
+to the canonical existing Mind so changing host processes or reasoning models does not create a new
 identity. The first reference reasoner uses the OpenAI Responses API, but it remains outside the
 Mind and can be replaced without changing identity or durable memory.
 
@@ -181,7 +185,7 @@ In VS Code:
 5. Change the reasoning model with VS Code's model picker.
 6. Ask the new model for the learned fact.
 
-The model changes. MongoDB-backed identity, durable memory, and cognitive history do not.
+The model changes. SurrealDB-backed identity, durable memory, and cognitive history do not.
 
 The intended host sequence for every turn remains:
 
@@ -215,7 +219,8 @@ network and authorization boundary.
 - Python 3.12
 - MCP Python SDK
 - FastAPI and Pydantic
-- MongoDB with the official asynchronous PyMongo client
+- SurrealDB as the canonical/default cognitive store
+- MongoDB/Atlas retained as a bridge, backup, and migration source
 - GitHub branches / pull requests
 - GitHub Actions as the default disposable validation machine
 - Codespaces / VS Code for interactive Linux or MCP-host work when needed

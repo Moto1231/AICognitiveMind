@@ -40,15 +40,20 @@ jobs:
       - name: Validate MCP server import
         run: python -c "import aicognitive_mind.mcp_server; print('MCP server import OK')"
 
-      - name: Run MCP stdio continuity smoke test
+      - name: Run MCP stdio continuity smoke test on SurrealDB
         env:
-          MONGODB_URI: mongodb://127.0.0.1:27017
+          STORAGE_PROVIDER: surreal
+          SURREALDB_URI: mem://
+          SURREALDB_NAMESPACE: ci
+          SURREALDB_DATABASE: cognitive_mind_stdio
         run: python scripts/mcp_stdio_smoke.py
 
-      - name: Start MCP HTTP server
+      - name: Start MCP HTTP server on SurrealDB
         env:
-          MONGODB_URI: mongodb://127.0.0.1:27017
-          MONGODB_DATABASE: ai_cognitive_mind_ci
+          STORAGE_PROVIDER: surreal
+          SURREALDB_URI: mem://
+          SURREALDB_NAMESPACE: ci
+          SURREALDB_DATABASE: cognitive_mind_http
         run: |
           python -m aicognitive_mind.mcp_server > /tmp/mcp-server.log 2>&1 &
           echo $! > /tmp/mcp-server.pid
