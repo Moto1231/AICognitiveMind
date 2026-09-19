@@ -125,6 +125,11 @@ class MongoJournalStore:
                 {"experience.deliberation.appraisal_gaps": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.context_observations": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.investigation_questions": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.resolution_readiness.status": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.resolution_readiness.candidate_side": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.resolution_readiness.candidate_value": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.resolution_readiness.blockers": {"$regex": literal, "$options": "i"}},
+                {"experience.deliberation.resolution_readiness.basis": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.query": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.response": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.appraisal.provenance.source": {"$regex": literal, "$options": "i"}},
@@ -133,6 +138,10 @@ class MongoJournalStore:
                 {"experience.current_evidence.semantic_interpretation.subject": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.semantic_interpretation.attribute": {"$regex": literal, "$options": "i"}},
                 {"experience.current_evidence.semantic_interpretation.value": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.tension_finding.provenance_independence": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.tension_finding.temporal_relationship": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.tension_finding.contextual_relationship": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.tension_finding.basis": {"$regex": literal, "$options": "i"}},
             ]
         return query
 
@@ -278,6 +287,11 @@ class MongoMemoryStore:
                     {"artifacts.payload.appraisal_gaps": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.context_observations": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.investigation_questions": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.resolution_readiness.status": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.resolution_readiness.candidate_side": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.resolution_readiness.candidate_value": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.resolution_readiness.blockers": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.resolution_readiness.basis": {"$regex": literal, "$options": "i"}},
                 ]
             })
         if association:
