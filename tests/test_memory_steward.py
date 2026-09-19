@@ -308,6 +308,89 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
             "The user's birthday is February 7.",
         )
 
+
+    async def test_competing_semantic_values_create_unresolved_tension(self) -> None:
+        memory = InMemoryMemoryStore()
+        journal = InMemoryJournalStore()
+        await memory.remember(
+            DurableMemory.model_validate(
+                {
+                    "memory_class": "semantic",
+                    "content": "The user's birthday is February 7.",
+                    "grounding": ["direct-user-statement"],
+                    "artifacts": [
+                        {
+                            "kind": "semantic_interpretation",
+                            "payload": {
+                                "subject": "current_human",
+                                "attribute": "birthday",
+                                "value": "February 7",
+                            },
+                        }
+                    ],
+                }
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="Actually, my birthday is February 8.",
+            memory=memory,
+            journal=journal,
+        )
+        await tool.invoke({"action": "recall", "focus": "birthday"})
+        decision = await tool.invoke(
+            {
+                "action": "propose_memory",
+                "memory_class": "semantic",
+                "content": "The user's birthday is February 8.",
+                "associations": ["birthday", "February 8"],
+                "grounding": ["direct-user-statement"],
+                "artifacts": [
+                    {
+                        "kind": "semantic_interpretation",
+                        "payload": {
+                            "subject": "current_human",
+                            "attribute": "birthday",
+                            "value": "February 8",
+                        },
+                    }
+                ],
+            }
+        )
+        await tool.complete()
+
+        self.assertTrue(decision["accepted"])
+        self.assertIn("unresolved semantic tension", decision["reason"])
+        self.assertEqual(len(decision["tensions"]), 1)
+        self.assertEqual(decision["tensions"][0]["existing_value"], "February 7")
+        self.assertEqual(decision["tensions"][0]["proposed_value"], "February 8")
+
+        memories = await memory.read()
+        self.assertEqual(len(memories), 2)
+        tension_artifacts = [
+            artifact
+            for artifact in memories[1].artifacts
+            if artifact.kind == "semantic_tension"
+        ]
+        self.assertEqual(len(tension_artifacts), 1)
+        self.assertEqual(tension_artifacts[0].payload["status"], "unresolved")
+        self.assertEqual(
+            tension_artifacts[0].payload["existing_evidence_content"],
+            "The user's birthday is February 7.",
+        )
+
+        journal_entries = await journal.read()
+        tension_entries = [
+            entry for entry in journal_entries if entry.kind.value == "tension"
+        ]
+        self.assertEqual(len(tension_entries), 1)
+        tension = tension_entries[0].experience
+        self.assertEqual(tension["status"], "unresolved")
+        self.assertEqual(tension["competing_values"]["existing"], "February 7")
+        self.assertEqual(tension["competing_values"]["proposed"], "February 8")
+
     async def test_same_subject_and_attribute_with_different_value_is_not_equivalence(self) -> None:
         memory = InMemoryMemoryStore()
         await memory.remember(
@@ -361,6 +444,12 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(
             any(
                 artifact["kind"] == "semantic_equivalence"
+                for artifact in decision["memory"]["artifacts"]
+            )
+        )
+        self.assertTrue(
+            any(
+                artifact["kind"] == "semantic_tension"
                 for artifact in decision["memory"]["artifacts"]
             )
         )
