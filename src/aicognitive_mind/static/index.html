@@ -225,6 +225,56 @@
             <div id="adminMemoryList" class="memory-list"></div>
           </article>
 
+
+          <article class="panel admin-journal-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">COGNITIVE HISTORY</p>
+                <h3>Journal Timeline</h3>
+              </div>
+              <button id="journalRefreshButton" class="secondary-button" type="button">Refresh Journal</button>
+            </div>
+            <div class="journal-search">
+              <div class="search-field search-wide">
+                <label for="journalSearch">Search</label>
+                <input id="journalSearch" type="search" placeholder="Input, response, revision, or journal text">
+              </div>
+              <div class="search-field">
+                <label for="journalKindFilter">Kind</label>
+                <select id="journalKindFilter">
+                  <option value="">All Kinds</option>
+                  <option value="initialization">Initialization</option>
+                  <option value="interaction">Interaction</option>
+                  <option value="reflection">Reflection</option>
+                  <option value="tension">Tension</option>
+                  <option value="checkpoint">Checkpoint</option>
+                  <option value="memory_revision">Memory Revision</option>
+                </select>
+              </div>
+              <div class="search-field">
+                <label for="journalFrom">Occurred From</label>
+                <input id="journalFrom" type="date">
+              </div>
+              <div class="search-field">
+                <label for="journalTo">Occurred Through</label>
+                <input id="journalTo" type="date">
+              </div>
+              <div class="search-field">
+                <label for="journalSort">Sort</label>
+                <select id="journalSort">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+              </div>
+              <button id="clearJournalFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
+            </div>
+            <div class="search-summary">
+              <span id="journalResultCount">0 Experiences</span>
+              <span>Journal history is read-only.</span>
+            </div>
+            <div id="journalTimeline" class="journal-timeline"></div>
+          </article>
+
           <article class="panel admin-summary">
             <p class="eyebrow">CURRENT STATE</p>
             <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
@@ -234,6 +284,31 @@
         </div>
       </section>
     </main>
+  </div>
+
+
+  <div id="journalInspector" class="inspector-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="journalInspectorTitle">
+    <aside class="inspector">
+      <div class="inspector-heading">
+        <div>
+          <p class="eyebrow">JOURNAL INSPECTOR</p>
+          <h2 id="journalInspectorTitle">Exact Journal Experience</h2>
+        </div>
+        <button id="closeJournalInspector" class="icon-button" type="button" aria-label="Close journal inspector">×</button>
+      </div>
+
+      <dl class="inspector-details">
+        <div><dt>Kind</dt><dd id="journalInspectorKind">—</dd></div>
+        <div><dt>Occurred At</dt><dd id="journalInspectorOccurredAt">—</dd></div>
+      </dl>
+
+      <div id="journalStructuredDetail" class="inspector-section journal-structured-detail"></div>
+
+      <div class="inspector-section raw-section">
+        <span class="inspector-label">Raw Journal Record</span>
+        <pre id="journalInspectorRaw" class="raw-record"></pre>
+      </div>
+    </aside>
   </div>
 
   <div id="memoryInspector" class="inspector-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="memoryInspectorTitle">
