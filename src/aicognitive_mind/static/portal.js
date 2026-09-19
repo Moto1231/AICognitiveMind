@@ -38,6 +38,7 @@ const el = {
   memorySort: document.getElementById("memorySort"),
   clearMemoryFilters: document.getElementById("clearMemoryFilters"),
   memoryResultCount: document.getElementById("memoryResultCount"),
+  loadMoreMemories: document.getElementById("loadMoreMemories"),
   refreshButton: document.getElementById("refreshButton"),
   adminRefreshButton: document.getElementById("adminRefreshButton"),
   protocolValue: document.getElementById("protocolValue"),
@@ -58,6 +59,7 @@ const el = {
   adminMemorySort: document.getElementById("adminMemorySort"),
   adminClearMemoryFilters: document.getElementById("adminClearMemoryFilters"),
   adminMemoryResultCount: document.getElementById("adminMemoryResultCount"),
+  adminLoadMoreMemories: document.getElementById("adminLoadMoreMemories"),
   journalRefreshButton: document.getElementById("journalRefreshButton"),
   journalSearch: document.getElementById("journalSearch"),
   journalKindFilter: document.getElementById("journalKindFilter"),
@@ -99,6 +101,7 @@ const el = {
 
 const filters = {
   mind: {
+    key: "mind",
     search: el.memorySearch,
     memoryClass: el.memoryClassFilter,
     association: el.associationFilter,
@@ -108,8 +111,10 @@ const filters = {
     sort: el.memorySort,
     count: el.memoryResultCount,
     list: el.memoryList,
+    loadMore: el.loadMoreMemories,
   },
   admin: {
+    key: "admin",
     search: el.adminMemorySearch,
     memoryClass: el.adminMemoryClassFilter,
     association: el.adminAssociationFilter,
@@ -119,6 +124,7 @@ const filters = {
     sort: el.adminMemorySort,
     count: el.adminMemoryResultCount,
     list: el.adminMemoryList,
+    loadMore: el.adminLoadMoreMemories,
   },
 };
 
@@ -204,8 +210,10 @@ async function enterAdminMode() {
     const allowed = await validateAdmin();
     if (!allowed) return;
     setMode("admin");
-    renderMemoryLists();
-    renderJournalList();
+    await Promise.all([
+      refreshMemory(filters.admin, true),
+      refreshJournal(true),
+    ]);
   } catch (error) {
     toast(error.message, true);
   }
@@ -350,7 +358,12 @@ async function saveMemoryEdit(event) {
       true,
     );
     toast("Durable memory revised and journaled");
-    await refresh();
+    await Promise.all([
+      refreshMemory(filters.mind, true),
+      refreshMemory(filters.admin, true),
+      refreshJournal(true),
+      refreshStatus(),
+    ]);
     openMemoryInspector(revised, "admin");
   } catch (error) {
     toast(error.message, true);
@@ -361,66 +374,45 @@ async function saveMemoryEdit(event) {
   }
 }
 
-function memoryMatches(memory, config) {
-  const search = config.search.value.trim().toLowerCase();
-  const memoryClass = config.memoryClass.value;
-  const association = config.association.value.trim().toLowerCase();
-  const grounding = config.grounding.value.trim().toLowerCase();
-
-  const searchable = [
-    memory.content,
-    ...(memory.associations || []),
-    ...(memory.grounding || []),
-  ].join(" ").toLowerCase();
-
-  if (search && !searchable.includes(search)) return false;
-  if (memoryClass && memory.memory_class !== memoryClass) return false;
-  if (
-    association &&
-    !(memory.associations || []).some(value => value.toLowerCase().includes(association))
-  ) return false;
-  if (
-    grounding &&
-    !(memory.grounding || []).some(value => value.toLowerCase().includes(grounding))
-  ) return false;
-
-  const formed = new Date(memory.formed_at);
-  if (config.from.value) {
-    const from = new Date(`${config.from.value}T00:00:00`);
-    if (formed < from) return false;
-  }
-  if (config.to.value) {
-    const to = new Date(`${config.to.value}T23:59:59.999`);
-    if (formed > to) return false;
-  }
-  return true;
-}
-
-function filteredMemories(config) {
-  const results = state.memories.filter(memory => memoryMatches(memory, config));
-  results.sort((left, right) => {
-    const delta = new Date(left.formed_at) - new Date(right.formed_at);
-    return config.sort.value === "oldest" ? delta : -delta;
+function memoryQuery(config, offset = 0) {
+  const params = new URLSearchParams({
+    limit: String(state.memoryPageSize),
+    offset: String(offset),
+    order: config.sort.value,
   });
-  return results;
+
+  const search = config.search.value.trim();
+  const association = config.association.value.trim();
+  const grounding = config.grounding.value.trim();
+
+  if (search) params.set("search", search);
+  if (config.memoryClass.value) params.set("memory_class", config.memoryClass.value);
+  if (association) params.set("association", association);
+  if (grounding) params.set("grounding", grounding);
+  if (config.from.value) params.set("from", config.from.value);
+  if (config.to.value) params.set("to", config.to.value);
+
+  return `/v1/portal/memory?${params.toString()}`;
 }
 
 function renderMemoryList(config, sourceMode) {
-  const memories = filteredMemories(config);
+  const page = state.memoryPages[config.key];
   config.list.innerHTML = "";
-  config.count.textContent = `${memories.length.toLocaleString()} ${memories.length === 1 ? "Memory" : "Memories"}`;
+  config.count.textContent =
+    `Showing ${page.items.length.toLocaleString()} of ${page.total.toLocaleString()} Memories`;
+  config.loadMore.classList.toggle("hidden", !page.hasMore);
 
-  if (!memories.length) {
+  if (!page.items.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = state.memories.length
+    empty.textContent = page.total
       ? "No durable memories match the current filters."
       : "No durable memories have been curated yet.";
     config.list.appendChild(empty);
     return;
   }
 
-  for (const memory of memories) {
+  for (const memory of page.items) {
     const item = document.createElement("article");
     item.className = "memory-item";
     item.tabIndex = 0;
@@ -451,11 +443,33 @@ function renderMemoryList(config, sourceMode) {
   }
 }
 
-function renderMemoryLists() {
-  renderMemoryList(filters.mind, "mind");
-  renderMemoryList(filters.admin, "admin");
+async function refreshMemory(config, reset = true) {
+  try {
+    const pageState = state.memoryPages[config.key];
+    const offset = reset ? 0 : pageState.nextOffset;
+    const page = await api(memoryQuery(config, offset));
+
+    if (reset) {
+      pageState.items = page.items;
+    } else {
+      pageState.items.push(...page.items);
+    }
+    pageState.total = page.total;
+    pageState.hasMore = page.has_more;
+    pageState.nextOffset = page.next_offset ?? pageState.items.length;
+    renderMemoryList(config, config.key);
+  } catch (error) {
+    toast(error.message, true);
+  }
 }
 
+function scheduleMemoryRefresh(config) {
+  clearTimeout(state.memoryFilterTimers[config.key]);
+  state.memoryFilterTimers[config.key] = setTimeout(
+    () => refreshMemory(config, true),
+    250,
+  );
+}
 
 function journalQuery(offset = 0) {
   const params = new URLSearchParams({
@@ -653,19 +667,21 @@ function clearFilters(config) {
   config.from.value = "";
   config.to.value = "";
   config.sort.value = "newest";
-  renderMemoryLists();
+  refreshMemory(config, true);
+}
+
+async function refreshStatus() {
+  const status = await api("/v1/portal/status");
+  renderStatus(status);
+  return status;
 }
 
 async function refresh() {
   try {
-    const [status, memories] = await Promise.all([
-      api("/v1/portal/status"),
-      api("/v1/mind/memory"),
+    await Promise.all([
+      refreshStatus(),
+      refreshMemory(filters.mind, true),
     ]);
-    renderStatus(status);
-    state.memories = memories;
-    renderMemoryLists();
-    await refreshJournal(true);
     el.initializeOverlay.classList.add("hidden");
   } catch (error) {
     if (error.status === 404) {
@@ -702,24 +718,30 @@ async function initializeMind(event) {
 }
 
 function bindFilterEvents(config) {
+  for (const control of [config.search, config.association, config.grounding]) {
+    control.addEventListener("input", () => scheduleMemoryRefresh(config));
+  }
   for (const control of [
-    config.search,
     config.memoryClass,
-    config.association,
-    config.grounding,
     config.from,
     config.to,
     config.sort,
   ]) {
-    control.addEventListener("input", renderMemoryLists);
-    control.addEventListener("change", renderMemoryLists);
+    control.addEventListener("change", () => refreshMemory(config, true));
   }
 }
 
 el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
-el.refreshButton.addEventListener("click", () => refresh());
-el.adminRefreshButton.addEventListener("click", () => refresh());
+el.refreshButton.addEventListener("click", () => Promise.all([
+  refreshStatus(),
+  refreshMemory(filters.mind, true),
+]));
+el.adminRefreshButton.addEventListener("click", () => Promise.all([
+  refreshStatus(),
+  refreshMemory(filters.admin, true),
+  refreshJournal(true),
+]));
 el.journalRefreshButton.addEventListener("click", () => refreshJournal(true));
 el.loadMoreJournals.addEventListener("click", () => refreshJournal(false));
 el.initializeForm.addEventListener("submit", initializeMind);
@@ -732,6 +754,8 @@ el.cancelMemoryEdit.addEventListener("click", cancelMemoryEdit);
 el.memoryEditForm.addEventListener("submit", saveMemoryEdit);
 el.clearMemoryFilters.addEventListener("click", () => clearFilters(filters.mind));
 el.adminClearMemoryFilters.addEventListener("click", () => clearFilters(filters.admin));
+el.loadMoreMemories.addEventListener("click", () => refreshMemory(filters.mind, false));
+el.adminLoadMoreMemories.addEventListener("click", () => refreshMemory(filters.admin, false));
 el.clearJournalFilters.addEventListener("click", clearJournalFilters);
 el.journalSearch.addEventListener("input", scheduleJournalRefresh);
 for (const control of [
