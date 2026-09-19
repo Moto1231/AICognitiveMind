@@ -13,6 +13,7 @@ from aicognitive_mind.body import (
     BodyRuntime,
     BrowserAvatarOutput,
     BrowserVisionIngress,
+    BrowserVoiceOutput,
     DeviceStatus,
     ExpressionIntent,
     ExpressionModality,
@@ -75,6 +76,14 @@ class FaceExpressionRequest(BaseModel):
     expression: str = Field(default="neutral", min_length=1, max_length=80)
     weight: float = Field(default=1.0, ge=0.0, le=1.0)
     text: str | None = Field(default=None, max_length=500)
+
+
+class MouthSpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    rate: float = Field(default=1.0, ge=0.1, le=10.0)
+    pitch: float = Field(default=1.0, ge=0.0, le=2.0)
+    volume: float = Field(default=1.0, ge=0.0, le=1.0)
+    voice_name: str | None = Field(default=None, max_length=200)
 
 
 def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
@@ -255,9 +264,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     browser_eyes = BrowserVisionIngress()
     browser_face = BrowserAvatarOutput()
+    browser_mouth = BrowserVoiceOutput()
     app.state.browser_eyes = browser_eyes
     app.state.browser_face = browser_face
-    app.state.body = BodyRuntime(vision=browser_eyes, avatar=browser_face)
+    app.state.browser_mouth = browser_mouth
+    app.state.body = BodyRuntime(
+        vision=browser_eyes,
+        voice=browser_mouth,
+        avatar=browser_face,
+    )
     engine = (
         OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
         if settings.openai_api_key
@@ -375,6 +390,49 @@ async def face_status(request: Request) -> DeviceStatus:
 async def next_face_intent(request: Request) -> ExpressionIntent | None:
     face = cast(BrowserAvatarOutput, request.app.state.browser_face)
     return face.consume()
+
+
+@app.get("/body/mouth", include_in_schema=False)
+async def mouth_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "mouth.html")
+
+
+@app.post("/v1/body/mouth/speak", response_model=ExpressionIntent)
+async def speak_through_mouth(
+    body: MouthSpeechRequest,
+    request: Request,
+) -> ExpressionIntent:
+    runtime = cast(BodyRuntime, request.app.state.body)
+    intent = ExpressionIntent(
+        modality=ExpressionModality.VOICE,
+        text=body.text,
+        metadata={
+            "rate": body.rate,
+            "pitch": body.pitch,
+            "volume": body.volume,
+            "voice_name": body.voice_name,
+        },
+    )
+    try:
+        await runtime.speak_intent(intent)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return intent
+
+
+@app.get("/v1/body/mouth/status")
+async def mouth_status(request: Request) -> DeviceStatus:
+    mouth = cast(BrowserVoiceOutput, request.app.state.browser_mouth)
+    return await mouth.status()
+
+
+@app.get("/v1/body/mouth/next", response_model=ExpressionIntent | None)
+async def next_mouth_intent(request: Request) -> ExpressionIntent | None:
+    mouth = cast(BrowserVoiceOutput, request.app.state.browser_mouth)
+    return mouth.consume()
 
 
 @app.get("/health")
