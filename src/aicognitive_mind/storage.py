@@ -98,6 +98,12 @@ def _journal_search_text(entry: JournalEntry) -> str:
         experience.get("before", {}).get("content", ""),
         experience.get("after", {}).get("content", ""),
         experience.get("self_name", ""),
+        experience.get("subject", ""),
+        experience.get("attribute", ""),
+        experience.get("competing_values", {}).get("existing", ""),
+        experience.get("competing_values", {}).get("proposed", ""),
+        experience.get("evidence", {}).get("existing", ""),
+        experience.get("evidence", {}).get("proposed", ""),
         " ".join(str(value) for value in experience.get("foundational_values", [])),
     ]
     return " ".join(str(value) for value in values if value).lower()

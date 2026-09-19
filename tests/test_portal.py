@@ -55,6 +55,9 @@ class PortalTests(unittest.TestCase):
         self.assertIn("JOURNAL INSPECTOR", markup)
         self.assertIn("renderJournalList", script_text)
         self.assertIn("openJournalInspector", script_text)
+        self.assertIn('entry.kind === "tension"', script_text)
+        self.assertIn("Existing Value", script_text)
+        self.assertIn("Proposed Value", script_text)
         self.assertIn("loadMoreJournals", script_text)
         self.assertIn("journalPageSize: 25", script_text)
 
@@ -110,6 +113,34 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(summary["preview"], "When is my birthday?")
         self.assertIn("February 7", summary["search_text"])
         self.assertNotIn("memory_steward", summary)
+
+
+    def test_tension_journal_summary_exposes_competing_values(self) -> None:
+        entry = JournalEntry(
+            kind=JournalKind.TENSION,
+            experience={
+                "source": "conscious_memory_steward",
+                "status": "unresolved",
+                "subject": "current_human",
+                "attribute": "birthday",
+                "competing_values": {
+                    "existing": "February 7",
+                    "proposed": "February 8",
+                },
+                "evidence": {
+                    "existing": "The user's birthday is February 7.",
+                    "proposed": "The user's birthday is February 8.",
+                },
+            },
+        )
+
+        summary = _journal_summary(entry)
+
+        self.assertEqual(summary["title"], "Semantic Tension")
+        self.assertIn("February 7", summary["preview"])
+        self.assertIn("February 8", summary["preview"])
+        self.assertIn("birthday", summary["search_text"])
+        self.assertIn("The user's birthday is February 8.", summary["search_text"])
 
     def test_memory_revision_summary_exposes_before_and_after_text(self) -> None:
         entry = JournalEntry(
