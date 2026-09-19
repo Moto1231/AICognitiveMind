@@ -96,6 +96,19 @@ class BodyRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(heard.source, "test-microphone")
         self.assertEqual(heard.summary, "Hello Mind.")
 
+    async def test_body_accepts_full_voice_intent(self) -> None:
+        voice = FakeVoice()
+        runtime = BodyRuntime(voice=voice)
+        intent = ExpressionIntent(
+            modality=ExpressionModality.VOICE,
+            text="Hello.",
+            metadata={"rate": 0.9},
+        )
+
+        await runtime.speak_intent(intent)
+
+        self.assertEqual(voice.intents, [intent])
+
     async def test_body_expression_drives_mouth_and_face(self) -> None:
         voice = FakeVoice()
         avatar = FakeAvatar()
