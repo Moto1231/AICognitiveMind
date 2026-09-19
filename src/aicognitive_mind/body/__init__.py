@@ -9,6 +9,7 @@ from aicognitive_mind.body.domain import (
 )
 from aicognitive_mind.body.eyes import BrowserVisionIngress
 from aicognitive_mind.body.face import BrowserAvatarOutput
+from aicognitive_mind.body.mouth import BrowserVoiceOutput
 from aicognitive_mind.body.runtime import BodyRuntime
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "ExpressionIntent",
     "ExpressionModality",
     "BrowserVisionIngress",
+    "BrowserVoiceOutput",
     "Percept",
     "SensoryModality",
 ]
