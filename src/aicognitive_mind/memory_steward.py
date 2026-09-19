@@ -2056,6 +2056,7 @@ class MemoryStewardTool:
     ) -> str:
         parts: list[str] = []
         current_beliefs = _latest_current_beliefs(memories)
+        current_reframes = _latest_belief_reframes(memories)
         if memories:
             parts.append(
                 "Established memory: " + " | ".join(memory.content for memory in memories)
@@ -2067,6 +2068,16 @@ class MemoryStewardTool:
                     f"{payload.get('subject')} · {payload.get('attribute')} = {payload.get('to_value')} "
                     f"(superseded {payload.get('from_value')})"
                     for payload in current_beliefs.values()
+                )
+            )
+        if current_reframes:
+            parts.append(
+                "Scoped belief: "
+                + " | ".join(
+                    f"{payload.get('subject')} · {payload.get('attribute')} = "
+                    f"{payload.get('existing_value')} [{payload.get('existing_scope')}] ; "
+                    f"{payload.get('proposed_value')} [{payload.get('proposed_scope')}]"
+                    for payload in current_reframes.values()
                 )
             )
         if experiences:
