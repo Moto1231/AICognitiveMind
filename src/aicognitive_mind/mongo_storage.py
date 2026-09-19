@@ -282,8 +282,15 @@ class MongoMemoryStore:
         recorded_by: CognitiveActor,
     ) -> DurableMemory | None:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
+        selector = original.model_dump(mode="python")
+        if not original.artifacts:
+            selector.pop("artifacts", None)
+            selector["$or"] = [
+                {"artifacts": {"$exists": False}},
+                {"artifacts": []},
+            ]
         result = await self._collection.replace_one(
-            original.model_dump(mode="python"),
+            selector,
             replacement.model_dump(mode="python"),
         )
         return replacement if result.matched_count == 1 else None

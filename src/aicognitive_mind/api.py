@@ -287,10 +287,13 @@ async def revise_memory(
 ) -> DurableMemory:
     require_admin(request)
     memory_store = cast(MemoryStore, request.app.state.memory_store)
-    journal_store = cast(MongoJournalStore, request.app.state.journal_store)
+    journal_store = cast(JournalStore, request.app.state.journal_store)
 
     replacement = body.replacement.model_copy(
-        update={"formed_at": body.original.formed_at}
+        update={
+            "formed_at": body.original.formed_at,
+            "artifacts": body.original.artifacts,
+        }
     )
     revised = await memory_store.replace_exact(
         body.original,

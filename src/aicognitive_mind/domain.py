@@ -56,6 +56,15 @@ class CognitiveMind(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
 
 
+class MemoryArtifact(BaseModel):
+    """A Steward-owned, evolvable annotation attached to a durable memory."""
+
+    kind: str = Field(min_length=1, max_length=120)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    formed_at: datetime = Field(default_factory=utc_now)
+    formed_by: CognitiveActor = CognitiveActor.CONSCIOUS_MEMORY_STEWARD
+
+
 class DurableMemory(BaseModel):
     """A whole memory document curated by a Memory Steward."""
 
@@ -64,6 +73,7 @@ class DurableMemory(BaseModel):
     content: str = Field(min_length=1)
     associations: tuple[str, ...] = ()
     grounding: tuple[str, ...] = ()
+    artifacts: tuple[MemoryArtifact, ...] = ()
 
 
 class JournalEntry(BaseModel):

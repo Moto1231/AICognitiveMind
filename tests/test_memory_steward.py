@@ -230,6 +230,19 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await memory.read(), [])
 
 
+
+    def test_legacy_memory_without_artifacts_remains_valid(self) -> None:
+        memory = DurableMemory.model_validate(
+            {
+                "memory_class": "semantic",
+                "content": "Legacy memory",
+                "associations": ["legacy"],
+                "grounding": ["historical-record"],
+            }
+        )
+
+        self.assertEqual(memory.artifacts, ())
+
     async def test_exact_memory_replacement_preserves_document_model(self) -> None:
         memory = InMemoryMemoryStore()
         original = DurableMemory(

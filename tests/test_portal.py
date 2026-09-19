@@ -1,7 +1,24 @@
 import unittest
+from types import SimpleNamespace
 
-from aicognitive_mind.api import STATIC_DIR, _journal_summary, app
-from aicognitive_mind.domain import JournalEntry, JournalKind
+from starlette.requests import Request
+
+from aicognitive_mind.api import (
+    STATIC_DIR,
+    AdminMemoryRevisionRequest,
+    _journal_summary,
+    app,
+    revise_memory,
+)
+from aicognitive_mind.domain import (
+    CognitiveActor,
+    DurableMemory,
+    JournalEntry,
+    JournalKind,
+    MemoryArtifact,
+    MemoryClass,
+)
+from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
 class PortalTests(unittest.TestCase):
@@ -19,11 +36,14 @@ class PortalTests(unittest.TestCase):
         self.assertIn("MCP", markup)
         self.assertIn("MEMORY INSPECTOR", markup)
         self.assertIn("Raw Record Returned by the Mind", markup)
+        self.assertIn("Steward Artifacts", markup)
 
         script_text = script.read_text(encoding="utf-8")
         self.assertIn("JSON.stringify(memory, null, 2)", script_text)
         self.assertIn("memory.grounding", script_text)
         self.assertIn("memory.associations", script_text)
+        self.assertIn("renderMemoryArtifacts", script_text)
+        self.assertIn("artifacts: original.artifacts || []", script_text)
         self.assertIn("adminMemorySearch", script_text)
         self.assertIn("saveMemoryEdit", script_text)
         self.assertIn("memoryQuery", script_text)
@@ -106,6 +126,64 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(summary["title"], "Memory Revision")
         self.assertEqual(summary["preview"], "Will's birthday is February 7.")
         self.assertIn("The User's birthday", summary["search_text"])
+
+
+class PortalAdministrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_admin_revision_preserves_steward_artifacts(self) -> None:
+        memory_store = InMemoryMemoryStore()
+        journal_store = InMemoryJournalStore()
+        artifact = MemoryArtifact(
+            kind="semantic_interpretation",
+            payload={"attribute": "birthday", "value": "February 7"},
+        )
+        original = DurableMemory(
+            memory_class=MemoryClass.SEMANTIC,
+            content="The user's birthday is February 7.",
+            associations=("birthday",),
+            grounding=("direct-user-statement",),
+            artifacts=(artifact,),
+        )
+        await memory_store.remember(
+            original,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        replacement = original.model_copy(
+            update={
+                "content": "The user's birthday is February 8.",
+                "artifacts": (),
+            }
+        )
+        request = Request(
+            {
+                "type": "http",
+                "method": "PUT",
+                "path": "/v1/admin/memory",
+                "headers": [],
+                "app": SimpleNamespace(
+                    state=SimpleNamespace(
+                        memory_store=memory_store,
+                        journal_store=journal_store,
+                    )
+                ),
+            }
+        )
+
+        revised = await revise_memory(
+            AdminMemoryRevisionRequest(
+                original=original,
+                replacement=replacement,
+            ),
+            request,
+        )
+
+        self.assertEqual(revised.content, "The user's birthday is February 8.")
+        self.assertEqual(revised.artifacts, (artifact,))
+        stored = await memory_store.read()
+        self.assertEqual(stored[0].artifacts, (artifact,))
+        journal = await journal_store.read()
+        self.assertEqual(journal[-1].kind, JournalKind.MEMORY_REVISION)
+
 
 
 if __name__ == "__main__":
