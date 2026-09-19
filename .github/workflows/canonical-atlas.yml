@@ -62,7 +62,7 @@ jobs:
         run: python scripts/atlas_canonical.py check
 
       - name: Initialize canonical Atlas Mind
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'genesis' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.operation == 'genesis') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[atlas-genesis]')) }}
         env:
           MONGODB_URI: ${{ secrets.CANONICAL_MONGODB_URI }}
           MONGODB_DATABASE: ai_cognitive_mind
@@ -70,12 +70,12 @@ jobs:
           MIND_SELF_NAME: ${{ inputs.self_name }}
         run: |
           python scripts/atlas_canonical.py genesis \
-            --self-name "$MIND_SELF_NAME" \
+            --self-name "${MIND_SELF_NAME:-AICognitiveMind}" \
             --value "Understanding before Recommending" \
             --value "Preserve continuity of identity"
 
       - name: Verify canonical Atlas after genesis
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'genesis' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.operation == 'genesis') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[atlas-genesis]')) }}
         env:
           MONGODB_URI: ${{ secrets.CANONICAL_MONGODB_URI }}
           MONGODB_DATABASE: ai_cognitive_mind
