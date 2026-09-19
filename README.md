@@ -39,6 +39,22 @@ Body foundation documentation lives in
 
 Mind and Body development proceed in parallel through narrow integration contracts.
 
+## Development workflow
+
+Routine development is GitHub-first:
+
+```text
+branch → pull request → GitHub Actions validation → merge
+```
+
+A fresh GitHub-hosted Ubuntu runner performs the normal test/build work for each pull request.
+Codespaces are now an interactive exception rather than the default development machine.
+
+Use the local Windows machine when Body work requires actual camera, microphone, speakers, display,
+or OS device APIs.
+
+See [`docs/DEVELOPMENT_WORKFLOW.md`](docs/DEVELOPMENT_WORKFLOW.md).
+
 ## First milestone
 
 Prove continuity across a reasoning-engine swap:
@@ -142,7 +158,10 @@ network and authorization boundary.
 - MCP Python SDK
 - FastAPI and Pydantic
 - MongoDB with the official asynchronous PyMongo client
-- GitHub Codespaces / VS Code
+- GitHub branches / pull requests
+- GitHub Actions as the default disposable validation machine
+- Codespaces / VS Code for interactive Linux or MCP-host work when needed
+- Local Windows for Body hardware/device testing
 - Standard-library unit tests plus MCP protocol smoke tests
 
 ## Validation

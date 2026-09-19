@@ -944,3 +944,69 @@ Body foundation details are documented in:
 
 The next Body slices may proceed independently: eyes, ears, mouth, face, and the Mind/Body perception
 bridge.
+
+
+---
+
+## 32. GitHub-first development logistics
+
+A practical constraint emerged when Codespaces allowance became a potential blocker.
+
+The development model was changed so project momentum does not depend on a long-lived cloud
+development machine.
+
+The default loop is now:
+
+```text
+GitHub branch
+     ↓
+pull request
+     ↓
+fresh GitHub Actions runner
+     ↓
+full validation
+     ↓
+merge to main
+```
+
+Mind and Body continue on independent branches and converge through `main`.
+
+### Codespaces
+
+Codespaces remain useful, but are no longer the routine compute layer.
+
+They are reserved for work that genuinely needs an interactive Linux/VS Code environment, such as
+interactive MCP-host testing or debugging that cannot be resolved from CI output.
+
+### Body hardware
+
+The local Windows machine becomes the Body hardware laboratory because camera, microphone, speakers,
+display, and operating-system device behavior must eventually be tested where those devices exist.
+
+Pure Body logic continues to run in GitHub Actions without physical hardware.
+
+### CI optimization
+
+Pull-request validation now uses concurrency cancellation. When a newer commit is pushed to the same
+PR, its obsolete in-progress validation run is canceled.
+
+Old feature-branch push triggers were removed so routine validation is centered on pull requests to
+`main`.
+
+### Persistence boundary
+
+GitHub Actions machines are disposable by design. They validate behavior but never own persistent
+Mind state.
+
+Durable identity and memory remain in the configured persistent storage environment.
+
+### Operational priority
+
+Routine project work should prefer:
+
+1. GitHub branches and direct repository changes;
+2. pull-request validation on GitHub Actions;
+3. local Windows only when Body hardware is involved;
+4. Codespaces only when interactive Linux is actually required.
+
+This makes the project independent of continually available Codespaces capacity.
