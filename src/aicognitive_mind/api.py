@@ -78,6 +78,30 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         summary["title"] = "Memory Revision"
         summary["preview"] = after_content or before_content
         summary["search_text"] = f"{before_content} {after_content}".strip()
+    elif entry.kind == JournalKind.BELIEF_TRANSITION:
+        subject = str(experience.get("subject", ""))
+        attribute = str(experience.get("attribute", ""))
+        from_value = str(experience.get("from_value", ""))
+        to_value = str(experience.get("to_value", ""))
+        summary["title"] = "Belief Transition"
+        summary["preview"] = (
+            f"{subject} · {attribute}: {from_value} → {to_value}".strip()
+        )
+        summary["search_text"] = " ".join(
+            str(value)
+            for value in (
+                subject,
+                attribute,
+                from_value,
+                to_value,
+                experience.get("status", ""),
+                experience.get("deliberation_revision", ""),
+                experience.get("readiness_basis", []),
+                experience.get("candidate_evidence", []),
+                experience.get("superseded_evidence", []),
+            )
+            if value
+        )
     elif entry.kind == JournalKind.TENSION:
         subject = str(experience.get("subject", ""))
         attribute = str(experience.get("attribute", ""))
