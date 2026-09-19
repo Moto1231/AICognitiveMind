@@ -23,14 +23,13 @@ from aicognitive_mind.domain import (
 )
 from aicognitive_mind.engines import EchoReasoningEngine, OpenAIReasoningEngine
 from aicognitive_mind.mcp_service import CognitiveMcpService
-from aicognitive_mind.mongo_storage import (
-    MongoDiagnosticStore,
-    MongoJournalStore,
-    MongoMemoryStore,
-    MongoMindStore,
-    MongoRuntime,
+from aicognitive_mind.persistence import create_storage
+from aicognitive_mind.storage import (
+    DiagnosticStore,
+    JournalStore,
+    MemoryStore,
+    MindAlreadyInitializedError,
 )
-from aicognitive_mind.storage import MindAlreadyInitializedError
 
 
 STATIC_DIR = Path(__file__).with_name("static")
@@ -109,20 +108,16 @@ def get_core(request: Request) -> CognitiveCore:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    runtime = MongoRuntime(settings.mongodb_uri, settings.mongodb_database)
-    await runtime.initialize()
-    app.state.runtime = runtime
-    app.state.diagnostics = MongoDiagnosticStore(runtime.database)
-    mind_store = MongoMindStore(runtime.database)
-    journal_store = MongoJournalStore(runtime.database)
-    memory_store = MongoMemoryStore(runtime.database)
-    app.state.mind_store = mind_store
-    app.state.journal_store = journal_store
-    app.state.memory_store = memory_store
+    storage = await create_storage(settings)
+    app.state.runtime = storage.runtime
+    app.state.diagnostics = storage.diagnostics
+    app.state.mind_store = storage.mind
+    app.state.journal_store = storage.journal
+    app.state.memory_store = storage.memory
     app.state.mcp_service = CognitiveMcpService(
-        mind=mind_store,
-        journal=journal_store,
-        memory=memory_store,
+        mind=storage.mind,
+        journal=storage.journal,
+        memory=storage.memory,
     )
     engine = (
         OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
@@ -130,14 +125,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         else EchoReasoningEngine()
     )
     app.state.core = CognitiveCore(
-        mind=mind_store,
-        journal=journal_store,
-        memory=memory_store,
-        diagnostics=app.state.diagnostics,
+        mind=storage.mind,
+        journal=storage.journal,
+        memory=storage.memory,
+        diagnostics=storage.diagnostics,
         engine=engine,
     )
     yield
-    await runtime.close()
+    await storage.runtime.close()
 
 
 settings = get_settings()
@@ -186,7 +181,7 @@ async def portal_memory(
     from_date: date | None = Query(None, alias="from"),
     to_date: date | None = Query(None, alias="to"),
 ) -> dict[str, Any]:
-    memory_store = cast(MongoMemoryStore, request.app.state.memory_store)
+    memory_store = cast(MemoryStore, request.app.state.memory_store)
     formed_from = (
         datetime.combine(from_date, time.min, tzinfo=UTC)
         if from_date
@@ -197,7 +192,7 @@ async def portal_memory(
         if to_date
         else None
     )
-    memories, total = await memory_store.read_page(
+    memories, total = await memory_store.query_page(
         offset=offset,
         limit=limit,
         newest_first=order == "newest",
@@ -230,7 +225,7 @@ async def portal_journal(
     from_date: date | None = Query(None, alias="from"),
     to_date: date | None = Query(None, alias="to"),
 ) -> dict[str, Any]:
-    journal_store = cast(MongoJournalStore, request.app.state.journal_store)
+    journal_store = cast(JournalStore, request.app.state.journal_store)
     occurred_from = (
         datetime.combine(from_date, time.min, tzinfo=UTC)
         if from_date
@@ -241,7 +236,7 @@ async def portal_journal(
         if to_date
         else None
     )
-    entries, total = await journal_store.read_summary_page(
+    entries, total = await journal_store.query_page(
         offset=offset,
         limit=limit,
         newest_first=order == "newest",
@@ -384,5 +379,5 @@ async def read_memory(request: Request) -> list[DurableMemory]:
 
 @app.get("/debug/diagnostics", response_model=list[DiagnosticObservation])
 async def read_diagnostics(request: Request) -> list[DiagnosticObservation]:
-    diagnostics = cast(MongoDiagnosticStore, request.app.state.diagnostics)
+    diagnostics = cast(DiagnosticStore, request.app.state.diagnostics)
     return await diagnostics.read()
