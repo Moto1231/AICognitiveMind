@@ -2,6 +2,7 @@ import json
 import unittest
 
 from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
+from aicognitive_mind.memory_steward import MemoryArtifactProposal
 from aicognitive_mind.domain import MemoryClass
 from aicognitive_mind.storage import (
     InMemoryJournalStore,
@@ -50,6 +51,42 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(durable), 1)
         self.assertEqual(durable[0]["content"], "Will's birthday is February 7.")
+
+
+    async def test_memory_artifacts_are_materialized_by_steward_and_recalled(self) -> None:
+        completed = await self.service.complete_interaction(
+            user_message="My birthday is February 7.",
+            response_text="I'll remember your birthday.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The user's birthday is February 7.",
+                    associations=("birthday", "February 7"),
+                    grounding=("direct-user-statement",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "current_human",
+                                "attribute": "birthday",
+                                "value": "February 7",
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        decision = completed["memory_decisions"][0]
+        self.assertTrue(decision["accepted"])
+        artifact = decision["memory"]["artifacts"][0]
+        self.assertEqual(artifact["kind"], "semantic_interpretation")
+        self.assertEqual(artifact["formed_by"], "conscious_memory_steward")
+        self.assertEqual(artifact["payload"]["attribute"], "birthday")
+
+        later = await self.service.begin_interaction("What birthday do you remember?")
+        recalled = later["recalled_context"]["durable_memory"]
+        self.assertEqual(recalled[0]["artifacts"][0]["payload"]["value"], "February 7")
 
     async def test_recalled_history_is_compact_and_does_not_embed_prior_journal_documents(self) -> None:
         for turn in range(8):
