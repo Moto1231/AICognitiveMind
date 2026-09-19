@@ -112,6 +112,7 @@ def _journal_search_text(entry: JournalEntry) -> str:
         experience.get("self_name", ""),
         experience.get("subject", ""),
         experience.get("attribute", ""),
+        _searchable_text(experience.get("scope")),
         experience.get("phase", ""),
         experience.get("from_value", ""),
         experience.get("to_value", ""),
