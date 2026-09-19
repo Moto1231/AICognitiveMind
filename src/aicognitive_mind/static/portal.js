@@ -707,6 +707,7 @@ function renderJournalDetail(entry) {
         "Semantic Slot",
         [experience.subject, experience.attribute].filter(Boolean).join(" · "),
       ),
+      addJournalBlock("Semantic Scope", experience.scope?.label || "Unscoped"),
       diff,
       addJournalBlock("Existing Evidence", evidence.existing || ""),
       addJournalBlock("Existing Appraisal", formatEvidenceAppraisal(appraisals.existing)),
@@ -763,6 +764,7 @@ function renderJournalDetail(entry) {
       ),
       addJournalBlock("Superseded Belief", String(experience.from_value ?? "")),
       addJournalBlock("Current Belief", String(experience.to_value ?? "")),
+      addJournalBlock("Semantic Scope", experience.scope?.label || "Unscoped"),
       addJournalBlock(
         "Deliberation Revision",
         String(experience.deliberation_revision ?? ""),
