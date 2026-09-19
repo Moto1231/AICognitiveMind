@@ -43,10 +43,15 @@ class BodyRuntime:
             raise RuntimeError("No ears are attached")
         return await self.audio.listen()
 
-    async def speak(self, text: str) -> None:
+    async def speak_intent(self, intent: ExpressionIntent) -> None:
         if self.voice is None:
             raise RuntimeError("No mouth is attached")
-        await self.voice.speak(
+        if intent.modality != ExpressionModality.VOICE:
+            raise ValueError("Mouth requires a voice ExpressionIntent")
+        await self.voice.speak(intent)
+
+    async def speak(self, text: str) -> None:
+        await self.speak_intent(
             ExpressionIntent(
                 modality=ExpressionModality.VOICE,
                 text=text,
