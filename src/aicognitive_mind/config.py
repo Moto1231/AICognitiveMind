@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "AI Cognitive Mind"
-    storage_provider: str = "mongo"
+    storage_provider: str = "surreal"
     mongodb_uri: str = "mongodb://mongodb:27017"
     mongodb_database: str = "ai_cognitive_mind"
     surrealdb_uri: str = "surrealkv://.surreal/cognitive_mind"
