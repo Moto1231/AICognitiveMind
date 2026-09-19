@@ -104,6 +104,7 @@ class MongoJournalStore:
                 {"experience.before.content": {"$regex": literal, "$options": "i"}},
                 {"experience.after.content": {"$regex": literal, "$options": "i"}},
                 {"experience.self_name": {"$regex": literal, "$options": "i"}},
+                {"experience.foundational_values": {"$regex": literal, "$options": "i"}},
             ]
         return query
 
