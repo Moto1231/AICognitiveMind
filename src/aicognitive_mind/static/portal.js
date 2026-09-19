@@ -306,6 +306,25 @@ function formatEvidenceAppraisal(appraisal) {
   ].join("\n") + basis;
 }
 
+function formatEvidenceDeliberation(deliberation) {
+  if (!deliberation) return "No Deliberation Recorded";
+  const gaps = (deliberation.appraisal_gaps || []).join("\n");
+  const contexts = (deliberation.context_observations || []).join("\n");
+  const questions = (deliberation.investigation_questions || [])
+    .map((question, index) => `${index + 1}. ${question}`)
+    .join("\n");
+  return [
+    `Existing Support: ${deliberation.existing_support_count ?? 0}`,
+    `Proposed Support: ${deliberation.proposed_support_count ?? 0}`,
+    `Provenance Relationship: ${displayLabel(deliberation.provenance_relationship || "unknown")}`,
+    `Existing Provenance Depth: ${deliberation.existing_provenance_depth ?? 0}`,
+    `Proposed Provenance Depth: ${deliberation.proposed_provenance_depth ?? 0}`,
+    gaps ? `Appraisal Gaps:\n${gaps}` : "Appraisal Gaps: None",
+    contexts ? `Context Observations:\n${contexts}` : "Context Observations: None",
+    questions ? `Investigation Questions:\n${questions}` : "Investigation Questions: None",
+  ].join("\n");
+}
+
 function renderMemoryArtifacts(artifacts) {
   el.inspectorArtifacts.innerHTML = "";
   if (!artifacts || !artifacts.length) {
@@ -320,9 +339,14 @@ function renderMemoryArtifacts(artifacts) {
     const item = document.createElement("div");
     item.className = "record-value";
     const formedBy = displayLabel(artifact.formed_by);
-    const payload = artifact.kind === "evidence_appraisal"
-      ? formatEvidenceAppraisal(artifact.payload)
-      : JSON.stringify(artifact.payload || {}, null, 2);
+    let payload;
+    if (artifact.kind === "evidence_appraisal") {
+      payload = formatEvidenceAppraisal(artifact.payload);
+    } else if (artifact.kind === "evidence_deliberation") {
+      payload = formatEvidenceDeliberation(artifact.payload);
+    } else {
+      payload = JSON.stringify(artifact.payload || {}, null, 2);
+    }
     item.textContent = `${displayLabel(artifact.kind)} · ${formedBy}\n${payload}`;
     el.inspectorArtifacts.appendChild(item);
   }
@@ -616,6 +640,7 @@ function renderJournalDetail(entry) {
     const values = experience.competing_values || {};
     const evidence = experience.evidence || {};
     const appraisals = experience.appraisals || {};
+    const deliberation = experience.deliberation || null;
     const diff = document.createElement("div");
     diff.className = "journal-diff";
     diff.append(
@@ -632,6 +657,7 @@ function renderJournalDetail(entry) {
       addJournalBlock("Existing Appraisal", formatEvidenceAppraisal(appraisals.existing)),
       addJournalBlock("Proposed Evidence", evidence.proposed || ""),
       addJournalBlock("Proposed Appraisal", formatEvidenceAppraisal(appraisals.proposed)),
+      addJournalBlock("Evidence Deliberation", formatEvidenceDeliberation(deliberation)),
       addJournalBlock("Status", displayLabel(experience.status || "unresolved")),
     );
     return;
