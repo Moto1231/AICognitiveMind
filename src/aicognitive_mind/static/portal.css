@@ -278,3 +278,87 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 @media (max-width: 620px) {
   .inspector { padding: 22px 18px; }
 }
+
+.memory-search {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.search-field {
+  display: grid;
+  gap: 6px;
+}
+.search-wide { grid-column: span 2; }
+.search-field label {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.search-field input,
+.search-field select,
+.memory-edit-form textarea,
+.memory-edit-form select {
+  width: 100%;
+  min-height: 39px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,.035);
+  color: var(--text);
+  outline: none;
+}
+.search-field input:focus,
+.search-field select:focus,
+.memory-edit-form textarea:focus,
+.memory-edit-form select:focus {
+  border-color: rgba(104,216,255,.5);
+  box-shadow: 0 0 0 3px rgba(104,216,255,.07);
+}
+.filter-clear {
+  align-self: end;
+  min-height: 39px;
+}
+.search-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 4px 0 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.admin-memory-panel { grid-column: 1 / -1; }
+.mini-status {
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--success);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.memory-edit-form {
+  margin-top: 20px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.memory-edit-form textarea { resize: vertical; }
+.edit-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+#memoryEditActions .primary-button { width: 100%; }
+@media (max-width: 860px) {
+  .memory-search { grid-template-columns: 1fr 1fr; }
+  .search-wide { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  .memory-search { grid-template-columns: 1fr; }
+  .search-wide { grid-column: auto; }
+  .search-summary { flex-direction: column; }
+}
