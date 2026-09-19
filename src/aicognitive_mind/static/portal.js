@@ -288,6 +288,24 @@ function renderRecordValues(container, values) {
   }
 }
 
+function formatEvidenceAppraisal(appraisal) {
+  if (!appraisal) return "Not Appraised";
+  const provenance = (appraisal.provenance || [])
+    .map((hop, index) => {
+      const details = [hop.source, hop.context, hop.condition].filter(Boolean).join(" · ");
+      return `${index + 1}. ${details}`;
+    })
+    .join("\n");
+  const basis = (appraisal.basis || []).length
+    ? `\nBasis: ${appraisal.basis.join("; ")}`
+    : "";
+  return [
+    `Confidence: ${appraisal.confidence}`,
+    `Weight: ${appraisal.weight}`,
+    provenance ? `Provenance:\n${provenance}` : "Provenance: —",
+  ].join("\n") + basis;
+}
+
 function renderMemoryArtifacts(artifacts) {
   el.inspectorArtifacts.innerHTML = "";
   if (!artifacts || !artifacts.length) {
@@ -302,7 +320,9 @@ function renderMemoryArtifacts(artifacts) {
     const item = document.createElement("div");
     item.className = "record-value";
     const formedBy = displayLabel(artifact.formed_by);
-    const payload = JSON.stringify(artifact.payload || {}, null, 2);
+    const payload = artifact.kind === "evidence_appraisal"
+      ? formatEvidenceAppraisal(artifact.payload)
+      : JSON.stringify(artifact.payload || {}, null, 2);
     item.textContent = `${displayLabel(artifact.kind)} · ${formedBy}\n${payload}`;
     el.inspectorArtifacts.appendChild(item);
   }
@@ -595,6 +615,7 @@ function renderJournalDetail(entry) {
   if (entry.kind === "tension") {
     const values = experience.competing_values || {};
     const evidence = experience.evidence || {};
+    const appraisals = experience.appraisals || {};
     const diff = document.createElement("div");
     diff.className = "journal-diff";
     diff.append(
@@ -608,7 +629,9 @@ function renderJournalDetail(entry) {
       ),
       diff,
       addJournalBlock("Existing Evidence", evidence.existing || ""),
+      addJournalBlock("Existing Appraisal", formatEvidenceAppraisal(appraisals.existing)),
       addJournalBlock("Proposed Evidence", evidence.proposed || ""),
+      addJournalBlock("Proposed Appraisal", formatEvidenceAppraisal(appraisals.proposed)),
       addJournalBlock("Status", displayLabel(experience.status || "unresolved")),
     );
     return;

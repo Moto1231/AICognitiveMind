@@ -111,6 +111,14 @@ class MongoJournalStore:
                 {"experience.competing_values.proposed": {"$regex": literal, "$options": "i"}},
                 {"experience.evidence.existing": {"$regex": literal, "$options": "i"}},
                 {"experience.evidence.proposed": {"$regex": literal, "$options": "i"}},
+                {"experience.appraisals.existing.provenance.source": {"$regex": literal, "$options": "i"}},
+                {"experience.appraisals.existing.provenance.context": {"$regex": literal, "$options": "i"}},
+                {"experience.appraisals.existing.provenance.condition": {"$regex": literal, "$options": "i"}},
+                {"experience.appraisals.existing.basis": {"$regex": literal, "$options": "i"}},
+                {"experience.appraisals.proposed.provenance.source": {"$regex": literal, "$options": "i"}},
+                {"experience.appraisals.proposed.provenance.context": {"$regex": literal, "$options": "i"}},
+                {"experience.appraisals.proposed.provenance.condition": {"$regex": literal, "$options": "i"}},
+                {"experience.appraisals.proposed.basis": {"$regex": literal, "$options": "i"}},
             ]
         return query
 
@@ -145,6 +153,7 @@ class MongoJournalStore:
             "experience.attribute": 1,
             "experience.competing_values": 1,
             "experience.evidence": 1,
+            "experience.appraisals": 1,
             "experience.status": 1,
         }
         direction = DESCENDING if newest_first else ASCENDING
@@ -239,6 +248,14 @@ class MongoMemoryStore:
                     {"content": {"$regex": literal, "$options": "i"}},
                     {"associations": {"$regex": literal, "$options": "i"}},
                     {"grounding": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.kind": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.subject": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.attribute": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.value": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.provenance.source": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.provenance.context": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.provenance.condition": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.basis": {"$regex": literal, "$options": "i"}},
                 ]
             })
         if association:

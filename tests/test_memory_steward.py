@@ -309,6 +309,146 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+
+    async def test_current_evidence_keeps_confidence_weight_and_provenance_separate(self) -> None:
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="Evaluate the current evidence.",
+            memory=InMemoryMemoryStore(),
+            journal=InMemoryJournalStore(),
+        )
+        await tool.invoke({"action": "recall", "focus": "current evidence"})
+
+        considered = await tool.invoke(
+            {
+                "action": "consider_evidence",
+                "query": "source chain example",
+                "response": "A current evidence summary.",
+                "articles": [],
+                "appraisal": {
+                    "confidence": 0.8,
+                    "weight": 0.35,
+                    "provenance": [
+                        {
+                            "source": "analyst summary",
+                            "context": "active research session",
+                            "condition": "secondary account",
+                        },
+                        {
+                            "source": "original witness",
+                            "context": "event observation",
+                            "condition": "direct observation",
+                        },
+                    ],
+                    "basis": ["source chain is known", "account is internally consistent"],
+                },
+            }
+        )
+
+        appraisal = considered["context"]["current_evidence"][0]["appraisal"]
+        self.assertEqual(appraisal["confidence"], 0.8)
+        self.assertEqual(appraisal["weight"], 0.35)
+        self.assertEqual(len(appraisal["provenance"]), 2)
+        self.assertEqual(appraisal["provenance"][0]["source"], "analyst summary")
+        self.assertEqual(appraisal["provenance"][1]["source"], "original witness")
+        self.assertNotIn("combined_score", appraisal)
+
+    async def test_semantic_tension_carries_both_evidence_appraisals_without_resolution(self) -> None:
+        memory = InMemoryMemoryStore()
+        journal = InMemoryJournalStore()
+        await memory.remember(
+            DurableMemory.model_validate(
+                {
+                    "memory_class": "semantic",
+                    "content": "The deployment date is October 1.",
+                    "grounding": ["project-plan"],
+                    "artifacts": [
+                        {
+                            "kind": "semantic_interpretation",
+                            "payload": {
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        },
+                        {
+                            "kind": "evidence_appraisal",
+                            "payload": {
+                                "confidence": 0.7,
+                                "weight": 0.9,
+                                "provenance": [
+                                    {
+                                        "source": "project plan",
+                                        "context": "approved baseline",
+                                        "condition": "published",
+                                    }
+                                ],
+                                "basis": ["approved plan"],
+                            },
+                        },
+                    ],
+                }
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="The deployment date is October 8.",
+            memory=memory,
+            journal=journal,
+        )
+        await tool.invoke({"action": "recall", "focus": "deployment date"})
+        decision = await tool.invoke(
+            {
+                "action": "propose_memory",
+                "memory_class": "semantic",
+                "content": "The deployment date is October 8.",
+                "grounding": ["meeting statement"],
+                "artifacts": [
+                    {
+                        "kind": "semantic_interpretation",
+                        "payload": {
+                            "subject": "deployment",
+                            "attribute": "date",
+                            "value": "October 8",
+                        },
+                    },
+                    {
+                        "kind": "evidence_appraisal",
+                        "payload": {
+                            "confidence": 0.85,
+                            "weight": 0.6,
+                            "provenance": [
+                                {
+                                    "source": "project lead",
+                                    "context": "status meeting",
+                                    "condition": "verbal update",
+                                }
+                            ],
+                            "basis": ["first-party project role"],
+                        },
+                    },
+                ],
+            }
+        )
+        await tool.complete()
+
+        tension = decision["tensions"][0]
+        self.assertEqual(tension["status"], "unresolved")
+        self.assertEqual(tension["existing_appraisal"]["confidence"], 0.7)
+        self.assertEqual(tension["existing_appraisal"]["weight"], 0.9)
+        self.assertEqual(tension["proposed_appraisal"]["confidence"], 0.85)
+        self.assertEqual(tension["proposed_appraisal"]["weight"], 0.6)
+
+        tension_entry = next(
+            entry for entry in await journal.read() if entry.kind.value == "tension"
+        )
+        appraisals = tension_entry.experience["appraisals"]
+        self.assertEqual(appraisals["existing"]["confidence"], 0.7)
+        self.assertEqual(appraisals["proposed"]["confidence"], 0.85)
+        self.assertEqual(tension_entry.experience["status"], "unresolved")
+
     async def test_competing_semantic_values_create_unresolved_tension(self) -> None:
         memory = InMemoryMemoryStore()
         journal = InMemoryJournalStore()

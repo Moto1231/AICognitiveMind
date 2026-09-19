@@ -9,6 +9,7 @@ from aicognitive_mind.domain import (
     DurableMemory,
     JournalEntry,
     JournalKind,
+    MemoryArtifact,
     MemoryClass,
     MindIdentity,
 )
@@ -132,6 +133,46 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
         stored = await store.read()
         self.assertIn(replacement, stored)
         self.assertNotIn(memories[1], stored)
+
+
+    async def test_memory_search_finds_evidence_provenance_outside_visible_text(self) -> None:
+        store = SurrealMemoryStore(self.runtime.database)
+        memory = DurableMemory(
+            memory_class=MemoryClass.SEMANTIC,
+            content="The deployment date is October 8.",
+            grounding=("status update",),
+            artifacts=(
+                MemoryArtifact(
+                    kind="evidence_appraisal",
+                    payload={
+                        "confidence": 0.85,
+                        "weight": 0.6,
+                        "provenance": [
+                            {
+                                "source": "project lead",
+                                "context": "status meeting",
+                                "condition": "verbal update",
+                            }
+                        ],
+                        "basis": ["first-party project role"],
+                    },
+                ),
+            ),
+        )
+        await store.remember(
+            memory,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        page, total = await store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="project lead",
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual(page, [memory])
 
     async def test_diagnostics_round_trip(self) -> None:
         store = SurrealDiagnosticStore(self.runtime.database)

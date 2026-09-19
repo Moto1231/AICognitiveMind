@@ -2,7 +2,12 @@ import json
 import unittest
 
 from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
-from aicognitive_mind.memory_steward import MemoryArtifactProposal
+from aicognitive_mind.memory_steward import (
+    EvidenceAppraisal,
+    MemoryArtifactProposal,
+    ProvenanceHop,
+    ResearchObservation,
+)
 from aicognitive_mind.domain import MemoryClass
 from aicognitive_mind.storage import (
     InMemoryJournalStore,
@@ -88,6 +93,43 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         recalled = later["recalled_context"]["durable_memory"]
         self.assertEqual(recalled[0]["artifacts"][0]["payload"]["value"], "February 7")
 
+
+
+    async def test_mcp_completion_accepts_appraised_current_evidence(self) -> None:
+        completed = await self.service.complete_interaction(
+            user_message="What does the current evidence say?",
+            response_text="The current evidence is recorded separately from durable memory.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="current source",
+                    response="A source reports a material update.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.75,
+                        weight=0.5,
+                        provenance=(
+                            ProvenanceHop(
+                                source="current source",
+                                context="active interaction",
+                                condition="externally supplied",
+                            ),
+                        ),
+                        basis=("source identity is known",),
+                    ),
+                ),
+            ),
+        )
+
+        self.assertEqual(completed["status"], "interaction_committed")
+        journal = await self.journal.read()
+        interaction = journal[-1]
+        considered = interaction.experience["memory_steward"]["evidence_considered"]
+        self.assertEqual(len(considered), 1)
+        appraisal = considered[0]["appraisal"]
+        self.assertEqual(appraisal["confidence"], 0.75)
+        self.assertEqual(appraisal["weight"], 0.5)
+        self.assertEqual(appraisal["provenance"][0]["source"], "current source")
+        self.assertNotIn("combined_score", appraisal)
 
     async def test_mcp_interaction_surfaces_and_journals_semantic_tension(self) -> None:
         await self.service.complete_interaction(

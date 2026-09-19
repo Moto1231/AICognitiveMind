@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from aicognitive_mind.domain import (
     CognitiveActor,
@@ -90,6 +90,18 @@ class MemoryStore(Protocol):
     ) -> DurableMemory | None: ...
 
 
+def _searchable_text(value: Any) -> str:
+    if isinstance(value, dict):
+        return " ".join(
+            f"{key} {_searchable_text(item)}" for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_searchable_text(item) for item in value)
+    if hasattr(value, "model_dump"):
+        return _searchable_text(value.model_dump(mode="json"))
+    return str(value)
+
+
 def _journal_search_text(entry: JournalEntry) -> str:
     experience = entry.experience
     values = [
@@ -104,6 +116,7 @@ def _journal_search_text(entry: JournalEntry) -> str:
         experience.get("competing_values", {}).get("proposed", ""),
         experience.get("evidence", {}).get("existing", ""),
         experience.get("evidence", {}).get("proposed", ""),
+        _searchable_text(experience.get("appraisals", {})),
         " ".join(str(value) for value in experience.get("foundational_values", [])),
     ]
     return " ".join(str(value) for value in values if value).lower()
@@ -142,7 +155,12 @@ def _memory_matches(
         return False
     if search:
         searchable = " ".join(
-            [memory.content, *memory.associations, *memory.grounding]
+            [
+                memory.content,
+                *memory.associations,
+                *memory.grounding,
+                _searchable_text(memory.artifacts),
+            ]
         ).lower()
         if search.lower() not in searchable:
             return False
