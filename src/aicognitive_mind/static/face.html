@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Cognitive Mind — Face V0.1</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
+    h1 { margin-bottom: .25rem; }
+    p { color: #b9bcc4; }
+    #stage { width: 100%; height: min(72vh, 760px); min-height: 460px; background: #181a20; border-radius: 14px; overflow: hidden; }
+    #stage canvas { display: block; width: 100%; height: 100%; }
+    .controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin: 1rem 0; }
+    button, input::file-selector-button { padding: .65rem .9rem; font: inherit; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    #status { white-space: pre-wrap; background: #181a20; padding: .85rem 1rem; border-radius: 10px; }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+        "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main>
+    <h1>Face V0.1</h1>
+    <p>Load an owned VRM avatar, then send expressions through the Body's ExpressionIntent boundary.</p>
+
+    <div class="controls">
+      <input id="avatarFile" type="file" accept=".vrm,model/gltf-binary">
+      <button id="neutral" disabled>Neutral</button>
+      <button id="happy" disabled>Happy</button>
+    </div>
+
+    <div id="stage"></div>
+    <div id="status">Choose a VRM 1.0 avatar to attach the Face.</div>
+  </main>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+
+    const stage = document.getElementById("stage");
+    const avatarFile = document.getElementById("avatarFile");
+    const neutralButton = document.getElementById("neutral");
+    const happyButton = document.getElementById("happy");
+    const statusBox = document.getElementById("status");
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    stage.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 30);
+    camera.position.set(0, 1.35, 2.7);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.25, 0);
+    controls.enableDamping = true;
+
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 2.0));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
+    keyLight.position.set(1.5, 2.5, 2.0);
+    scene.add(keyLight);
+
+    const loader = new GLTFLoader();
+    loader.register((parser) => new VRMLoaderPlugin(parser));
+
+    const clock = new THREE.Clock();
+    let currentVrm = null;
+    let currentObjectUrl = null;
+
+    function setStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    function resize() {
+      const width = stage.clientWidth;
+      const height = stage.clientHeight;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    function detachCurrentAvatar() {
+      if (currentVrm) {
+        scene.remove(currentVrm.scene);
+        currentVrm = null;
+      }
+      if (currentObjectUrl) {
+        URL.revokeObjectURL(currentObjectUrl);
+        currentObjectUrl = null;
+      }
+    }
+
+    function expressionExists(name) {
+      return Boolean(currentVrm?.expressionManager?.getExpression(name));
+    }
+
+    function applyIntent(intent) {
+      if (!currentVrm?.expressionManager || !intent) return;
+
+      const manager = currentVrm.expressionManager;
+      const expression = String(intent.metadata?.expression || "neutral");
+      const weight = Number(intent.metadata?.weight ?? 1.0);
+
+      manager.resetValues();
+
+      if (expressionExists(expression)) {
+        manager.setValue(expression, Math.max(0, Math.min(1, weight)));
+        manager.update();
+        setStatus(
+          "FACE RECEIVED EXPRESSION INTENT\n" +
+          "expression: " + expression + "\n" +
+          "weight: " + weight
+        );
+        return;
+      }
+
+      if (expression === "neutral") {
+        manager.update();
+        setStatus("FACE RECEIVED EXPRESSION INTENT\nexpression: neutral (reset)");
+        return;
+      }
+
+      manager.update();
+      setStatus("VRM does not define expression: " + expression);
+    }
+
+    async function sendExpression(expression) {
+      const response = await fetch("/v1/body/face/expression", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expression, weight: 1.0 })
+      });
+
+      if (!response.ok) {
+        setStatus("Body rejected expression: " + await response.text());
+      }
+    }
+
+    async function pollExpressionIntent() {
+      try {
+        const response = await fetch("/v1/body/face/next", { cache: "no-store" });
+        if (!response.ok) return;
+        const intent = await response.json();
+        if (intent) applyIntent(intent);
+      } catch {
+        // The Face can survive a temporary network interruption.
+      }
+    }
+
+    avatarFile.addEventListener("change", () => {
+      const file = avatarFile.files?.[0];
+      if (!file) return;
+
+      detachCurrentAvatar();
+      neutralButton.disabled = true;
+      happyButton.disabled = true;
+      setStatus("Loading VRM avatar...");
+
+      currentObjectUrl = URL.createObjectURL(file);
+      loader.load(
+        currentObjectUrl,
+        (gltf) => {
+          const vrm = gltf.userData.vrm;
+          if (!vrm) {
+            setStatus("The selected file did not contain a VRM avatar.");
+            return;
+          }
+
+          VRMUtils.removeUnnecessaryVertices(gltf.scene);
+          VRMUtils.combineSkeletons(gltf.scene);
+          VRMUtils.combineMorphs(vrm);
+          VRMUtils.rotateVRM0(vrm);
+
+          vrm.scene.traverse((object) => {
+            object.frustumCulled = false;
+          });
+
+          currentVrm = vrm;
+          scene.add(vrm.scene);
+          neutralButton.disabled = false;
+          happyButton.disabled = false;
+
+          const expressions = Object.keys(vrm.expressionManager?.expressionMap || {});
+          setStatus(
+            "FACE ATTACHED\n" +
+            "avatar: " + file.name + "\n" +
+            "expressions: " + (expressions.join(", ") || "none reported")
+          );
+        },
+        undefined,
+        (error) => {
+          console.error(error);
+          setStatus("Could not load VRM avatar: " + error.message);
+        }
+      );
+    });
+
+    neutralButton.addEventListener("click", () => sendExpression("neutral"));
+    happyButton.addEventListener("click", () => sendExpression("happy"));
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      if (currentVrm) currentVrm.update(delta);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener("resize", resize);
+    window.addEventListener("beforeunload", detachCurrentAvatar);
+    resize();
+    animate();
+    setInterval(pollExpressionIntent, 250);
+  </script>
+</body>
+</html>

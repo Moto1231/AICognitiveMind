@@ -53,10 +53,15 @@ class BodyRuntime:
             )
         )
 
-    async def present(self, text: str) -> None:
+    async def present_intent(self, intent: ExpressionIntent) -> None:
         if self.avatar is None:
             raise RuntimeError("No face is attached")
-        await self.avatar.render(
+        if intent.modality != ExpressionModality.AVATAR:
+            raise ValueError("Face requires an avatar ExpressionIntent")
+        await self.avatar.render(intent)
+
+    async def present(self, text: str) -> None:
+        await self.present_intent(
             ExpressionIntent(
                 modality=ExpressionModality.AVATAR,
                 text=text,

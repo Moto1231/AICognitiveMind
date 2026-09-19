@@ -9,7 +9,15 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from aicognitive_mind.body import BodyRuntime, BrowserVisionIngress, DeviceStatus, Percept
+from aicognitive_mind.body import (
+    BodyRuntime,
+    BrowserAvatarOutput,
+    BrowserVisionIngress,
+    DeviceStatus,
+    ExpressionIntent,
+    ExpressionModality,
+    Percept,
+)
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
@@ -60,6 +68,12 @@ class BrowserVisionObservationRequest(BaseModel):
     width: int = Field(gt=0, le=10_000)
     height: int = Field(gt=0, le=10_000)
     source: str = Field(default="browser-camera", min_length=1, max_length=120)
+
+
+class FaceExpressionRequest(BaseModel):
+    expression: str = Field(default="neutral", min_length=1, max_length=80)
+    weight: float = Field(default=1.0, ge=0.0, le=1.0)
+    text: str | None = Field(default=None, max_length=500)
 
 
 def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
@@ -239,8 +253,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory=storage.memory,
     )
     browser_eyes = BrowserVisionIngress()
+    browser_face = BrowserAvatarOutput()
     app.state.browser_eyes = browser_eyes
-    app.state.body = BodyRuntime(vision=browser_eyes)
+    app.state.browser_face = browser_face
+    app.state.body = BodyRuntime(vision=browser_eyes, avatar=browser_face)
     engine = (
         OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
         if settings.openai_api_key
@@ -308,6 +324,47 @@ async def body_see(request: Request) -> Percept:
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+
+
+@app.get("/body/face", include_in_schema=False)
+async def face_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "face.html")
+
+
+@app.post("/v1/body/face/expression", response_model=ExpressionIntent)
+async def set_face_expression(
+    body: FaceExpressionRequest,
+    request: Request,
+) -> ExpressionIntent:
+    runtime = cast(BodyRuntime, request.app.state.body)
+    intent = ExpressionIntent(
+        modality=ExpressionModality.AVATAR,
+        text=body.text,
+        metadata={
+            "expression": body.expression,
+            "weight": body.weight,
+        },
+    )
+    try:
+        await runtime.present_intent(intent)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return intent
+
+
+@app.get("/v1/body/face/status")
+async def face_status(request: Request) -> DeviceStatus:
+    face = cast(BrowserAvatarOutput, request.app.state.browser_face)
+    return await face.status()
+
+
+@app.get("/v1/body/face/next", response_model=ExpressionIntent | None)
+async def next_face_intent(request: Request) -> ExpressionIntent | None:
+    face = cast(BrowserAvatarOutput, request.app.state.browser_face)
+    return face.consume()
 
 
 @app.get("/health")
