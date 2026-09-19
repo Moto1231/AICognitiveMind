@@ -114,9 +114,12 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         attribute = str(experience.get("attribute", ""))
         from_value = str(experience.get("from_value", ""))
         to_value = str(experience.get("to_value", ""))
+        scope = experience.get("scope") or {}
+        scope_label = str(scope.get("label", "")) if isinstance(scope, dict) else ""
         summary["title"] = "Belief Transition"
         summary["preview"] = (
-            f"{subject} · {attribute}: {from_value} → {to_value}".strip()
+            f"{subject} · {attribute}: {from_value} → {to_value}"
+            f"{f' [{scope_label}]' if scope_label else ''}".strip()
         )
         summary["search_text"] = " ".join(
             str(value)
@@ -125,6 +128,7 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
                 attribute,
                 from_value,
                 to_value,
+                scope_label,
                 experience.get("status", ""),
                 experience.get("deliberation_revision", ""),
                 experience.get("readiness_basis", []),
@@ -140,11 +144,14 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         existing_value = str(values.get("existing", ""))
         proposed_value = str(values.get("proposed", ""))
         phase = str(experience.get("phase", "detected"))
+        scope = experience.get("scope") or {}
+        scope_label = str(scope.get("label", "")) if isinstance(scope, dict) else ""
         summary["title"] = (
             "Tension Reassessment" if phase == "reassessment" else "Semantic Tension"
         )
         summary["preview"] = (
-            f"{subject} · {attribute}: {existing_value} ↔ {proposed_value}".strip()
+            f"{subject} · {attribute}: {existing_value} ↔ {proposed_value}"
+            f"{f' [{scope_label}]' if scope_label else ''}".strip()
         )
         evidence = experience.get("evidence", {})
         deliberation = experience.get("deliberation") or {}
@@ -165,6 +172,7 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
                 attribute,
                 existing_value,
                 proposed_value,
+                scope_label,
                 str(evidence.get("existing", "")),
                 str(evidence.get("proposed", "")),
                 str(deliberation.get("provenance_relationship", "")),
