@@ -7,6 +7,7 @@ from aicognitive_mind.memory_steward import (
     MemoryArtifactProposal,
     ProvenanceHop,
     ResearchObservation,
+    SemanticInterpretation,
 )
 from aicognitive_mind.domain import MemoryClass
 from aicognitive_mind.storage import (
@@ -19,10 +20,11 @@ from aicognitive_mind.storage import (
 class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.journal = InMemoryJournalStore()
+        self.memory = InMemoryMemoryStore()
         self.service = CognitiveMcpService(
             mind=InMemoryMindStore(),
             journal=self.journal,
-            memory=InMemoryMemoryStore(),
+            memory=self.memory,
         )
         await self.service.initialize(
             "Genesis",
@@ -196,6 +198,250 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             "February 7",
         )
         self.assertEqual(journal[-1].kind.value, "interaction")
+
+    async def test_current_evidence_participates_when_tension_is_first_detected(self) -> None:
+        await self.service.complete_interaction(
+            user_message="The deployment date is October 1.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 1.",
+                    grounding=("approved plan",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.8,
+                                "weight": 0.7,
+                                "provenance": [
+                                    {
+                                        "source": "approved plan",
+                                        "context": "release planning",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        completed = await self.service.complete_interaction(
+            user_message="The deployment date may be October 8.",
+            response_text="I have competing evidence and will keep it unresolved.",
+            current_evidence=(
+                ResearchObservation(
+                    query="latest deployment status",
+                    response="The release board lists October 8.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.85,
+                        weight=0.65,
+                        provenance=(
+                            ProvenanceHop(
+                                source="release board",
+                                context="current status",
+                                condition="published",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="deployment",
+                        attribute="date",
+                        value="October 8",
+                    ),
+                ),
+            ),
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 8.",
+                    grounding=("status statement",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 8",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.75,
+                                "weight": 0.6,
+                                "provenance": [
+                                    {
+                                        "source": "project lead",
+                                        "context": "status meeting",
+                                        "condition": "verbal update",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        tension = completed["memory_decisions"][0]["tensions"][0]
+        deliberation = tension["deliberation"]
+        self.assertEqual(deliberation["revision"], 1)
+        self.assertEqual(deliberation["trigger"], "current_evidence_reassessment")
+        self.assertEqual(deliberation["proposed_support_count"], 2)
+        self.assertEqual(deliberation["current_proposed_support_count"], 1)
+        self.assertEqual(completed["tension_reassessments"], [])
+
+    async def test_later_current_evidence_reassesses_and_persists_tension_history(self) -> None:
+        await self.service.complete_interaction(
+            user_message="The deployment date is October 1.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 1.",
+                    grounding=("approved plan",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.8,
+                                "weight": 0.7,
+                                "provenance": [
+                                    {
+                                        "source": "approved plan",
+                                        "context": "release planning",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        await self.service.complete_interaction(
+            user_message="The deployment date is October 8.",
+            response_text="That creates an unresolved tension.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 8.",
+                    grounding=("status statement",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 8",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.75,
+                                "weight": 0.6,
+                                "provenance": [
+                                    {
+                                        "source": "project lead",
+                                        "context": "status meeting",
+                                        "condition": "verbal update",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        completed = await self.service.complete_interaction(
+            user_message="I found more evidence about the deployment date.",
+            response_text="The tension has been re-deliberated but remains unresolved.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="release calendar",
+                    response="The release board independently lists October 8.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.9,
+                        weight=0.55,
+                        provenance=(
+                            ProvenanceHop(
+                                source="release board",
+                                context="current release calendar",
+                                condition="published",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="deployment",
+                        attribute="date",
+                        value="October 8",
+                    ),
+                ),
+            ),
+        )
+
+        self.assertEqual(len(completed["tension_reassessments"]), 1)
+        reassessment = completed["tension_reassessments"][0]
+        self.assertEqual(reassessment["status"], "unresolved")
+        deliberation = reassessment["deliberation"]
+        self.assertEqual(deliberation["revision"], 2)
+        self.assertEqual(deliberation["trigger"], "current_evidence_reassessment")
+        self.assertEqual(deliberation["existing_support_count"], 1)
+        self.assertEqual(deliberation["proposed_support_count"], 2)
+        self.assertEqual(deliberation["current_evidence_considered"], 1)
+        self.assertEqual(deliberation["current_proposed_support_count"], 1)
+
+        memories = await self.memory.read()
+        self.assertEqual(len(memories), 2)
+        tension_memory = next(
+            memory for memory in memories if memory.content.endswith("October 8.")
+        )
+        deliberations = [
+            artifact
+            for artifact in tension_memory.artifacts
+            if artifact.kind == "evidence_deliberation"
+        ]
+        self.assertEqual([artifact.payload["revision"] for artifact in deliberations], [1, 2])
+
+        tension_entries = [
+            entry for entry in await self.journal.read() if entry.kind.value == "tension"
+        ]
+        self.assertEqual(len(tension_entries), 2)
+        self.assertEqual(tension_entries[0].experience["phase"], "detected")
+        self.assertEqual(tension_entries[1].experience["phase"], "reassessment")
+        self.assertEqual(
+            tension_entries[1].experience["current_evidence"][0]["response"],
+            "The release board independently lists October 8.",
+        )
+
+        later = await self.service.begin_interaction("What is the deployment date?")
+        self.assertIn("Investigation guidance:", later["recalled_context"]["summary"])
+        self.assertNotIn(
+            "Seek independent corroboration for the proposed value.",
+            later["recalled_context"]["summary"],
+        )
 
     async def test_recalled_history_is_compact_and_does_not_embed_prior_journal_documents(self) -> None:
         for turn in range(8):
