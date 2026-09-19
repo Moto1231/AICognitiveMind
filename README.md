@@ -103,6 +103,48 @@ The server exposes four tools:
 
 No ChatGPT-, Claude-, Gemini-, or other vendor-specific adapter is part of the Cognitive Mind.
 
+
+## Reference MCP reasoning host
+
+The repository now includes a small reference host whose only job is to connect a replaceable
+reasoning model to the persistent Mind through MCP.
+
+After installing the package, run:
+
+```bash
+export OPENAI_API_KEY="..."
+export MONGODB_URI="mongodb://127.0.0.1:27017"
+export MONGODB_DATABASE="ai_cognitive_mind"
+cognitive-mind
+```
+
+For a single turn:
+
+```bash
+cognitive-mind --message "When is my birthday?"
+```
+
+The host sequence is enforced in code:
+
+```text
+human message
+    ↓
+begin_interaction over MCP
+    ↓
+replaceable reasoning model
+    ↓
+complete_interaction over MCP
+    ↓
+Memory Steward review + journal commit
+    ↓
+human-facing response
+```
+
+The host does not initialize a new Mind automatically. Its MongoDB target must point to the
+canonical existing Mind so changing host processes or reasoning models does not create a new
+identity. The first reference reasoner uses the OpenAI Responses API, but it remains outside the
+Mind and can be replaced without changing identity or durable memory.
+
 ## September 23 demo: VS Code as the MCP host
 
 The workspace includes `.vscode/mcp.json`. In a Codespace, VS Code starts the Cognitive Mind as a
