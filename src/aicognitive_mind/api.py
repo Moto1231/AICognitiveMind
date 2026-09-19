@@ -261,7 +261,7 @@ async def portal_journal_detail(
     body: JournalDetailRequest,
     request: Request,
 ) -> JournalEntry:
-    journal_store = cast(MongoJournalStore, request.app.state.journal_store)
+    journal_store = cast(JournalStore, request.app.state.journal_store)
     entry = await journal_store.find_exact(
         kind=body.kind.value,
         occurred_at=body.occurred_at,
@@ -286,7 +286,7 @@ async def revise_memory(
     request: Request,
 ) -> DurableMemory:
     require_admin(request)
-    memory_store = cast(MongoMemoryStore, request.app.state.memory_store)
+    memory_store = cast(MemoryStore, request.app.state.memory_store)
     journal_store = cast(MongoJournalStore, request.app.state.journal_store)
 
     replacement = body.replacement.model_copy(
