@@ -112,6 +112,7 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
                 str(evidence.get("existing", "")),
                 str(evidence.get("proposed", "")),
                 str(deliberation.get("provenance_relationship", "")),
+                str(deliberation.get("trigger", "")),
                 guidance,
                 str(current_evidence),
             )
