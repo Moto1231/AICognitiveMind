@@ -17,15 +17,6 @@ from aicognitive_mind.storage import (
     MemoryStore,
     MindStore,
 )
-from aicognitive_mind.surreal_storage import (
-    SurrealDiagnosticStore,
-    SurrealJournalStore,
-    SurrealMemoryStore,
-    SurrealMindStore,
-    SurrealRuntime,
-)
-
-
 class StorageRuntime(Protocol):
     async def initialize(self) -> None: ...
     async def ping(self) -> None: ...
@@ -56,6 +47,14 @@ async def create_storage(settings: Settings) -> StorageBundle:
         )
 
     if provider == "surreal":
+        from aicognitive_mind.surreal_storage import (
+            SurrealDiagnosticStore,
+            SurrealJournalStore,
+            SurrealMemoryStore,
+            SurrealMindStore,
+            SurrealRuntime,
+        )
+
         runtime = SurrealRuntime(
             settings.surrealdb_uri,
             settings.surrealdb_namespace,
