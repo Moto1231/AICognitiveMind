@@ -23,10 +23,28 @@ class ArticleReference(BaseModel):
     relevant_content: str = Field(min_length=1)
 
 
+class ProvenanceHop(BaseModel):
+    """One link in the evidence source chain, ordered immediate source outward."""
+
+    source: str = Field(min_length=1)
+    context: str | None = None
+    condition: str | None = None
+
+
+class EvidenceAppraisal(BaseModel):
+    """Separate evidence dimensions; intentionally no combined credibility score."""
+
+    confidence: float = Field(ge=0.0, le=1.0)
+    weight: float = Field(ge=0.0, le=1.0)
+    provenance: tuple[ProvenanceHop, ...] = Field(min_length=1)
+    basis: tuple[str, ...] = ()
+
+
 class ResearchObservation(BaseModel):
     query: str = Field(min_length=1)
     response: str = Field(min_length=1)
     articles: tuple[ArticleReference, ...] = ()
+    appraisal: EvidenceAppraisal | None = None
 
 
 class RecallCall(BaseModel):
@@ -39,6 +57,7 @@ class ConsiderEvidenceCall(BaseModel):
     query: str = Field(min_length=1)
     response: str = Field(min_length=1)
     articles: tuple[ArticleReference, ...] = ()
+    appraisal: EvidenceAppraisal | None = None
 
 
 class MemoryArtifactProposal(BaseModel):
@@ -84,6 +103,8 @@ class SemanticTension(BaseModel):
     existing_value: Any
     proposed_evidence_content: str
     existing_evidence_content: str
+    proposed_appraisal: EvidenceAppraisal | None = None
+    existing_appraisal: EvidenceAppraisal | None = None
     status: Literal["unresolved"] = "unresolved"
 
 
@@ -107,6 +128,7 @@ class MemoryStewardNotConsultedError(RuntimeError):
 _SEMANTIC_INTERPRETATION_KIND = "semantic_interpretation"
 _SEMANTIC_EQUIVALENCE_KIND = "semantic_equivalence"
 _SEMANTIC_TENSION_KIND = "semantic_tension"
+_EVIDENCE_APPRAISAL_KIND = "evidence_appraisal"
 
 
 def _normalized_semantic_value(value: Any) -> str:
@@ -166,6 +188,22 @@ def _semantic_interpretations(
     return interpretations
 
 
+def _evidence_appraisal_from_artifacts(
+    artifacts: tuple[MemoryArtifact, ...] | tuple[MemoryArtifactProposal, ...],
+) -> EvidenceAppraisal | None:
+    for artifact in artifacts:
+        if artifact.kind == _EVIDENCE_APPRAISAL_KIND:
+            return EvidenceAppraisal.model_validate(artifact.payload)
+    return None
+
+
+def _materialize_artifact(proposal: MemoryArtifactProposal) -> MemoryArtifact:
+    payload = proposal.payload
+    if proposal.kind == _EVIDENCE_APPRAISAL_KIND:
+        payload = EvidenceAppraisal.model_validate(payload).model_dump(mode="json")
+    return MemoryArtifact(kind=proposal.kind, payload=payload)
+
+
 class MemoryStewardTool:
     """Interaction-scoped doorway to an independent Conscious Memory Steward."""
 
@@ -220,6 +258,7 @@ class MemoryStewardTool:
                 query=call.query,
                 response=call.response,
                 articles=call.articles,
+                appraisal=call.appraisal,
             )
             self._evidence.append(observation)
             self._brief = self._refresh_brief_with_evidence(brief)
@@ -258,6 +297,18 @@ class MemoryStewardTool:
                         "evidence": {
                             "existing": tension.existing_evidence_content,
                             "proposed": tension.proposed_evidence_content,
+                        },
+                        "appraisals": {
+                            "existing": (
+                                tension.existing_appraisal.model_dump(mode="json")
+                                if tension.existing_appraisal
+                                else None
+                            ),
+                            "proposed": (
+                                tension.proposed_appraisal.model_dump(mode="json")
+                                if tension.proposed_appraisal
+                                else None
+                            ),
                         },
                     },
                 ),
@@ -337,18 +388,14 @@ class MemoryStewardTool:
                         existing_value=existing_payload["value"],
                         proposed_evidence_content=call.content,
                         existing_evidence_content=memory.content,
+                        proposed_appraisal=_evidence_appraisal_from_artifacts(call.artifacts),
+                        existing_appraisal=_evidence_appraisal_from_artifacts(memory.artifacts),
                     )
                     if tension not in tensions:
                         tensions.append(tension)
 
         associations = call.associations or tuple(_derived_associations(call.content))
-        artifacts = [
-            MemoryArtifact(
-                kind=artifact.kind,
-                payload=artifact.payload,
-            )
-            for artifact in call.artifacts
-        ]
+        artifacts = [_materialize_artifact(artifact) for artifact in call.artifacts]
         if equivalent_evidence:
             matched_memory, matched_meaning = equivalent_evidence[0]
             artifacts.append(
@@ -371,6 +418,16 @@ class MemoryStewardTool:
                         "proposed_value": tension.proposed_value,
                         "existing_value": tension.existing_value,
                         "existing_evidence_content": tension.existing_evidence_content,
+                        "proposed_appraisal": (
+                            tension.proposed_appraisal.model_dump(mode="json")
+                            if tension.proposed_appraisal
+                            else None
+                        ),
+                        "existing_appraisal": (
+                            tension.existing_appraisal.model_dump(mode="json")
+                            if tension.existing_appraisal
+                            else None
+                        ),
                     },
                 )
             )
