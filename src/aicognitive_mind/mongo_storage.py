@@ -105,6 +105,12 @@ class MongoJournalStore:
                 {"experience.after.content": {"$regex": literal, "$options": "i"}},
                 {"experience.self_name": {"$regex": literal, "$options": "i"}},
                 {"experience.foundational_values": {"$regex": literal, "$options": "i"}},
+                {"experience.subject": {"$regex": literal, "$options": "i"}},
+                {"experience.attribute": {"$regex": literal, "$options": "i"}},
+                {"experience.competing_values.existing": {"$regex": literal, "$options": "i"}},
+                {"experience.competing_values.proposed": {"$regex": literal, "$options": "i"}},
+                {"experience.evidence.existing": {"$regex": literal, "$options": "i"}},
+                {"experience.evidence.proposed": {"$regex": literal, "$options": "i"}},
             ]
         return query
 
@@ -135,6 +141,11 @@ class MongoJournalStore:
             "experience.after.content": 1,
             "experience.self_name": 1,
             "experience.foundational_values": 1,
+            "experience.subject": 1,
+            "experience.attribute": 1,
+            "experience.competing_values": 1,
+            "experience.evidence": 1,
+            "experience.status": 1,
         }
         direction = DESCENDING if newest_first else ASCENDING
         cursor = (
