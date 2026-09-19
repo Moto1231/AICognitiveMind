@@ -1,10 +1,10 @@
 from collections.abc import AsyncIterator
-from datetime import datetime
 from contextlib import asynccontextmanager
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any, cast
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -173,10 +173,45 @@ async def portal_status(request: Request) -> dict[str, Any]:
 
 
 @app.get("/v1/portal/journal")
-async def portal_journal(request: Request) -> list[dict[str, Any]]:
+async def portal_journal(
+    request: Request,
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    order: str = Query("newest", pattern="^(newest|oldest)$"),
+    kind: JournalKind | None = None,
+    search: str | None = Query(None, max_length=200),
+    from_date: date | None = Query(None, alias="from"),
+    to_date: date | None = Query(None, alias="to"),
+) -> dict[str, Any]:
     journal_store = cast(MongoJournalStore, request.app.state.journal_store)
-    entries = await journal_store.read()
-    return [_journal_summary(entry) for entry in entries]
+    occurred_from = (
+        datetime.combine(from_date, time.min, tzinfo=UTC)
+        if from_date
+        else None
+    )
+    occurred_to = (
+        datetime.combine(to_date, time.max, tzinfo=UTC)
+        if to_date
+        else None
+    )
+    entries, total = await journal_store.read_summary_page(
+        offset=offset,
+        limit=limit,
+        newest_first=order == "newest",
+        kind=kind.value if kind else None,
+        search=search.strip() if search else None,
+        occurred_from=occurred_from,
+        occurred_to=occurred_to,
+    )
+    next_offset = offset + len(entries)
+    return {
+        "items": [_journal_summary(entry) for entry in entries],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": next_offset < total,
+        "next_offset": next_offset if next_offset < total else None,
+    }
 
 
 @app.post("/v1/portal/journal/detail", response_model=JournalEntry)
@@ -185,10 +220,12 @@ async def portal_journal_detail(
     request: Request,
 ) -> JournalEntry:
     journal_store = cast(MongoJournalStore, request.app.state.journal_store)
-    entries = await journal_store.read()
-    for entry in entries:
-        if entry.kind == body.kind and entry.occurred_at == body.occurred_at:
-            return entry
+    entry = await journal_store.find_exact(
+        kind=body.kind.value,
+        occurred_at=body.occurred_at,
+    )
+    if entry is not None:
+        return entry
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Journal experience was not found",
