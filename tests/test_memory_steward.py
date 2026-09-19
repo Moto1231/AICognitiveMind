@@ -230,5 +230,36 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await memory.read(), [])
 
 
+    async def test_exact_memory_replacement_preserves_document_model(self) -> None:
+        memory = InMemoryMemoryStore()
+        original = DurableMemory(
+            memory_class=MemoryClass.SEMANTIC,
+            content="The user's birthday is February 7.",
+            associations=("birthday",),
+            grounding=("direct-user-statement",),
+        )
+        await memory.remember(
+            original,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        replacement = original.model_copy(
+            update={
+                "content": "The user's birthday is February 8.",
+                "associations": ("birthday", "corrected"),
+            }
+        )
+
+        revised = await memory.replace_exact(
+            original,
+            replacement,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        self.assertEqual(revised, replacement)
+        stored = await memory.read()
+        self.assertEqual(stored, [replacement])
+        self.assertEqual(stored[0].formed_at, original.formed_at)
+
+
 if __name__ == "__main__":
     unittest.main()

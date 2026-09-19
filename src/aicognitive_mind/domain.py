@@ -38,6 +38,7 @@ class JournalKind(StrEnum):
     REFLECTION = "reflection"
     TENSION = "tension"
     CHECKPOINT = "checkpoint"
+    MEMORY_REVISION = "memory_revision"
 
 
 class MindIdentity(BaseModel):

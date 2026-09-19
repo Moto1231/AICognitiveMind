@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime
 from typing import Protocol
 
 from aicognitive_mind.domain import (
@@ -32,6 +33,25 @@ class JournalStore(Protocol):
 
     async def read(self) -> list[JournalEntry]: ...
 
+    async def query_page(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        newest_first: bool,
+        kind: str | None = None,
+        search: str | None = None,
+        occurred_from: datetime | None = None,
+        occurred_to: datetime | None = None,
+    ) -> tuple[list[JournalEntry], int]: ...
+
+    async def find_exact(
+        self,
+        *,
+        kind: str,
+        occurred_at: datetime,
+    ) -> JournalEntry | None: ...
+
 
 class DiagnosticStore(Protocol):
     async def record(self, observation: DiagnosticObservation) -> None: ...
@@ -47,6 +67,92 @@ class MemoryStore(Protocol):
     ) -> DurableMemory: ...
 
     async def read(self) -> list[DurableMemory]: ...
+
+    async def query_page(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        newest_first: bool,
+        memory_class: str | None = None,
+        search: str | None = None,
+        association: str | None = None,
+        grounding: str | None = None,
+        formed_from: datetime | None = None,
+        formed_to: datetime | None = None,
+    ) -> tuple[list[DurableMemory], int]: ...
+
+    async def replace_exact(
+        self,
+        original: DurableMemory,
+        replacement: DurableMemory,
+        recorded_by: CognitiveActor,
+    ) -> DurableMemory | None: ...
+
+
+def _journal_search_text(entry: JournalEntry) -> str:
+    experience = entry.experience
+    values = [
+        experience.get("input", {}).get("content", ""),
+        experience.get("expression", {}).get("content", ""),
+        experience.get("before", {}).get("content", ""),
+        experience.get("after", {}).get("content", ""),
+        experience.get("self_name", ""),
+        " ".join(str(value) for value in experience.get("foundational_values", [])),
+    ]
+    return " ".join(str(value) for value in values if value).lower()
+
+
+def _journal_matches(
+    entry: JournalEntry,
+    *,
+    kind: str | None,
+    search: str | None,
+    occurred_from: datetime | None,
+    occurred_to: datetime | None,
+) -> bool:
+    if kind and entry.kind.value != kind:
+        return False
+    if search and search.lower() not in _journal_search_text(entry):
+        return False
+    if occurred_from and entry.occurred_at < occurred_from:
+        return False
+    if occurred_to and entry.occurred_at > occurred_to:
+        return False
+    return True
+
+
+def _memory_matches(
+    memory: DurableMemory,
+    *,
+    memory_class: str | None,
+    search: str | None,
+    association: str | None,
+    grounding: str | None,
+    formed_from: datetime | None,
+    formed_to: datetime | None,
+) -> bool:
+    if memory_class and memory.memory_class.value != memory_class:
+        return False
+    if search:
+        searchable = " ".join(
+            [memory.content, *memory.associations, *memory.grounding]
+        ).lower()
+        if search.lower() not in searchable:
+            return False
+    if association and not any(
+        association.lower() in value.lower() for value in memory.associations
+    ):
+        return False
+    if grounding and not any(
+        grounding.lower() in value.lower() for value in memory.grounding
+    ):
+        return False
+    if formed_from and memory.formed_at < formed_from:
+        return False
+    if formed_to and memory.formed_at > formed_to:
+        return False
+    return True
 
 
 class InMemoryMindStore:
@@ -81,6 +187,42 @@ class InMemoryJournalStore:
     async def read(self) -> list[JournalEntry]:
         return deepcopy(self._entries)
 
+    async def query_page(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        newest_first: bool,
+        kind: str | None = None,
+        search: str | None = None,
+        occurred_from: datetime | None = None,
+        occurred_to: datetime | None = None,
+    ) -> tuple[list[JournalEntry], int]:
+        matching = [
+            entry
+            for entry in self._entries
+            if _journal_matches(
+                entry,
+                kind=kind,
+                search=search,
+                occurred_from=occurred_from,
+                occurred_to=occurred_to,
+            )
+        ]
+        matching.sort(key=lambda entry: entry.occurred_at, reverse=newest_first)
+        return deepcopy(matching[offset : offset + limit]), len(matching)
+
+    async def find_exact(
+        self,
+        *,
+        kind: str,
+        occurred_at: datetime,
+    ) -> JournalEntry | None:
+        for entry in self._entries:
+            if entry.kind.value == kind and entry.occurred_at == occurred_at:
+                return deepcopy(entry)
+        return None
+
 
 class InMemoryDiagnosticStore:
     def __init__(self) -> None:
@@ -110,3 +252,46 @@ class InMemoryMemoryStore:
 
     async def read(self) -> list[DurableMemory]:
         return deepcopy(self._memories)
+
+    async def query_page(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        newest_first: bool,
+        memory_class: str | None = None,
+        search: str | None = None,
+        association: str | None = None,
+        grounding: str | None = None,
+        formed_from: datetime | None = None,
+        formed_to: datetime | None = None,
+    ) -> tuple[list[DurableMemory], int]:
+        matching = [
+            memory
+            for memory in self._memories
+            if _memory_matches(
+                memory,
+                memory_class=memory_class,
+                search=search,
+                association=association,
+                grounding=grounding,
+                formed_from=formed_from,
+                formed_to=formed_to,
+            )
+        ]
+        matching.sort(key=lambda memory: memory.formed_at, reverse=newest_first)
+        return deepcopy(matching[offset : offset + limit]), len(matching)
+
+    async def replace_exact(
+        self,
+        original: DurableMemory,
+        replacement: DurableMemory,
+        recorded_by: CognitiveActor,
+    ) -> DurableMemory | None:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
+        for index, existing in enumerate(self._memories):
+            if existing == original:
+                stored = deepcopy(replacement)
+                self._memories[index] = stored
+                return deepcopy(stored)
+        return None

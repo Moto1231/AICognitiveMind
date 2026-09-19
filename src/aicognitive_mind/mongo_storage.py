@@ -1,6 +1,8 @@
+import re
+from datetime import datetime
 from typing import Any
 
-from pymongo import ASCENDING, AsyncMongoClient
+from pymongo import ASCENDING, DESCENDING, AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
 from aicognitive_mind.domain import (
@@ -74,6 +76,89 @@ class MongoJournalStore:
         cursor = self._collection.find({}, {"_id": 0}).sort("occurred_at", ASCENDING)
         return [JournalEntry.model_validate(document) async for document in cursor]
 
+    def _portal_filter(
+        self,
+        *,
+        kind: str | None = None,
+        search: str | None = None,
+        occurred_from: datetime | None = None,
+        occurred_to: datetime | None = None,
+    ) -> dict[str, Any]:
+        query: dict[str, Any] = {}
+        if kind:
+            query["kind"] = kind
+
+        if occurred_from or occurred_to:
+            occurred: dict[str, datetime] = {}
+            if occurred_from:
+                occurred["$gte"] = occurred_from
+            if occurred_to:
+                occurred["$lte"] = occurred_to
+            query["occurred_at"] = occurred
+
+        if search:
+            literal = re.escape(search)
+            query["$or"] = [
+                {"experience.input.content": {"$regex": literal, "$options": "i"}},
+                {"experience.expression.content": {"$regex": literal, "$options": "i"}},
+                {"experience.before.content": {"$regex": literal, "$options": "i"}},
+                {"experience.after.content": {"$regex": literal, "$options": "i"}},
+                {"experience.self_name": {"$regex": literal, "$options": "i"}},
+                {"experience.foundational_values": {"$regex": literal, "$options": "i"}},
+            ]
+        return query
+
+    async def query_page(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        newest_first: bool,
+        kind: str | None = None,
+        search: str | None = None,
+        occurred_from: datetime | None = None,
+        occurred_to: datetime | None = None,
+    ) -> tuple[list[JournalEntry], int]:
+        query = self._portal_filter(
+            kind=kind,
+            search=search,
+            occurred_from=occurred_from,
+            occurred_to=occurred_to,
+        )
+        projection = {
+            "_id": 0,
+            "kind": 1,
+            "occurred_at": 1,
+            "experience.input.content": 1,
+            "experience.expression.content": 1,
+            "experience.before.content": 1,
+            "experience.after.content": 1,
+            "experience.self_name": 1,
+            "experience.foundational_values": 1,
+        }
+        direction = DESCENDING if newest_first else ASCENDING
+        cursor = (
+            self._collection.find(query, projection)
+            .sort("occurred_at", direction)
+            .skip(offset)
+            .limit(limit)
+        )
+        entries = [JournalEntry.model_validate(document) async for document in cursor]
+        total = await self._collection.count_documents(query)
+        return entries, total
+
+    async def find_exact(
+        self,
+        *,
+        kind: str,
+        occurred_at: datetime,
+    ) -> JournalEntry | None:
+        document = await self._collection.find_one(
+            {"kind": kind, "occurred_at": occurred_at},
+            {"_id": 0},
+        )
+        return JournalEntry.model_validate(document) if document else None
+
 
 class MongoDiagnosticStore:
     """Implementation observations deliberately isolated from cognitive documents."""
@@ -112,3 +197,93 @@ class MongoMemoryStore:
     async def read(self) -> list[DurableMemory]:
         cursor = self._collection.find({}, {"_id": 0}).sort("formed_at", ASCENDING)
         return [DurableMemory.model_validate(document) async for document in cursor]
+
+    def _portal_filter(
+        self,
+        *,
+        memory_class: str | None = None,
+        search: str | None = None,
+        association: str | None = None,
+        grounding: str | None = None,
+        formed_from: datetime | None = None,
+        formed_to: datetime | None = None,
+    ) -> dict[str, Any]:
+        query: dict[str, Any] = {}
+        if memory_class:
+            query["memory_class"] = memory_class
+
+        if formed_from or formed_to:
+            formed: dict[str, datetime] = {}
+            if formed_from:
+                formed["$gte"] = formed_from
+            if formed_to:
+                formed["$lte"] = formed_to
+            query["formed_at"] = formed
+
+        clauses: list[dict[str, Any]] = []
+        if search:
+            literal = re.escape(search)
+            clauses.append({
+                "$or": [
+                    {"content": {"$regex": literal, "$options": "i"}},
+                    {"associations": {"$regex": literal, "$options": "i"}},
+                    {"grounding": {"$regex": literal, "$options": "i"}},
+                ]
+            })
+        if association:
+            clauses.append({
+                "associations": {"$regex": re.escape(association), "$options": "i"}
+            })
+        if grounding:
+            clauses.append({
+                "grounding": {"$regex": re.escape(grounding), "$options": "i"}
+            })
+        if clauses:
+            query["$and"] = clauses
+
+        return query
+
+    async def query_page(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        newest_first: bool,
+        memory_class: str | None = None,
+        search: str | None = None,
+        association: str | None = None,
+        grounding: str | None = None,
+        formed_from: datetime | None = None,
+        formed_to: datetime | None = None,
+    ) -> tuple[list[DurableMemory], int]:
+        query = self._portal_filter(
+            memory_class=memory_class,
+            search=search,
+            association=association,
+            grounding=grounding,
+            formed_from=formed_from,
+            formed_to=formed_to,
+        )
+        direction = DESCENDING if newest_first else ASCENDING
+        cursor = (
+            self._collection.find(query, {"_id": 0})
+            .sort("formed_at", direction)
+            .skip(offset)
+            .limit(limit)
+        )
+        memories = [DurableMemory.model_validate(document) async for document in cursor]
+        total = await self._collection.count_documents(query)
+        return memories, total
+
+    async def replace_exact(
+        self,
+        original: DurableMemory,
+        replacement: DurableMemory,
+        recorded_by: CognitiveActor,
+    ) -> DurableMemory | None:
+        self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
+        result = await self._collection.replace_one(
+            original.model_dump(mode="python"),
+            replacement.model_dump(mode="python"),
+        )
+        return replacement if result.matched_count == 1 else None

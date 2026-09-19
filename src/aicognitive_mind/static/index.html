@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Cognitive Mind</title>
+  <link rel="stylesheet" href="/static/portal.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">DG</div>
+        <div>
+          <h1>AI Cognitive Mind</h1>
+          <p>Persistent identity and memory across reasoning systems</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="status-pill">
+          <span class="status-dot"></span>
+          <span id="connectionLabel">Connecting…</span>
+        </div>
+        <nav class="mode-switch" aria-label="Portal mode">
+          <button id="mindTab" class="mode-button active" type="button">Mind</button>
+          <button id="adminTab" class="mode-button" type="button">Administration</button>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section id="mindView" class="view">
+        <div class="hero">
+          <div>
+            <p class="eyebrow">PERSISTENT MIND</p>
+            <h2 id="mindName">Loading…</h2>
+            <p class="hero-copy">
+              Identity and durable memory belong to the Mind. Reasoning is supplied by the connected MCP host.
+            </p>
+          </div>
+          <div class="hero-status">
+            <span>Continuity</span>
+            <strong id="continuityLabel">Checking…</strong>
+          </div>
+        </div>
+
+        <div class="grid">
+          <article class="panel identity-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">IDENTITY</p>
+                <h3>Who This Mind Is</h3>
+              </div>
+            </div>
+            <dl class="details">
+              <div><dt>Self Name</dt><dd id="selfName">—</dd></div>
+              <div><dt>Developmental State</dt><dd id="developmentState">—</dd></div>
+              <div><dt>Created</dt><dd id="createdAt">—</dd></div>
+            </dl>
+            <div class="values-block">
+              <p class="field-label">Foundational Values</p>
+              <div id="foundationalValues" class="tag-list"></div>
+            </div>
+          </article>
+
+          <article class="panel stat-panel">
+            <p class="eyebrow">DURABLE MEMORY</p>
+            <div id="memoryCount" class="big-stat">—</div>
+            <p>Curated Memories</p>
+          </article>
+
+          <article class="panel stat-panel">
+            <p class="eyebrow">COGNITIVE HISTORY</p>
+            <div id="journalCount" class="big-stat">—</div>
+            <p>Journal Experiences</p>
+          </article>
+
+          <article class="panel memory-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">MEMORY</p>
+                <h3>What This Mind Currently Carries</h3>
+              </div>
+              <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
+            </div>
+
+            <div class="memory-search">
+              <div class="search-field search-wide">
+                <label for="memorySearch">Search</label>
+                <input id="memorySearch" type="search" placeholder="Content, grounding, or associations">
+              </div>
+              <div class="search-field">
+                <label for="memoryClassFilter">Memory Class</label>
+                <select id="memoryClassFilter">
+                  <option value="">All Classes</option>
+                  <option value="working">Working</option>
+                  <option value="episodic">Episodic</option>
+                  <option value="semantic">Semantic</option>
+                  <option value="procedural">Procedural</option>
+                  <option value="identity">Identity</option>
+                  <option value="reflective">Reflective</option>
+                </select>
+              </div>
+              <div class="search-field">
+                <label for="associationFilter">Association</label>
+                <input id="associationFilter" type="search" placeholder="Association contains…">
+              </div>
+              <div class="search-field">
+                <label for="groundingFilter">Grounding</label>
+                <input id="groundingFilter" type="search" placeholder="Grounding contains…">
+              </div>
+              <div class="search-field">
+                <label for="formedFrom">Formed From</label>
+                <input id="formedFrom" type="date">
+              </div>
+              <div class="search-field">
+                <label for="formedTo">Formed Through</label>
+                <input id="formedTo" type="date">
+              </div>
+              <div class="search-field">
+                <label for="memorySort">Sort</label>
+                <select id="memorySort">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+              </div>
+              <button id="clearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
+            </div>
+            <div class="search-summary">
+              <span id="memoryResultCount">0 Memories</span>
+            </div>
+            <div id="memoryList" class="memory-list"></div>
+            <div class="memory-pagination">
+              <button id="loadMoreMemories" class="secondary-button hidden" type="button">Load 25 More</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="adminView" class="view hidden">
+        <div class="hero">
+          <div>
+            <p class="eyebrow">ADMINISTRATION</p>
+            <h2>Continuity & Integration</h2>
+            <p class="hero-copy">
+              Inspect the boundary between the persistent Cognitive Mind and whichever reasoning host is connected.
+            </p>
+          </div>
+          <button id="adminRefreshButton" class="secondary-button" type="button">Refresh Status</button>
+        </div>
+
+        <div class="admin-grid">
+          <article class="panel">
+            <p class="eyebrow">INTEGRATION</p>
+            <h3>Reasoning Boundary</h3>
+            <dl class="details admin-details">
+              <div><dt>Protocol</dt><dd id="protocolValue">—</dd></div>
+              <div><dt>Reasoning Owner</dt><dd id="reasoningOwner">—</dd></div>
+              <div><dt>Identity Owner</dt><dd id="identityOwner">—</dd></div>
+              <div><dt>Memory Owner</dt><dd id="memoryOwner">—</dd></div>
+            </dl>
+          </article>
+
+          <article class="panel proof-panel">
+            <p class="eyebrow">CONTINUITY PRINCIPLE</p>
+            <h3>The model may change. The Mind does not.</h3>
+            <p>
+              The portal does not select or own a reasoning vendor. The connected MCP host supplies reasoning;
+              this system preserves identity, memory, and cognitive history.
+            </p>
+          </article>
+
+
+          <article class="panel admin-memory-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">MEMORY ADMINISTRATION</p>
+                <h3>Search & Manage Durable Memory</h3>
+              </div>
+              <span id="adminAuthorizationState" class="mini-status">Checking…</span>
+            </div>
+            <div class="memory-search">
+              <div class="search-field search-wide">
+                <label for="adminMemorySearch">Search</label>
+                <input id="adminMemorySearch" type="search" placeholder="Content, grounding, or associations">
+              </div>
+              <div class="search-field">
+                <label for="adminMemoryClassFilter">Memory Class</label>
+                <select id="adminMemoryClassFilter">
+                  <option value="">All Classes</option>
+                  <option value="working">Working</option>
+                  <option value="episodic">Episodic</option>
+                  <option value="semantic">Semantic</option>
+                  <option value="procedural">Procedural</option>
+                  <option value="identity">Identity</option>
+                  <option value="reflective">Reflective</option>
+                </select>
+              </div>
+              <div class="search-field">
+                <label for="adminAssociationFilter">Association</label>
+                <input id="adminAssociationFilter" type="search" placeholder="Association contains…">
+              </div>
+              <div class="search-field">
+                <label for="adminGroundingFilter">Grounding</label>
+                <input id="adminGroundingFilter" type="search" placeholder="Grounding contains…">
+              </div>
+              <div class="search-field">
+                <label for="adminFormedFrom">Formed From</label>
+                <input id="adminFormedFrom" type="date">
+              </div>
+              <div class="search-field">
+                <label for="adminFormedTo">Formed Through</label>
+                <input id="adminFormedTo" type="date">
+              </div>
+              <div class="search-field">
+                <label for="adminMemorySort">Sort</label>
+                <select id="adminMemorySort">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+              </div>
+              <button id="adminClearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
+            </div>
+            <div class="search-summary">
+              <span id="adminMemoryResultCount">0 Memories</span>
+              <span>Open a memory to edit its persisted record.</span>
+            </div>
+            <div id="adminMemoryList" class="memory-list"></div>
+            <div class="memory-pagination">
+              <button id="adminLoadMoreMemories" class="secondary-button hidden" type="button">Load 25 More</button>
+            </div>
+          </article>
+
+
+          <article class="panel admin-journal-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">COGNITIVE HISTORY</p>
+                <h3>Journal Timeline</h3>
+              </div>
+              <button id="journalRefreshButton" class="secondary-button" type="button">Refresh Journal</button>
+            </div>
+            <div class="journal-search">
+              <div class="search-field search-wide">
+                <label for="journalSearch">Search</label>
+                <input id="journalSearch" type="search" placeholder="Input, response, revision, or identity text">
+              </div>
+              <div class="search-field">
+                <label for="journalKindFilter">Kind</label>
+                <select id="journalKindFilter">
+                  <option value="">All Kinds</option>
+                  <option value="initialization">Initialization</option>
+                  <option value="interaction">Interaction</option>
+                  <option value="reflection">Reflection</option>
+                  <option value="tension">Tension</option>
+                  <option value="checkpoint">Checkpoint</option>
+                  <option value="memory_revision">Memory Revision</option>
+                </select>
+              </div>
+              <div class="search-field">
+                <label for="journalFrom">Occurred From</label>
+                <input id="journalFrom" type="date">
+              </div>
+              <div class="search-field">
+                <label for="journalTo">Occurred Through</label>
+                <input id="journalTo" type="date">
+              </div>
+              <div class="search-field">
+                <label for="journalSort">Sort</label>
+                <select id="journalSort">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+              </div>
+              <button id="clearJournalFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
+            </div>
+            <div class="search-summary">
+              <span id="journalResultCount">0 Experiences</span>
+              <span>Journal history is read-only.</span>
+            </div>
+            <div id="journalTimeline" class="journal-timeline"></div>
+            <div class="journal-pagination">
+              <button id="loadMoreJournals" class="secondary-button hidden" type="button">Load 25 More</button>
+            </div>
+          </article>
+
+          <article class="panel admin-summary">
+            <p class="eyebrow">CURRENT STATE</p>
+            <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
+            <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
+            <div class="summary-row"><span>Journal Experiences</span><strong id="adminJournalCount">—</strong></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+
+  <div id="journalInspector" class="inspector-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="journalInspectorTitle">
+    <aside class="inspector">
+      <div class="inspector-heading">
+        <div>
+          <p class="eyebrow">JOURNAL INSPECTOR</p>
+          <h2 id="journalInspectorTitle">Exact Journal Experience</h2>
+        </div>
+        <button id="closeJournalInspector" class="icon-button" type="button" aria-label="Close journal inspector">×</button>
+      </div>
+
+      <dl class="inspector-details">
+        <div><dt>Kind</dt><dd id="journalInspectorKind">—</dd></div>
+        <div><dt>Occurred At</dt><dd id="journalInspectorOccurredAt">—</dd></div>
+      </dl>
+
+      <div id="journalStructuredDetail" class="inspector-section journal-structured-detail"></div>
+
+      <div class="inspector-section raw-section">
+        <span class="inspector-label">Raw Journal Record</span>
+        <pre id="journalInspectorRaw" class="raw-record"></pre>
+      </div>
+    </aside>
+  </div>
+
+  <div id="memoryInspector" class="inspector-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="memoryInspectorTitle">
+    <aside class="inspector">
+      <div class="inspector-heading">
+        <div>
+          <p class="eyebrow">MEMORY INSPECTOR</p>
+          <h2 id="memoryInspectorTitle">Exact Durable Memory</h2>
+        </div>
+        <button id="closeMemoryInspector" class="icon-button" type="button" aria-label="Close memory inspector">×</button>
+      </div>
+
+      <div class="inspector-section">
+        <span class="inspector-label">Content</span>
+        <div id="inspectorContent" class="exact-content"></div>
+      </div>
+
+      <dl class="inspector-details">
+        <div><dt>Memory Class</dt><dd id="inspectorClass">—</dd></div>
+        <div><dt>Formed At</dt><dd id="inspectorFormedAt">—</dd></div>
+      </dl>
+
+      <div class="inspector-section">
+        <span class="inspector-label">Grounding</span>
+        <div id="inspectorGrounding" class="record-list"></div>
+      </div>
+
+      <div class="inspector-section">
+        <span class="inspector-label">Associations</span>
+        <div id="inspectorAssociations" class="record-list"></div>
+      </div>
+
+      <div id="memoryEditActions" class="inspector-section hidden">
+        <button id="editMemoryButton" class="primary-button" type="button">Edit Memory</button>
+      </div>
+
+      <form id="memoryEditForm" class="memory-edit-form hidden">
+        <div class="inspector-section">
+          <label class="inspector-label" for="editMemoryContent">Content</label>
+          <textarea id="editMemoryContent" rows="5" required></textarea>
+        </div>
+        <div class="inspector-section">
+          <label class="inspector-label" for="editMemoryClass">Memory Class</label>
+          <select id="editMemoryClass">
+            <option value="working">Working</option>
+            <option value="episodic">Episodic</option>
+            <option value="semantic">Semantic</option>
+            <option value="procedural">Procedural</option>
+            <option value="identity">Identity</option>
+            <option value="reflective">Reflective</option>
+          </select>
+        </div>
+        <div class="inspector-section">
+          <label class="inspector-label" for="editAssociations">Associations</label>
+          <textarea id="editAssociations" rows="4" placeholder="One association per line"></textarea>
+        </div>
+        <div class="inspector-section">
+          <label class="inspector-label" for="editGrounding">Grounding</label>
+          <textarea id="editGrounding" rows="4" placeholder="One grounding source per line"></textarea>
+        </div>
+        <div class="edit-actions">
+          <button id="cancelMemoryEdit" class="secondary-button" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Save Changes</button>
+        </div>
+      </form>
+
+      <div class="inspector-section raw-section">
+        <span class="inspector-label">Raw Record Returned by the Mind</span>
+        <pre id="inspectorRaw" class="raw-record"></pre>
+      </div>
+    </aside>
+  </div>
+
+  <div id="initializeOverlay" class="overlay hidden">
+    <form id="initializeForm" class="setup-card">
+      <p class="eyebrow">GENESIS</p>
+      <h2>Initialize this Mind</h2>
+      <p>This operation happens once. Identity then persists independently of the reasoning model.</p>
+      <label for="initializeName">Self Name</label>
+      <input id="initializeName" value="AICognitiveMind" maxlength="120" required>
+      <label for="initializeValues">Foundational Values</label>
+      <textarea id="initializeValues" rows="4">Understanding before Recommending
+Preserve continuity of identity</textarea>
+      <button class="primary-button" type="submit">Create Mind</button>
+    </form>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="/static/portal.js"></script>
+</body>
+</html>
