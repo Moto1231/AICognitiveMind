@@ -856,3 +856,91 @@ It is an operational cognitive architecture with:
 The next milestone is not another abstract cognitive mechanism.
 
 > **The next milestone is to use the Mind.**
+
+
+---
+
+## 31. Parallel Body workstream
+
+A second major development track was opened after the Mind reached the point where it could be used
+through MCP.
+
+The new track is deliberately called **Body**.
+
+The project model is now:
+
+```text
+Mind
+  +
+Body
+```
+
+These are not separate identities or separate beings. They are two major systems of the same whole.
+
+### Mind responsibility
+
+The Mind owns:
+
+- identity;
+- durable memory;
+- beliefs;
+- reasoning;
+- governance;
+- continuity.
+
+### Body responsibility
+
+The Body owns:
+
+- eyes — camera / visual input;
+- ears — microphone / acoustic input;
+- mouth — speech output;
+- face — on-screen avatar;
+- sensors;
+- physical/computer interfaces;
+- device lifecycle and health.
+
+### Sensory-memory boundary
+
+The Body does not write durable memory directly.
+
+Raw camera frames, audio buffers, screen images, and other device data are transient sensory input.
+The Mind may interpret those percepts and then use the existing Memory Steward boundary to decide
+whether an experience should become durable memory.
+
+This keeps identity and memory authority in one place.
+
+### Parallel development rule
+
+Mind and Body development are not sequential roadmap items.
+
+They proceed concurrently:
+
+```text
+Mind work ───────┐
+                 ├── same whole
+Body work ───────┘
+```
+
+Each workstream should remain independently testable and should integrate through narrow contracts
+rather than reaching into the other's internal implementation.
+
+### Body foundation
+
+The first Body slice introduces:
+
+- transient sensory modalities;
+- transient percepts;
+- expression intents;
+- device status;
+- provider-neutral eyes / ears / mouth / face contracts;
+- a `BodyRuntime` that coordinates attached faculties without owning cognitive state.
+
+No camera, microphone, speech engine, or avatar vendor is selected at the foundation layer.
+
+Body foundation details are documented in:
+
+- `docs/body/0001-foundation.md`
+
+The next Body slices may proceed independently: eyes, ears, mouth, face, and the Mind/Body perception
+bridge.
