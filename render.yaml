@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: ai-cognitive-mind
+    runtime: python
+    region: ohio
+    plan: free
+    branch: main
+    buildCommand: pip install .
+    startCommand: uvicorn aicognitive_mind.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: APP_NAME
+        value: AI Cognitive Mind
+      - key: STORAGE_PROVIDER
+        value: mongo
+      - key: MONGODB_DATABASE
+        value: ai_cognitive_mind
+      - key: MONGODB_URI
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.6-terra
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: gpt-4o-transcribe
+      - key: APP_ACCESS_USERNAME
+        value: mind
+      - key: APP_ACCESS_PASSWORD
+        sync: false
