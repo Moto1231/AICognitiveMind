@@ -348,6 +348,7 @@ function formatEvidenceDeliberation(deliberation) {
     gaps ? `Appraisal Gaps:\n${gaps}` : "Appraisal Gaps: None",
     contexts ? `Context Observations:\n${contexts}` : "Context Observations: None",
     questions ? `Investigation Questions:\n${questions}` : "Investigation Questions: None",
+    `Tension Finding:\n${deliberation.tension_finding ? JSON.stringify(deliberation.tension_finding, null, 2) : "None"}`,
     `Resolution Readiness:\n${formatResolutionReadiness(deliberation.resolution_readiness)}`,
   ].join("\n");
 }
