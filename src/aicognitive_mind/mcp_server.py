@@ -96,7 +96,10 @@ async def complete_interaction(
     When current external evidence materially informed reasoning, include it with its separate
     provenance / confidence / weight appraisal. When evidence bears on a recalled semantic tension,
     also include its semantic interpretation (subject / attribute / value) so the Memory Steward
-    can re-deliberate that tension. These dimensions are not collapsed into one score.
+    can re-deliberate that tension. If research establishes whether the competing values are
+    independent and apply to the same time/context, include a tension_finding as well. These
+    dimensions are not collapsed into one score, and candidate readiness does not itself rewrite
+    durable belief.
     """
     return await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,

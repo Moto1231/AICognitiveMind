@@ -8,6 +8,7 @@ from aicognitive_mind.memory_steward import (
     ProvenanceHop,
     ResearchObservation,
     SemanticInterpretation,
+    TensionInvestigationFinding,
 )
 from aicognitive_mind.domain import MemoryClass
 from aicognitive_mind.storage import (
@@ -412,6 +413,8 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deliberation["proposed_support_count"], 2)
         self.assertEqual(deliberation["current_evidence_considered"], 1)
         self.assertEqual(deliberation["current_proposed_support_count"], 1)
+        self.assertEqual(deliberation["resolution_readiness"]["status"], "blocked")
+        self.assertIsNone(deliberation["resolution_readiness"]["candidate_value"])
 
         memories = await self.memory.read()
         self.assertEqual(len(memories), 2)
@@ -440,6 +443,329 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Investigation guidance:", later["recalled_context"]["summary"])
         self.assertNotIn(
             "Seek independent corroboration for the proposed value.",
+            later["recalled_context"]["summary"],
+        )
+
+    async def test_resolution_readiness_marks_candidate_without_changing_belief(self) -> None:
+        await self.service.complete_interaction(
+            user_message="The deployment date is October 1.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 1.",
+                    grounding=("approved plan",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.55,
+                                "weight": 0.4,
+                                "provenance": [
+                                    {
+                                        "source": "approved plan",
+                                        "context": "release decision",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        await self.service.complete_interaction(
+            user_message="The deployment date is October 8.",
+            response_text="That creates an unresolved tension.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The deployment date is October 8.",
+                    grounding=("project lead update",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 8",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.8,
+                                "weight": 0.7,
+                                "provenance": [
+                                    {
+                                        "source": "project lead",
+                                        "context": "release decision",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        completed = await self.service.complete_interaction(
+            user_message="I verified the deployment evidence.",
+            response_text="October 8 is ready as a candidate for a later belief transition.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="release board",
+                    response="The independently maintained release board lists October 8.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.9,
+                        weight=0.75,
+                        provenance=(
+                            ProvenanceHop(
+                                source="release board",
+                                context="release decision",
+                                condition="published",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="deployment",
+                        attribute="date",
+                        value="October 8",
+                    ),
+                    tension_finding=TensionInvestigationFinding(
+                        subject="deployment",
+                        attribute="date",
+                        existing_value="October 1",
+                        proposed_value="October 8",
+                        provenance_independence="verified_independent",
+                        temporal_relationship="same_timeframe",
+                        contextual_relationship="same_context",
+                        basis=(
+                            "The release board is maintained independently of the approved-plan source.",
+                            "Both values purport to describe the same release decision and timeframe.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        reassessment = completed["tension_reassessments"][0]
+        readiness = reassessment["deliberation"]["resolution_readiness"]
+        self.assertEqual(reassessment["status"], "unresolved")
+        self.assertEqual(readiness["status"], "candidate_ready")
+        self.assertEqual(readiness["candidate_side"], "proposed")
+        self.assertEqual(readiness["candidate_value"], "October 8")
+        self.assertEqual(readiness["blockers"], [])
+        self.assertEqual(readiness["proposed"]["support_count"], 2)
+        self.assertEqual(readiness["proposed"]["distinct_immediate_sources"], 2)
+        self.assertGreater(
+            readiness["proposed"]["confidence_floor"],
+            readiness["existing"]["confidence_ceiling"],
+        )
+        self.assertGreater(
+            readiness["proposed"]["weight_floor"],
+            readiness["existing"]["weight_ceiling"],
+        )
+
+        refined = await self.service.complete_interaction(
+            user_message="A second independent source also confirms October 8.",
+            response_text="The readiness assessment remains candidate-ready.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="change log",
+                    response="The change log also records October 8.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.88,
+                        weight=0.72,
+                        provenance=(
+                            ProvenanceHop(
+                                source="change log",
+                                context="release decision",
+                                condition="approved",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="deployment",
+                        attribute="date",
+                        value="October 8",
+                    ),
+                ),
+            ),
+        )
+        refined_deliberation = refined["tension_reassessments"][0]["deliberation"]
+        self.assertEqual(refined_deliberation["revision"], 3)
+        self.assertEqual(
+            refined_deliberation["resolution_readiness"]["status"],
+            "candidate_ready",
+        )
+        self.assertEqual(
+            refined_deliberation["tension_finding"]["provenance_independence"],
+            "verified_independent",
+        )
+        self.assertEqual(
+            refined_deliberation["resolution_readiness"]["proposed"]["support_count"],
+            3,
+        )
+        self.assertEqual(len(refined_deliberation["current_evidence_history"]), 2)
+        self.assertEqual(
+            refined_deliberation["current_evidence_history"][0]["response_excerpt"],
+            "The independently maintained release board lists October 8.",
+        )
+
+        memories = await self.memory.read()
+        self.assertEqual(len(memories), 2)
+        self.assertEqual(
+            {memory.content for memory in memories},
+            {
+                "The deployment date is October 1.",
+                "The deployment date is October 8.",
+            },
+        )
+        later = await self.service.begin_interaction("What is the deployment date?")
+        self.assertIn(
+            "Candidate ready for later belief transition: October 8",
+            later["recalled_context"]["summary"],
+        )
+
+    async def test_resolution_readiness_requires_reframe_for_temporal_change(self) -> None:
+        await self.service.complete_interaction(
+            user_message="The service owner is Alice.",
+            response_text="Recorded.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The service owner is Alice.",
+                    grounding=("original assignment",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "service",
+                                "attribute": "owner",
+                                "value": "Alice",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.8,
+                                "weight": 0.8,
+                                "provenance": [
+                                    {
+                                        "source": "assignment record",
+                                        "context": "service ownership",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+        await self.service.complete_interaction(
+            user_message="The service owner is Bob.",
+            response_text="That creates an unresolved tension until timing is known.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="The service owner is Bob.",
+                    grounding=("current assignment",),
+                    artifacts=(
+                        MemoryArtifactProposal(
+                            kind="semantic_interpretation",
+                            payload={
+                                "subject": "service",
+                                "attribute": "owner",
+                                "value": "Bob",
+                            },
+                        ),
+                        MemoryArtifactProposal(
+                            kind="evidence_appraisal",
+                            payload={
+                                "confidence": 0.9,
+                                "weight": 0.9,
+                                "provenance": [
+                                    {
+                                        "source": "current assignment record",
+                                        "context": "service ownership",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        completed = await self.service.complete_interaction(
+            user_message="The ownership history explains the difference.",
+            response_text="This should be represented as ownership changing over time.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="ownership history",
+                    response="The change record shows Alice handed ownership to Bob on September 1.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.95,
+                        weight=0.9,
+                        provenance=(
+                            ProvenanceHop(
+                                source="ownership change record",
+                                context="service ownership",
+                                condition="approved",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="service",
+                        attribute="owner",
+                        value="Bob",
+                    ),
+                    tension_finding=TensionInvestigationFinding(
+                        subject="service",
+                        attribute="owner",
+                        existing_value="Alice",
+                        proposed_value="Bob",
+                        provenance_independence="verified_independent",
+                        temporal_relationship="changed_over_time",
+                        contextual_relationship="same_context",
+                        basis=(
+                            "The ownership change record gives an effective-date transition from Alice to Bob.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        readiness = completed["tension_reassessments"][0]["deliberation"]["resolution_readiness"]
+        self.assertEqual(readiness["status"], "reframe_required")
+        self.assertIsNone(readiness["candidate_side"])
+        self.assertIsNone(readiness["candidate_value"])
+        self.assertTrue(
+            any("different times" in item for item in readiness["basis"])
+        )
+
+        later = await self.service.begin_interaction("Who owns the service?")
+        self.assertIn(
+            "Belief reframe required",
+            later["recalled_context"]["summary"],
+        )
+        self.assertNotIn(
+            "Check whether the competing values can both be valid at different times",
             later["recalled_context"]["summary"],
         )
 

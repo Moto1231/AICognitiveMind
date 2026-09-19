@@ -306,12 +306,39 @@ function formatEvidenceAppraisal(appraisal) {
   ].join("\n") + basis;
 }
 
+function formatResolutionReadiness(readiness) {
+  if (!readiness) return "Not Assessed";
+  const existing = readiness.existing || {};
+  const proposed = readiness.proposed || {};
+  const blockers = (readiness.blockers || []).length
+    ? readiness.blockers.map((item, index) => `${index + 1}. ${item}`).join("\n")
+    : "None";
+  const basis = (readiness.basis || []).length
+    ? readiness.basis.map((item, index) => `${index + 1}. ${item}`).join("\n")
+    : "None";
+  return [
+    `Status: ${displayLabel(readiness.status)}`,
+    `Candidate Side: ${readiness.candidate_side ? displayLabel(readiness.candidate_side) : "None"}`,
+    `Candidate Value: ${readiness.candidate_value ?? "None"}`,
+    `Existing Profile: support=${existing.support_count ?? 0}, sources=${existing.distinct_immediate_sources ?? 0}, confidence=${existing.confidence_floor ?? "—"}..${existing.confidence_ceiling ?? "—"}, weight=${existing.weight_floor ?? "—"}..${existing.weight_ceiling ?? "—"}`,
+    `Proposed Profile: support=${proposed.support_count ?? 0}, sources=${proposed.distinct_immediate_sources ?? 0}, confidence=${proposed.confidence_floor ?? "—"}..${proposed.confidence_ceiling ?? "—"}, weight=${proposed.weight_floor ?? "—"}..${proposed.weight_ceiling ?? "—"}`,
+    `Blockers:\n${blockers}`,
+    `Basis:\n${basis}`,
+  ].join("\n");
+}
+
 function formatEvidenceDeliberation(deliberation) {
   if (!deliberation) return "No Deliberation Recorded";
   const gaps = (deliberation.appraisal_gaps || []).join("\n");
   const contexts = (deliberation.context_observations || []).join("\n");
   const questions = (deliberation.investigation_questions || [])
     .map((question, index) => `${index + 1}. ${question}`)
+    .join("\n");
+  const evidenceHistory = (deliberation.current_evidence_history || [])
+    .map((item, index) => {
+      const meaning = item.semantic_interpretation || {};
+      return `${index + 1}. ${item.response_excerpt} [${meaning.subject || "?"} · ${meaning.attribute || "?"} = ${meaning.value ?? "?"}]`;
+    })
     .join("\n");
   return [
     `Revision: ${deliberation.revision ?? 1}`,
@@ -327,6 +354,9 @@ function formatEvidenceDeliberation(deliberation) {
     gaps ? `Appraisal Gaps:\n${gaps}` : "Appraisal Gaps: None",
     contexts ? `Context Observations:\n${contexts}` : "Context Observations: None",
     questions ? `Investigation Questions:\n${questions}` : "Investigation Questions: None",
+    evidenceHistory ? `Retained Research Evidence:\n${evidenceHistory}` : "Retained Research Evidence: None",
+    `Tension Finding:\n${deliberation.tension_finding ? JSON.stringify(deliberation.tension_finding, null, 2) : "None"}`,
+    `Resolution Readiness:\n${formatResolutionReadiness(deliberation.resolution_readiness)}`,
   ].join("\n");
 }
 
@@ -639,7 +669,10 @@ function formatResearchEvidence(observations) {
     const appraisal = observation.appraisal
       ? `\n${formatEvidenceAppraisal(observation.appraisal)}`
       : "\nNot Appraised";
-    return `${index + 1}. ${observation.response}${meaning}${appraisal}`;
+    const finding = observation.tension_finding
+      ? `\nTension Finding: ${JSON.stringify(observation.tension_finding, null, 2)}`
+      : "";
+    return `${index + 1}. ${observation.response}${meaning}${appraisal}${finding}`;
   }).join("\n\n");
 }
 

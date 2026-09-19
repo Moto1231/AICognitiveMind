@@ -113,9 +113,12 @@ class CognitiveMcpService:
             "next_step": (
                 "Reason as this Mind using the recalled context. If unresolved evidence includes "
                 "investigation guidance, pursue the material questions that can change or clarify "
-                "the conclusion and submit useful findings as current_evidence. Before presenting "
-                "the final answer, call complete_interaction with the response text and only stable "
-                "memory proposals that should influence future interactions."
+                "the conclusion and submit useful findings as current_evidence. If resolution "
+                "readiness says candidate_ready, treat that value only as eligible for a later "
+                "belief-transition step; do not silently rewrite belief. If it says reframe_required, "
+                "represent the time/context distinction instead of selecting a universal winner. "
+                "Before presenting the final answer, call complete_interaction with the response "
+                "text and only stable memory proposals that should influence future interactions."
             ),
         }
 

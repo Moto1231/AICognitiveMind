@@ -162,6 +162,16 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
                             "attribute": "date",
                             "value": "October 8",
                         },
+                        "tension_finding": {
+                            "subject": "deployment",
+                            "attribute": "date",
+                            "existing_value": "October 1",
+                            "proposed_value": "October 8",
+                            "provenance_independence": "verified_independent",
+                            "temporal_relationship": "same_timeframe",
+                            "contextual_relationship": "same_context",
+                            "basis": ["independence verified"],
+                        },
                     }
                 ],
                 "deliberation": {
@@ -184,6 +194,33 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
                     "investigation_questions": [
                         "Seek independent corroboration for the existing value."
                     ],
+                    "resolution_readiness": {
+                        "status": "candidate_ready",
+                        "candidate_side": "proposed",
+                        "candidate_value": "October 8",
+                        "existing": {
+                            "value": "October 1",
+                            "support_count": 1,
+                            "appraised_support_count": 1,
+                            "distinct_immediate_sources": 1,
+                            "confidence_floor": 0.55,
+                            "confidence_ceiling": 0.55,
+                            "weight_floor": 0.4,
+                            "weight_ceiling": 0.4,
+                        },
+                        "proposed": {
+                            "value": "October 8",
+                            "support_count": 2,
+                            "appraised_support_count": 2,
+                            "distinct_immediate_sources": 2,
+                            "confidence_floor": 0.8,
+                            "confidence_ceiling": 0.9,
+                            "weight_floor": 0.7,
+                            "weight_ceiling": 0.75,
+                        },
+                        "blockers": [],
+                        "basis": ["candidate evidence is independently corroborated"],
+                    },
                 },
             },
         )
@@ -209,6 +246,24 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(phase_total, 1)
         self.assertEqual(phase_page, [reassessment])
+
+        ready_page, ready_total = await store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="candidate_ready",
+        )
+        self.assertEqual(ready_total, 1)
+        self.assertEqual(ready_page, [reassessment])
+
+        finding_page, finding_total = await store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="verified_independent",
+        )
+        self.assertEqual(finding_total, 1)
+        self.assertEqual(finding_page, [reassessment])
 
     async def test_memory_searches_full_collection_and_replaces_exact_document(self) -> None:
         store = SurrealMemoryStore(self.runtime.database)

@@ -46,12 +46,38 @@ class SemanticInterpretation(BaseModel):
     value: Any
 
 
+class TensionInvestigationFinding(BaseModel):
+    """Evidence-backed finding about how two competing values relate."""
+
+    subject: str = Field(min_length=1)
+    attribute: str = Field(min_length=1)
+    existing_value: Any
+    proposed_value: Any
+    provenance_independence: Literal[
+        "verified_independent",
+        "shared_provenance",
+        "unknown",
+    ] = "unknown"
+    temporal_relationship: Literal[
+        "same_timeframe",
+        "changed_over_time",
+        "unknown",
+    ] = "unknown"
+    contextual_relationship: Literal[
+        "same_context",
+        "different_contexts",
+        "unknown",
+    ] = "unknown"
+    basis: tuple[str, ...] = Field(min_length=1)
+
+
 class ResearchObservation(BaseModel):
     query: str = Field(min_length=1)
     response: str = Field(min_length=1)
     articles: tuple[ArticleReference, ...] = ()
     appraisal: EvidenceAppraisal | None = None
     semantic_interpretation: SemanticInterpretation | None = None
+    tension_finding: TensionInvestigationFinding | None = None
 
 
 class RecallCall(BaseModel):
@@ -66,6 +92,7 @@ class ConsiderEvidenceCall(BaseModel):
     articles: tuple[ArticleReference, ...] = ()
     appraisal: EvidenceAppraisal | None = None
     semantic_interpretation: SemanticInterpretation | None = None
+    tension_finding: TensionInvestigationFinding | None = None
 
 
 class MemoryArtifactProposal(BaseModel):
@@ -104,6 +131,38 @@ class MemoryBrief(BaseModel):
     summary: str
 
 
+class DeliberationEvidence(BaseModel):
+    """Compact current-evidence contribution retained with deliberation history."""
+
+    query: str = Field(min_length=1)
+    response_excerpt: str = Field(min_length=1, max_length=500)
+    appraisal: EvidenceAppraisal | None = None
+    semantic_interpretation: SemanticInterpretation
+
+
+class EvidenceSideProfile(BaseModel):
+    value: Any
+    support_count: int = Field(ge=1)
+    appraised_support_count: int = Field(ge=0)
+    distinct_immediate_sources: int = Field(ge=0)
+    confidence_floor: float | None = None
+    confidence_ceiling: float | None = None
+    weight_floor: float | None = None
+    weight_ceiling: float | None = None
+
+
+class ResolutionReadiness(BaseModel):
+    """Gate for a later belief transition; never performs the transition itself."""
+
+    status: Literal["blocked", "candidate_ready", "reframe_required"]
+    candidate_side: Literal["existing", "proposed"] | None = None
+    candidate_value: Any = None
+    existing: EvidenceSideProfile
+    proposed: EvidenceSideProfile
+    blockers: tuple[str, ...] = ()
+    basis: tuple[str, ...] = ()
+
+
 class EvidenceDeliberation(BaseModel):
     """Structured investigation guidance; it does not select an authoritative value."""
 
@@ -116,6 +175,7 @@ class EvidenceDeliberation(BaseModel):
     current_evidence_considered: int = Field(default=0, ge=0)
     current_existing_support_count: int = Field(default=0, ge=0)
     current_proposed_support_count: int = Field(default=0, ge=0)
+    current_evidence_history: tuple[DeliberationEvidence, ...] = ()
     existing_support_count: int = Field(ge=1)
     proposed_support_count: int = Field(ge=1)
     provenance_relationship: Literal[
@@ -128,6 +188,8 @@ class EvidenceDeliberation(BaseModel):
     appraisal_gaps: tuple[str, ...] = ()
     context_observations: tuple[str, ...] = ()
     investigation_questions: tuple[str, ...] = ()
+    tension_finding: TensionInvestigationFinding | None = None
+    resolution_readiness: ResolutionReadiness | None = None
 
 
 class SemanticTension(BaseModel):
@@ -290,6 +352,209 @@ def _provenance_sources(appraisal: EvidenceAppraisal | None) -> set[str]:
     }
 
 
+def _compact_deliberation_evidence(
+    observation: ResearchObservation,
+) -> DeliberationEvidence | None:
+    if observation.semantic_interpretation is None:
+        return None
+    excerpt = observation.response
+    if len(excerpt) > 500:
+        excerpt = f"{excerpt[:497]}..."
+    return DeliberationEvidence(
+        query=observation.query,
+        response_excerpt=excerpt,
+        appraisal=observation.appraisal,
+        semantic_interpretation=observation.semantic_interpretation,
+    )
+
+
+def _deliberation_evidence_key(
+    evidence: DeliberationEvidence,
+) -> tuple[str, str, str, str, tuple[str, ...]]:
+    interpretation = evidence.semantic_interpretation
+    return (
+        _normalized_semantic_value(interpretation.subject),
+        _normalized_semantic_value(interpretation.attribute),
+        _normalized_semantic_value(interpretation.value),
+        _normalized_semantic_value(evidence.response_excerpt),
+        tuple(sorted(_provenance_sources(evidence.appraisal))),
+    )
+
+
+def _finding_matches_tension(
+    finding: TensionInvestigationFinding,
+    tension: SemanticTension,
+) -> bool:
+    return (
+        _normalized_semantic_value(finding.subject)
+        == _normalized_semantic_value(tension.subject)
+        and _normalized_semantic_value(finding.attribute)
+        == _normalized_semantic_value(tension.attribute)
+        and _normalized_semantic_value(finding.existing_value)
+        == _normalized_semantic_value(tension.existing_value)
+        and _normalized_semantic_value(finding.proposed_value)
+        == _normalized_semantic_value(tension.proposed_value)
+    )
+
+
+def _latest_tension_finding(
+    tension: SemanticTension,
+    current_evidence: tuple[ResearchObservation, ...],
+) -> TensionInvestigationFinding | None:
+    for observation in reversed(current_evidence):
+        finding = observation.tension_finding
+        if finding and _finding_matches_tension(finding, tension):
+            return finding
+    return None
+
+
+def _side_profile(
+    *,
+    value: Any,
+    support_count: int,
+    appraisals: list[EvidenceAppraisal | None],
+) -> EvidenceSideProfile:
+    known = [appraisal for appraisal in appraisals if appraisal is not None]
+    immediate_sources = {
+        _normalized_semantic_value(appraisal.provenance[0].source)
+        for appraisal in known
+        if appraisal.provenance and appraisal.provenance[0].source.strip()
+    }
+    confidences = [appraisal.confidence for appraisal in known]
+    weights = [appraisal.weight for appraisal in known]
+    return EvidenceSideProfile(
+        value=value,
+        support_count=support_count,
+        appraised_support_count=len(known),
+        distinct_immediate_sources=len(immediate_sources),
+        confidence_floor=min(confidences) if confidences else None,
+        confidence_ceiling=max(confidences) if confidences else None,
+        weight_floor=min(weights) if weights else None,
+        weight_ceiling=max(weights) if weights else None,
+    )
+
+
+def _strictly_dominates(
+    candidate: EvidenceSideProfile,
+    competitor: EvidenceSideProfile,
+) -> bool:
+    if None in {
+        candidate.confidence_floor,
+        candidate.weight_floor,
+        competitor.confidence_ceiling,
+        competitor.weight_ceiling,
+    }:
+        return False
+    confidence_at_least = (
+        candidate.confidence_floor >= competitor.confidence_ceiling
+    )
+    weight_at_least = candidate.weight_floor >= competitor.weight_ceiling
+    one_strict = (
+        candidate.confidence_floor > competitor.confidence_ceiling
+        or candidate.weight_floor > competitor.weight_ceiling
+    )
+    return confidence_at_least and weight_at_least and one_strict
+
+
+def _resolution_readiness(
+    *,
+    tension: SemanticTension,
+    existing_profile: EvidenceSideProfile,
+    proposed_profile: EvidenceSideProfile,
+    appraisal_gaps: tuple[str, ...],
+    finding: TensionInvestigationFinding | None,
+) -> ResolutionReadiness:
+    blockers: list[str] = []
+    basis: list[str] = []
+
+    if appraisal_gaps:
+        blockers.append("Competing evidence is not fully appraised.")
+    else:
+        basis.append("Competing evidence has provenance, Confidence, and Weight appraisals.")
+
+    if finding is None:
+        blockers.append(
+            "No evidence-backed tension finding establishes provenance independence and applicability."
+        )
+    else:
+        basis.extend(finding.basis)
+        if finding.temporal_relationship == "changed_over_time":
+            return ResolutionReadiness(
+                status="reframe_required",
+                existing=existing_profile,
+                proposed=proposed_profile,
+                blockers=(),
+                basis=(
+                    *basis,
+                    "The competing values apply at different times; model temporal change instead of selecting one timeless value.",
+                ),
+            )
+        if finding.contextual_relationship == "different_contexts":
+            return ResolutionReadiness(
+                status="reframe_required",
+                existing=existing_profile,
+                proposed=proposed_profile,
+                blockers=(),
+                basis=(
+                    *basis,
+                    "The competing values apply in different contexts; model contextual scope instead of selecting one universal value.",
+                ),
+            )
+        if finding.temporal_relationship != "same_timeframe":
+            blockers.append("Temporal applicability remains unresolved.")
+        if finding.contextual_relationship != "same_context":
+            blockers.append("Contextual applicability remains unresolved.")
+        if finding.provenance_independence != "verified_independent":
+            blockers.append("Evidence independence has not been verified.")
+
+    candidates: list[tuple[str, EvidenceSideProfile, EvidenceSideProfile]] = []
+    if (
+        existing_profile.support_count >= 2
+        and existing_profile.distinct_immediate_sources >= 2
+        and _strictly_dominates(existing_profile, proposed_profile)
+    ):
+        candidates.append(("existing", existing_profile, proposed_profile))
+    if (
+        proposed_profile.support_count >= 2
+        and proposed_profile.distinct_immediate_sources >= 2
+        and _strictly_dominates(proposed_profile, existing_profile)
+    ):
+        candidates.append(("proposed", proposed_profile, existing_profile))
+
+    if not candidates:
+        blockers.append(
+            "Neither side has independently corroborated evidence that strictly dominates the competing side on both separate Confidence and Weight dimensions."
+        )
+
+    if blockers or len(candidates) != 1:
+        return ResolutionReadiness(
+            status="blocked",
+            existing=existing_profile,
+            proposed=proposed_profile,
+            blockers=tuple(dict.fromkeys(blockers)),
+            basis=tuple(dict.fromkeys(basis)),
+        )
+
+    side, candidate, _ = candidates[0]
+    return ResolutionReadiness(
+        status="candidate_ready",
+        candidate_side=side,
+        candidate_value=candidate.value,
+        existing=existing_profile,
+        proposed=proposed_profile,
+        blockers=(),
+        basis=tuple(
+            dict.fromkeys(
+                [
+                    *basis,
+                    "Candidate evidence has at least two supporting items from at least two distinct immediate sources.",
+                    "Candidate evidence strictly dominates the competing evidence on separate Confidence and Weight dimensions without combining them into one score.",
+                ]
+            )
+        ),
+    )
+
+
 def _deliberate_tension(
     *,
     tension: SemanticTension,
@@ -325,8 +590,6 @@ def _deliberate_tension(
     if include_pending_proposed:
         proposed_appraisals.append(tension.proposed_appraisal)
 
-    current_existing_support_count = 0
-    current_proposed_support_count = 0
     relevant_current_evidence: list[ResearchObservation] = []
     for observation in current_evidence:
         signature = _semantic_signature_from_interpretation(
@@ -334,15 +597,56 @@ def _deliberate_tension(
         )
         if signature is None or signature[:2] != semantic_key:
             continue
+        if signature[2] not in {existing_value, proposed_value}:
+            continue
         relevant_current_evidence.append(observation)
+
+    prior_evidence = list(
+        prior_deliberation.current_evidence_history
+        if prior_deliberation
+        else ()
+    )
+    merged_evidence: list[DeliberationEvidence] = []
+    seen_evidence: set[tuple[str, str, str, str, tuple[str, ...]]] = set()
+    for evidence in [
+        *prior_evidence,
+        *(
+            compact
+            for observation in relevant_current_evidence
+            if (compact := _compact_deliberation_evidence(observation)) is not None
+        ),
+    ]:
+        key = _deliberation_evidence_key(evidence)
+        if key in seen_evidence:
+            continue
+        seen_evidence.add(key)
+        merged_evidence.append(evidence)
+
+    for evidence in merged_evidence:
+        signature = _semantic_signature_from_interpretation(
+            evidence.semantic_interpretation
+        )
+        if signature is None:
+            continue
+        if signature[2] == existing_value:
+            existing_support_count += 1
+            existing_appraisals.append(evidence.appraisal)
+        elif signature[2] == proposed_value:
+            proposed_support_count += 1
+            proposed_appraisals.append(evidence.appraisal)
+
+    current_existing_support_count = 0
+    current_proposed_support_count = 0
+    for observation in relevant_current_evidence:
+        signature = _semantic_signature_from_interpretation(
+            observation.semantic_interpretation
+        )
+        if signature is None:
+            continue
         if signature[2] == existing_value:
             current_existing_support_count += 1
-            existing_support_count += 1
-            existing_appraisals.append(observation.appraisal)
         elif signature[2] == proposed_value:
             current_proposed_support_count += 1
-            proposed_support_count += 1
-            proposed_appraisals.append(observation.appraisal)
 
     # A tension requires at least one item on each side.
     existing_support_count = max(existing_support_count, 1)
@@ -394,34 +698,49 @@ def _deliberate_tension(
                 "Immediate-source conditions differ; determine whether source condition affects applicability."
             )
 
+    finding = (
+        _latest_tension_finding(tension, tuple(relevant_current_evidence))
+        or (prior_deliberation.tension_finding if prior_deliberation else None)
+    )
     questions: list[str] = []
     if appraisal_gaps:
         questions.append(
             "Appraise missing evidence for provenance, Confidence, and Weight before attempting resolution."
         )
-    if provenance_relationship == "overlap_detected":
+
+    if finding is None or finding.provenance_independence == "unknown":
+        if provenance_relationship == "overlap_detected":
+            questions.append(
+                "Trace the shared provenance upstream to determine whether the evidence is independent or repeated reporting."
+            )
+        elif provenance_relationship == "no_overlap_observed":
+            questions.append(
+                "Verify whether the apparently separate provenance chains are genuinely independent."
+            )
+        else:
+            questions.append(
+                "Establish enough provenance to compare the competing evidence responsibly."
+            )
+    elif finding.provenance_independence == "shared_provenance":
         questions.append(
-            "Trace the shared provenance upstream to determine whether the evidence is independent or repeated reporting."
+            "Determine whether shared provenance prevents treating the evidence as independent corroboration."
         )
-    elif provenance_relationship == "no_overlap_observed":
-        questions.append(
-            "Verify whether the apparently separate provenance chains are genuinely independent."
-        )
-    else:
-        questions.append(
-            "Establish enough provenance to compare the competing evidence responsibly."
-        )
-    if context_observations:
-        questions.append(
-            "Determine whether the competing values apply to different contexts or conditions."
-        )
+
+    if finding is None or finding.contextual_relationship == "unknown":
+        if context_observations:
+            questions.append(
+                "Determine whether the competing values apply to different contexts or conditions."
+            )
+
     if existing_support_count <= 1:
         questions.append("Seek independent corroboration for the existing value.")
     if proposed_support_count <= 1:
         questions.append("Seek independent corroboration for the proposed value.")
-    questions.append(
-        "Check whether the competing values can both be valid at different times before treating the tension as contradiction."
-    )
+
+    if finding is None or finding.temporal_relationship == "unknown":
+        questions.append(
+            "Check whether the competing values can both be valid at different times before treating the tension as contradiction."
+        )
 
     revision = (prior_deliberation.revision + 1) if prior_deliberation else 1
     trigger = (
@@ -430,6 +749,23 @@ def _deliberate_tension(
         else "tension_detected"
     )
     unique_questions = tuple(dict.fromkeys(questions))
+    existing_profile = _side_profile(
+        value=tension.existing_value,
+        support_count=existing_support_count,
+        appraisals=existing_appraisals,
+    )
+    proposed_profile = _side_profile(
+        value=tension.proposed_value,
+        support_count=proposed_support_count,
+        appraisals=proposed_appraisals,
+    )
+    readiness = _resolution_readiness(
+        tension=tension,
+        existing_profile=existing_profile,
+        proposed_profile=proposed_profile,
+        appraisal_gaps=tuple(appraisal_gaps),
+        finding=finding,
+    )
     return EvidenceDeliberation(
         subject=tension.subject,
         attribute=tension.attribute,
@@ -440,6 +776,7 @@ def _deliberate_tension(
         current_evidence_considered=len(relevant_current_evidence),
         current_existing_support_count=current_existing_support_count,
         current_proposed_support_count=current_proposed_support_count,
+        current_evidence_history=tuple(merged_evidence),
         existing_support_count=existing_support_count,
         proposed_support_count=proposed_support_count,
         provenance_relationship=provenance_relationship,
@@ -454,6 +791,8 @@ def _deliberate_tension(
         appraisal_gaps=tuple(appraisal_gaps),
         context_observations=tuple(context_observations),
         investigation_questions=unique_questions,
+        tension_finding=finding,
+        resolution_readiness=readiness,
     )
 
 
@@ -525,6 +864,7 @@ class MemoryStewardTool:
                 articles=call.articles,
                 appraisal=call.appraisal,
                 semantic_interpretation=call.semantic_interpretation,
+                tension_finding=call.tension_finding,
             )
             self._evidence.append(observation)
             reassessments = await self._reassess_tensions()
@@ -1025,6 +1365,45 @@ class MemoryStewardTool:
             parts.append(
                 "Investigation guidance: " + " | ".join(investigation_questions)
             )
+
+        readiness_notes: list[str] = []
+        for memory in memories:
+            seen_readiness: set[tuple[str, str, str, str]] = set()
+            for artifact in reversed(memory.artifacts):
+                if artifact.kind != _EVIDENCE_DELIBERATION_KIND:
+                    continue
+                payload = artifact.payload
+                key = (
+                    _normalized_semantic_value(payload.get("subject")),
+                    _normalized_semantic_value(payload.get("attribute")),
+                    _normalized_semantic_value(payload.get("existing_value")),
+                    _normalized_semantic_value(payload.get("proposed_value")),
+                )
+                if key in seen_readiness:
+                    continue
+                seen_readiness.add(key)
+                readiness = payload.get("resolution_readiness")
+                if not isinstance(readiness, dict):
+                    continue
+                status = str(readiness.get("status", "blocked"))
+                candidate = readiness.get("candidate_value")
+                if status == "candidate_ready":
+                    readiness_notes.append(
+                        f"Candidate ready for later belief transition: {candidate}"
+                    )
+                elif status == "reframe_required":
+                    readiness_notes.append(
+                        "Belief reframe required: competing values apply to different time/context."
+                    )
+                else:
+                    blockers = readiness.get("blockers", [])
+                    if blockers:
+                        readiness_notes.append(
+                            "Resolution blocked: " + "; ".join(str(item) for item in blockers)
+                        )
+        if readiness_notes:
+            parts.append("Resolution readiness: " + " | ".join(readiness_notes))
+
         if not parts:
             parts.append("No materially related durable memory or prior experience was found.")
         return "\n".join(parts)
