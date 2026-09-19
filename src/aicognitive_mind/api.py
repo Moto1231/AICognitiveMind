@@ -78,6 +78,37 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         summary["title"] = "Memory Revision"
         summary["preview"] = after_content or before_content
         summary["search_text"] = f"{before_content} {after_content}".strip()
+    elif entry.kind == JournalKind.BELIEF_REFRAME:
+        subject = str(experience.get("subject", ""))
+        attribute = str(experience.get("attribute", ""))
+        existing_value = str(experience.get("existing_value", ""))
+        proposed_value = str(experience.get("proposed_value", ""))
+        existing_scope = str(experience.get("existing_scope", ""))
+        proposed_scope = str(experience.get("proposed_scope", ""))
+        relationship = str(experience.get("relationship", ""))
+        summary["title"] = "Belief Reframe"
+        summary["preview"] = (
+            f"{subject} · {attribute}: {existing_value} [{existing_scope}] ; "
+            f"{proposed_value} [{proposed_scope}]"
+        ).strip()
+        summary["search_text"] = " ".join(
+            str(value)
+            for value in (
+                subject,
+                attribute,
+                relationship,
+                existing_value,
+                existing_scope,
+                proposed_value,
+                proposed_scope,
+                experience.get("status", ""),
+                experience.get("deliberation_revision", ""),
+                experience.get("basis", []),
+                experience.get("existing_evidence", []),
+                experience.get("proposed_evidence", []),
+            )
+            if value
+        )
     elif entry.kind == JournalKind.BELIEF_TRANSITION:
         subject = str(experience.get("subject", ""))
         attribute = str(experience.get("attribute", ""))
