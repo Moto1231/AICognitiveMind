@@ -1,6 +1,11 @@
 const state = {
   status: null,
-  memories: [],
+  memoryPages: {
+    mind: { items: [], total: 0, hasMore: false, nextOffset: 0 },
+    admin: { items: [], total: 0, hasMore: false, nextOffset: 0 },
+  },
+  memoryPageSize: 25,
+  memoryFilterTimers: { mind: null, admin: null },
   journals: [],
   journalTotal: 0,
   journalHasMore: false,
