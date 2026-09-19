@@ -426,7 +426,7 @@ def _deliberate_tension(
     revision = (prior_deliberation.revision + 1) if prior_deliberation else 1
     trigger = (
         "current_evidence_reassessment"
-        if relevant_current_evidence
+        if prior_deliberation is not None and relevant_current_evidence
         else "tension_detected"
     )
     unique_questions = tuple(dict.fromkeys(questions))
