@@ -19,6 +19,7 @@ from aicognitive_mind.domain import (
     InteractionResult,
     JournalEntry,
     JournalKind,
+    MemoryClass,
 )
 from aicognitive_mind.engines import EchoReasoningEngine, OpenAIReasoningEngine
 from aicognitive_mind.mcp_service import CognitiveMcpService
@@ -170,6 +171,52 @@ async def portal_status(request: Request) -> dict[str, Any]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+
+@app.get("/v1/portal/memory")
+async def portal_memory(
+    request: Request,
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    order: str = Query("newest", pattern="^(newest|oldest)$"),
+    memory_class: MemoryClass | None = None,
+    search: str | None = Query(None, max_length=200),
+    association: str | None = Query(None, max_length=200),
+    grounding: str | None = Query(None, max_length=200),
+    from_date: date | None = Query(None, alias="from"),
+    to_date: date | None = Query(None, alias="to"),
+) -> dict[str, Any]:
+    memory_store = cast(MongoMemoryStore, request.app.state.memory_store)
+    formed_from = (
+        datetime.combine(from_date, time.min, tzinfo=UTC)
+        if from_date
+        else None
+    )
+    formed_to = (
+        datetime.combine(to_date, time.max, tzinfo=UTC)
+        if to_date
+        else None
+    )
+    memories, total = await memory_store.read_page(
+        offset=offset,
+        limit=limit,
+        newest_first=order == "newest",
+        memory_class=memory_class.value if memory_class else None,
+        search=search.strip() if search else None,
+        association=association.strip() if association else None,
+        grounding=grounding.strip() if grounding else None,
+        formed_from=formed_from,
+        formed_to=formed_to,
+    )
+    next_offset = offset + len(memories)
+    return {
+        "items": memories,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": next_offset < total,
+        "next_offset": next_offset if next_offset < total else None,
+    }
 
 
 @app.get("/v1/portal/journal")
