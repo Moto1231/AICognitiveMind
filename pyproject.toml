@@ -21,6 +21,7 @@ dependencies = [
 
 [project.scripts]
 cognitive-mind = "aicognitive_mind.reference_host:main"
+cognitive-mind-init = "aicognitive_mind.initialize_cli:main"
 
 [project.optional-dependencies]
 dev = [
