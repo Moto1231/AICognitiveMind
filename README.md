@@ -4,6 +4,19 @@ A working prototype of the Digital Genesis Cognitive Core: one persistent cognit
 
 > A reasoning engine produces thought. It must not own identity.
 
+## Project journey and current usage milestone
+
+The full development path is documented in
+[`docs/BUILD_JOURNEY_AND_USAGE.md`](docs/BUILD_JOURNEY_AND_USAGE.md).
+
+That document records the architecture's evolution, major failures and corrections, evidence and
+belief-governance model, what has been proven, and the current priority:
+
+> **Use before expanding.**
+
+The Cognitive Mind is already usable through MCP. The next milestone is to connect the existing
+Mind to the everyday reasoning host rather than adding another cognitive subsystem first.
+
 ## First milestone
 
 Prove continuity across a reasoning-engine swap:
