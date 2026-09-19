@@ -1396,6 +1396,7 @@ class MemoryStewardTool:
         from_normalized = _normalized_semantic_value(from_value)
         candidate_evidence: list[str] = []
         superseded_evidence: list[str] = []
+        staged_replacements: list[tuple[DurableMemory, DurableMemory]] = []
 
         for memory in memories:
             interpretations = _semantic_interpretations(memory.artifacts)
@@ -1448,9 +1449,11 @@ class MemoryStewardTool:
                 )
 
             if tuple(artifacts) != memory.artifacts:
-                self._stage_replacement(
-                    memory,
-                    memory.model_copy(update={"artifacts": tuple(artifacts)}),
+                staged_replacements.append(
+                    (
+                        memory,
+                        memory.model_copy(update={"artifacts": tuple(artifacts)}),
+                    )
                 )
 
         if not candidate_evidence or not superseded_evidence:
@@ -1465,6 +1468,9 @@ class MemoryStewardTool:
                 to_value=call.candidate_value,
                 deliberation_revision=revision,
             )
+
+        for original, replacement in staged_replacements:
+            self._stage_replacement(original, replacement)
 
         decision = BeliefTransitionDecision(
             accepted=True,
