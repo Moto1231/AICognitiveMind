@@ -84,12 +84,16 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         values = experience.get("competing_values", {})
         existing_value = str(values.get("existing", ""))
         proposed_value = str(values.get("proposed", ""))
-        summary["title"] = "Semantic Tension"
+        phase = str(experience.get("phase", "detected"))
+        summary["title"] = (
+            "Tension Reassessment" if phase == "reassessment" else "Semantic Tension"
+        )
         summary["preview"] = (
             f"{subject} · {attribute}: {existing_value} ↔ {proposed_value}".strip()
         )
         evidence = experience.get("evidence", {})
         deliberation = experience.get("deliberation") or {}
+        current_evidence = experience.get("current_evidence", [])
         guidance = " ".join(
             str(value)
             for value in (
@@ -109,6 +113,7 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
                 str(evidence.get("proposed", "")),
                 str(deliberation.get("provenance_relationship", "")),
                 guidance,
+                str(current_evidence),
             )
             if value
         )
