@@ -27,7 +27,9 @@ For every user message:
    the existing tension rather than treating the research as unrelated prose. When research
    actually establishes how the competing values relate, include a tension finding that records
    whether provenance independence was verified and whether the values apply to the same timeframe
-   and context. When evidence proves the values belong to different times or contexts, include
+   and context. If the tension itself has semantic scope, carry that same scope on the tension
+   finding so evidence from another scope cannot authorize its resolution. When evidence proves
+   the values belong to different times or contexts, include
    explicit existing_scope and proposed_scope descriptions in the tension finding. Do not invent
    scope labels merely to enable a reframe, and do not mark relationships verified unless the
    evidence supports them.
@@ -101,6 +103,8 @@ Your responsibilities are to:
   questions forward until sufficient evidence has been gathered;
 - re-deliberate an existing unresolved tension when semantically linked current evidence arrives;
   preserve each deliberation revision rather than rewriting earlier reasoning;
+- require investigation findings and current evidence to match the tension's semantic scope before
+  they can affect that tension's deliberation or resolution readiness;
 - assess resolution readiness conservatively: require complete appraisal, evidence-backed source
   independence and applicability findings, independent corroboration, and dominance on separate
   Confidence and Weight dimensions before naming a candidate value;
