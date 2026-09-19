@@ -92,6 +92,7 @@ const el = {
   inspectorFormedAt: document.getElementById("inspectorFormedAt"),
   inspectorGrounding: document.getElementById("inspectorGrounding"),
   inspectorAssociations: document.getElementById("inspectorAssociations"),
+  inspectorArtifacts: document.getElementById("inspectorArtifacts"),
   inspectorRaw: document.getElementById("inspectorRaw"),
   memoryEditActions: document.getElementById("memoryEditActions"),
   editMemoryButton: document.getElementById("editMemoryButton"),
@@ -287,6 +288,26 @@ function renderRecordValues(container, values) {
   }
 }
 
+function renderMemoryArtifacts(artifacts) {
+  el.inspectorArtifacts.innerHTML = "";
+  if (!artifacts || !artifacts.length) {
+    const empty = document.createElement("div");
+    empty.className = "record-empty";
+    empty.textContent = "None";
+    el.inspectorArtifacts.appendChild(empty);
+    return;
+  }
+
+  for (const artifact of artifacts) {
+    const item = document.createElement("div");
+    item.className = "record-value";
+    const formedBy = displayLabel(artifact.formed_by);
+    const payload = JSON.stringify(artifact.payload || {}, null, 2);
+    item.textContent = `${displayLabel(artifact.kind)} · ${formedBy}\n${payload}`;
+    el.inspectorArtifacts.appendChild(item);
+  }
+}
+
 function openMemoryInspector(memory, sourceMode) {
   state.activeMemory = JSON.parse(JSON.stringify(memory));
   el.inspectorContent.textContent = memory.content;
@@ -294,6 +315,7 @@ function openMemoryInspector(memory, sourceMode) {
   el.inspectorFormedAt.textContent = new Date(memory.formed_at).toLocaleString();
   renderRecordValues(el.inspectorGrounding, memory.grounding);
   renderRecordValues(el.inspectorAssociations, memory.associations);
+  renderMemoryArtifacts(memory.artifacts);
   el.inspectorRaw.textContent = JSON.stringify(memory, null, 2);
 
   const editable = sourceMode === "admin" && state.adminAuthorized;
