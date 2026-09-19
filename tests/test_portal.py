@@ -26,7 +26,11 @@ class PortalTests(unittest.TestCase):
         self.assertIn("memory.associations", script_text)
         self.assertIn("adminMemorySearch", script_text)
         self.assertIn("saveMemoryEdit", script_text)
-        self.assertIn("memoryMatches", script_text)
+        self.assertIn("memoryQuery", script_text)
+        self.assertIn("refreshMemory", script_text)
+        self.assertIn("memoryPageSize: 25", script_text)
+        self.assertIn("loadMoreMemories", script_text)
+        self.assertNotIn("function memoryMatches", script_text)
         self.assertIn("Journal Timeline", markup)
         self.assertIn("JOURNAL INSPECTOR", markup)
         self.assertIn("renderJournalList", script_text)
@@ -37,16 +41,38 @@ class PortalTests(unittest.TestCase):
         paths = {route.path for route in app.routes}
         self.assertIn("/", paths)
         self.assertIn("/v1/portal/status", paths)
+        self.assertIn("/v1/portal/memory", paths)
         self.assertIn("/v1/admin/status", paths)
         self.assertIn("/v1/admin/memory", paths)
         self.assertIn("/v1/portal/journal", paths)
         self.assertIn("/v1/portal/journal/detail", paths)
 
         schema = app.openapi()
-        parameters = schema["paths"]["/v1/portal/journal"]["get"]["parameters"]
-        limit = next(parameter for parameter in parameters if parameter["name"] == "limit")
-        self.assertEqual(limit["schema"]["default"], 25)
-        self.assertEqual(limit["schema"]["maximum"], 100)
+        journal_parameters = schema["paths"]["/v1/portal/journal"]["get"]["parameters"]
+        journal_limit = next(
+            parameter for parameter in journal_parameters if parameter["name"] == "limit"
+        )
+        self.assertEqual(journal_limit["schema"]["default"], 25)
+        self.assertEqual(journal_limit["schema"]["maximum"], 100)
+
+        memory_parameters = schema["paths"]["/v1/portal/memory"]["get"]["parameters"]
+        memory_limit = next(
+            parameter for parameter in memory_parameters if parameter["name"] == "limit"
+        )
+        self.assertEqual(memory_limit["schema"]["default"], 25)
+        self.assertEqual(memory_limit["schema"]["maximum"], 100)
+        memory_parameter_names = {parameter["name"] for parameter in memory_parameters}
+        self.assertTrue(
+            {
+                "search",
+                "memory_class",
+                "association",
+                "grounding",
+                "from",
+                "to",
+                "order",
+            }.issubset(memory_parameter_names)
+        )
 
     def test_interaction_journal_summary_is_compact(self) -> None:
         entry = JournalEntry(
