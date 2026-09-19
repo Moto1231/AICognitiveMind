@@ -94,7 +94,9 @@ async def complete_interaction(
     independently accepts/rejects those proposals, commits accepted durable memory, and journals
     the complete user/response experience. Pass an empty list when nothing deserves retention.
     When current external evidence materially informed reasoning, include it with its separate
-    provenance / confidence / weight appraisal. These dimensions are not collapsed into one score.
+    provenance / confidence / weight appraisal. When evidence bears on a recalled semantic tension,
+    also include its semantic interpretation (subject / attribute / value) so the Memory Steward
+    can re-deliberate that tension. These dimensions are not collapsed into one score.
     """
     return await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,

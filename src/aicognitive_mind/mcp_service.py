@@ -180,6 +180,10 @@ class CognitiveMcpService:
             "status": "interaction_committed",
             "occurred_at": journal_entry.occurred_at.isoformat(),
             "memory_decisions": decisions,
+            "tension_reassessments": [
+                tension.model_dump(mode="json")
+                for tension in trace.tension_reassessments
+            ],
             "memory_steward_contract": CONSCIOUS_MEMORY_STEWARD_SYSTEM_PROMPT,
         }
 

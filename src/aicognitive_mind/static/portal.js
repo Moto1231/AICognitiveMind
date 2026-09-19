@@ -314,6 +314,11 @@ function formatEvidenceDeliberation(deliberation) {
     .map((question, index) => `${index + 1}. ${question}`)
     .join("\n");
   return [
+    `Revision: ${deliberation.revision ?? 1}`,
+    `Trigger: ${displayLabel(deliberation.trigger || "tension_detected")}`,
+    `Current Evidence Considered: ${deliberation.current_evidence_considered ?? 0}`,
+    `Current Evidence Supporting Existing: ${deliberation.current_existing_support_count ?? 0}`,
+    `Current Evidence Supporting Proposed: ${deliberation.current_proposed_support_count ?? 0}`,
     `Existing Support: ${deliberation.existing_support_count ?? 0}`,
     `Proposed Support: ${deliberation.proposed_support_count ?? 0}`,
     `Provenance Relationship: ${displayLabel(deliberation.provenance_relationship || "unknown")}`,
@@ -624,6 +629,20 @@ function addJournalBlock(label, content) {
   return block;
 }
 
+function formatResearchEvidence(observations) {
+  if (!observations || !observations.length) return "None";
+  return observations.map((observation, index) => {
+    const interpretation = observation.semantic_interpretation;
+    const meaning = interpretation
+      ? `\nMeaning: ${interpretation.subject} · ${interpretation.attribute} = ${interpretation.value}`
+      : "";
+    const appraisal = observation.appraisal
+      ? `\n${formatEvidenceAppraisal(observation.appraisal)}`
+      : "\nNot Appraised";
+    return `${index + 1}. ${observation.response}${meaning}${appraisal}`;
+  }).join("\n\n");
+}
+
 function renderJournalDetail(entry) {
   el.journalStructuredDetail.innerHTML = "";
   const experience = entry.experience || {};
@@ -641,6 +660,7 @@ function renderJournalDetail(entry) {
     const evidence = experience.evidence || {};
     const appraisals = experience.appraisals || {};
     const deliberation = experience.deliberation || null;
+    const currentEvidence = experience.current_evidence || [];
     const diff = document.createElement("div");
     diff.className = "journal-diff";
     diff.append(
@@ -658,6 +678,10 @@ function renderJournalDetail(entry) {
       addJournalBlock("Proposed Evidence", evidence.proposed || ""),
       addJournalBlock("Proposed Appraisal", formatEvidenceAppraisal(appraisals.proposed)),
       addJournalBlock("Evidence Deliberation", formatEvidenceDeliberation(deliberation)),
+      ...(experience.phase === "reassessment"
+        ? [addJournalBlock("Current Evidence Used", formatResearchEvidence(currentEvidence))]
+        : []),
+      addJournalBlock("Phase", displayLabel(experience.phase || "detected")),
       addJournalBlock("Status", displayLabel(experience.status || "unresolved")),
     );
     return;

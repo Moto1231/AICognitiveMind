@@ -112,12 +112,14 @@ def _journal_search_text(entry: JournalEntry) -> str:
         experience.get("self_name", ""),
         experience.get("subject", ""),
         experience.get("attribute", ""),
+        experience.get("phase", ""),
         experience.get("competing_values", {}).get("existing", ""),
         experience.get("competing_values", {}).get("proposed", ""),
         experience.get("evidence", {}).get("existing", ""),
         experience.get("evidence", {}).get("proposed", ""),
         _searchable_text(experience.get("appraisals", {})),
         _searchable_text(experience.get("deliberation", {})),
+        _searchable_text(experience.get("current_evidence", [])),
         " ".join(str(value) for value in experience.get("foundational_values", [])),
     ]
     return " ".join(str(value) for value in values if value).lower()

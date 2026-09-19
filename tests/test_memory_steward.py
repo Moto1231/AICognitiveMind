@@ -567,6 +567,228 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Investigation guidance:", summary)
         self.assertIn("Appraise missing evidence", summary)
 
+    async def test_multiple_current_evidence_items_create_ordered_reassessment_history(self) -> None:
+        memory = InMemoryMemoryStore()
+        journal = InMemoryJournalStore()
+        await memory.remember(
+            DurableMemory.model_validate(
+                {
+                    "memory_class": "semantic",
+                    "content": "The deployment date is October 1.",
+                    "grounding": ["approved plan"],
+                    "artifacts": [
+                        {
+                            "kind": "semantic_interpretation",
+                            "payload": {
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 1",
+                            },
+                        },
+                        {
+                            "kind": "evidence_appraisal",
+                            "payload": {
+                                "confidence": 0.8,
+                                "weight": 0.7,
+                                "provenance": [
+                                    {
+                                        "source": "approved plan",
+                                        "context": "release planning",
+                                        "condition": "published",
+                                    }
+                                ],
+                            },
+                        },
+                    ],
+                }
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        await memory.remember(
+            DurableMemory.model_validate(
+                {
+                    "memory_class": "semantic",
+                    "content": "The deployment date is October 8.",
+                    "grounding": ["status statement"],
+                    "artifacts": [
+                        {
+                            "kind": "semantic_interpretation",
+                            "payload": {
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "value": "October 8",
+                            },
+                        },
+                        {
+                            "kind": "evidence_appraisal",
+                            "payload": {
+                                "confidence": 0.75,
+                                "weight": 0.6,
+                                "provenance": [
+                                    {
+                                        "source": "project lead",
+                                        "context": "status meeting",
+                                        "condition": "verbal update",
+                                    }
+                                ],
+                            },
+                        },
+                        {
+                            "kind": "semantic_tension",
+                            "payload": {
+                                "status": "unresolved",
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "existing_value": "October 1",
+                                "proposed_value": "October 8",
+                                "existing_evidence_content": "The deployment date is October 1.",
+                            },
+                        },
+                        {
+                            "kind": "evidence_deliberation",
+                            "payload": {
+                                "subject": "deployment",
+                                "attribute": "date",
+                                "existing_value": "October 1",
+                                "proposed_value": "October 8",
+                                "revision": 1,
+                                "trigger": "tension_detected",
+                                "existing_support_count": 1,
+                                "proposed_support_count": 1,
+                                "provenance_relationship": "no_overlap_observed",
+                                "existing_provenance_depth": 1,
+                                "proposed_provenance_depth": 1,
+                                "appraisal_gaps": [],
+                                "context_observations": [],
+                                "investigation_questions": [
+                                    "Seek independent corroboration for the existing value.",
+                                    "Seek independent corroboration for the proposed value.",
+                                ],
+                            },
+                        },
+                    ],
+                }
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="Investigate the deployment date.",
+            memory=memory,
+            journal=journal,
+        )
+        await tool.invoke({"action": "recall", "focus": "deployment date"})
+
+        first = await tool.invoke(
+            {
+                "action": "consider_evidence",
+                "query": "current calendar",
+                "response": "The release board lists October 8.",
+                "appraisal": {
+                    "confidence": 0.9,
+                    "weight": 0.55,
+                    "provenance": [
+                        {
+                            "source": "release board",
+                            "context": "current calendar",
+                            "condition": "published",
+                        }
+                    ],
+                },
+                "semantic_interpretation": {
+                    "subject": "deployment",
+                    "attribute": "date",
+                    "value": "October 8",
+                },
+            }
+        )
+        second = await tool.invoke(
+            {
+                "action": "consider_evidence",
+                "query": "change record",
+                "response": "The change log independently records October 8.",
+                "appraisal": {
+                    "confidence": 0.88,
+                    "weight": 0.5,
+                    "provenance": [
+                        {
+                            "source": "change log",
+                            "context": "release governance",
+                            "condition": "approved",
+                        }
+                    ],
+                },
+                "semantic_interpretation": {
+                    "subject": "deployment",
+                    "attribute": "date",
+                    "value": "October 8",
+                },
+            }
+        )
+        trace = await tool.complete()
+
+        self.assertEqual(
+            first["tension_reassessments"][0]["deliberation"]["revision"],
+            2,
+        )
+        self.assertEqual(
+            second["tension_reassessments"][0]["deliberation"]["revision"],
+            3,
+        )
+        self.assertEqual(len(trace.tension_reassessments), 2)
+
+        stored = await memory.read()
+        tension_memory = next(
+            item for item in stored if item.content.endswith("October 8.")
+        )
+        deliberations = [
+            artifact.payload
+            for artifact in tension_memory.artifacts
+            if artifact.kind == "evidence_deliberation"
+        ]
+        self.assertEqual(
+            [payload["revision"] for payload in deliberations],
+            [1, 2, 3],
+        )
+        self.assertEqual(deliberations[-1]["proposed_support_count"], 3)
+        self.assertEqual(deliberations[-1]["current_proposed_support_count"], 2)
+
+        reassessment_entries = [
+            entry
+            for entry in await journal.read()
+            if entry.kind.value == "tension"
+            and entry.experience.get("phase") == "reassessment"
+        ]
+        self.assertEqual(len(reassessment_entries), 2)
+        self.assertEqual(
+            len(reassessment_entries[0].experience["current_evidence"]),
+            1,
+        )
+        self.assertEqual(
+            len(reassessment_entries[1].experience["current_evidence"]),
+            2,
+        )
+
+        recalled_tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="What remains unresolved about deployment?",
+            memory=memory,
+            journal=journal,
+        )
+        recalled = await recalled_tool.invoke(
+            {"action": "recall", "focus": "deployment date"}
+        )
+        summary = recalled["context"]["summary"]
+        self.assertNotIn(
+            "Seek independent corroboration for the proposed value.",
+            summary,
+        )
+        self.assertIn(
+            "Seek independent corroboration for the existing value.",
+            summary,
+        )
+
     async def test_semantic_tension_carries_both_evidence_appraisals_without_resolution(self) -> None:
         memory = InMemoryMemoryStore()
         journal = InMemoryJournalStore()
