@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     surrealdb_database: str = "ai_cognitive_mind"
     surrealdb_username: str | None = None
     surrealdb_password: str | None = None
+    surrealdb_auth_level: str = "database"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.6-terra"
     admin_pin: str | None = None
