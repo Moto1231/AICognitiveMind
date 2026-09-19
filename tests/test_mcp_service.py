@@ -577,6 +577,48 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             readiness["existing"]["weight_ceiling"],
         )
 
+        refined = await self.service.complete_interaction(
+            user_message="A second independent source also confirms October 8.",
+            response_text="The readiness assessment remains candidate-ready.",
+            proposed_memories=(),
+            current_evidence=(
+                ResearchObservation(
+                    query="change log",
+                    response="The change log also records October 8.",
+                    appraisal=EvidenceAppraisal(
+                        confidence=0.88,
+                        weight=0.72,
+                        provenance=(
+                            ProvenanceHop(
+                                source="change log",
+                                context="release decision",
+                                condition="approved",
+                            ),
+                        ),
+                    ),
+                    semantic_interpretation=SemanticInterpretation(
+                        subject="deployment",
+                        attribute="date",
+                        value="October 8",
+                    ),
+                ),
+            ),
+        )
+        refined_deliberation = refined["tension_reassessments"][0]["deliberation"]
+        self.assertEqual(refined_deliberation["revision"], 3)
+        self.assertEqual(
+            refined_deliberation["resolution_readiness"]["status"],
+            "candidate_ready",
+        )
+        self.assertEqual(
+            refined_deliberation["tension_finding"]["provenance_independence"],
+            "verified_independent",
+        )
+        self.assertEqual(
+            refined_deliberation["resolution_readiness"]["proposed"]["support_count"],
+            3,
+        )
+
         memories = await self.memory.read()
         self.assertEqual(len(memories), 2)
         self.assertEqual(
