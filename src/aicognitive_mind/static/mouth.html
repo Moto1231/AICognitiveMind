@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Cognitive Mind — Mouth V0.1</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
+    main { max-width: 900px; margin: 0 auto; padding: 1.25rem; }
+    h1 { margin-bottom: .25rem; }
+    p, label { color: #b9bcc4; }
+    textarea, select, input { font: inherit; }
+    textarea { width: 100%; min-height: 8rem; padding: .75rem; box-sizing: border-box; }
+    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; margin: 1rem 0; }
+    .field { display: flex; flex-direction: column; gap: .35rem; }
+    .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
+    button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
+    #status { white-space: pre-wrap; background: #181a20; padding: .85rem 1rem; border-radius: 10px; }
+    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Mouth V0.1</h1>
+    <p>The Body sends a transient VOICE ExpressionIntent; this browser turns it into sound through the local speakers.</p>
+
+    <div class="field">
+      <label for="voice">Browser / OS voice</label>
+      <select id="voice"></select>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="rate">Rate</label>
+        <input id="rate" type="number" min="0.1" max="10" step="0.1" value="1">
+      </div>
+      <div class="field">
+        <label for="pitch">Pitch</label>
+        <input id="pitch" type="number" min="0" max="2" step="0.1" value="1">
+      </div>
+      <div class="field">
+        <label for="volume">Volume</label>
+        <input id="volume" type="number" min="0" max="1" step="0.1" value="1">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="text">Speech</label>
+      <textarea id="text">Hello. The Body now has a voice.</textarea>
+    </div>
+
+    <div class="controls">
+      <button id="speak">Speak through Body</button>
+      <button id="stop">Stop speech</button>
+    </div>
+
+    <div id="status">Mouth is waiting.</div>
+  </main>
+
+  <script>
+    const voiceSelect = document.getElementById("voice");
+    const rateInput = document.getElementById("rate");
+    const pitchInput = document.getElementById("pitch");
+    const volumeInput = document.getElementById("volume");
+    const textInput = document.getElementById("text");
+    const speakButton = document.getElementById("speak");
+    const stopButton = document.getElementById("stop");
+    const statusBox = document.getElementById("status");
+
+    let voices = [];
+
+    function setStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    function loadVoices() {
+      voices = window.speechSynthesis.getVoices();
+      const previous = voiceSelect.value;
+      voiceSelect.replaceChildren();
+
+      const automatic = document.createElement("option");
+      automatic.value = "";
+      automatic.textContent = "Browser default";
+      voiceSelect.appendChild(automatic);
+
+      for (const voice of voices) {
+        const option = document.createElement("option");
+        option.value = voice.name;
+        option.textContent =
+          voice.name + " — " + voice.lang + (voice.default ? " (default)" : "");
+        voiceSelect.appendChild(option);
+      }
+
+      if (previous && voices.some((voice) => voice.name === previous)) {
+        voiceSelect.value = previous;
+      }
+    }
+
+    function applyVoice(intent) {
+      if (!intent?.text) return;
+
+      const utterance = new SpeechSynthesisUtterance(intent.text);
+      const metadata = intent.metadata || {};
+      utterance.rate = Number(metadata.rate ?? 1);
+      utterance.pitch = Number(metadata.pitch ?? 1);
+      utterance.volume = Number(metadata.volume ?? 1);
+
+      const requestedVoice = metadata.voice_name;
+      if (requestedVoice) {
+        const match = voices.find((voice) => voice.name === requestedVoice);
+        if (match) utterance.voice = match;
+      }
+
+      utterance.onstart = () => {
+        setStatus(
+          "MOUTH RECEIVED VOICE INTENT\n" +
+          "voice: " + (utterance.voice?.name || "browser default") + "\n" +
+          "rate: " + utterance.rate + "\n" +
+          "pitch: " + utterance.pitch + "\n" +
+          "volume: " + utterance.volume
+        );
+      };
+
+      utterance.onend = () => {
+        setStatus("VOICE EXPRESSION COMPLETE");
+      };
+
+      utterance.onerror = (event) => {
+        setStatus("Speech synthesis failed: " + event.error);
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }
+
+    async function consumeNextIntent() {
+      const response = await fetch("/v1/body/mouth/next", { cache: "no-store" });
+      if (!response.ok) {
+        setStatus("Could not read Mouth output: " + await response.text());
+        return;
+      }
+
+      const intent = await response.json();
+      if (intent) applyVoice(intent);
+    }
+
+    async function speakThroughBody() {
+      const text = textInput.value.trim();
+      if (!text) {
+        setStatus("Enter text for the Mouth to speak.");
+        return;
+      }
+
+      loadVoices();
+      window.speechSynthesis.cancel();
+
+      const response = await fetch("/v1/body/mouth/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          rate: Number(rateInput.value),
+          pitch: Number(pitchInput.value),
+          volume: Number(volumeInput.value),
+          voice_name: voiceSelect.value || null
+        })
+      });
+
+      if (!response.ok) {
+        setStatus("Body rejected voice expression: " + await response.text());
+        return;
+      }
+
+      await consumeNextIntent();
+    }
+
+    speakButton.addEventListener("click", speakThroughBody);
+    stopButton.addEventListener("click", () => {
+      window.speechSynthesis.cancel();
+      setStatus("Speech stopped.");
+    });
+
+    if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+      speakButton.disabled = true;
+      setStatus("This browser does not expose speech synthesis.");
+    } else {
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  </script>
+</body>
+</html>
