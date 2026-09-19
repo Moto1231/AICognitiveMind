@@ -84,6 +84,51 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(exact, entries[1])
 
+    async def test_journal_search_finds_deliberation_guidance(self) -> None:
+        store = SurrealJournalStore(self.runtime.database)
+        tension = JournalEntry(
+            kind=JournalKind.TENSION,
+            experience={
+                "status": "unresolved",
+                "subject": "deployment",
+                "attribute": "date",
+                "competing_values": {
+                    "existing": "October 1",
+                    "proposed": "October 8",
+                },
+                "evidence": {
+                    "existing": "The deployment date is October 1.",
+                    "proposed": "The deployment date is October 8.",
+                },
+                "deliberation": {
+                    "existing_support_count": 1,
+                    "proposed_support_count": 1,
+                    "provenance_relationship": "overlap_detected",
+                    "existing_provenance_depth": 2,
+                    "proposed_provenance_depth": 2,
+                    "appraisal_gaps": [],
+                    "context_observations": [],
+                    "investigation_questions": [
+                        "Trace the shared provenance upstream to determine whether the evidence is independent or repeated reporting."
+                    ],
+                },
+            },
+        )
+        await store.append(
+            tension,
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+
+        page, total = await store.query_page(
+            offset=0,
+            limit=25,
+            newest_first=True,
+            search="shared provenance",
+        )
+
+        self.assertEqual(total, 1)
+        self.assertEqual(page, [tension])
+
     async def test_memory_searches_full_collection_and_replaces_exact_document(self) -> None:
         store = SurrealMemoryStore(self.runtime.database)
         base = datetime(2026, 9, 18, 12, tzinfo=UTC)
