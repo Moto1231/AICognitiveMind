@@ -123,6 +123,14 @@ class MongoJournalStore:
                 {"experience.deliberation.appraisal_gaps": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.context_observations": {"$regex": literal, "$options": "i"}},
                 {"experience.deliberation.investigation_questions": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.query": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.response": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.appraisal.provenance.source": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.appraisal.provenance.context": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.appraisal.provenance.condition": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.semantic_interpretation.subject": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.semantic_interpretation.attribute": {"$regex": literal, "$options": "i"}},
+                {"experience.current_evidence.semantic_interpretation.value": {"$regex": literal, "$options": "i"}},
             ]
         return query
 
@@ -159,6 +167,8 @@ class MongoJournalStore:
             "experience.evidence": 1,
             "experience.appraisals": 1,
             "experience.deliberation": 1,
+            "experience.current_evidence": 1,
+            "experience.phase": 1,
             "experience.status": 1,
         }
         direction = DESCENDING if newest_first else ASCENDING
