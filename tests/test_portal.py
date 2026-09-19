@@ -45,6 +45,10 @@ class PortalTests(unittest.TestCase):
         self.assertIn("renderMemoryArtifacts", script_text)
         self.assertIn("formatEvidenceAppraisal", script_text)
         self.assertIn("formatEvidenceDeliberation", script_text)
+        self.assertIn("formatResearchEvidence", script_text)
+        self.assertIn("Current Evidence Used", script_text)
+        self.assertIn("Revision:", script_text)
+        self.assertIn("Trigger:", script_text)
         self.assertIn("Evidence Deliberation", script_text)
         self.assertIn("Investigation Questions:", script_text)
         self.assertIn("Confidence:", script_text)
@@ -166,6 +170,78 @@ class PortalTests(unittest.TestCase):
         self.assertIn("The user's birthday is February 8.", summary["search_text"])
         self.assertIn("Establish enough provenance", summary["search_text"])
         self.assertIn("unknown", summary["search_text"])
+
+    def test_tension_reassessment_summary_and_search_include_current_evidence(self) -> None:
+        entry = JournalEntry(
+            kind=JournalKind.TENSION,
+            experience={
+                "source": "conscious_memory_steward",
+                "phase": "reassessment",
+                "status": "unresolved",
+                "subject": "deployment",
+                "attribute": "date",
+                "competing_values": {
+                    "existing": "October 1",
+                    "proposed": "October 8",
+                },
+                "evidence": {
+                    "existing": "The deployment date is October 1.",
+                    "proposed": "The deployment date is October 8.",
+                },
+                "current_evidence": [
+                    {
+                        "query": "release calendar",
+                        "response": "The release board independently lists October 8.",
+                        "articles": [],
+                        "appraisal": {
+                            "confidence": 0.9,
+                            "weight": 0.55,
+                            "provenance": [
+                                {
+                                    "source": "release board",
+                                    "context": "current release calendar",
+                                    "condition": "published",
+                                }
+                            ],
+                            "basis": [],
+                        },
+                        "semantic_interpretation": {
+                            "subject": "deployment",
+                            "attribute": "date",
+                            "value": "October 8",
+                        },
+                    }
+                ],
+                "deliberation": {
+                    "subject": "deployment",
+                    "attribute": "date",
+                    "existing_value": "October 1",
+                    "proposed_value": "October 8",
+                    "revision": 2,
+                    "trigger": "current_evidence_reassessment",
+                    "current_evidence_considered": 1,
+                    "current_existing_support_count": 0,
+                    "current_proposed_support_count": 1,
+                    "existing_support_count": 1,
+                    "proposed_support_count": 2,
+                    "provenance_relationship": "no_overlap_observed",
+                    "existing_provenance_depth": 1,
+                    "proposed_provenance_depth": 1,
+                    "appraisal_gaps": [],
+                    "context_observations": [],
+                    "investigation_questions": [
+                        "Seek independent corroboration for the existing value."
+                    ],
+                },
+            },
+        )
+
+        summary = _journal_summary(entry)
+
+        self.assertEqual(summary["title"], "Tension Reassessment")
+        self.assertIn("release board", summary["search_text"])
+        self.assertIn("current_evidence_reassessment", summary["search_text"])
+        self.assertIn("October 8", summary["preview"])
 
     def test_memory_revision_summary_exposes_before_and_after_text(self) -> None:
         entry = JournalEntry(
