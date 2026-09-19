@@ -33,6 +33,12 @@ from aicognitive_mind.domain import (
     JournalKind,
     MemoryClass,
 )
+from aicognitive_mind.embodiment import (
+    EmbodiedInteractionResult,
+    MindBodyBridge,
+    OpenAIPerceptInterpreter,
+    SummaryPerceptInterpreter,
+)
 from aicognitive_mind.engines import EchoReasoningEngine, OpenAIReasoningEngine
 from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.persistence import create_storage
@@ -288,12 +294,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if settings.openai_api_key
         else EchoReasoningEngine()
     )
-    app.state.core = CognitiveCore(
+    core = CognitiveCore(
         mind=storage.mind,
         journal=storage.journal,
         memory=storage.memory,
         diagnostics=storage.diagnostics,
         engine=engine,
+    )
+    interpreter = (
+        OpenAIPerceptInterpreter(
+            settings.openai_api_key,
+            vision_model=settings.openai_model,
+            transcription_model=settings.openai_transcription_model,
+        )
+        if settings.openai_api_key
+        else SummaryPerceptInterpreter()
+    )
+    app.state.core = core
+    app.state.mind_body = MindBodyBridge(
+        core=core,
+        body=app.state.body,
+        interpreter=interpreter,
     )
     yield
     await storage.runtime.close()
@@ -307,6 +328,39 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/", include_in_schema=False)
 async def portal() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/body/live", include_in_schema=False)
+async def live_body_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "live_body.html")
+
+
+@app.post("/v1/mind/body/see", response_model=EmbodiedInteractionResult)
+async def mind_see(request: Request) -> EmbodiedInteractionResult:
+    bridge = cast(MindBodyBridge, request.app.state.mind_body)
+    try:
+        return await bridge.see()
+    except (MindNotInitializedError, RuntimeError, ValueError) as exc:
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if isinstance(exc, MindNotInitializedError)
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+@app.post("/v1/mind/body/hear", response_model=EmbodiedInteractionResult)
+async def mind_hear(request: Request) -> EmbodiedInteractionResult:
+    bridge = cast(MindBodyBridge, request.app.state.mind_body)
+    try:
+        return await bridge.hear()
+    except (MindNotInitializedError, RuntimeError, ValueError) as exc:
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if isinstance(exc, MindNotInitializedError)
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
 
 
 @app.get("/body/eyes", include_in_schema=False)
