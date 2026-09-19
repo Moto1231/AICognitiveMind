@@ -112,6 +112,7 @@ def _journal_search_text(entry: JournalEntry) -> str:
         experience.get("self_name", ""),
         experience.get("subject", ""),
         experience.get("attribute", ""),
+        experience.get("phase", ""),
         experience.get("competing_values", {}).get("existing", ""),
         experience.get("competing_values", {}).get("proposed", ""),
         experience.get("evidence", {}).get("existing", ""),
