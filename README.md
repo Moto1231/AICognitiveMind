@@ -82,6 +82,14 @@ The cognitive model contains no application-level primary keys, foreign keys, mi
 
 Nothing in `diagnostics` is part of identity, memory, or persona.
 
+## Portable Mind backup
+
+Before moving canonical storage, create a verified portable backup of the exact MongoDB documents
+that hold identity and cognitive history. The backup utility preserves BSON values and `_id`s,
+checks integrity, refuses identity merges, and rolls back a failed partial restore.
+
+See [`docs/MIND_BACKUP.md`](docs/MIND_BACKUP.md).
+
 ## Memory Steward Tool V0.1
 
 Every interaction gives the reasoning process a Memory Steward boundary. The reasoning engine can
