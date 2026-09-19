@@ -261,6 +261,10 @@ class MongoMemoryStore:
                     {"artifacts.payload.provenance.context": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.provenance.condition": {"$regex": literal, "$options": "i"}},
                     {"artifacts.payload.basis": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.provenance_relationship": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.appraisal_gaps": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.context_observations": {"$regex": literal, "$options": "i"}},
+                    {"artifacts.payload.investigation_questions": {"$regex": literal, "$options": "i"}},
                 ]
             })
         if association:
