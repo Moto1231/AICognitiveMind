@@ -10,6 +10,7 @@ from aicognitive_mind.domain import (
     CognitiveMind,
     DurableMemory,
     JournalEntry,
+    JournalKind,
     MemoryArtifact,
     MemoryClass,
 )
@@ -76,10 +77,21 @@ class MemoryBrief(BaseModel):
     summary: str
 
 
+class SemanticTension(BaseModel):
+    subject: str
+    attribute: str
+    proposed_value: Any
+    existing_value: Any
+    proposed_evidence_content: str
+    existing_evidence_content: str
+    status: Literal["unresolved"] = "unresolved"
+
+
 class MemoryDecision(BaseModel):
     accepted: bool
     reason: str
     memory: DurableMemory | None = None
+    tensions: tuple[SemanticTension, ...] = ()
 
 
 class MemoryStewardTrace(BaseModel):
@@ -94,6 +106,7 @@ class MemoryStewardNotConsultedError(RuntimeError):
 
 _SEMANTIC_INTERPRETATION_KIND = "semantic_interpretation"
 _SEMANTIC_EQUIVALENCE_KIND = "semantic_equivalence"
+_SEMANTIC_TENSION_KIND = "semantic_tension"
 
 
 def _normalized_semantic_value(value: Any) -> str:
@@ -124,6 +137,19 @@ def _semantic_signature_from_payload(payload: dict[str, Any]) -> tuple[str, str,
         _normalized_semantic_value(subject),
         _normalized_semantic_value(attribute),
         _normalized_semantic_value(payload["value"]),
+    )
+
+
+def _semantic_key_from_payload(payload: dict[str, Any]) -> tuple[str, str] | None:
+    subject = payload.get("subject")
+    attribute = payload.get("attribute")
+    if not isinstance(subject, str) or not subject.strip():
+        return None
+    if not isinstance(attribute, str) or not attribute.strip():
+        return None
+    return (
+        _normalized_semantic_value(subject),
+        _normalized_semantic_value(attribute),
     )
 
 
@@ -160,6 +186,7 @@ class MemoryStewardTool:
         self._evidence: list[ResearchObservation] = []
         self._decisions: list[MemoryDecision] = []
         self._pending: list[DurableMemory] = []
+        self._pending_tensions: list[SemanticTension] = []
         self._completed = False
 
     @property
@@ -213,6 +240,27 @@ class MemoryStewardTool:
         for memory in self._pending:
             await self._memory.remember(
                 memory,
+                recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+            )
+        for tension in self._pending_tensions:
+            await self._journal.append(
+                JournalEntry(
+                    kind=JournalKind.TENSION,
+                    experience={
+                        "source": "conscious_memory_steward",
+                        "status": tension.status,
+                        "subject": tension.subject,
+                        "attribute": tension.attribute,
+                        "competing_values": {
+                            "existing": tension.existing_value,
+                            "proposed": tension.proposed_value,
+                        },
+                        "evidence": {
+                            "existing": tension.existing_evidence_content,
+                            "proposed": tension.proposed_evidence_content,
+                        },
+                    },
+                ),
                 recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
             )
         self._completed = True
@@ -270,11 +318,28 @@ class MemoryStewardTool:
 
         proposed_interpretations = _semantic_interpretations(call.artifacts)
         equivalent_evidence: list[tuple[DurableMemory, dict[str, Any]]] = []
+        tensions: list[SemanticTension] = []
         for memory in existing:
             existing_interpretations = _semantic_interpretations(memory.artifacts)
-            for signature, payload in proposed_interpretations.items():
-                if signature in existing_interpretations:
-                    equivalent_evidence.append((memory, payload))
+            for proposed_signature, proposed_payload in proposed_interpretations.items():
+                if proposed_signature in existing_interpretations:
+                    equivalent_evidence.append((memory, proposed_payload))
+                    continue
+
+                proposed_key = proposed_signature[:2]
+                for existing_signature, existing_payload in existing_interpretations.items():
+                    if existing_signature[:2] != proposed_key:
+                        continue
+                    tension = SemanticTension(
+                        subject=str(proposed_payload["subject"]),
+                        attribute=str(proposed_payload["attribute"]),
+                        proposed_value=proposed_payload["value"],
+                        existing_value=existing_payload["value"],
+                        proposed_evidence_content=call.content,
+                        existing_evidence_content=memory.content,
+                    )
+                    if tension not in tensions:
+                        tensions.append(tension)
 
         associations = call.associations or tuple(_derived_associations(call.content))
         artifacts = [
@@ -295,6 +360,20 @@ class MemoryStewardTool:
                     },
                 )
             )
+        for tension in tensions:
+            artifacts.append(
+                MemoryArtifact(
+                    kind=_SEMANTIC_TENSION_KIND,
+                    payload={
+                        "status": tension.status,
+                        "subject": tension.subject,
+                        "attribute": tension.attribute,
+                        "proposed_value": tension.proposed_value,
+                        "existing_value": tension.existing_value,
+                        "existing_evidence_content": tension.existing_evidence_content,
+                    },
+                )
+            )
 
         memory = DurableMemory(
             memory_class=call.memory_class,
@@ -304,15 +383,21 @@ class MemoryStewardTool:
             artifacts=tuple(artifacts),
         )
         self._pending.append(memory)
-        reason = (
-            "Accepted as distinct corroborating evidence for an already interpreted proposition."
-            if equivalent_evidence
-            else "Accepted by the Conscious Memory Steward for commit with this experience."
-        )
+        self._pending_tensions.extend(tensions)
+        if tensions:
+            reason = (
+                "Accepted as distinct evidence with unresolved semantic tension; no competing value "
+                "was selected as authoritative."
+            )
+        elif equivalent_evidence:
+            reason = "Accepted as distinct corroborating evidence for an already interpreted proposition."
+        else:
+            reason = "Accepted by the Conscious Memory Steward for commit with this experience."
         return MemoryDecision(
             accepted=True,
             reason=reason,
             memory=memory,
+            tensions=tuple(tensions),
         )
 
     def _build_brief(
