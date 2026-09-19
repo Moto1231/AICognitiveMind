@@ -1019,6 +1019,11 @@ def _latest_current_beliefs(
     return {key: payload for key, (_, payload) in beliefs.items()}
 
 
+def _scope_suffix_from_payload(payload: dict[str, Any]) -> str:
+    scope = _semantic_scope_from_payload(payload)
+    return f" [{scope.label}]" if scope is not None else ""
+
+
 def _deliberation_closed_by_transition(
     deliberation: EvidenceDeliberation,
     beliefs: dict[tuple[str, str, str], dict[str, Any]],
@@ -2258,7 +2263,8 @@ class MemoryStewardTool:
             parts.append(
                 "Current belief: "
                 + " | ".join(
-                    f"{payload.get('subject')} · {payload.get('attribute')} = {payload.get('to_value')} "
+                    f"{payload.get('subject')} · {payload.get('attribute')} = {payload.get('to_value')}"
+                    f"{_scope_suffix_from_payload(payload)} "
                     f"(superseded {payload.get('from_value')})"
                     for payload in current_beliefs.values()
                 )
