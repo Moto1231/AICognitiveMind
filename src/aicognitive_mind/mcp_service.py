@@ -38,6 +38,13 @@ class BeliefTransitionProposal(BaseModel):
     candidate_value: Any
 
 
+class BeliefReframeProposal(BaseModel):
+    subject: str = Field(min_length=1)
+    attribute: str = Field(min_length=1)
+    existing_value: Any
+    proposed_value: Any
+
+
 class CognitiveMcpService:
     """Host-model interface to one persistent Cognitive Mind."""
 
@@ -123,7 +130,8 @@ class CognitiveMcpService:
                 "readiness says candidate_ready, you may explicitly propose that exact value in "
                 "belief_transitions; the Memory Steward will independently revalidate it before "
                 "changing current belief. Do not silently rewrite belief. If it says reframe_required, "
-                "represent the time/context distinction instead of selecting a universal winner. "
+                "propose the exact competing values in belief_reframes only when the evidence-backed "
+                "finding supplies explicit scopes for both values. "
                 "Before presenting the final answer, call complete_interaction with the response "
                 "text and only stable memory proposals that should influence future interactions."
             ),
@@ -136,6 +144,7 @@ class CognitiveMcpService:
         proposed_memories: tuple[MemoryProposal, ...] = (),
         current_evidence: tuple[ResearchObservation, ...] = (),
         belief_transitions: tuple[BeliefTransitionProposal, ...] = (),
+        belief_reframes: tuple[BeliefReframeProposal, ...] = (),
     ) -> dict[str, Any]:
         """Let the Steward review proposed learning, commit accepted memory, and journal the experience."""
         mind = await self._require_mind()
@@ -154,6 +163,16 @@ class CognitiveMcpService:
                     **evidence.model_dump(mode="json"),
                 }
             )
+
+        reframe_decisions: list[dict[str, Any]] = []
+        for proposal in belief_reframes:
+            reframe = await steward.invoke(
+                {
+                    "action": "reframe_belief",
+                    **proposal.model_dump(mode="json"),
+                }
+            )
+            reframe_decisions.append(reframe)
 
         transition_decisions: list[dict[str, Any]] = []
         for proposal in belief_transitions:
@@ -206,6 +225,7 @@ class CognitiveMcpService:
                 for tension in trace.tension_reassessments
             ],
             "belief_transition_decisions": transition_decisions,
+            "belief_reframe_decisions": reframe_decisions,
             "memory_steward_contract": CONSCIOUS_MEMORY_STEWARD_SYSTEM_PROMPT,
         }
 
