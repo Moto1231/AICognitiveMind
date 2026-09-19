@@ -816,6 +816,81 @@ def _deliberate_tension(
     )
 
 
+def _belief_status_for_signature(
+    memory: DurableMemory,
+    signature: tuple[str, str, str],
+) -> str | None:
+    for artifact in reversed(memory.artifacts):
+        if artifact.kind != _BELIEF_STATUS_KIND:
+            continue
+        payload = artifact.payload
+        candidate = (
+            _normalized_semantic_value(payload.get("subject")),
+            _normalized_semantic_value(payload.get("attribute")),
+            _normalized_semantic_value(payload.get("value")),
+        )
+        if candidate == signature:
+            status = payload.get("status")
+            return str(status) if status is not None else None
+    return None
+
+
+def _transition_matches_tension(
+    payload: dict[str, Any],
+    tension: SemanticTension,
+) -> bool:
+    if payload.get("status") != "committed":
+        return False
+    if (
+        _normalized_semantic_value(payload.get("subject"))
+        != _normalized_semantic_value(tension.subject)
+        or _normalized_semantic_value(payload.get("attribute"))
+        != _normalized_semantic_value(tension.attribute)
+    ):
+        return False
+    transitioned = {
+        _normalized_semantic_value(payload.get("from_value")),
+        _normalized_semantic_value(payload.get("to_value")),
+    }
+    competing = {
+        _normalized_semantic_value(tension.existing_value),
+        _normalized_semantic_value(tension.proposed_value),
+    }
+    return transitioned == competing
+
+
+def _tension_has_committed_transition(
+    memory: DurableMemory,
+    tension: SemanticTension,
+) -> bool:
+    return any(
+        artifact.kind == _BELIEF_TRANSITION_KIND
+        and _transition_matches_tension(artifact.payload, tension)
+        for artifact in memory.artifacts
+    )
+
+
+def _latest_current_beliefs(
+    memories: tuple[DurableMemory, ...] | list[DurableMemory],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    beliefs: dict[tuple[str, str], tuple[Any, dict[str, Any]]] = {}
+    for memory in memories:
+        for artifact in memory.artifacts:
+            if artifact.kind != _BELIEF_TRANSITION_KIND:
+                continue
+            payload = artifact.payload
+            if payload.get("status") != "committed":
+                continue
+            key = (
+                _normalized_semantic_value(payload.get("subject")),
+                _normalized_semantic_value(payload.get("attribute")),
+            )
+            previous = beliefs.get(key)
+            if previous is None or artifact.formed_at > previous[0]:
+                beliefs[key] = (artifact.formed_at, payload)
+    return {key: payload for key, (_, payload) in beliefs.items()}
+
+
 def _materialize_artifact(proposal: MemoryArtifactProposal) -> MemoryArtifact:
     payload = proposal.payload
     if proposal.kind == _EVIDENCE_APPRAISAL_KIND:
@@ -849,6 +924,8 @@ class MemoryStewardTool:
         self._reassessment_events: list[
             tuple[SemanticTension, tuple[ResearchObservation, ...]]
         ] = []
+        self._belief_transitions: list[BeliefTransitionDecision] = []
+        self._transition_events: list[dict[str, Any]] = []
         self._completed = False
 
     @property
@@ -895,6 +972,14 @@ class MemoryStewardTool:
                 "tension_reassessments": [
                     tension.model_dump(mode="json") for tension in reassessments
                 ],
+            }
+
+        if isinstance(call, TransitionBeliefCall):
+            transition = await self._consider_belief_transition(call)
+            self._belief_transitions.append(transition)
+            return {
+                "status": "belief_transition_considered",
+                **transition.model_dump(mode="json"),
             }
 
         decision = await self._consider_memory(call)
@@ -1010,6 +1095,7 @@ class MemoryStewardTool:
             evidence_considered=tuple(self._evidence),
             memory_decisions=tuple(self._decisions),
             tension_reassessments=tuple(self._tension_reassessments),
+            belief_transitions=tuple(self._belief_transitions),
         )
 
     async def _recall(self, requested_focus: str) -> MemoryBrief:
@@ -1095,6 +1181,9 @@ class MemoryStewardTool:
                         else None
                     ),
                 )
+                if _tension_has_committed_transition(replacement, tension):
+                    continue
+
                 semantic_key = (
                     _normalized_semantic_value(tension.subject),
                     _normalized_semantic_value(tension.attribute),
@@ -1213,6 +1302,8 @@ class MemoryStewardTool:
                 proposed_key = proposed_signature[:2]
                 for existing_signature, existing_payload in existing_interpretations.items():
                     if existing_signature[:2] != proposed_key:
+                        continue
+                    if _belief_status_for_signature(memory, existing_signature) == "superseded":
                         continue
                     tension = SemanticTension(
                         subject=str(proposed_payload["subject"]),
