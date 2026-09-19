@@ -891,6 +891,33 @@ def _latest_current_beliefs(
     return {key: payload for key, (_, payload) in beliefs.items()}
 
 
+def _deliberation_closed_by_transition(
+    deliberation: EvidenceDeliberation,
+    beliefs: dict[tuple[str, str], dict[str, Any]],
+) -> bool:
+    if deliberation.subject is None or deliberation.attribute is None:
+        return False
+    key = (
+        _normalized_semantic_value(deliberation.subject),
+        _normalized_semantic_value(deliberation.attribute),
+    )
+    transition = beliefs.get(key)
+    if transition is None:
+        return False
+    transitioned = {
+        _normalized_semantic_value(transition.get("from_value")),
+        _normalized_semantic_value(transition.get("to_value")),
+    }
+    competing = {
+        _normalized_semantic_value(deliberation.existing_value),
+        _normalized_semantic_value(deliberation.proposed_value),
+    }
+    return (
+        transitioned == competing
+        and int(transition.get("deliberation_revision", 0)) >= deliberation.revision
+    )
+
+
 def _materialize_artifact(proposal: MemoryArtifactProposal) -> MemoryArtifact:
     payload = proposal.payload
     if proposal.kind == _EVIDENCE_APPRAISAL_KIND:
@@ -1266,6 +1293,206 @@ class MemoryStewardTool:
             self._reassessment_events.append((tension, evidence_snapshot))
         self._tension_reassessments.extend(reassessed)
         return reassessed
+
+    async def _consider_belief_transition(
+        self,
+        call: TransitionBeliefCall,
+    ) -> BeliefTransitionDecision:
+        memories = await self._working_memories()
+        semantic_key = (
+            _normalized_semantic_value(call.subject),
+            _normalized_semantic_value(call.attribute),
+        )
+        requested_value = _normalized_semantic_value(call.candidate_value)
+
+        latest_by_pair: dict[
+            tuple[str, str, str, str],
+            tuple[int, DurableMemory, EvidenceDeliberation],
+        ] = {}
+        for memory in memories:
+            for artifact in memory.artifacts:
+                if artifact.kind != _EVIDENCE_DELIBERATION_KIND:
+                    continue
+                deliberation = EvidenceDeliberation.model_validate(artifact.payload)
+                if deliberation.subject is None or deliberation.attribute is None:
+                    continue
+                if (
+                    _normalized_semantic_value(deliberation.subject),
+                    _normalized_semantic_value(deliberation.attribute),
+                ) != semantic_key:
+                    continue
+                pair = (
+                    semantic_key[0],
+                    semantic_key[1],
+                    _normalized_semantic_value(deliberation.existing_value),
+                    _normalized_semantic_value(deliberation.proposed_value),
+                )
+                prior = latest_by_pair.get(pair)
+                if prior is None or deliberation.revision > prior[0]:
+                    latest_by_pair[pair] = (
+                        deliberation.revision,
+                        memory,
+                        deliberation,
+                    )
+
+        eligible: list[tuple[int, DurableMemory, EvidenceDeliberation]] = []
+        for revision, memory, deliberation in latest_by_pair.values():
+            readiness = deliberation.resolution_readiness
+            if readiness is None or readiness.status != "candidate_ready":
+                continue
+            if _normalized_semantic_value(readiness.candidate_value) != requested_value:
+                continue
+            eligible.append((revision, memory, deliberation))
+
+        if not eligible:
+            return BeliefTransitionDecision(
+                accepted=False,
+                reason=(
+                    "No latest candidate-ready deliberation authorizes this belief transition."
+                ),
+                subject=call.subject,
+                attribute=call.attribute,
+                to_value=call.candidate_value,
+            )
+
+        revision, transition_memory, deliberation = max(
+            eligible,
+            key=lambda item: item[0],
+        )
+        readiness = deliberation.resolution_readiness
+        if readiness is None:
+            raise RuntimeError("Candidate-ready deliberation lost its readiness assessment")
+
+        current_beliefs = _latest_current_beliefs(memories)
+        current = current_beliefs.get(semantic_key)
+        if (
+            current is not None
+            and _normalized_semantic_value(current.get("to_value")) == requested_value
+            and int(current.get("deliberation_revision", 0)) >= revision
+        ):
+            return BeliefTransitionDecision(
+                accepted=False,
+                reason="This candidate is already the current belief.",
+                subject=call.subject,
+                attribute=call.attribute,
+                from_value=current.get("from_value"),
+                to_value=current.get("to_value"),
+                deliberation_revision=int(current.get("deliberation_revision", revision)),
+            )
+
+        if readiness.candidate_side == "existing":
+            from_value = deliberation.proposed_value
+        elif readiness.candidate_side == "proposed":
+            from_value = deliberation.existing_value
+        else:
+            return BeliefTransitionDecision(
+                accepted=False,
+                reason="Candidate-ready deliberation does not identify a transition side.",
+                subject=call.subject,
+                attribute=call.attribute,
+                to_value=call.candidate_value,
+            )
+
+        from_normalized = _normalized_semantic_value(from_value)
+        candidate_evidence: list[str] = []
+        superseded_evidence: list[str] = []
+
+        for memory in memories:
+            interpretations = _semantic_interpretations(memory.artifacts)
+            status: str | None = None
+            matched_value: Any = None
+            for signature, payload in interpretations.items():
+                if signature[:2] != semantic_key:
+                    continue
+                if signature[2] == requested_value:
+                    status = "current"
+                    matched_value = payload.get("value")
+                    candidate_evidence.append(memory.content)
+                    break
+                if signature[2] == from_normalized:
+                    status = "superseded"
+                    matched_value = payload.get("value")
+                    superseded_evidence.append(memory.content)
+                    break
+
+            artifacts = list(memory.artifacts)
+            if status is not None:
+                artifacts.append(
+                    MemoryArtifact(
+                        kind=_BELIEF_STATUS_KIND,
+                        payload={
+                            "subject": call.subject,
+                            "attribute": call.attribute,
+                            "value": matched_value,
+                            "status": status,
+                            "current_value": call.candidate_value,
+                            "deliberation_revision": revision,
+                        },
+                    )
+                )
+
+            if memory == transition_memory:
+                artifacts.append(
+                    MemoryArtifact(
+                        kind=_BELIEF_TRANSITION_KIND,
+                        payload={
+                            "status": "committed",
+                            "subject": call.subject,
+                            "attribute": call.attribute,
+                            "from_value": from_value,
+                            "to_value": call.candidate_value,
+                            "deliberation_revision": revision,
+                            "readiness_basis": list(readiness.basis),
+                        },
+                    )
+                )
+
+            if tuple(artifacts) != memory.artifacts:
+                self._stage_replacement(
+                    memory,
+                    memory.model_copy(update={"artifacts": tuple(artifacts)}),
+                )
+
+        if not candidate_evidence or not superseded_evidence:
+            return BeliefTransitionDecision(
+                accepted=False,
+                reason=(
+                    "Candidate-ready deliberation could not be mapped back to both competing durable evidence sets."
+                ),
+                subject=call.subject,
+                attribute=call.attribute,
+                from_value=from_value,
+                to_value=call.candidate_value,
+                deliberation_revision=revision,
+            )
+
+        decision = BeliefTransitionDecision(
+            accepted=True,
+            reason=(
+                "Candidate-ready belief transition accepted; evidence is preserved and the prior value is superseded rather than deleted."
+            ),
+            subject=call.subject,
+            attribute=call.attribute,
+            from_value=from_value,
+            to_value=call.candidate_value,
+            deliberation_revision=revision,
+        )
+        self._transition_events.append(
+            {
+                "source": "conscious_memory_steward",
+                "subject": call.subject,
+                "attribute": call.attribute,
+                "from_value": from_value,
+                "to_value": call.candidate_value,
+                "deliberation_revision": revision,
+                "readiness_basis": list(readiness.basis),
+                "candidate_evidence": candidate_evidence,
+                "superseded_evidence": superseded_evidence,
+                "status": "committed",
+            }
+        )
+        return decision
+
 
     async def _consider_memory(self, call: ProposeMemoryCall) -> MemoryDecision:
         if call.memory_class not in {
