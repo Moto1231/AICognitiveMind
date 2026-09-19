@@ -31,6 +31,8 @@ class PortalTests(unittest.TestCase):
         self.assertIn("JOURNAL INSPECTOR", markup)
         self.assertIn("renderJournalList", script_text)
         self.assertIn("openJournalInspector", script_text)
+        self.assertIn("loadMoreJournals", script_text)
+        self.assertIn("journalPageSize: 25", script_text)
 
         paths = {route.path for route in app.routes}
         self.assertIn("/", paths)
@@ -39,6 +41,12 @@ class PortalTests(unittest.TestCase):
         self.assertIn("/v1/admin/memory", paths)
         self.assertIn("/v1/portal/journal", paths)
         self.assertIn("/v1/portal/journal/detail", paths)
+
+        schema = app.openapi()
+        parameters = schema["paths"]["/v1/portal/journal"]["get"]["parameters"]
+        limit = next(parameter for parameter in parameters if parameter["name"] == "limit")
+        self.assertEqual(limit["schema"]["default"], 25)
+        self.assertEqual(limit["schema"]["maximum"], 100)
 
     def test_interaction_journal_summary_is_compact(self) -> None:
         entry = JournalEntry(
