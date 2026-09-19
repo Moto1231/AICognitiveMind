@@ -2104,7 +2104,24 @@ class MemoryStewardTool:
                         proposed_appraisal=_evidence_appraisal_from_artifacts(call.artifacts),
                         existing_appraisal=_evidence_appraisal_from_artifacts(memory.artifacts),
                     )
-                    if tension not in tensions:
+                    tension_key = (
+                        _normalized_semantic_value(tension.subject),
+                        _normalized_semantic_value(tension.attribute),
+                        _normalized_semantic_value(tension.existing_value),
+                        _normalized_semantic_value(tension.proposed_value),
+                        _semantic_scope_key(tension.scope),
+                    )
+                    if not any(
+                        (
+                            _normalized_semantic_value(existing_tension.subject),
+                            _normalized_semantic_value(existing_tension.attribute),
+                            _normalized_semantic_value(existing_tension.existing_value),
+                            _normalized_semantic_value(existing_tension.proposed_value),
+                            _semantic_scope_key(existing_tension.scope),
+                        )
+                        == tension_key
+                        for existing_tension in tensions
+                    ):
                         tensions.append(tension)
 
         tensions = [
