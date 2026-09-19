@@ -218,11 +218,19 @@
       const file = avatarFile.files?.[0];
       if (!file) return;
 
-      if (currentObjectUrl) {
-        URL.revokeObjectURL(currentObjectUrl);
-      }
+      detachCurrentAvatar();
       currentObjectUrl = URL.createObjectURL(file);
-      loadAvatar(currentObjectUrl, file.name);
+      setStatus("Loading " + file.name + "...");
+
+      loader.load(
+        currentObjectUrl,
+        (gltf) => attachLoadedAvatar(gltf, file.name),
+        undefined,
+        (error) => {
+          console.error(error);
+          setStatus("Could not load VRM avatar: " + error.message);
+        }
+      );
     });
 
     neutralButton.addEventListener("click", () => sendExpression("neutral"));
