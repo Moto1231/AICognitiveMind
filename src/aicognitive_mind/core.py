@@ -68,7 +68,13 @@ class CognitiveCore:
             raise MindNotInitializedError("This instance has not initialized its mind")
         return mind
 
-    async def interact(self, input_text: str) -> InteractionResult:
+    async def interact(
+        self,
+        input_text: str,
+        *,
+        source: str = "human",
+        input_context: dict[str, object] | None = None,
+    ) -> InteractionResult:
         mind = await self.load_mind()
         memory_steward = MemoryStewardTool(
             mind=mind,
@@ -95,8 +101,9 @@ class CognitiveCore:
                 kind=JournalKind.INTERACTION,
                 experience={
                     "input": {
-                        "source": "human",
+                        "source": source,
                         "content": input_text,
+                        **({"context": input_context} if input_context else {}),
                     },
                     "memory_steward": memory_trace.model_dump(mode="python"),
                     "expression": {
