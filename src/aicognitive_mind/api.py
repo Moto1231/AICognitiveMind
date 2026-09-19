@@ -120,6 +120,7 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
                 str(readiness.get("blockers", "")),
                 str(readiness.get("basis", "")),
                 str(deliberation.get("tension_finding", "")),
+                str(deliberation.get("current_evidence_history", "")),
                 guidance,
                 str(current_evidence),
             )
