@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Cognitive Mind — Ears V0.1</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
+    main { max-width: 900px; margin: 0 auto; padding: 1.25rem; }
+    h1 { margin-bottom: .25rem; }
+    p { color: #b9bcc4; }
+    .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
+    button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    audio { width: 100%; margin: 1rem 0; }
+    #status { white-space: pre-wrap; background: #181a20; padding: .85rem 1rem; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Ears V0.1</h1>
+    <p>The microphone stays on this device. The browser sends one transient audio clip to the remote Body.</p>
+
+    <div class="controls">
+      <button id="start">Start listening</button>
+      <button id="stop" disabled>Stop and send</button>
+    </div>
+
+    <audio id="playback" controls hidden></audio>
+    <div id="status">Ears are waiting.</div>
+  </main>
+
+  <script>
+    const startButton = document.getElementById("start");
+    const stopButton = document.getElementById("stop");
+    const playback = document.getElementById("playback");
+    const statusBox = document.getElementById("status");
+
+    let stream = null;
+    let recorder = null;
+    let chunks = [];
+    let startedAt = 0;
+    let stopTimer = null;
+
+    function setStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    function preferredMimeType() {
+      const candidates = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus"
+      ];
+      return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    }
+
+    function releaseMicrophone() {
+      if (stream) {
+        for (const track of stream.getTracks()) track.stop();
+        stream = null;
+      }
+      if (stopTimer) {
+        clearTimeout(stopTimer);
+        stopTimer = null;
+      }
+      startButton.disabled = false;
+      stopButton.disabled = true;
+    }
+
+    function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function sendClip(blob, durationMs) {
+      const audioDataUrl = await blobToDataUrl(blob);
+
+      setStatus("Sending one transient audio clip to the Body...");
+
+      const ingressResponse = await fetch("/v1/body/ears/observe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audio_data_url: audioDataUrl,
+          duration_ms: durationMs,
+          source: "browser-microphone"
+        })
+      });
+
+      if (!ingressResponse.ok) {
+        setStatus("Body rejected the audio clip: " + await ingressResponse.text());
+        return;
+      }
+
+      const hearResponse = await fetch("/v1/body/ears/hear");
+      if (!hearResponse.ok) {
+        setStatus("Audio arrived, but BodyRuntime.hear() failed: " + await hearResponse.text());
+        return;
+      }
+
+      const percept = await hearResponse.json();
+      playback.src = percept.content_ref;
+      playback.hidden = false;
+
+      setStatus(
+        "BODY CAN HEAR\n" +
+        "source: " + percept.source + "\n" +
+        "media: " + percept.metadata.media_type + "\n" +
+        "duration: " + percept.metadata.duration_ms + " ms\n" +
+        "bytes: " + percept.metadata.byte_length + "\n" +
+        "storage: transient only"
+      );
+    }
+
+    async function startListening() {
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        setStatus("This browser does not expose microphone recording.");
+        return;
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const mimeType = preferredMimeType();
+        recorder = mimeType
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
+
+        chunks = [];
+        recorder.addEventListener("dataavailable", (event) => {
+          if (event.data.size > 0) chunks.push(event.data);
+        });
+
+        recorder.addEventListener("stop", async () => {
+          const durationMs = Math.max(1, Math.min(30_000, Math.round(performance.now() - startedAt)));
+          const blob = new Blob(chunks, { type: recorder.mimeType || chunks[0]?.type || "audio/webm" });
+          releaseMicrophone();
+
+          try {
+            await sendClip(blob, durationMs);
+          } catch (error) {
+            setStatus("Audio transfer failed: " + error.message);
+          }
+        }, { once: true });
+
+        recorder.start();
+        startedAt = performance.now();
+        startButton.disabled = true;
+        stopButton.disabled = false;
+        setStatus("LISTENING\nSpeak now. Recording will stop automatically after 10 seconds.");
+
+        stopTimer = setTimeout(() => {
+          if (recorder?.state === "recording") recorder.stop();
+        }, 10_000);
+      } catch (error) {
+        releaseMicrophone();
+        setStatus("Microphone access failed: " + error.message);
+      }
+    }
+
+    function stopListening() {
+      if (recorder?.state === "recording") recorder.stop();
+    }
+
+    startButton.addEventListener("click", startListening);
+    stopButton.addEventListener("click", stopListening);
+    window.addEventListener("beforeunload", releaseMicrophone);
+  </script>
+</body>
+</html>
