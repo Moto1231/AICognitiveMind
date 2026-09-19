@@ -40,6 +40,9 @@ jobs:
       - name: Validate MCP server import
         run: python -c "import aicognitive_mind.mcp_server; print('MCP server import OK')"
 
+      - name: Validate canonical Surreal migration utility
+        run: python scripts/surreal_canonical.py --help
+
       - name: Run MCP stdio continuity smoke test on SurrealDB
         env:
           STORAGE_PROVIDER: surreal
