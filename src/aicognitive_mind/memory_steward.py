@@ -109,8 +109,15 @@ class ProposeMemoryCall(BaseModel):
     artifacts: tuple[MemoryArtifactProposal, ...] = ()
 
 
+class TransitionBeliefCall(BaseModel):
+    action: Literal["transition_belief"]
+    subject: str = Field(min_length=1)
+    attribute: str = Field(min_length=1)
+    candidate_value: Any
+
+
 MemoryStewardCall = Annotated[
-    RecallCall | ConsiderEvidenceCall | ProposeMemoryCall,
+    RecallCall | ConsiderEvidenceCall | ProposeMemoryCall | TransitionBeliefCall,
     Field(discriminator="action"),
 ]
 _CALL_ADAPTER = TypeAdapter(MemoryStewardCall)
@@ -212,11 +219,22 @@ class MemoryDecision(BaseModel):
     tensions: tuple[SemanticTension, ...] = ()
 
 
+class BeliefTransitionDecision(BaseModel):
+    accepted: bool
+    reason: str
+    subject: str
+    attribute: str
+    from_value: Any = None
+    to_value: Any = None
+    deliberation_revision: int | None = None
+
+
 class MemoryStewardTrace(BaseModel):
     recalled_context: MemoryBrief
     evidence_considered: tuple[ResearchObservation, ...] = ()
     memory_decisions: tuple[MemoryDecision, ...] = ()
     tension_reassessments: tuple[SemanticTension, ...] = ()
+    belief_transitions: tuple[BeliefTransitionDecision, ...] = ()
 
 
 class MemoryStewardNotConsultedError(RuntimeError):
@@ -228,6 +246,8 @@ _SEMANTIC_EQUIVALENCE_KIND = "semantic_equivalence"
 _SEMANTIC_TENSION_KIND = "semantic_tension"
 _EVIDENCE_APPRAISAL_KIND = "evidence_appraisal"
 _EVIDENCE_DELIBERATION_KIND = "evidence_deliberation"
+_BELIEF_TRANSITION_KIND = "belief_transition"
+_BELIEF_STATUS_KIND = "belief_status"
 
 
 def _normalized_semantic_value(value: Any) -> str:
