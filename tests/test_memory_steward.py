@@ -231,6 +231,140 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+
+    async def test_semantic_equivalence_preserves_distinct_corroborating_evidence(self) -> None:
+        memory = InMemoryMemoryStore()
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="My birthday is February 7.",
+            memory=memory,
+            journal=InMemoryJournalStore(),
+        )
+        await tool.invoke({"action": "recall", "focus": "birthday"})
+        first = await tool.invoke(
+            {
+                "action": "propose_memory",
+                "memory_class": "semantic",
+                "content": "The user's birthday is February 7.",
+                "associations": ["birthday", "February 7"],
+                "grounding": ["direct-user-statement"],
+                "artifacts": [
+                    {
+                        "kind": "semantic_interpretation",
+                        "payload": {
+                            "subject": "current_human",
+                            "attribute": "birthday",
+                            "value": "February 7",
+                        },
+                    }
+                ],
+            }
+        )
+        await tool.complete()
+        self.assertTrue(first["accepted"])
+
+        second_tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="Will's birthday is February 7.",
+            memory=memory,
+            journal=InMemoryJournalStore(),
+        )
+        await second_tool.invoke({"action": "recall", "focus": "birthday"})
+        second = await second_tool.invoke(
+            {
+                "action": "propose_memory",
+                "memory_class": "semantic",
+                "content": "Will's birthday is February 7.",
+                "associations": ["Will", "birthday", "February 7"],
+                "grounding": ["direct-user-statement"],
+                "artifacts": [
+                    {
+                        "kind": "semantic_interpretation",
+                        "payload": {
+                            "subject": "CURRENT_HUMAN",
+                            "attribute": "Birthday",
+                            "value": "  February 7  ",
+                        },
+                    }
+                ],
+            }
+        )
+        await second_tool.complete()
+
+        self.assertTrue(second["accepted"])
+        self.assertIn("corroborating evidence", second["reason"])
+        memories = await memory.read()
+        self.assertEqual(len(memories), 2)
+        self.assertEqual(memories[0].content, "The user's birthday is February 7.")
+        self.assertEqual(memories[1].content, "Will's birthday is February 7.")
+        equivalence = [
+            artifact
+            for artifact in memories[1].artifacts
+            if artifact.kind == "semantic_equivalence"
+        ]
+        self.assertEqual(len(equivalence), 1)
+        self.assertEqual(
+            equivalence[0].payload["equivalent_evidence_content"],
+            "The user's birthday is February 7.",
+        )
+
+    async def test_same_subject_and_attribute_with_different_value_is_not_equivalence(self) -> None:
+        memory = InMemoryMemoryStore()
+        await memory.remember(
+            DurableMemory.model_validate(
+                {
+                    "memory_class": "semantic",
+                    "content": "The user's birthday is February 7.",
+                    "grounding": ["direct-user-statement"],
+                    "artifacts": [
+                        {
+                            "kind": "semantic_interpretation",
+                            "payload": {
+                                "subject": "current_human",
+                                "attribute": "birthday",
+                                "value": "February 7",
+                            },
+                        }
+                    ],
+                }
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        tool = MemoryStewardTool(
+            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+            input_text="My birthday is February 8.",
+            memory=memory,
+            journal=InMemoryJournalStore(),
+        )
+        await tool.invoke({"action": "recall", "focus": "birthday"})
+        decision = await tool.invoke(
+            {
+                "action": "propose_memory",
+                "memory_class": "semantic",
+                "content": "The user's birthday is February 8.",
+                "grounding": ["direct-user-statement"],
+                "artifacts": [
+                    {
+                        "kind": "semantic_interpretation",
+                        "payload": {
+                            "subject": "current_human",
+                            "attribute": "birthday",
+                            "value": "February 8",
+                        },
+                    }
+                ],
+            }
+        )
+        await tool.complete()
+
+        self.assertTrue(decision["accepted"])
+        self.assertFalse(
+            any(
+                artifact["kind"] == "semantic_equivalence"
+                for artifact in decision["memory"]["artifacts"]
+            )
+        )
+
     def test_legacy_memory_without_artifacts_remains_valid(self) -> None:
         memory = DurableMemory.model_validate(
             {
