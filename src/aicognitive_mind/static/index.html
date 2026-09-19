@@ -49,16 +49,16 @@
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">IDENTITY</p>
-                <h3>Who this Mind is</h3>
+                <h3>Who This Mind Is</h3>
               </div>
             </div>
             <dl class="details">
-              <div><dt>Self name</dt><dd id="selfName">—</dd></div>
-              <div><dt>Developmental state</dt><dd id="developmentState">—</dd></div>
+              <div><dt>Self Name</dt><dd id="selfName">—</dd></div>
+              <div><dt>Developmental State</dt><dd id="developmentState">—</dd></div>
               <div><dt>Created</dt><dd id="createdAt">—</dd></div>
             </dl>
             <div class="values-block">
-              <p class="field-label">Foundational values</p>
+              <p class="field-label">Foundational Values</p>
               <div id="foundationalValues" class="tag-list"></div>
             </div>
           </article>
@@ -66,20 +66,20 @@
           <article class="panel stat-panel">
             <p class="eyebrow">DURABLE MEMORY</p>
             <div id="memoryCount" class="big-stat">—</div>
-            <p>curated memories</p>
+            <p>Curated Memories</p>
           </article>
 
           <article class="panel stat-panel">
             <p class="eyebrow">COGNITIVE HISTORY</p>
             <div id="journalCount" class="big-stat">—</div>
-            <p>journal experiences</p>
+            <p>Journal Experiences</p>
           </article>
 
           <article class="panel memory-panel">
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">MEMORY</p>
-                <h3>What this Mind currently carries</h3>
+                <h3>What This Mind Currently Carries</h3>
               </div>
               <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
@@ -92,23 +92,23 @@
         <div class="hero">
           <div>
             <p class="eyebrow">ADMINISTRATION</p>
-            <h2>Continuity & integration</h2>
+            <h2>Continuity & Integration</h2>
             <p class="hero-copy">
               Inspect the boundary between the persistent Cognitive Mind and whichever reasoning host is connected.
             </p>
           </div>
-          <button id="adminRefreshButton" class="secondary-button" type="button">Refresh status</button>
+          <button id="adminRefreshButton" class="secondary-button" type="button">Refresh Status</button>
         </div>
 
         <div class="admin-grid">
           <article class="panel">
             <p class="eyebrow">INTEGRATION</p>
-            <h3>Reasoning boundary</h3>
+            <h3>Reasoning Boundary</h3>
             <dl class="details admin-details">
               <div><dt>Protocol</dt><dd id="protocolValue">—</dd></div>
-              <div><dt>Reasoning owner</dt><dd id="reasoningOwner">—</dd></div>
-              <div><dt>Identity owner</dt><dd id="identityOwner">—</dd></div>
-              <div><dt>Memory owner</dt><dd id="memoryOwner">—</dd></div>
+              <div><dt>Reasoning Owner</dt><dd id="reasoningOwner">—</dd></div>
+              <div><dt>Identity Owner</dt><dd id="identityOwner">—</dd></div>
+              <div><dt>Memory Owner</dt><dd id="memoryOwner">—</dd></div>
             </dl>
           </article>
 
@@ -124,8 +124,8 @@
           <article class="panel admin-summary">
             <p class="eyebrow">CURRENT STATE</p>
             <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
-            <div class="summary-row"><span>Durable memories</span><strong id="adminMemoryCount">—</strong></div>
-            <div class="summary-row"><span>Journal experiences</span><strong id="adminJournalCount">—</strong></div>
+            <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
+            <div class="summary-row"><span>Journal Experiences</span><strong id="adminJournalCount">—</strong></div>
           </article>
         </div>
       </section>
@@ -137,7 +137,7 @@
       <div class="inspector-heading">
         <div>
           <p class="eyebrow">MEMORY INSPECTOR</p>
-          <h2 id="memoryInspectorTitle">Exact durable memory</h2>
+          <h2 id="memoryInspectorTitle">Exact Durable Memory</h2>
         </div>
         <button id="closeMemoryInspector" class="icon-button" type="button" aria-label="Close memory inspector">×</button>
       </div>
@@ -148,8 +148,8 @@
       </div>
 
       <dl class="inspector-details">
-        <div><dt>Memory class</dt><dd id="inspectorClass">—</dd></div>
-        <div><dt>Formed at</dt><dd id="inspectorFormedAt">—</dd></div>
+        <div><dt>Memory Class</dt><dd id="inspectorClass">—</dd></div>
+        <div><dt>Formed At</dt><dd id="inspectorFormedAt">—</dd></div>
       </dl>
 
       <div class="inspector-section">
@@ -163,7 +163,7 @@
       </div>
 
       <div class="inspector-section raw-section">
-        <span class="inspector-label">Raw record returned by the Mind</span>
+        <span class="inspector-label">Raw Record Returned by the Mind</span>
         <pre id="inspectorRaw" class="raw-record"></pre>
       </div>
     </aside>
@@ -174,9 +174,9 @@
       <p class="eyebrow">GENESIS</p>
       <h2>Initialize this Mind</h2>
       <p>This operation happens once. Identity then persists independently of the reasoning model.</p>
-      <label for="initializeName">Self name</label>
+      <label for="initializeName">Self Name</label>
       <input id="initializeName" value="AICognitiveMind" maxlength="120" required>
-      <label for="initializeValues">Foundational values</label>
+      <label for="initializeValues">Foundational Values</label>
       <textarea id="initializeValues" rows="4">Understanding before Recommending
 Preserve continuity of identity</textarea>
       <button class="primary-button" type="submit">Create Mind</button>
