@@ -2098,7 +2098,10 @@ class MemoryStewardTool:
                     continue
                 payload = artifact.payload
                 deliberation = EvidenceDeliberation.model_validate(payload)
-                if _deliberation_closed_by_transition(deliberation, current_beliefs):
+                if (
+                    _deliberation_closed_by_transition(deliberation, current_beliefs)
+                    or _deliberation_closed_by_reframe(deliberation, current_reframes)
+                ):
                     continue
                 key = (
                     _normalized_semantic_value(payload.get("subject")),
@@ -2125,7 +2128,10 @@ class MemoryStewardTool:
                     continue
                 payload = artifact.payload
                 deliberation = EvidenceDeliberation.model_validate(payload)
-                if _deliberation_closed_by_transition(deliberation, current_beliefs):
+                if (
+                    _deliberation_closed_by_transition(deliberation, current_beliefs)
+                    or _deliberation_closed_by_reframe(deliberation, current_reframes)
+                ):
                     continue
                 key = (
                     _normalized_semantic_value(payload.get("subject")),
