@@ -1273,6 +1273,11 @@ class MemoryStewardTool:
                         "status": tension.status,
                         "subject": tension.subject,
                         "attribute": tension.attribute,
+                        "scope": (
+                            tension.scope.model_dump(mode="json")
+                            if tension.scope
+                            else None
+                        ),
                         "competing_values": {
                             "existing": tension.existing_value,
                             "proposed": tension.proposed_value,
@@ -1316,6 +1321,11 @@ class MemoryStewardTool:
                         "status": tension.status,
                         "subject": tension.subject,
                         "attribute": tension.attribute,
+                        "scope": (
+                            tension.scope.model_dump(mode="json")
+                            if tension.scope
+                            else None
+                        ),
                         "competing_values": {
                             "existing": tension.existing_value,
                             "proposed": tension.proposed_value,
@@ -1440,6 +1450,11 @@ class MemoryStewardTool:
                     attribute=str(payload["attribute"]),
                     proposed_value=payload["proposed_value"],
                     existing_value=payload["existing_value"],
+                    scope=(
+                        SemanticScope.model_validate(payload["scope"])
+                        if payload.get("scope")
+                        else None
+                    ),
                     proposed_evidence_content=memory.content,
                     existing_evidence_content=str(
                         payload.get("existing_evidence_content", "")
@@ -1461,9 +1476,10 @@ class MemoryStewardTool:
                 ):
                     continue
 
-                semantic_key = (
+                semantic_slot = (
                     _normalized_semantic_value(tension.subject),
                     _normalized_semantic_value(tension.attribute),
+                    _semantic_scope_key(tension.scope),
                 )
                 relevant = tuple(
                     observation
@@ -1473,7 +1489,7 @@ class MemoryStewardTool:
                             observation.semantic_interpretation
                         ))
                         is not None
-                        and signature[:2] == semantic_key
+                        and _semantic_slot_from_signature(signature) == semantic_slot
                         and signature[2]
                         in {
                             _normalized_semantic_value(tension.existing_value),
@@ -1520,9 +1536,10 @@ class MemoryStewardTool:
                     self._stage_replacement(memory, replacement)
 
         for tension in reassessed:
-            semantic_key = (
+            semantic_slot = (
                 _normalized_semantic_value(tension.subject),
                 _normalized_semantic_value(tension.attribute),
+                _semantic_scope_key(tension.scope),
             )
             evidence_snapshot = tuple(
                 observation
@@ -1532,7 +1549,7 @@ class MemoryStewardTool:
                         observation.semantic_interpretation
                     ))
                     is not None
-                    and signature[:2] == semantic_key
+                    and _semantic_slot_from_signature(signature) == semantic_slot
                     and signature[2]
                     in {
                         _normalized_semantic_value(tension.existing_value),
@@ -1674,7 +1691,7 @@ class MemoryStewardTool:
             interpretations = _semantic_interpretations(memory.artifacts)
             scoped_payload: dict[str, Any] | None = None
             for signature, payload in interpretations.items():
-                if signature[:2] != semantic_key:
+                if _semantic_slot_from_signature(signature) != semantic_slot:
                     continue
                 if signature[2] == requested_existing:
                     existing_evidence.append(memory.content)
@@ -1795,14 +1812,15 @@ class MemoryStewardTool:
         call: TransitionBeliefCall,
     ) -> BeliefTransitionDecision:
         memories = await self._working_memories()
-        semantic_key = (
+        semantic_slot = (
             _normalized_semantic_value(call.subject),
             _normalized_semantic_value(call.attribute),
+            _semantic_scope_key(call.scope),
         )
         requested_value = _normalized_semantic_value(call.candidate_value)
 
         latest_by_pair: dict[
-            tuple[str, str, str, str],
+            tuple[str, str, str, str, str],
             tuple[int, DurableMemory, EvidenceDeliberation],
         ] = {}
         for memory in memories:
@@ -1815,11 +1833,13 @@ class MemoryStewardTool:
                 if (
                     _normalized_semantic_value(deliberation.subject),
                     _normalized_semantic_value(deliberation.attribute),
-                ) != semantic_key:
+                    _semantic_scope_key(deliberation.scope),
+                ) != semantic_slot:
                     continue
                 pair = (
-                    semantic_key[0],
-                    semantic_key[1],
+                    semantic_slot[0],
+                    semantic_slot[1],
+                    semantic_slot[2],
                     _normalized_semantic_value(deliberation.existing_value),
                     _normalized_semantic_value(deliberation.proposed_value),
                 )
@@ -1860,7 +1880,7 @@ class MemoryStewardTool:
             raise RuntimeError("Candidate-ready deliberation lost its readiness assessment")
 
         current_beliefs = _latest_current_beliefs(memories)
-        current = current_beliefs.get(semantic_key)
+        current = current_beliefs.get(semantic_slot)
         if (
             current is not None
             and _normalized_semantic_value(current.get("to_value")) == requested_value
@@ -1921,6 +1941,11 @@ class MemoryStewardTool:
                             "subject": call.subject,
                             "attribute": call.attribute,
                             "value": matched_value,
+                            "scope": (
+                                call.scope.model_dump(mode="json")
+                                if call.scope
+                                else None
+                            ),
                             "status": status,
                             "current_value": call.candidate_value,
                             "deliberation_revision": revision,
@@ -1938,6 +1963,11 @@ class MemoryStewardTool:
                             "attribute": call.attribute,
                             "from_value": from_value,
                             "to_value": call.candidate_value,
+                            "scope": (
+                                call.scope.model_dump(mode="json")
+                                if call.scope
+                                else None
+                            ),
                             "deliberation_revision": revision,
                             "readiness_basis": list(readiness.basis),
                         },
@@ -1977,6 +2007,7 @@ class MemoryStewardTool:
             attribute=call.attribute,
             from_value=from_value,
             to_value=call.candidate_value,
+            scope=call.scope,
             deliberation_revision=revision,
         )
         self._transition_events.append(
@@ -1986,6 +2017,11 @@ class MemoryStewardTool:
                 "attribute": call.attribute,
                 "from_value": from_value,
                 "to_value": call.candidate_value,
+                "scope": (
+                    call.scope.model_dump(mode="json")
+                    if call.scope
+                    else None
+                ),
                 "deliberation_revision": revision,
                 "readiness_basis": list(readiness.basis),
                 "candidate_evidence": candidate_evidence,
