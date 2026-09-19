@@ -61,6 +61,7 @@ async def create_storage(settings: Settings) -> StorageBundle:
             settings.surrealdb_database,
             settings.surrealdb_username,
             settings.surrealdb_password,
+            settings.surrealdb_auth_level,
         )
         await runtime.initialize()
         return StorageBundle(
