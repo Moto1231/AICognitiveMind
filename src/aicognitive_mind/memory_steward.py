@@ -471,6 +471,8 @@ def _deliberation_matches_tension(
         == _normalized_semantic_value(tension.existing_value)
         and _normalized_semantic_value(deliberation.proposed_value)
         == _normalized_semantic_value(tension.proposed_value)
+        and _semantic_scope_key(deliberation.scope)
+        == _semantic_scope_key(tension.scope)
     )
 
 
@@ -518,12 +520,13 @@ def _compact_deliberation_evidence(
 
 def _deliberation_evidence_key(
     evidence: DeliberationEvidence,
-) -> tuple[str, str, str, str, tuple[str, ...]]:
+) -> tuple[str, str, str, str, str, tuple[str, ...]]:
     interpretation = evidence.semantic_interpretation
     return (
         _normalized_semantic_value(interpretation.subject),
         _normalized_semantic_value(interpretation.attribute),
         _normalized_semantic_value(interpretation.value),
+        _semantic_scope_key(interpretation.scope),
         _normalized_semantic_value(evidence.response_excerpt),
         tuple(sorted(_provenance_sources(evidence.appraisal))),
     )
@@ -542,6 +545,8 @@ def _finding_matches_tension(
         == _normalized_semantic_value(tension.existing_value)
         and _normalized_semantic_value(finding.proposed_value)
         == _normalized_semantic_value(tension.proposed_value)
+        and _semantic_scope_key(finding.scope)
+        == _semantic_scope_key(tension.scope)
     )
 
 
@@ -711,9 +716,10 @@ def _deliberate_tension(
     include_pending_proposed: bool = False,
     prior_deliberation: EvidenceDeliberation | None = None,
 ) -> EvidenceDeliberation:
-    semantic_key = (
+    semantic_slot = (
         _normalized_semantic_value(tension.subject),
         _normalized_semantic_value(tension.attribute),
+        _semantic_scope_key(tension.scope),
     )
     existing_value = _normalized_semantic_value(tension.existing_value)
     proposed_value = _normalized_semantic_value(tension.proposed_value)
@@ -726,7 +732,7 @@ def _deliberate_tension(
     for memory in existing_memories:
         appraisal = _evidence_appraisal_from_artifacts(memory.artifacts)
         for signature in _semantic_interpretations(memory.artifacts):
-            if signature[:2] != semantic_key:
+            if _semantic_slot_from_signature(signature) != semantic_slot:
                 continue
             if signature[2] == existing_value:
                 existing_support_count += 1
@@ -743,7 +749,7 @@ def _deliberate_tension(
         signature = _semantic_signature_from_interpretation(
             observation.semantic_interpretation
         )
-        if signature is None or signature[:2] != semantic_key:
+        if signature is None or _semantic_slot_from_signature(signature) != semantic_slot:
             continue
         if signature[2] not in {existing_value, proposed_value}:
             continue
@@ -755,7 +761,7 @@ def _deliberate_tension(
         else ()
     )
     merged_evidence: list[DeliberationEvidence] = []
-    seen_evidence: set[tuple[str, str, str, str, tuple[str, ...]]] = set()
+    seen_evidence: set[tuple[str, str, str, str, str, tuple[str, ...]]] = set()
     for evidence in [
         *prior_evidence,
         *(
@@ -919,6 +925,7 @@ def _deliberate_tension(
         attribute=tension.attribute,
         existing_value=tension.existing_value,
         proposed_value=tension.proposed_value,
+        scope=tension.scope,
         revision=revision,
         trigger=trigger,
         current_evidence_considered=len(relevant_current_evidence),
@@ -946,16 +953,18 @@ def _deliberate_tension(
 
 def _belief_status_for_signature(
     memory: DurableMemory,
-    signature: tuple[str, str, str],
+    signature: tuple[str, str, str, str],
 ) -> str | None:
     for artifact in reversed(memory.artifacts):
         if artifact.kind != _BELIEF_STATUS_KIND:
             continue
         payload = artifact.payload
+        candidate_scope = _semantic_scope_from_payload(payload)
         candidate = (
             _normalized_semantic_value(payload.get("subject")),
             _normalized_semantic_value(payload.get("attribute")),
             _normalized_semantic_value(payload.get("value")),
+            _semantic_scope_key(candidate_scope),
         )
         if candidate == signature:
             status = payload.get("status")
@@ -975,6 +984,8 @@ def _transition_matches_tension(
         or _normalized_semantic_value(payload.get("attribute"))
         != _normalized_semantic_value(tension.attribute)
     ):
+        return False
+    if _semantic_scope_key(_semantic_scope_from_payload(payload)) != _semantic_scope_key(tension.scope):
         return False
     transitioned = {
         _normalized_semantic_value(payload.get("from_value")),
@@ -1000,8 +1011,8 @@ def _tension_has_committed_transition(
 
 def _latest_current_beliefs(
     memories: tuple[DurableMemory, ...] | list[DurableMemory],
-) -> dict[tuple[str, str], dict[str, Any]]:
-    beliefs: dict[tuple[str, str], tuple[Any, dict[str, Any]]] = {}
+) -> dict[tuple[str, str, str], dict[str, Any]]:
+    beliefs: dict[tuple[str, str, str], tuple[Any, dict[str, Any]]] = {}
     for memory in memories:
         for artifact in memory.artifacts:
             if artifact.kind != _BELIEF_TRANSITION_KIND:
@@ -1012,6 +1023,7 @@ def _latest_current_beliefs(
             key = (
                 _normalized_semantic_value(payload.get("subject")),
                 _normalized_semantic_value(payload.get("attribute")),
+                _semantic_scope_key(_semantic_scope_from_payload(payload)),
             )
             previous = beliefs.get(key)
             if previous is None or artifact.formed_at > previous[0]:
@@ -1021,13 +1033,14 @@ def _latest_current_beliefs(
 
 def _deliberation_closed_by_transition(
     deliberation: EvidenceDeliberation,
-    beliefs: dict[tuple[str, str], dict[str, Any]],
+    beliefs: dict[tuple[str, str, str], dict[str, Any]],
 ) -> bool:
     if deliberation.subject is None or deliberation.attribute is None:
         return False
     key = (
         _normalized_semantic_value(deliberation.subject),
         _normalized_semantic_value(deliberation.attribute),
+        _semantic_scope_key(deliberation.scope),
     )
     transition = beliefs.get(key)
     if transition is None:
