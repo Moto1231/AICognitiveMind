@@ -287,7 +287,7 @@ async def revise_memory(
 ) -> DurableMemory:
     require_admin(request)
     memory_store = cast(MemoryStore, request.app.state.memory_store)
-    journal_store = cast(MongoJournalStore, request.app.state.journal_store)
+    journal_store = cast(JournalStore, request.app.state.journal_store)
 
     replacement = body.replacement.model_copy(
         update={
