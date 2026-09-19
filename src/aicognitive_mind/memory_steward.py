@@ -446,13 +446,14 @@ def _evidence_appraisal_from_artifacts(
 
 def _semantic_signature_from_interpretation(
     interpretation: SemanticInterpretation | None,
-) -> tuple[str, str, str] | None:
+) -> tuple[str, str, str, str] | None:
     if interpretation is None:
         return None
     return (
         _normalized_semantic_value(interpretation.subject),
         _normalized_semantic_value(interpretation.attribute),
         _normalized_semantic_value(interpretation.value),
+        _semantic_scope_key(interpretation.scope),
     )
 
 
@@ -780,7 +781,7 @@ def _deliberate_tension(
         signature = _semantic_signature_from_interpretation(
             evidence.semantic_interpretation
         )
-        if signature is None:
+        if signature is None or _semantic_slot_from_signature(signature) != semantic_slot:
             continue
         if signature[2] == existing_value:
             existing_support_count += 1
@@ -795,7 +796,7 @@ def _deliberate_tension(
         signature = _semantic_signature_from_interpretation(
             observation.semantic_interpretation
         )
-        if signature is None:
+        if signature is None or _semantic_slot_from_signature(signature) != semantic_slot:
             continue
         if signature[2] == existing_value:
             current_existing_support_count += 1
@@ -1869,6 +1870,7 @@ class MemoryStewardTool:
                 subject=call.subject,
                 attribute=call.attribute,
                 to_value=call.candidate_value,
+                scope=call.scope,
             )
 
         revision, transition_memory, deliberation = max(
@@ -1893,6 +1895,7 @@ class MemoryStewardTool:
                 attribute=call.attribute,
                 from_value=current.get("from_value"),
                 to_value=current.get("to_value"),
+                scope=call.scope,
                 deliberation_revision=int(current.get("deliberation_revision", revision)),
             )
 
@@ -1907,6 +1910,7 @@ class MemoryStewardTool:
                 subject=call.subject,
                 attribute=call.attribute,
                 to_value=call.candidate_value,
+                scope=call.scope,
             )
 
         from_normalized = _normalized_semantic_value(from_value)
@@ -1919,7 +1923,7 @@ class MemoryStewardTool:
             status: str | None = None
             matched_value: Any = None
             for signature, payload in interpretations.items():
-                if signature[:2] != semantic_key:
+                if _semantic_slot_from_signature(signature) != semantic_slot:
                     continue
                 if signature[2] == requested_value:
                     status = "current"
@@ -1992,6 +1996,7 @@ class MemoryStewardTool:
                 attribute=call.attribute,
                 from_value=from_value,
                 to_value=call.candidate_value,
+                scope=call.scope,
                 deliberation_revision=revision,
             )
 
