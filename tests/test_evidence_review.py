@@ -4,6 +4,7 @@ import unittest
 from datetime import UTC, datetime
 
 from aicognitive_mind.domain import (
+    CognitiveActor,
     CognitiveMind,
     JournalEntry,
     JournalKind,
@@ -153,7 +154,7 @@ class SensoryEvidenceReviewV01Tests(unittest.IsolatedAsyncioTestCase):
                     "metadata": {"width": 640, "height": 480},
                 },
             ),
-            recorded_by="conscious_workspace",
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
         steward = MemoryStewardTool(
             mind=CognitiveMind(identity=MindIdentity(self_name="AICognitiveMind")),
