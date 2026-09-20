@@ -11,8 +11,14 @@ from pydantic import BaseModel
 
 from aicognitive_mind.body import BodyRuntime, Percept, SensoryModality
 from aicognitive_mind.core import CognitiveCore
-from aicognitive_mind.domain import SensoryEvidenceArtifact, SensoryEvidenceReference
-from aicognitive_mind.storage import EvidenceStore
+from aicognitive_mind.domain import (
+    CognitiveActor,
+    JournalEntry,
+    JournalKind,
+    SensoryEvidenceArtifact,
+    SensoryEvidenceReference,
+)
+from aicognitive_mind.storage import EvidenceStore, JournalStore
 
 
 class PerceptInterpreter(Protocol):
@@ -158,11 +164,13 @@ class MindBodyBridge:
         body: BodyRuntime,
         interpreter: PerceptInterpreter,
         evidence: EvidenceStore,
+        journal: JournalStore,
     ) -> None:
         self._core = core
         self._body = body
         self._interpreter = interpreter
         self._evidence = evidence
+        self._journal = journal
 
     async def see(self) -> EmbodiedInteractionResult:
         return await self.perceive(await self._body.see())
@@ -173,6 +181,19 @@ class MindBodyBridge:
     async def perceive(self, percept: Percept) -> EmbodiedInteractionResult:
         artifact = await self._preserve_evidence(percept)
         reference = artifact.reference()
+        await self._journal.append(
+            JournalEntry(
+                kind=JournalKind.SENSORY_EVIDENCE,
+                occurred_at=percept.observed_at,
+                experience={
+                    "status": "admitted",
+                    "source": f"body:{percept.modality.value}",
+                    "evidence": reference.model_dump(mode="python"),
+                    "metadata": self._journal_safe_metadata(percept.metadata),
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
         interpretation = await self._interpreter.interpret(percept)
         context = {
             "modality": percept.modality.value,
