@@ -61,7 +61,7 @@ The runtime bootstrap is created automatically after a scene loads, so an empty 
 
 After the bootstrap is proven on Windows:
 
-- admin memory editing and diagnostics inside the desktop application
+- diagnostics inside the desktop application
 - voice-pack controls inside the desktop application
 - phoneme/viseme refinement beyond amplitude-driven mouth opening
 - broader expression mapping
@@ -170,3 +170,28 @@ Journal provides:
 
 This slice is intentionally read-only. Privileged memory revision remains an
 Admin-mode function and is the next desktop consolidation boundary.
+
+## Desktop Admin V0.1
+
+The Unity desktop application now exposes a separate **Admin** view.
+
+Admin authorization uses the server's existing `X-Admin-Pin` contract. The
+PIN is held only in the running Unity session; it is never written to
+`PlayerPrefs`.
+
+Once authorized, the desktop Admin view provides governed durable-memory
+revision:
+
+- search and page through the same canonical memory data shown in the normal
+  Memory view;
+- select a durable memory and edit its memory class, content, associations,
+  and grounding;
+- save through the protected admin API;
+- preserve the original `formed_at` value and all Steward artifacts on the
+  server;
+- reject ambiguous/stale revisions instead of guessing which memory to change;
+- append the same `memory_revision` journal experience used by the browser
+  portal, with the channel recorded as `desktop`;
+- refresh Memory and Journal after a successful revision.
+
+Unity still has no direct SurrealDB credentials or storage access.
