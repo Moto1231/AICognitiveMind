@@ -22,6 +22,73 @@ class ReasoningEngine(Protocol):
     ) -> ReasoningProposal: ...
 
 
+GEMINI_FLASH_PREFERENCE = (
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3-flash-preview",
+)
+
+
+async def resolve_gemini_model(
+    api_key: str,
+    requested_model: str | None = None,
+    *,
+    client: Any | None = None,
+) -> str:
+    """Resolve a usable Flash model from the models visible to this Gemini project."""
+
+    active_client = client or genai.Client(api_key=api_key)
+    pager = await active_client.aio.models.list(config={"page_size": 100})
+
+    available: dict[str, Any] = {}
+    async for model in pager:
+        raw_name = str(getattr(model, "name", "") or "")
+        name = raw_name.removeprefix("models/")
+        if not name:
+            continue
+
+        actions = {
+            str(action).lower()
+            for action in (getattr(model, "supported_actions", None) or [])
+        }
+        if actions and "generatecontent" not in actions:
+            continue
+        available[name] = model
+
+    if requested_model:
+        requested = requested_model.removeprefix("models/")
+        if requested in available:
+            return requested
+
+    for candidate in GEMINI_FLASH_PREFERENCE:
+        if candidate in available:
+            return candidate
+
+    fallback = sorted(
+        name
+        for name in available
+        if name.startswith("gemini-")
+        and "flash" in name
+        and all(
+            excluded not in name
+            for excluded in ("image", "live", "tts", "transcribe", "native-audio")
+        )
+    )
+    if fallback:
+        return fallback[-1]
+
+    visible = ", ".join(sorted(available)[:12]) or "none"
+    raise RuntimeError(
+        "This Gemini API key/project exposes no general-purpose Flash model "
+        f"that supports generateContent. Visible models: {visible}"
+    )
+
+
 class EchoReasoningEngine:
     """Deterministic implementation used without making it part of the mind."""
 
