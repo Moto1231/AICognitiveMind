@@ -22,6 +22,8 @@ namespace Axiom.Body
         public bool HasMouthTarget =>
             _hasVrmMouthExpression || _mouthBlendShapeIndex >= 0;
 
+        public float CurrentWeight => _weight;
+
         public string TargetDescription
         {
             get
