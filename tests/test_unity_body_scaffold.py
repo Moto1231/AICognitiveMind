@@ -31,6 +31,18 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertNotIn("SURREALDB_", combined)
         self.assertNotIn("MONGODB_", combined)
 
+    def test_unity_body_runtime_references_required_univrm_assemblies(self) -> None:
+        asmdef = json.loads(
+            Path(
+                "body-unity/Assets/AxiomBody/Runtime/Axiom.Body.Runtime.asmdef"
+            ).read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(asmdef["name"], "Axiom.Body.Runtime")
+        self.assertIn("VRM10", asmdef["references"])
+        self.assertIn("UniGLTF", asmdef["references"])
+        self.assertIn("UniGLTF.Utils", asmdef["references"])
+
     def test_unity_body_runtime_loads_vrm_and_persists_across_scenes(self) -> None:
         loader = Path(
             "body-unity/Assets/AxiomBody/Runtime/AxiomAvatarLoader.cs"
@@ -42,6 +54,8 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("Vrm10.LoadBytesAsync", loader)
         self.assertIn("DontDestroyOnLoad", bootstrap)
         self.assertIn("RuntimeInitializeOnLoadMethod", bootstrap)
+        self.assertIn("FindAnyObjectByType", bootstrap)
+        self.assertNotIn("FindFirstObjectByType", bootstrap)
 
 
 if __name__ == "__main__":
