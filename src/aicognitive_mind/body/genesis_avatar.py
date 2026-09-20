@@ -101,12 +101,21 @@ def build_genesis_vrm() -> bytes:
         {"name": "Skin", "pbrMetallicRoughness": {"baseColorFactor": [0.72, 0.52, 0.40, 1], "metallicFactor": 0, "roughnessFactor": 0.85}},
         {"name": "Shirt", "pbrMetallicRoughness": {"baseColorFactor": [0.18, 0.26, 0.34, 1], "metallicFactor": 0, "roughnessFactor": 0.90}},
         {"name": "Pants", "pbrMetallicRoughness": {"baseColorFactor": [0.10, 0.12, 0.16, 1], "metallicFactor": 0, "roughnessFactor": 0.95}},
-        {"name": "Dark", "pbrMetallicRoughness": {"baseColorFactor": [0.035, 0.04, 0.05, 1], "metallicFactor": 0, "roughnessFactor": 0.70}},
+        {"name": "Hair", "pbrMetallicRoughness": {"baseColorFactor": [0.035, 0.04, 0.05, 1], "metallicFactor": 0, "roughnessFactor": 0.70}},
+        {"name": "Eyes", "pbrMetallicRoughness": {"baseColorFactor": [0.035, 0.04, 0.05, 1], "metallicFactor": 0, "roughnessFactor": 0.70}},
+        {"name": "Shoes", "pbrMetallicRoughness": {"baseColorFactor": [0.035, 0.04, 0.05, 1], "metallicFactor": 0, "roughnessFactor": 0.80}},
         {"name": "Mouth", "pbrMetallicRoughness": {"baseColorFactor": [0.36, 0.06, 0.07, 1], "metallicFactor": 0, "roughnessFactor": 0.80}},
     ]
 
     meshes = []
-    for name, material in (("SkinCube", 0), ("ShirtCube", 1), ("PantsCube", 2), ("DarkCube", 3)):
+    for name, material in (
+        ("SkinCube", 0),
+        ("ShirtCube", 1),
+        ("PantsCube", 2),
+        ("HairCube", 3),
+        ("EyeCube", 4),
+        ("ShoeCube", 5),
+    ):
         meshes.append(
             {
                 "name": name,
@@ -130,7 +139,7 @@ def build_genesis_vrm() -> bytes:
                 {
                     "attributes": {"POSITION": mouth_position_accessor, "NORMAL": mouth_normal_accessor},
                     "indices": mouth_index_accessor,
-                    "material": 4,
+                    "material": 6,
                     "targets": [{"POSITION": mouth_target_accessor}],
                 }
             ],
@@ -191,8 +200,8 @@ def build_genesis_vrm() -> bytes:
     visual(neck, "NeckVisual", 0, [0, 0.05, 0], [0.12, 0.14, 0.12])
     visual(head, "HeadVisual", 0, [0, 0.12, 0], [0.34, 0.38, 0.30])
     visual(head, "HairVisual", 3, [0, 0.28, -0.005], [0.36, 0.12, 0.31])
-    visual(head, "LeftEyeVisual", 3, [-0.075, 0.17, 0.158], [0.045, 0.035, 0.018])
-    visual(head, "RightEyeVisual", 3, [0.075, 0.17, 0.158], [0.045, 0.035, 0.018])
+    visual(head, "LeftEyeVisual", 4, [-0.075, 0.17, 0.158], [0.045, 0.035, 0.018])
+    visual(head, "RightEyeVisual", 4, [0.075, 0.17, 0.158], [0.045, 0.035, 0.018])
     mouth_node = visual(head, "MouthVisual", mouth_mesh, [0, 0.06, 0.162], [1, 1, 1])
 
     visual(left_upper_arm, "LeftUpperArmVisual", 0, [-0.17, 0, 0], [0.34, 0.11, 0.11])
@@ -203,10 +212,10 @@ def build_genesis_vrm() -> bytes:
     visual(right_hand, "RightHandVisual", 0, [0.08, 0, 0], [0.16, 0.12, 0.07])
     visual(left_upper_leg, "LeftUpperLegVisual", 2, [0, -0.20, 0], [0.18, 0.40, 0.19])
     visual(left_lower_leg, "LeftLowerLegVisual", 2, [0, -0.19, 0], [0.16, 0.38, 0.17])
-    visual(left_foot, "LeftFootVisual", 3, [0, -0.04, 0.08], [0.18, 0.12, 0.31])
+    visual(left_foot, "LeftFootVisual", 5, [0, -0.04, 0.08], [0.18, 0.12, 0.31])
     visual(right_upper_leg, "RightUpperLegVisual", 2, [0, -0.20, 0], [0.18, 0.40, 0.19])
     visual(right_lower_leg, "RightLowerLegVisual", 2, [0, -0.19, 0], [0.16, 0.38, 0.17])
-    visual(right_foot, "RightFootVisual", 3, [0, -0.04, 0.08], [0.18, 0.12, 0.31])
+    visual(right_foot, "RightFootVisual", 5, [0, -0.04, 0.08], [0.18, 0.12, 0.31])
 
     human_bones = {
         "hips": {"node": hips},
