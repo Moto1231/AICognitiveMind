@@ -60,6 +60,15 @@ async def create_storage(settings: Settings) -> StorageBundle:
         )
 
     if provider == "surreal":
+        if (
+            os.getenv("RENDER", "").lower() == "true"
+            and settings.surrealdb_uri == "surrealkv://.surreal/cognitive_mind"
+        ):
+            raise RuntimeError(
+                "SURREALDB_URI is not configured for Render. "
+                "Set the remote SurrealDB connection string in the Render service Environment."
+            )
+
         from aicognitive_mind.surreal_storage import (
             SurrealDiagnosticStore,
             SurrealEvidenceStore,
