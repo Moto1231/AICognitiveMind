@@ -317,7 +317,13 @@ namespace Axiom.Body
                     material.SetColor("_Color", color);
                 }
 
-                material.color = color;
+                if (
+                    !material.HasProperty("_BaseColor") &&
+                    !material.HasProperty("_Color")
+                )
+                {
+                    continue;
+                }
             }
         }
 
