@@ -171,7 +171,15 @@ namespace Axiom.Body
                 MindInteractionResponse response = await _client.InteractAsync(outgoing);
                 _reply = response.response_text;
                 _message = string.Empty;
-                _status = "Mind responded.";
+
+                if (_mouthRuntime != null)
+                {
+                    await _mouthRuntime.SpeakTextAsync(response.response_text);
+                }
+                else
+                {
+                    _status = "Mind responded.";
+                }
             }
             catch (Exception exception)
             {
