@@ -102,9 +102,15 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("SetOutputToWaveFile", speech)
         self.assertIn("UnityWebRequestMultimedia.GetAudioClip", mouth)
         self.assertIn("AudioSource", mouth)
-        self.assertIn("GetOutputData", lip_sync)
+        self.assertIn("clip.GetData", lip_sync)
+        self.assertNotIn("GetOutputData", lip_sync)
         self.assertIn("ExpressionPreset.aa", lip_sync)
         self.assertIn("Runtime.Expression.SetWeight", lip_sync)
+        self.assertIn("aaOpen", lip_sync)
+        self.assertIn("SetBlendShapeWeight", lip_sync)
+        self.assertIn("DefaultExecutionOrder(12000)", lip_sync)
+        self.assertIn("CurrentWeight", lip_sync)
+        self.assertIn("Lip target:", mouth)
 
     def test_genesis_avatar_exposes_vrm_aa_mouth_expression(self) -> None:
         genesis = Path(
