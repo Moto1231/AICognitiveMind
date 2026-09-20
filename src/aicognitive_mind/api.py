@@ -896,14 +896,8 @@ async def embodied_text_interaction(
     request: Request,
 ) -> InteractionResult:
     try:
-        result = await get_core(request).interact(
-            body.message,
-            source="human",
-            input_context={"interface": "body:live:text"},
-        )
-        runtime = cast(BodyRuntime, request.app.state.body)
-        await runtime.express(result.response_text)
-        return result
+        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        return await bridge.interact(body.message)
     except MindNotInitializedError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
