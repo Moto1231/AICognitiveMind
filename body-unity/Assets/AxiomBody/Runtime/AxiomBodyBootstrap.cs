@@ -11,6 +11,7 @@ namespace Axiom.Body
         private AxiomMouthRuntime _mouthRuntime;
         private AxiomSensesRuntime _sensesRuntime;
         private AxiomAvatarEditorRuntime _avatarEditor;
+        private AxiomMindDataRuntime _mindData;
         private string _status = "Starting Axiom Body...";
         private string _message = string.Empty;
         private string _reply = string.Empty;
@@ -23,6 +24,8 @@ namespace Axiom.Body
         private bool _sensesChanging;
         private DesktopView _view = DesktopView.Body;
         private Vector2 _avatarScroll = Vector2.zero;
+        private Vector2 _memoryScroll = Vector2.zero;
+        private Vector2 _journalScroll = Vector2.zero;
         private string _avatarEditorStatus = "Appearance changes preview immediately.";
         private string _skinColorText = "#b88566";
         private string _hairColorText = "#090a0d";
@@ -34,7 +37,9 @@ namespace Axiom.Body
         private enum DesktopView
         {
             Body,
-            Avatar
+            Avatar,
+            Memory,
+            Journal
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -119,6 +124,12 @@ namespace Axiom.Body
                 }
                 _avatarEditor.Attach(_avatarLoader.Instance);
                 LoadAvatarEditorFields();
+
+                if (_mindData == null)
+                {
+                    _mindData = gameObject.AddComponent<AxiomMindDataRuntime>();
+                }
+                _mindData.Attach(_client);
 
                 if (_mouthRuntime == null)
                 {
@@ -265,13 +276,25 @@ namespace Axiom.Body
                 return;
             }
 
+            if (_view == DesktopView.Memory)
+            {
+                DrawMemoryView();
+                return;
+            }
+
+            if (_view == DesktopView.Journal)
+            {
+                DrawJournalView();
+                return;
+            }
+
             DrawBodyView();
         }
 
         private void DrawBodyView()
         {
             const float width = 520f;
-            const float panelHeight = 396f;
+            const float panelHeight = 424f;
 
             Rect panel = new Rect(18f, 18f, width, panelHeight);
             GUI.Box(panel, "Axiom Body");
@@ -369,12 +392,289 @@ namespace Axiom.Body
                 LoadAvatarEditorFields();
                 _view = DesktopView.Avatar;
             }
+
+            GUI.enabled = _connected && _mindData != null;
+            if (GUI.Button(new Rect(158f, 342f, 112f, 30f), "Memory"))
+            {
+                _memoryScroll = Vector2.zero;
+                _view = DesktopView.Memory;
+                _ = _mindData.LoadMemoryAsync(0);
+            }
+
+            if (GUI.Button(new Rect(282f, 342f, 112f, 30f), "Journal"))
+            {
+                _journalScroll = Vector2.zero;
+                _view = DesktopView.Journal;
+                _ = _mindData.LoadJournalAsync(0);
+            }
             GUI.enabled = true;
 
             GUI.Label(
-                new Rect(160f, 347f, width - 178f, 24f),
-                "Appearance editor"
+                new Rect(34f, 382f, width - 68f, 24f),
+                "Desktop Body · Avatar · Memory · Journal"
             );
+        }
+
+        private void DrawMemoryView()
+        {
+            const float width = 640f;
+            float height = Mathf.Min(720f, Mathf.Max(460f, Screen.height - 36f));
+
+            GUI.Box(new Rect(18f, 18f, width, height), "Memory");
+
+            if (GUI.Button(new Rect(34f, 48f, 112f, 30f), "Back to Body"))
+            {
+                _view = DesktopView.Body;
+                return;
+            }
+
+            if (_mindData == null)
+            {
+                GUI.Label(
+                    new Rect(34f, 96f, width - 68f, 40f),
+                    "Connect to the Mind before viewing memory."
+                );
+                return;
+            }
+
+            GUI.enabled = !_mindData.LoadingMemory;
+            if (GUI.Button(new Rect(158f, 48f, 82f, 30f), "Refresh"))
+            {
+                _ = _mindData.LoadMemoryAsync(_mindData.MemoryPage.offset);
+            }
+            GUI.enabled = true;
+
+            GUI.Label(new Rect(34f, 94f, 58f, 24f), "Search");
+            _mindData.MemorySearch = GUI.TextField(
+                new Rect(92f, 90f, width - 226f, 28f),
+                _mindData.MemorySearch ?? string.Empty,
+                200
+            );
+
+            GUI.enabled = !_mindData.LoadingMemory;
+            if (GUI.Button(new Rect(width - 120f, 90f, 86f, 28f), "Search"))
+            {
+                _memoryScroll = Vector2.zero;
+                _ = _mindData.LoadMemoryAsync(0);
+            }
+            GUI.enabled = true;
+
+            DesktopMemoryPage page = _mindData.MemoryPage ?? new DesktopMemoryPage();
+            DesktopMemoryItem[] items = page.items ?? Array.Empty<DesktopMemoryItem>();
+
+            Rect viewport = new Rect(34f, 132f, width - 50f, height - 222f);
+            float contentHeight = Mathf.Max(
+                viewport.height - 4f,
+                items.Length * 126f
+            );
+            _memoryScroll = GUI.BeginScrollView(
+                viewport,
+                _memoryScroll,
+                new Rect(0f, 0f, width - 86f, contentHeight)
+            );
+
+            for (int index = 0; index < items.Length; index++)
+            {
+                DesktopMemoryItem item = items[index];
+                float y = index * 126f;
+                GUI.Box(new Rect(0f, y, width - 102f, 116f), string.Empty);
+
+                GUI.Label(
+                    new Rect(10f, y + 7f, 180f, 22f),
+                    (item.memory_class ?? "memory").ToUpperInvariant()
+                );
+                GUI.Label(
+                    new Rect(194f, y + 7f, width - 316f, 22f),
+                    CompactTimestamp(item.formed_at)
+                );
+
+                GUI.Label(
+                    new Rect(10f, y + 31f, width - 126f, 46f),
+                    CompactText(item.content, 220)
+                );
+
+                string associations = JoinCompact(item.associations, 90);
+                string grounding = JoinCompact(item.grounding, 90);
+                GUI.Label(
+                    new Rect(10f, y + 80f, width - 126f, 18f),
+                    string.IsNullOrEmpty(associations)
+                        ? "Associations: —"
+                        : "Associations: " + associations
+                );
+                GUI.Label(
+                    new Rect(10f, y + 98f, width - 126f, 18f),
+                    string.IsNullOrEmpty(grounding)
+                        ? "Grounding: —"
+                        : "Grounding: " + grounding
+                );
+            }
+
+            GUI.EndScrollView();
+
+            float footerY = height - 76f;
+            GUI.Label(
+                new Rect(34f, footerY, width - 250f, 24f),
+                _mindData.MemoryStatus
+            );
+
+            GUI.enabled = !_mindData.LoadingMemory && page.offset > 0;
+            if (GUI.Button(new Rect(width - 202f, footerY - 2f, 78f, 28f), "Previous"))
+            {
+                _memoryScroll = Vector2.zero;
+                _ = _mindData.PreviousMemoryAsync();
+            }
+
+            GUI.enabled = !_mindData.LoadingMemory && page.has_more;
+            if (GUI.Button(new Rect(width - 114f, footerY - 2f, 78f, 28f), "Next"))
+            {
+                _memoryScroll = Vector2.zero;
+                _ = _mindData.NextMemoryAsync();
+            }
+            GUI.enabled = true;
+        }
+
+        private void DrawJournalView()
+        {
+            const float width = 640f;
+            float height = Mathf.Min(720f, Mathf.Max(460f, Screen.height - 36f));
+
+            GUI.Box(new Rect(18f, 18f, width, height), "Journal");
+
+            if (GUI.Button(new Rect(34f, 48f, 112f, 30f), "Back to Body"))
+            {
+                _view = DesktopView.Body;
+                return;
+            }
+
+            if (_mindData == null)
+            {
+                GUI.Label(
+                    new Rect(34f, 96f, width - 68f, 40f),
+                    "Connect to the Mind before viewing the journal."
+                );
+                return;
+            }
+
+            GUI.enabled = !_mindData.LoadingJournal;
+            if (GUI.Button(new Rect(158f, 48f, 82f, 30f), "Refresh"))
+            {
+                _ = _mindData.LoadJournalAsync(_mindData.JournalPage.offset);
+            }
+            GUI.enabled = true;
+
+            GUI.Label(new Rect(34f, 94f, 58f, 24f), "Search");
+            _mindData.JournalSearch = GUI.TextField(
+                new Rect(92f, 90f, width - 226f, 28f),
+                _mindData.JournalSearch ?? string.Empty,
+                200
+            );
+
+            GUI.enabled = !_mindData.LoadingJournal;
+            if (GUI.Button(new Rect(width - 120f, 90f, 86f, 28f), "Search"))
+            {
+                _journalScroll = Vector2.zero;
+                _ = _mindData.LoadJournalAsync(0);
+            }
+            GUI.enabled = true;
+
+            DesktopJournalPage page = _mindData.JournalPage ?? new DesktopJournalPage();
+            DesktopJournalItem[] items = page.items ?? Array.Empty<DesktopJournalItem>();
+
+            Rect viewport = new Rect(34f, 132f, width - 50f, height - 222f);
+            float contentHeight = Mathf.Max(
+                viewport.height - 4f,
+                items.Length * 96f
+            );
+            _journalScroll = GUI.BeginScrollView(
+                viewport,
+                _journalScroll,
+                new Rect(0f, 0f, width - 86f, contentHeight)
+            );
+
+            for (int index = 0; index < items.Length; index++)
+            {
+                DesktopJournalItem item = items[index];
+                float y = index * 96f;
+                GUI.Box(new Rect(0f, y, width - 102f, 86f), string.Empty);
+
+                GUI.Label(
+                    new Rect(10f, y + 7f, 220f, 22f),
+                    string.IsNullOrWhiteSpace(item.title)
+                        ? (item.kind ?? "Journal")
+                        : item.title
+                );
+                GUI.Label(
+                    new Rect(234f, y + 7f, width - 356f, 22f),
+                    CompactTimestamp(item.occurred_at)
+                );
+                GUI.Label(
+                    new Rect(10f, y + 32f, width - 126f, 44f),
+                    CompactText(item.preview, 250)
+                );
+            }
+
+            GUI.EndScrollView();
+
+            float footerY = height - 76f;
+            GUI.Label(
+                new Rect(34f, footerY, width - 250f, 24f),
+                _mindData.JournalStatus
+            );
+
+            GUI.enabled = !_mindData.LoadingJournal && page.offset > 0;
+            if (GUI.Button(new Rect(width - 202f, footerY - 2f, 78f, 28f), "Previous"))
+            {
+                _journalScroll = Vector2.zero;
+                _ = _mindData.PreviousJournalAsync();
+            }
+
+            GUI.enabled = !_mindData.LoadingJournal && page.has_more;
+            if (GUI.Button(new Rect(width - 114f, footerY - 2f, 78f, 28f), "Next"))
+            {
+                _journalScroll = Vector2.zero;
+                _ = _mindData.NextJournalAsync();
+            }
+            GUI.enabled = true;
+        }
+
+        private static string CompactTimestamp(string timestamp)
+        {
+            if (string.IsNullOrWhiteSpace(timestamp))
+            {
+                return string.Empty;
+            }
+
+            if (DateTimeOffset.TryParse(timestamp, out DateTimeOffset parsed))
+            {
+                return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+            }
+
+            return CompactText(timestamp, 22);
+        }
+
+        private static string JoinCompact(string[] values, int maxLength)
+        {
+            if (values == null || values.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            return CompactText(string.Join(", ", values), maxLength);
+        }
+
+        private static string CompactText(string value, int maxLength)
+        {
+            string text = (value ?? string.Empty)
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Trim();
+
+            if (text.Length <= maxLength)
+            {
+                return text;
+            }
+
+            return text.Substring(0, Mathf.Max(0, maxLength - 1)) + "…";
         }
 
         private void DrawAvatarEditor()
