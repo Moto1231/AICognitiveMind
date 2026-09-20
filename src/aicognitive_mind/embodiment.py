@@ -22,7 +22,12 @@ from aicognitive_mind.storage import EvidenceStore, JournalStore
 
 
 class PerceptInterpreter(Protocol):
-    async def interpret(self, percept: Percept) -> str: ...
+    async def interpret(
+        self,
+        percept: Percept,
+        *,
+        focus: str | None = None,
+    ) -> str: ...
 
 
 class EmbodiedInteractionResult(BaseModel):
@@ -37,11 +42,17 @@ class EmbodiedInteractionResult(BaseModel):
 class SummaryPerceptInterpreter:
     """Fallback interpreter used when no multimodal reasoning service is configured."""
 
-    async def interpret(self, percept: Percept) -> str:
+    async def interpret(
+        self,
+        percept: Percept,
+        *,
+        focus: str | None = None,
+    ) -> str:
         summary = (percept.summary or "Uninterpreted sensory observation.").strip()
+        focus_suffix = f" Review focus: {focus}" if focus else ""
         return (
             f"Body {percept.modality.value} perception from {percept.source}: "
-            f"{summary}"
+            f"{summary}{focus_suffix}"
         )
 
 
@@ -65,11 +76,16 @@ class OpenAIPerceptInterpreter:
         self._vision_model = vision_model
         self._transcription_model = transcription_model
 
-    async def interpret(self, percept: Percept) -> str:
+    async def interpret(
+        self,
+        percept: Percept,
+        *,
+        focus: str | None = None,
+    ) -> str:
         if percept.modality == SensoryModality.VISION:
-            return await self._interpret_vision(percept)
+            return await self._interpret_vision(percept, focus=focus)
         if percept.modality == SensoryModality.AUDIO:
-            return await self._interpret_audio(percept)
+            return await self._interpret_audio(percept, focus=focus)
 
         summary = (percept.summary or "Uninterpreted sensory observation.").strip()
         return (
@@ -77,7 +93,12 @@ class OpenAIPerceptInterpreter:
             f"{summary}"
         )
 
-    async def _interpret_vision(self, percept: Percept) -> str:
+    async def _interpret_vision(
+        self,
+        percept: Percept,
+        *,
+        focus: str | None = None,
+    ) -> str:
         if not percept.content_ref:
             raise ValueError("Visual percept contains no image content")
 
@@ -93,6 +114,11 @@ class OpenAIPerceptInterpreter:
                                 "Interpret this as direct visual sensory input for a persistent "
                                 "cognitive mind. Describe only what is reasonably observable. "
                                 "Do not invent identity, intent, or hidden facts."
+                                + (
+                                    f" Re-examine the original evidence specifically for: {focus}"
+                                    if focus
+                                    else ""
+                                )
                             ),
                         },
                         {
@@ -109,7 +135,12 @@ class OpenAIPerceptInterpreter:
             raise RuntimeError("Vision interpreter returned no description")
         return f"Visual perception: {text}"
 
-    async def _interpret_audio(self, percept: Percept) -> str:
+    async def _interpret_audio(
+        self,
+        percept: Percept,
+        *,
+        focus: str | None = None,
+    ) -> str:
         if not percept.content_ref:
             raise ValueError("Audio percept contains no audio content")
 
@@ -122,6 +153,11 @@ class OpenAIPerceptInterpreter:
         text = (getattr(transcription, "text", "") or "").strip()
         if not text:
             raise RuntimeError("Audio interpreter returned no transcription")
+        if focus:
+            return (
+                f"Auditory perception: {text}\n"
+                f"Evidence review focus: {focus}"
+            )
         return f"Auditory perception: {text}"
 
     @staticmethod
