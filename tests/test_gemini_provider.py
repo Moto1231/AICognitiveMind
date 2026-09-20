@@ -30,6 +30,30 @@ class RecordingTool:
         return {"status": "recalled", "focus": arguments["focus"]}
 
 
+class ActionAliasTool:
+    name = "memory_steward"
+    description = "Memory steward with discriminated action calls."
+    input_schema = {
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "action": {"const": "propose_memory"},
+                    "content": {"type": "string"},
+                },
+                "required": ["action", "content"],
+            }
+        ]
+    }
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(arguments)
+        return {"status": "memory_considered"}
+
+
 class FakeAsyncPager:
     def __init__(self, models: list[Any]) -> None:
         self._models = models
@@ -205,6 +229,48 @@ class GeminiProviderV01Tests(unittest.IsolatedAsyncioTestCase):
             "gemini-generate-content",
         )
         self.assertEqual(proposal.diagnostic.implementation["tool_calls"], 1)
+
+    async def test_reasoning_engine_maps_action_alias_back_to_memory_steward(self) -> None:
+        tool = ActionAliasTool()
+        first = SimpleNamespace(
+            function_calls=[
+                SimpleNamespace(
+                    name="propose_memory",
+                    args={"content": "A stable fact."},
+                    id="call-alias-1",
+                )
+            ],
+            candidates=[
+                SimpleNamespace(
+                    content=SimpleNamespace(role="model", parts=[]),
+                )
+            ],
+            text="",
+        )
+        second = SimpleNamespace(
+            function_calls=[],
+            candidates=[],
+            text="Done.",
+        )
+        client = FakeGeminiClient([first, second])
+        engine = GeminiReasoningEngine(
+            "test-key",
+            model="gemini-3.5-flash",
+            client=client,
+        )
+        request = ReasoningRequest(
+            mind=CognitiveMind(identity=MindIdentity(self_name="AICognitiveMind")),
+            input_text="Remember this.",
+            system_prompt="Use memory_steward.",
+        )
+
+        proposal = await engine.propose(request, tools=(tool,))
+
+        self.assertEqual(proposal.response_text, "Done.")
+        self.assertEqual(
+            tool.calls,
+            [{"action": "propose_memory", "content": "A stable fact."}],
+        )
 
     async def test_visual_interpreter_sends_exact_image_bytes(self) -> None:
         response = SimpleNamespace(text="A desk and a window are visible.")
