@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Protocol
 
 from aicognitive_mind.config import Settings
@@ -39,6 +40,14 @@ async def create_storage(settings: Settings) -> StorageBundle:
     provider = settings.storage_provider.lower()
 
     if provider == "mongo":
+        if (
+            os.getenv("RENDER", "").lower() == "true"
+            and settings.mongodb_uri == "mongodb://mongodb:27017"
+        ):
+            raise RuntimeError(
+                "MONGODB_URI is not configured for Render. "
+                "Set the Atlas connection string in the Render service Environment."
+            )
         runtime = MongoRuntime(settings.mongodb_uri, settings.mongodb_database)
         await runtime.initialize()
         return StorageBundle(
