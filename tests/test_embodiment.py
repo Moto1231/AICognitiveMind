@@ -306,10 +306,13 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
         )
-        self.assertIn("/v1/body/eyes/observe", markup)
-        self.assertIn("/v1/mind/body/see", markup)
-        self.assertIn("/v1/body/ears/observe", markup)
-        self.assertIn("/v1/mind/body/hear", markup)
+        self.assertIn('id="sensesToggle"', markup)
+        self.assertIn("getUserMedia({ video: true, audio: false })", markup)
+        self.assertIn("getUserMedia({ audio: true, video: false })", markup)
+        self.assertIn("releaseSenses", markup)
+        self.assertNotIn('id="see"', markup)
+        self.assertNotIn('id="listen"', markup)
+        self.assertNotIn('id="stopCamera"', markup)
         self.assertIn("/v1/mind/body/interact", markup)
         self.assertIn('id="interactionForm"', markup)
         self.assertNotIn("Live Body V0.1", markup)
