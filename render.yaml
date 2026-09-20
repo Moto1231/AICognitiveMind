@@ -17,6 +17,12 @@ services:
         value: ai_cognitive_mind
       - key: MONGODB_URI
         sync: false
+      - key: REASONING_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
