@@ -374,6 +374,16 @@
       await consumeExpressionOutputs();
     }
 
+    async function responseErrorMessage(response) {
+      const text = await response.text();
+      try {
+        const payload = JSON.parse(text);
+        return payload.detail || text || ("HTTP " + response.status);
+      } catch {
+        return text || ("HTTP " + response.status);
+      }
+    }
+
     async function submitTextInteraction(event) {
       event.preventDefault();
       const message = interactionMessage.value.trim();
@@ -389,7 +399,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message })
         });
-        if (!response.ok) throw new Error(await response.text());
+        if (!response.ok) throw new Error(await responseErrorMessage(response));
 
         const result = await response.json();
         interactionResponse.textContent = result.response_text;
@@ -456,7 +466,7 @@
         if (!ingress.ok) throw new Error(await ingress.text());
 
         const response = await fetch("/v1/mind/body/see", { method: "POST" });
-        if (!response.ok) throw new Error(await response.text());
+        if (!response.ok) throw new Error(await responseErrorMessage(response));
         await showMindResult(await response.json());
       } catch (error) {
         setStatus("Visual Mind↔Body loop failed: " + error.message);
@@ -509,7 +519,7 @@
       if (!ingress.ok) throw new Error(await ingress.text());
 
       const response = await fetch("/v1/mind/body/hear", { method: "POST" });
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) throw new Error(await responseErrorMessage(response));
       await showMindResult(await response.json());
     }
 
