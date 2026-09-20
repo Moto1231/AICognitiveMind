@@ -134,3 +134,16 @@ The integration is proven when either a camera frame or microphone clip:
 - autonomous decisions about when to look or listen.
 
 Those belong after the first full loop is proven on actual hardware.
+
+
+## Typed interaction
+
+`/body/live` also exposes a **Talk to Mind** text interaction surface.
+
+Typed input is not sensory evidence. It enters the conscious workspace as a human interaction,
+passes through the same Cognitive Core and Memory Steward reasoning path, is journaled as an
+interaction with `body:live:text` interface provenance, and the resulting response returns through
+the Body's Face and Mouth outputs.
+
+This keeps text, vision, and audio as distinct input modalities while preserving one Mind/Body
+response circuit.
