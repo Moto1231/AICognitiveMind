@@ -82,7 +82,27 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("System.Speech", speech)
         self.assertIn("SelectVoice", speech)
         self.assertIn("SpeakSsml", speech)
-        self.assertIn("_mouthRuntime.Attach(_client)", bootstrap)
+        self.assertIn("SetOutputToWaveFile", speech)
+        self.assertIn("_mouthRuntime.Attach(_client, _avatarLoader.Instance)", bootstrap)
+
+    def test_unity_body_drives_vrm_mouth_from_actual_audio(self) -> None:
+        mouth = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomMouthRuntime.cs"
+        ).read_text(encoding="utf-8")
+        lip_sync = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomLipSync.cs"
+        ).read_text(encoding="utf-8")
+        speech = Path(
+            "body-unity/Assets/AxiomBody/Runtime/WindowsSpeechOutput.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("SynthesizeWavAsync", speech)
+        self.assertIn("SetOutputToWaveFile", speech)
+        self.assertIn("UnityWebRequestMultimedia.GetAudioClip", mouth)
+        self.assertIn("AudioSource", mouth)
+        self.assertIn("GetOutputData", lip_sync)
+        self.assertIn("ExpressionPreset.aa", lip_sync)
+        self.assertIn("Runtime.Expression.SetWeight", lip_sync)
 
     def test_unity_body_runtime_loads_vrm_and_persists_across_scenes(self) -> None:
         loader = Path(
