@@ -296,6 +296,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
     def test_live_body_routes_and_browser_surface_exist(self) -> None:
         paths = {route.path for route in app.routes}
         self.assertIn("/body/live", paths)
+        self.assertIn("/body/avatar", paths)
         self.assertIn("/v1/mind/body/see", paths)
         self.assertIn("/v1/mind/body/hear", paths)
         self.assertIn("/v1/mind/body/interact", paths)
@@ -311,6 +312,11 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/v1/mind/body/hear", markup)
         self.assertIn("/v1/mind/body/interact", markup)
         self.assertIn('id="interactionForm"', markup)
+        self.assertNotIn("Live Body V0.1", markup)
+        self.assertNotIn("One circuit:", markup)
+        self.assertNotIn("Talk to Mind", markup)
+        self.assertNotIn("Typed interaction enters", markup)
+        self.assertNotIn("Modify Genesis", markup)
         self.assertIn('id="interactionMessage"', markup)
         self.assertIn("Send interaction", markup)
         self.assertIn("TEXT INTERACTION COMPLETE", markup)
