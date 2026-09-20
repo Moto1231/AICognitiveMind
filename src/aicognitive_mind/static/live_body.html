@@ -8,6 +8,27 @@
     :root { color-scheme: dark; }
     body { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
     main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
+    .page-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: .85rem;
+    }
+    .page-links { display: flex; gap: .6rem; flex-wrap: wrap; }
+    .page-links a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.35rem;
+      padding: .5rem .72rem;
+      border: 1px solid #373a44;
+      border-radius: 9px;
+      background: #181a20;
+      color: #d7d9df;
+      text-decoration: none;
+      font-size: .92rem;
+    }
+    .page-links a:hover { border-color: #687388; }
     #stage {
       width: 100%;
       height: clamp(320px, 48vh, 520px);
@@ -142,6 +163,15 @@
 </head>
 <body>
   <main>
+    <nav class="page-bar" aria-label="Body navigation">
+      <div class="page-links">
+        <a href="/" aria-label="Back to portal">← Portal</a>
+      </div>
+      <div class="page-links">
+        <a href="/body/avatar">Avatar Editor</a>
+      </div>
+    </nav>
+
     <div id="stage"></div>
 
     <section class="interaction-panel" aria-label="Conversation with Mind">
@@ -245,9 +275,51 @@
     let audioStartedAt = 0;
     let listenTimer = null;
     let voices = [];
+    let pageSourceSnapshot = null;
+    let pageRefreshPending = false;
+    let pageRefreshProbeBusy = false;
 
     function setStatus(message) {
       statusBox.textContent = message;
+    }
+
+    function bodyIsBusy() {
+      return Boolean(
+        cameraStream ||
+        microphoneStream ||
+        recorder?.state === "recording" ||
+        sendInteractionButton.disabled
+      );
+    }
+
+    async function checkForBodyPageUpdate() {
+      if (document.hidden || pageRefreshProbeBusy) return;
+      pageRefreshProbeBusy = true;
+      try {
+        const response = await fetch(
+          window.location.pathname + "?body_refresh_probe=" + Date.now(),
+          { cache: "no-store" }
+        );
+        if (!response.ok) return;
+        const source = await response.text();
+
+        if (pageSourceSnapshot === null) {
+          pageSourceSnapshot = source;
+          return;
+        }
+
+        if (source !== pageSourceSnapshot) {
+          pageRefreshPending = true;
+        }
+
+        if (pageRefreshPending && !bodyIsBusy()) {
+          window.location.reload();
+        }
+      } catch {
+        // A failed probe should never interrupt the active Body session.
+      } finally {
+        pageRefreshProbeBusy = false;
+      }
     }
 
     function resize() {
@@ -634,6 +706,9 @@
     }
 
     window.addEventListener("resize", resize);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) checkForBodyPageUpdate();
+    });
     window.addEventListener("beforeunload", () => {
       releaseCamera();
       releaseMicrophone();
@@ -642,6 +717,8 @@
 
     resize();
     animate();
+    checkForBodyPageUpdate();
+    window.setInterval(checkForBodyPageUpdate, 12_000);
     loader.load(
       "/v1/body/face/avatar",
       attachAvatar,
