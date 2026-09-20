@@ -161,6 +161,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
             body=body,
             interpreter=FixedInterpreter("Auditory perception: Good morning."),
             evidence=evidence,
+            journal=journal,
         )
 
         ears.accept(
