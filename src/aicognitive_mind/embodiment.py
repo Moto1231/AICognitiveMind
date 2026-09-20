@@ -49,7 +49,8 @@ class OpenAIPerceptInterpreter:
     """Mind-side sensory interpreter.
 
     Vision is interpreted as an image input. Audio is transcribed before it is
-    handed to the conscious workspace. Raw media remains transient Body data.
+    handed to the conscious workspace. The admitted source media is preserved
+    separately as immutable sensory evidence before interpretation.
     """
 
     def __init__(
