@@ -23,11 +23,25 @@
     }
     #stage canvas { display: block; width: 100%; height: 100%; }
     .editor { padding: 1rem; background: #181a20; border-radius: 14px; }
+    .editor + .editor { margin-top: 1rem; }
+    .editor h2 { margin: 0 0 .35rem; font-size: 1.1rem; }
+    .editor-copy { margin: 0 0 1rem; color: #9da2ae; line-height: 1.45; font-size: .9rem; }
     .avatar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .85rem; }
     .avatar-field { display: flex; flex-direction: column; gap: .35rem; }
     .avatar-field label { color: #b9bcc4; font-size: .9rem; }
     .avatar-field input[type="color"] { width: 100%; min-height: 2.5rem; }
     .avatar-field input[type="range"] { width: 100%; }
+    .avatar-field select,
+    .avatar-field input[type="text"] {
+      min-height: 2.55rem;
+      padding: .55rem .65rem;
+      border: 1px solid #373a44;
+      border-radius: 9px;
+      background: #101114;
+      color: #f2f2f2;
+      font: inherit;
+    }
+    .voice-wide { grid-column: 1 / -1; }
     .avatar-value { font-variant-numeric: tabular-nums; color: #d7d9df; }
     .controls { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1rem; }
     button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
@@ -56,6 +70,7 @@
     <div id="stage"></div>
 
     <section class="editor" aria-label="Avatar appearance controls">
+      <h2>Appearance</h2>
       <div class="avatar-grid">
         <div class="avatar-field"><label for="skinColor">Skin</label><input id="skinColor" data-avatar-key="skinColor" type="color" value="#b88566"></div>
         <div class="avatar-field"><label for="hairColor">Hair</label><input id="hairColor" data-avatar-key="hairColor" type="color" value="#090a0d"></div>
@@ -81,6 +96,48 @@
       </div>
       <div id="status">Loading Genesis...</div>
     </section>
+
+    <section class="editor" aria-label="Voice pack controls">
+      <h2>Voice Pack</h2>
+      <p class="editor-copy">
+        Choose the browser or operating-system voice Genesis uses, then tune its delivery.
+      </p>
+      <div class="avatar-grid">
+        <div class="avatar-field voice-wide">
+          <label for="voiceSelect">Voice</label>
+          <select id="voiceSelect">
+            <option value="">System default</option>
+          </select>
+        </div>
+        <div class="avatar-field">
+          <label for="voiceRate">Rate <span id="voiceRateValue" class="avatar-value"></span></label>
+          <input id="voiceRate" type="range" min="0.50" max="1.75" step="0.05" value="1">
+        </div>
+        <div class="avatar-field">
+          <label for="voicePitch">Pitch <span id="voicePitchValue" class="avatar-value"></span></label>
+          <input id="voicePitch" type="range" min="0.50" max="1.50" step="0.05" value="1">
+        </div>
+        <div class="avatar-field">
+          <label for="voiceVolume">Volume <span id="voiceVolumeValue" class="avatar-value"></span></label>
+          <input id="voiceVolume" type="range" min="0" max="1" step="0.05" value="1">
+        </div>
+        <div class="avatar-field voice-wide">
+          <label for="voicePreviewText">Preview phrase</label>
+          <input
+            id="voicePreviewText"
+            type="text"
+            value="Hello. This is the voice I will use."
+            maxlength="240"
+          >
+        </div>
+      </div>
+      <div class="controls">
+        <button id="previewVoicePack" type="button">Preview voice</button>
+        <button id="saveVoicePack" type="button">Save voice pack</button>
+        <button id="resetVoicePack" type="button">Reset voice pack</button>
+      </div>
+      <div id="voiceStatus">Loading available voices...</div>
+    </section>
   </main>
 
   <script type="module">
@@ -95,6 +152,13 @@
       loadSavedAvatarAppearance,
       saveAvatarAppearance
     } from "/static/avatar_customizer.js";
+    import {
+      DEFAULT_VOICE_PACK,
+      applyVoicePack,
+      clearSavedVoicePack,
+      loadSavedVoicePack,
+      saveVoicePack
+    } from "/static/voice_pack.js";
 
     const stage = document.getElementById("stage");
     const statusBox = document.getElementById("status");
@@ -102,6 +166,18 @@
     const avatarValueLabels = [...document.querySelectorAll("[data-avatar-value]")];
     const saveButton = document.getElementById("saveAvatarAppearance");
     const resetButton = document.getElementById("resetAvatarAppearance");
+    const voiceSelect = document.getElementById("voiceSelect");
+    const voiceRate = document.getElementById("voiceRate");
+    const voicePitch = document.getElementById("voicePitch");
+    const voiceVolume = document.getElementById("voiceVolume");
+    const voiceRateValue = document.getElementById("voiceRateValue");
+    const voicePitchValue = document.getElementById("voicePitchValue");
+    const voiceVolumeValue = document.getElementById("voiceVolumeValue");
+    const voicePreviewText = document.getElementById("voicePreviewText");
+    const previewVoicePackButton = document.getElementById("previewVoicePack");
+    const saveVoicePackButton = document.getElementById("saveVoicePack");
+    const resetVoicePackButton = document.getElementById("resetVoicePack");
+    const voiceStatus = document.getElementById("voiceStatus");
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -125,6 +201,95 @@
     let avatarCustomizer = null;
     let pageSourceSnapshot = null;
     let pageRefreshProbeBusy = false;
+    let availableVoices = [];
+
+    function refreshVoiceValueLabels() {
+      voiceRateValue.textContent = Number(voiceRate.value).toFixed(2);
+      voicePitchValue.textContent = Number(voicePitch.value).toFixed(2);
+      voiceVolumeValue.textContent = Number(voiceVolume.value).toFixed(2);
+    }
+
+    function writeVoicePackControls(pack) {
+      voiceRate.value = String(pack.rate);
+      voicePitch.value = String(pack.pitch);
+      voiceVolume.value = String(pack.volume);
+      refreshVoiceValueLabels();
+
+      let match = null;
+      if (pack.voiceURI) {
+        match = [...voiceSelect.options].find(
+          (option) => option.value === pack.voiceURI
+        );
+      }
+      if (!match && pack.voiceName) {
+        match = [...voiceSelect.options].find(
+          (option) =>
+            option.dataset.voiceName === pack.voiceName &&
+            (!pack.lang || option.dataset.lang === pack.lang)
+        );
+      }
+      voiceSelect.value = match?.value || "";
+    }
+
+    function readVoicePackControls() {
+      const selected = voiceSelect.selectedOptions[0];
+      return {
+        voiceName: selected?.dataset.voiceName || "",
+        voiceURI: selected?.value || "",
+        lang: selected?.dataset.lang || "",
+        rate: Number(voiceRate.value),
+        pitch: Number(voicePitch.value),
+        volume: Number(voiceVolume.value)
+      };
+    }
+
+    function loadVoiceOptions() {
+      if (!window.speechSynthesis) {
+        voiceStatus.textContent = "Speech synthesis is not available in this browser.";
+        return;
+      }
+
+      availableVoices = window.speechSynthesis.getVoices().slice().sort(
+        (left, right) =>
+          left.lang.localeCompare(right.lang) || left.name.localeCompare(right.name)
+      );
+
+      voiceSelect.replaceChildren();
+      const defaultOption = document.createElement("option");
+      defaultOption.value = "";
+      defaultOption.textContent = "System default";
+      voiceSelect.appendChild(defaultOption);
+
+      for (const voice of availableVoices) {
+        const option = document.createElement("option");
+        option.value = voice.voiceURI;
+        option.dataset.voiceName = voice.name;
+        option.dataset.lang = voice.lang;
+        option.textContent = voice.name + " — " + voice.lang;
+        voiceSelect.appendChild(option);
+      }
+
+      const saved = loadSavedVoicePack();
+      writeVoicePackControls(saved);
+      voiceStatus.textContent = availableVoices.length
+        ? availableVoices.length + " voices available in this browser."
+        : "Waiting for browser voices...";
+    }
+
+    function previewVoicePack() {
+      if (!window.speechSynthesis) {
+        voiceStatus.textContent = "Speech synthesis is not available in this browser.";
+        return;
+      }
+      const text = voicePreviewText.value.trim();
+      if (!text) return;
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      applyVoicePack(utterance, readVoicePackControls(), availableVoices);
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+      voiceStatus.textContent = "Previewing current voice pack.";
+    }
 
     async function checkForBodyPageUpdate() {
       if (document.hidden || pageRefreshProbeBusy) return;
@@ -254,11 +419,32 @@
       statusBox.textContent = "Genesis reset to default appearance.";
     });
 
+    for (const input of [voiceRate, voicePitch, voiceVolume]) {
+      input.addEventListener("input", refreshVoiceValueLabels);
+    }
+    previewVoicePackButton.addEventListener("click", previewVoicePack);
+    saveVoicePackButton.addEventListener("click", () => {
+      const saved = saveVoicePack(readVoicePackControls());
+      writeVoicePackControls(saved);
+      voiceStatus.textContent = "Voice pack saved.";
+    });
+    resetVoicePackButton.addEventListener("click", () => {
+      clearSavedVoicePack();
+      writeVoicePackControls(DEFAULT_VOICE_PACK);
+      window.speechSynthesis?.cancel();
+      voiceStatus.textContent = "Voice pack reset to system default.";
+    });
+
     window.addEventListener("resize", resize);
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) checkForBodyPageUpdate();
     });
     writeControls(DEFAULT_AVATAR_APPEARANCE);
+    writeVoicePackControls(loadSavedVoicePack());
+    loadVoiceOptions();
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = loadVoiceOptions;
+    }
     resize();
     animate();
     checkForBodyPageUpdate();
