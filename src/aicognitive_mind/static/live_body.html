@@ -40,11 +40,8 @@
       #stage { height: clamp(280px, 44vh, 420px); }
     }
     #stage canvas { display: block; width: 100%; height: 100%; }
-    .controls { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
     button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .5; }
-    video { width: 220px; border-radius: 10px; background: #181a20; }
-    #cameraPanel { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
     #status { white-space: pre-wrap; background: #181a20; padding: 1rem; border-radius: 10px; margin-top: 1rem; min-height: 6rem; }
     #evidenceArtifact { display: inline-block; margin-top: .75rem; }
     .interaction-panel {
@@ -140,15 +137,45 @@
     .sense-panel {
       margin-top: 1rem;
       padding: .8rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
       background: #181a20;
       border-radius: 14px;
     }
-    .sense-panel summary {
-      cursor: pointer;
+    .sense-label {
       color: #c8ccd5;
-      user-select: none;
+      font-weight: 650;
     }
-    .sense-panel[open] summary { margin-bottom: .9rem; }
+    .senses-toggle {
+      min-width: 118px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: .55rem;
+      border: 1px solid #454954;
+      border-radius: 999px;
+      background: #242731;
+      color: #c8ccd5;
+    }
+    .senses-toggle::before {
+      content: "";
+      width: .72rem;
+      height: .72rem;
+      border-radius: 50%;
+      background: #676d78;
+      box-shadow: 0 0 0 3px rgba(103, 109, 120, .12);
+    }
+    .senses-toggle.on {
+      border-color: #38795d;
+      background: #1d382d;
+      color: #d9f6e8;
+    }
+    .senses-toggle.on::before {
+      background: #65d39b;
+      box-shadow: 0 0 0 3px rgba(101, 211, 155, .14);
+    }
   </style>
 
   <script type="importmap">
@@ -194,24 +221,17 @@
       </form>
     </section>
 
-    <details class="sense-panel">
-      <summary>Senses</summary>
-      <div id="cameraPanel">
-        <video id="video" autoplay playsinline muted></video>
-        <div>
-          <div class="controls">
-            <button id="see">See through camera</button>
-            <button id="listen">Listen for 5 seconds</button>
-            <button id="stopListen" disabled>Stop listening</button>
-          </div>
-          <div class="controls">
-            <button id="stopCamera" disabled>Release camera</button>
-            <button id="stopSpeech">Stop speech</button>
-          </div>
-        </div>
-      </div>
-    </details>
+    <section class="sense-panel" aria-label="Senses">
+      <span class="sense-label">Senses</span>
+      <button
+        id="sensesToggle"
+        class="senses-toggle"
+        type="button"
+        aria-pressed="false"
+      >Off</button>
+    </section>
 
+    <video id="video" autoplay playsinline muted hidden></video>
     <canvas id="captureCanvas" hidden></canvas>
     <div id="status">Attaching Genesis...</div>
     <a id="evidenceArtifact" href="#" target="_blank" rel="noopener" hidden>Open evidence artifact</a>
@@ -230,11 +250,7 @@
     const stage = document.getElementById("stage");
     const video = document.getElementById("video");
     const canvas = document.getElementById("captureCanvas");
-    const seeButton = document.getElementById("see");
-    const listenButton = document.getElementById("listen");
-    const stopListenButton = document.getElementById("stopListen");
-    const stopCameraButton = document.getElementById("stopCamera");
-    const stopSpeechButton = document.getElementById("stopSpeech");
+    const sensesToggle = document.getElementById("sensesToggle");
     const statusBox = document.getElementById("status");
     const evidenceArtifactLink = document.getElementById("evidenceArtifact");
     const interactionForm = document.getElementById("interactionForm");
@@ -271,10 +287,8 @@
     let cameraStream = null;
     let microphoneStream = null;
     let recorder = null;
-    let audioChunks = [];
-    let audioStartedAt = 0;
-    let listenTimer = null;
     let voices = [];
+    let sensesEnabled = false;
     let pageSourceSnapshot = null;
     let pageRefreshPending = false;
     let pageRefreshProbeBusy = false;
@@ -285,8 +299,6 @@
 
     function bodyIsBusy() {
       return Boolean(
-        cameraStream ||
-        microphoneStream ||
         recorder?.state === "recording" ||
         sendInteractionButton.disabled
       );
@@ -513,157 +525,72 @@
       }
     }
 
-    async function ensureCamera() {
-      if (cameraStream) return;
-      cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      video.srcObject = cameraStream;
-      await video.play();
-      stopCameraButton.disabled = false;
+    function setSensesUi(enabled) {
+      sensesEnabled = enabled;
+      sensesToggle.classList.toggle("on", enabled);
+      sensesToggle.setAttribute("aria-pressed", String(enabled));
+      sensesToggle.textContent = enabled ? "On" : "Off";
     }
 
-    function releaseCamera() {
+    async function enableSenses() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus("This browser does not expose camera and microphone access.");
+        setSensesUi(false);
+        return;
+      }
+
+      sensesToggle.disabled = true;
+      try {
+        const [videoStream, audioStream] = await Promise.all([
+          navigator.mediaDevices.getUserMedia({ video: true, audio: false }),
+          navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        ]);
+
+        cameraStream = videoStream;
+        microphoneStream = audioStream;
+        video.srcObject = cameraStream;
+        await video.play();
+
+        setSensesUi(true);
+        localStorage.setItem("aicognitive_mind.senses", "on");
+        setStatus("SENSES ON\nCamera and microphone are available to the Body.");
+      } catch (error) {
+        releaseSenses();
+        setStatus("Could not turn senses on: " + error.message);
+      } finally {
+        sensesToggle.disabled = false;
+      }
+    }
+
+    function releaseSenses({ persist = true } = {}) {
+      if (recorder?.state === "recording") {
+        recorder.stop();
+      }
+      recorder = null;
+
       if (cameraStream) {
         for (const track of cameraStream.getTracks()) track.stop();
         cameraStream = null;
       }
-      video.srcObject = null;
-      stopCameraButton.disabled = true;
-    }
-
-    async function seeThroughBody() {
-      try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          setStatus("This browser does not expose camera access.");
-          return;
-        }
-        await ensureCamera();
-
-        const maxWidth = 960;
-        const scale = Math.min(1, maxWidth / video.videoWidth);
-        canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-        canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-        canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        evidenceArtifactLink.hidden = true;
-        setStatus("Eyes captured a frame. Preserving evidence and sending sensation to the Mind...");
-
-        const ingress = await fetch("/v1/body/eyes/observe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            image_data_url: canvas.toDataURL("image/jpeg", 0.85),
-            width: canvas.width,
-            height: canvas.height,
-            source: "browser-camera"
-          })
-        });
-        if (!ingress.ok) throw new Error(await ingress.text());
-
-        const response = await fetch("/v1/mind/body/see", { method: "POST" });
-        if (!response.ok) throw new Error(await responseErrorMessage(response));
-        await showMindResult(await response.json());
-      } catch (error) {
-        setStatus("Visual Mind↔Body loop failed: " + error.message);
-      }
-    }
-
-    function preferredAudioMimeType() {
-      const candidates = [
-        "audio/webm;codecs=opus",
-        "audio/webm",
-        "audio/ogg;codecs=opus"
-      ];
-      return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
-    }
-
-    function blobToDataUrl(blob) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-      });
-    }
-
-    function releaseMicrophone() {
       if (microphoneStream) {
         for (const track of microphoneStream.getTracks()) track.stop();
         microphoneStream = null;
       }
-      if (listenTimer) {
-        clearTimeout(listenTimer);
-        listenTimer = null;
+
+      video.srcObject = null;
+      setSensesUi(false);
+      if (persist) {
+        localStorage.setItem("aicognitive_mind.senses", "off");
       }
-      listenButton.disabled = false;
-      stopListenButton.disabled = true;
     }
 
-    async function submitAudio(blob, durationMs) {
-      evidenceArtifactLink.hidden = true;
-      setStatus("Ears captured sound. Preserving evidence and sending sensation to the Mind...");
-      const ingress = await fetch("/v1/body/ears/observe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          audio_data_url: await blobToDataUrl(blob),
-          duration_ms: durationMs,
-          source: "browser-microphone"
-        })
-      });
-      if (!ingress.ok) throw new Error(await ingress.text());
-
-      const response = await fetch("/v1/mind/body/hear", { method: "POST" });
-      if (!response.ok) throw new Error(await responseErrorMessage(response));
-      await showMindResult(await response.json());
-    }
-
-    async function listenThroughBody() {
-      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-        setStatus("This browser does not expose microphone recording.");
+    async function toggleSenses() {
+      if (sensesEnabled) {
+        releaseSenses();
+        setStatus("SENSES OFF\nCamera and microphone have been released.");
         return;
       }
-
-      try {
-        microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        const mimeType = preferredAudioMimeType();
-        recorder = mimeType
-          ? new MediaRecorder(microphoneStream, { mimeType })
-          : new MediaRecorder(microphoneStream);
-
-        audioChunks = [];
-        recorder.addEventListener("dataavailable", (event) => {
-          if (event.data.size > 0) audioChunks.push(event.data);
-        });
-        recorder.addEventListener("stop", async () => {
-          const durationMs = Math.max(1, Math.min(30_000, Math.round(performance.now() - audioStartedAt)));
-          const blob = new Blob(
-            audioChunks,
-            { type: recorder.mimeType || audioChunks[0]?.type || "audio/webm" }
-          );
-          releaseMicrophone();
-          try {
-            await submitAudio(blob, durationMs);
-          } catch (error) {
-            setStatus("Auditory Mind↔Body loop failed: " + error.message);
-          }
-        }, { once: true });
-
-        recorder.start();
-        audioStartedAt = performance.now();
-        listenButton.disabled = true;
-        stopListenButton.disabled = false;
-        setStatus("LISTENING\nSpeak now. The clip will stop after 5 seconds.");
-        listenTimer = setTimeout(() => {
-          if (recorder?.state === "recording") recorder.stop();
-        }, 5_000);
-      } catch (error) {
-        releaseMicrophone();
-        setStatus("Microphone access failed: " + error.message);
-      }
-    }
-
-    function stopListening() {
-      if (recorder?.state === "recording") recorder.stop();
+      await enableSenses();
     }
 
     function animate() {
@@ -694,11 +621,7 @@
       interactionMessage.focus();
     });
 
-    seeButton.addEventListener("click", seeThroughBody);
-    listenButton.addEventListener("click", listenThroughBody);
-    stopListenButton.addEventListener("click", stopListening);
-    stopCameraButton.addEventListener("click", releaseCamera);
-    stopSpeechButton.addEventListener("click", () => window.speechSynthesis?.cancel());
+    sensesToggle.addEventListener("click", toggleSenses);
 
     if (window.speechSynthesis) {
       loadVoices();
@@ -710,8 +633,7 @@
       if (!document.hidden) checkForBodyPageUpdate();
     });
     window.addEventListener("beforeunload", () => {
-      releaseCamera();
-      releaseMicrophone();
+      releaseSenses({ persist: false });
       window.speechSynthesis?.cancel();
     });
 
@@ -719,6 +641,11 @@
     animate();
     checkForBodyPageUpdate();
     window.setInterval(checkForBodyPageUpdate, 12_000);
+    if (localStorage.getItem("aicognitive_mind.senses") === "on") {
+      enableSenses();
+    } else {
+      setSensesUi(false);
+    }
     loader.load(
       "/v1/body/face/avatar",
       attachAvatar,
