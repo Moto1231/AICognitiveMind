@@ -26,25 +26,108 @@
     #cameraPanel { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
     #status { white-space: pre-wrap; background: #181a20; padding: 1rem; border-radius: 10px; margin-top: 1rem; min-height: 6rem; }
     #evidenceArtifact { display: inline-block; margin-top: .75rem; }
-    .interaction-panel { margin: 1rem 0; padding: 1rem; background: #181a20; border-radius: 14px; }
-    .interaction-form { display: grid; gap: .75rem; }
+    .interaction-panel {
+      margin: 1rem 0;
+      background: #181a20;
+      border: 1px solid #242731;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    #interactionHistory {
+      min-height: 8rem;
+      max-height: 34vh;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+    }
+    .chat-empty {
+      margin: auto;
+      color: #858a96;
+      text-align: center;
+      font-size: .95rem;
+    }
+    .chat-message {
+      max-width: 82%;
+      padding: .72rem .9rem;
+      border-radius: 14px;
+      white-space: pre-wrap;
+      line-height: 1.4;
+    }
+    .chat-message.user {
+      align-self: flex-end;
+      background: #2b5f91;
+      color: #fff;
+      border-bottom-right-radius: 5px;
+    }
+    .chat-message.mind {
+      align-self: flex-start;
+      background: #242731;
+      color: #eceef3;
+      border-bottom-left-radius: 5px;
+    }
+    .chat-message.error {
+      align-self: flex-start;
+      background: #3a2528;
+      color: #ffd7da;
+    }
+    .interaction-form {
+      display: flex;
+      gap: .65rem;
+      align-items: flex-end;
+      padding: .8rem;
+      border-top: 1px solid #2a2d36;
+      background: #14161b;
+    }
     .interaction-form textarea {
+      flex: 1;
       width: 100%;
       box-sizing: border-box;
-      min-height: 6rem;
-      resize: vertical;
-      padding: .8rem;
+      min-height: 2.8rem;
+      max-height: 9rem;
+      resize: none;
+      padding: .72rem .82rem;
       border: 1px solid #373a44;
-      border-radius: 10px;
+      border-radius: 12px;
       background: #101114;
       color: #f2f2f2;
       font: inherit;
+      line-height: 1.35;
     }
-    #interactionResponse {
-      white-space: pre-wrap;
-      min-height: 1.5rem;
-      color: #d7d9df;
+    .interaction-form textarea:focus {
+      outline: none;
+      border-color: #687388;
+      box-shadow: 0 0 0 2px rgba(104, 115, 136, .2);
     }
+    .interaction-actions {
+      display: flex;
+      gap: .5rem;
+      align-items: center;
+    }
+    .interaction-actions button { margin: 0; }
+    #clearInteraction {
+      background: transparent;
+      color: #b6bbc7;
+      border: 1px solid #373a44;
+    }
+    #sendInteraction {
+      border: 1px solid #4777a7;
+      background: #315f8d;
+      color: #fff;
+    }
+    .sense-panel {
+      margin-top: 1rem;
+      padding: .8rem 1rem;
+      background: #181a20;
+      border-radius: 14px;
+    }
+    .sense-panel summary {
+      cursor: pointer;
+      color: #c8ccd5;
+      user-select: none;
+    }
+    .sense-panel[open] summary { margin-bottom: .9rem; }
   </style>
 
   <script type="importmap">
@@ -61,32 +144,43 @@
   <main>
     <div id="stage"></div>
 
-    <section class="interaction-panel" aria-label="Text interaction">
+    <section class="interaction-panel" aria-label="Conversation with Mind">
+      <div id="interactionHistory" aria-live="polite">
+        <div id="chatEmpty" class="chat-empty">Talk to the Mind.</div>
+      </div>
       <form id="interactionForm" class="interaction-form">
-        <label for="interactionMessage">Message</label>
-        <textarea id="interactionMessage" maxlength="8000" placeholder="Talk to the Mind..." required></textarea>
-        <div class="controls">
-          <button id="sendInteraction" type="submit">Send interaction</button>
-          <button id="clearInteraction" type="button">Clear</button>
+        <textarea
+          id="interactionMessage"
+          maxlength="8000"
+          placeholder="Message the Mind..."
+          aria-label="Message"
+          rows="1"
+          required
+        ></textarea>
+        <div class="interaction-actions">
+          <button id="clearInteraction" type="button" title="Clear conversation">Clear</button>
+          <button id="sendInteraction" type="submit" aria-label="Send interaction">Send</button>
         </div>
       </form>
-      <div id="interactionResponse" aria-live="polite"></div>
     </section>
 
-    <div id="cameraPanel">
-      <video id="video" autoplay playsinline muted></video>
-      <div>
-        <div class="controls">
-          <button id="see">See through camera</button>
-          <button id="listen">Listen for 5 seconds</button>
-          <button id="stopListen" disabled>Stop listening</button>
-        </div>
-        <div class="controls">
-          <button id="stopCamera" disabled>Release camera</button>
-          <button id="stopSpeech">Stop speech</button>
+    <details class="sense-panel">
+      <summary>Senses</summary>
+      <div id="cameraPanel">
+        <video id="video" autoplay playsinline muted></video>
+        <div>
+          <div class="controls">
+            <button id="see">See through camera</button>
+            <button id="listen">Listen for 5 seconds</button>
+            <button id="stopListen" disabled>Stop listening</button>
+          </div>
+          <div class="controls">
+            <button id="stopCamera" disabled>Release camera</button>
+            <button id="stopSpeech">Stop speech</button>
+          </div>
         </div>
       </div>
-    </div>
+    </details>
 
     <canvas id="captureCanvas" hidden></canvas>
     <div id="status">Attaching Genesis...</div>
@@ -117,7 +211,8 @@
     const interactionMessage = document.getElementById("interactionMessage");
     const sendInteractionButton = document.getElementById("sendInteraction");
     const clearInteractionButton = document.getElementById("clearInteraction");
-    const interactionResponse = document.getElementById("interactionResponse");
+    const interactionHistory = document.getElementById("interactionHistory");
+    const chatEmpty = document.getElementById("chatEmpty");
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -290,13 +385,33 @@
       }
     }
 
+    function appendChatMessage(role, text, extraClass = "") {
+      chatEmpty?.remove();
+      const message = document.createElement("div");
+      message.className = "chat-message " + role + (extraClass ? " " + extraClass : "");
+      message.textContent = text;
+      interactionHistory.appendChild(message);
+      interactionHistory.scrollTop = interactionHistory.scrollHeight;
+      return message;
+    }
+
+    function resizeComposer() {
+      interactionMessage.style.height = "auto";
+      interactionMessage.style.height =
+        Math.min(interactionMessage.scrollHeight, 144) + "px";
+    }
+
     async function submitTextInteraction(event) {
       event.preventDefault();
       const message = interactionMessage.value.trim();
       if (!message) return;
 
+      appendChatMessage("user", message);
+      interactionMessage.value = "";
+      resizeComposer();
+
       sendInteractionButton.disabled = true;
-      interactionResponse.textContent = "Thinking...";
+      const thinkingMessage = appendChatMessage("mind", "Thinking...");
       evidenceArtifactLink.hidden = true;
 
       try {
@@ -308,16 +423,17 @@
         if (!response.ok) throw new Error(await responseErrorMessage(response));
 
         const result = await response.json();
-        interactionResponse.textContent = result.response_text;
+        thinkingMessage.textContent = result.response_text;
         setStatus(
           "TEXT INTERACTION COMPLETE\n\n" +
           "You:\n" + message + "\n\n" +
           "Mind response:\n" + result.response_text
         );
-        interactionMessage.value = "";
+        interactionHistory.scrollTop = interactionHistory.scrollHeight;
         await consumeExpressionOutputs();
       } catch (error) {
-        interactionResponse.textContent = "Interaction failed: " + error.message;
+        thinkingMessage.classList.add("error");
+        thinkingMessage.textContent = "Interaction failed: " + error.message;
         setStatus("Text interaction failed: " + error.message);
       } finally {
         sendInteractionButton.disabled = false;
@@ -487,9 +603,22 @@
     }
 
     interactionForm.addEventListener("submit", submitTextInteraction);
+    interactionMessage.addEventListener("input", resizeComposer);
+    interactionMessage.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        interactionForm.requestSubmit();
+      }
+    });
     clearInteractionButton.addEventListener("click", () => {
       interactionMessage.value = "";
-      interactionResponse.textContent = "";
+      interactionHistory.replaceChildren();
+      const empty = document.createElement("div");
+      empty.id = "chatEmpty";
+      empty.className = "chat-empty";
+      empty.textContent = "Talk to the Mind.";
+      interactionHistory.appendChild(empty);
+      resizeComposer();
       interactionMessage.focus();
     });
 
