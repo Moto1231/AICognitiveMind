@@ -86,6 +86,29 @@ class JournalEntry(BaseModel):
     experience: dict[str, Any]
 
 
+class SensoryEvidenceArtifact(BaseModel):
+    """Immutable media admitted into cognition as evidence."""
+
+    captured_at: datetime = Field(default_factory=utc_now)
+    modality: str = Field(min_length=1, max_length=40)
+    source: str = Field(min_length=1, max_length=120)
+    media_type: str = Field(min_length=1, max_length=120)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    byte_length: int = Field(gt=0)
+    payload_base64: str = Field(min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def reference(self) -> dict[str, Any]:
+        return {
+            "sha256": self.sha256,
+            "captured_at": self.captured_at,
+            "modality": self.modality,
+            "source": self.source,
+            "media_type": self.media_type,
+            "byte_length": self.byte_length,
+        }
+
+
 class DiagnosticObservation(BaseModel):
     """Implementation provenance kept outside identity and cognitive history."""
 
