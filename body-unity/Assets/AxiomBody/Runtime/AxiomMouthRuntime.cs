@@ -1,6 +1,8 @@
 using System;
 using System.Threading.Tasks;
+using UniVRM10;
 using UnityEngine;
+using UnityEngine.Networking;
 
 namespace Axiom.Body
 {
@@ -10,22 +12,49 @@ namespace Axiom.Body
 
         private readonly WindowsSpeechOutput _speech = new WindowsSpeechOutput();
         private MindApiClient _client;
+        private AudioSource _audioSource;
+        private AxiomLipSync _lipSync;
+        private string _currentAudioPath = string.Empty;
         private bool _polling;
         private float _nextPollAt;
 
         public event Action<string> StatusChanged;
 
-        public void Attach(MindApiClient client)
+        public void Attach(MindApiClient client, Vrm10Instance avatar)
         {
             _client = client;
             _nextPollAt = 0f;
-            StatusChanged?.Invoke("Axiom Body connected. Voice ready.");
+
+            if (_audioSource == null)
+            {
+                _audioSource = gameObject.GetComponent<AudioSource>();
+                if (_audioSource == null)
+                {
+                    _audioSource = gameObject.AddComponent<AudioSource>();
+                }
+                _audioSource.playOnAwake = false;
+                _audioSource.loop = false;
+                _audioSource.spatialBlend = 0f;
+            }
+
+            if (_lipSync == null)
+            {
+                _lipSync = gameObject.GetComponent<AxiomLipSync>();
+                if (_lipSync == null)
+                {
+                    _lipSync = gameObject.AddComponent<AxiomLipSync>();
+                }
+            }
+
+            _lipSync.Attach(avatar, _audioSource);
+            StatusChanged?.Invoke("Axiom Body connected. Voice + lip sync ready.");
         }
 
         public void Detach()
         {
             _client = null;
-            _speech.Stop();
+            StopPlayback();
+            _lipSync?.Detach();
         }
 
         private void Update()
@@ -51,6 +80,8 @@ namespace Axiom.Body
             }
 
             _polling = true;
+            string wavPath = string.Empty;
+
             try
             {
                 VoiceExpressionIntent intent = await _client.NextMouthIntentAsync();
@@ -67,9 +98,16 @@ namespace Axiom.Body
                     return;
                 }
 
+                StatusChanged?.Invoke("Preparing speech...");
+                wavPath = await _speech.SynthesizeWavAsync(intent);
+                _currentAudioPath = wavPath;
+
                 StatusChanged?.Invoke("Speaking...");
-                await _speech.SpeakAsync(intent);
-                StatusChanged?.Invoke("Axiom Body connected. Voice ready.");
+                await PlayWavAsync(wavPath);
+
+                StatusChanged?.Invoke(
+                    "Axiom Body connected. Voice + lip sync ready."
+                );
             }
             catch (Exception exception)
             {
@@ -78,18 +116,91 @@ namespace Axiom.Body
             }
             finally
             {
+                if (string.Equals(_currentAudioPath, wavPath, StringComparison.Ordinal))
+                {
+                    _currentAudioPath = string.Empty;
+                }
+
+                WindowsSpeechOutput.TryDelete(wavPath);
                 _polling = false;
+            }
+        }
+
+        private async Task PlayWavAsync(string path)
+        {
+            if (_audioSource == null)
+            {
+                throw new InvalidOperationException("Unity audio output is unavailable.");
+            }
+
+            string uri = new Uri(path).AbsoluteUri;
+            using UnityWebRequest request =
+                UnityWebRequestMultimedia.GetAudioClip(uri, AudioType.WAV);
+
+            UnityWebRequestAsyncOperation operation = request.SendWebRequest();
+            while (!operation.isDone)
+            {
+                await Task.Yield();
+            }
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                throw new InvalidOperationException(
+                    "Unity could not load synthesized speech: " + request.error
+                );
+            }
+
+            AudioClip clip = DownloadHandlerAudioClip.GetContent(request);
+            if (clip == null)
+            {
+                throw new InvalidOperationException(
+                    "Unity returned an empty speech audio clip."
+                );
+            }
+
+            try
+            {
+                _audioSource.clip = clip;
+                _audioSource.Play();
+
+                while (_audioSource.isPlaying)
+                {
+                    await Task.Yield();
+                }
+            }
+            finally
+            {
+                _audioSource.Stop();
+                _audioSource.clip = null;
+                Destroy(clip);
+            }
+        }
+
+        private void StopPlayback()
+        {
+            _speech.Stop();
+
+            if (_audioSource != null)
+            {
+                _audioSource.Stop();
+                _audioSource.clip = null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_currentAudioPath))
+            {
+                WindowsSpeechOutput.TryDelete(_currentAudioPath);
+                _currentAudioPath = string.Empty;
             }
         }
 
         private void OnDisable()
         {
-            _speech.Stop();
+            StopPlayback();
         }
 
         private void OnDestroy()
         {
-            _speech.Stop();
+            StopPlayback();
         }
     }
 }

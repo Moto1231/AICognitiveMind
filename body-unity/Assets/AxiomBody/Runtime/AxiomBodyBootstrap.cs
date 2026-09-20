@@ -98,10 +98,10 @@ namespace Axiom.Body
                     _mouthRuntime = gameObject.AddComponent<AxiomMouthRuntime>();
                     _mouthRuntime.StatusChanged += HandleBodyStatus;
                 }
-                _mouthRuntime.Attach(_client);
+                _mouthRuntime.Attach(_client, _avatarLoader.Instance);
 
                 _connected = true;
-                _status = "Axiom Body connected. Voice ready.";
+                _status = "Axiom Body connected. Voice + lip sync ready.";
             }
             catch (Exception exception)
             {

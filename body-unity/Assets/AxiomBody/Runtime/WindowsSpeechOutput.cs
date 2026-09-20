@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -11,13 +12,13 @@ namespace Axiom.Body
         private readonly object _gate = new object();
         private Process _currentProcess;
 
-        public Task SpeakAsync(VoiceExpressionIntent intent)
+        public Task<string> SynthesizeWavAsync(VoiceExpressionIntent intent)
         {
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-            return Task.Run(() => SpeakBlocking(intent));
+            return Task.Run(() => SynthesizeWavBlocking(intent));
 #else
             throw new PlatformNotSupportedException(
-                "The current desktop Mouth V0.1 uses Windows System.Speech."
+                "The current desktop Mouth V0.2 uses Windows System.Speech."
             );
 #endif
         }
@@ -48,11 +49,11 @@ namespace Axiom.Body
         }
 
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-        private void SpeakBlocking(VoiceExpressionIntent intent)
+        private string SynthesizeWavBlocking(VoiceExpressionIntent intent)
         {
             if (intent == null || string.IsNullOrWhiteSpace(intent.text))
             {
-                return;
+                throw new ArgumentException("Voice intent requires text.", nameof(intent));
             }
 
             VoiceIntentMetadata metadata = intent.metadata ?? new VoiceIntentMetadata();
@@ -72,11 +73,19 @@ namespace Axiom.Body
             );
             int volumePercent = Mathf.RoundToInt(volume * 100f);
 
+            string outputPath = Path.Combine(
+                Path.GetTempPath(),
+                "axiom-voice-" + Guid.NewGuid().ToString("N") + ".wav"
+            );
+
             string textBase64 = Convert.ToBase64String(
                 Encoding.UTF8.GetBytes(intent.text.Trim())
             );
             string voiceBase64 = Convert.ToBase64String(
                 Encoding.UTF8.GetBytes(metadata.voice_name ?? string.Empty)
+            );
+            string pathBase64 = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes(outputPath)
             );
 
             string script = string.Join(
@@ -86,6 +95,8 @@ namespace Axiom.Body
                     textBase64 + "'))",
                 "$voice=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
                     voiceBase64 + "'))",
+                "$path=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
+                    pathBase64 + "'))",
                 "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer",
                 "if($voice){try{$s.SelectVoice($voice)}catch{}}",
                 "$s.Volume=" + volumePercent,
@@ -95,6 +106,7 @@ namespace Axiom.Body
                     (ratePercent >= 0 ? "+" : string.Empty) + ratePercent +
                     "%' pitch='" + (pitchPercent >= 0 ? "+" : string.Empty) +
                     pitchPercent + "%'>$escaped</prosody></speak>\"",
+                "$s.SetOutputToWaveFile($path)",
                 "$s.SpeakSsml($ssml)",
                 "$s.Dispose()"
             );
@@ -125,7 +137,7 @@ namespace Axiom.Body
                 if (!process.Start())
                 {
                     throw new InvalidOperationException(
-                        "Windows speech process could not start."
+                        "Windows speech synthesis process could not start."
                     );
                 }
 
@@ -133,10 +145,24 @@ namespace Axiom.Body
                 if (process.ExitCode != 0)
                 {
                     throw new InvalidOperationException(
-                        "Windows speech process exited with code " +
+                        "Windows speech synthesis exited with code " +
                         process.ExitCode + "."
                     );
                 }
+
+                if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
+                {
+                    throw new InvalidOperationException(
+                        "Windows speech synthesis did not produce audio."
+                    );
+                }
+
+                return outputPath;
+            }
+            catch
+            {
+                TryDelete(outputPath);
+                throw;
             }
             finally
             {
@@ -150,5 +176,25 @@ namespace Axiom.Body
             }
         }
 #endif
+
+        public static void TryDelete(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+                // Temporary audio cleanup must not crash the Body.
+            }
+        }
     }
 }
