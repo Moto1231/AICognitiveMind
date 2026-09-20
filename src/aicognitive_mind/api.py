@@ -504,6 +504,11 @@ async def live_body_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "live_body.html")
 
 
+@app.get("/body/avatar", include_in_schema=False)
+async def avatar_editor_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "avatar_editor.html")
+
+
 @app.post("/v1/mind/body/see", response_model=EmbodiedInteractionResult)
 async def mind_see(request: Request) -> EmbodiedInteractionResult:
     bridge = cast(MindBodyBridge, request.app.state.mind_body)

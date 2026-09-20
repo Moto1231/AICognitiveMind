@@ -110,23 +110,45 @@ class AvatarCustomizationV01Tests(unittest.TestCase):
         self.assertIn("clearSavedAvatarAppearance", source)
         self.assertIn("DEFAULT_AVATAR_APPEARANCE", source)
 
-    def test_live_body_exposes_avatar_editor_controls(self) -> None:
+    def test_avatar_editor_is_separate_from_live_body(self) -> None:
+        live_markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
+            encoding="utf-8"
+        )
+        editor_markup = Path("src/aicognitive_mind/static/avatar_editor.html").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn('id="avatarEditorTitle"', live_markup)
+        self.assertNotIn('data-avatar-key="skinColor"', live_markup)
+        self.assertNotIn('id="saveAvatarAppearance"', live_markup)
+
+        self.assertIn("<h1>Avatar Editor</h1>", editor_markup)
+        self.assertIn('data-avatar-key="skinColor"', editor_markup)
+        self.assertIn('data-avatar-key="hairColor"', editor_markup)
+        self.assertIn('data-avatar-key="headSize"', editor_markup)
+        self.assertIn('data-avatar-key="eyeSpacing"', editor_markup)
+        self.assertIn('data-avatar-key="torsoWidth"', editor_markup)
+        self.assertIn('data-avatar-key="shoulderWidth"', editor_markup)
+        self.assertIn('data-avatar-key="armThickness"', editor_markup)
+        self.assertIn('data-avatar-key="legThickness"', editor_markup)
+        self.assertIn('id="saveAvatarAppearance"', editor_markup)
+        self.assertIn('id="resetAvatarAppearance"', editor_markup)
+        self.assertIn('from "/static/avatar_customizer.js"', editor_markup)
+        self.assertIn('href="/body/live"', editor_markup)
+
+        portal_markup = Path("src/aicognitive_mind/static/index.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('href="/body/avatar"', portal_markup)
+        self.assertIn("Avatar Editor", portal_markup)
+
+    def test_live_body_still_applies_saved_avatar_appearance(self) -> None:
         markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn('id="avatarEditorTitle"', markup)
-        self.assertIn('data-avatar-key="skinColor"', markup)
-        self.assertIn('data-avatar-key="hairColor"', markup)
-        self.assertIn('data-avatar-key="headSize"', markup)
-        self.assertIn('data-avatar-key="eyeSpacing"', markup)
-        self.assertIn('data-avatar-key="torsoWidth"', markup)
-        self.assertIn('data-avatar-key="shoulderWidth"', markup)
-        self.assertIn('data-avatar-key="armThickness"', markup)
-        self.assertIn('data-avatar-key="legThickness"', markup)
-        self.assertIn('id="saveAvatarAppearance"', markup)
-        self.assertIn('id="resetAvatarAppearance"', markup)
-        self.assertIn('from "/static/avatar_customizer.js"', markup)
+        self.assertIn("loadSavedAvatarAppearance", markup)
+        self.assertIn("avatarCustomizer.apply(loadSavedAvatarAppearance())", markup)
 
 
 if __name__ == "__main__":
