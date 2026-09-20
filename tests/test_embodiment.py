@@ -97,6 +97,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
             body=body,
             interpreter=interpreter,
             evidence=evidence,
+            journal=journal,
         )
 
         eyes.accept(
@@ -177,7 +178,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entries[-1].experience["input"]["source"], "body:audio")
 
     async def test_evidence_survives_even_when_interpretation_fails(self) -> None:
-        core, _journal = await self._core()
+        core, journal = await self._core()
         eyes = BrowserVisionIngress()
         evidence = InMemoryEvidenceStore()
         body = BodyRuntime(vision=eyes)
@@ -186,6 +187,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
             body=body,
             interpreter=FailingInterpreter(),
             evidence=evidence,
+            journal=journal,
         )
 
         percept = eyes.accept(
@@ -203,6 +205,11 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
             captured_at=percept.observed_at,
         )
         self.assertIsNotNone(preserved)
+        entries = await journal.read()
+        sensory = entries[-1]
+        self.assertEqual(sensory.kind.value, "sensory_evidence")
+        self.assertEqual(sensory.experience["status"], "admitted")
+        self.assertEqual(sensory.experience["evidence"]["sha256"], sha256)
 
     async def test_openai_interpreter_sends_image_as_multimodal_input(self) -> None:
         client = FakeOpenAIClient()
