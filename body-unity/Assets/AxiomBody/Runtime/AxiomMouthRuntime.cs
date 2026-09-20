@@ -47,7 +47,9 @@ namespace Axiom.Body
             }
 
             _lipSync.Attach(avatar, _audioSource);
-            StatusChanged?.Invoke("Axiom Body connected. Voice + lip sync ready.");
+            StatusChanged?.Invoke(
+                "Axiom Body connected. Lip target: " + _lipSync.TargetDescription
+            );
         }
 
         public void Detach()
@@ -102,11 +104,13 @@ namespace Axiom.Body
                 wavPath = await _speech.SynthesizeWavAsync(intent);
                 _currentAudioPath = wavPath;
 
-                StatusChanged?.Invoke("Speaking...");
+                StatusChanged?.Invoke(
+                    "Speaking... Lip target: " + _lipSync.TargetDescription
+                );
                 await PlayWavAsync(wavPath);
 
                 StatusChanged?.Invoke(
-                    "Axiom Body connected. Voice + lip sync ready."
+                    "Axiom Body connected. Lip target: " + _lipSync.TargetDescription
                 );
             }
             catch (Exception exception)
@@ -163,8 +167,23 @@ namespace Axiom.Body
                 _audioSource.clip = clip;
                 _audioSource.Play();
 
+                float nextLipStatusAt = 0f;
                 while (_audioSource.isPlaying)
                 {
+                    if (
+                        _lipSync != null &&
+                        Time.unscaledTime >= nextLipStatusAt
+                    )
+                    {
+                        nextLipStatusAt = Time.unscaledTime + 0.25f;
+                        StatusChanged?.Invoke(
+                            "Speaking... lip=" +
+                            _lipSync.CurrentWeight.ToString("0.00") +
+                            " via " +
+                            _lipSync.TargetDescription
+                        );
+                    }
+
                     await Task.Yield();
                 }
             }
