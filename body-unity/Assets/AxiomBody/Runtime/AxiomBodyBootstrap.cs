@@ -15,7 +15,7 @@ namespace Axiom.Body
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CreateRuntime()
         {
-            if (FindFirstObjectByType<AxiomBodyBootstrap>() != null)
+            if (FindAnyObjectByType<AxiomBodyBootstrap>() != null)
             {
                 return;
             }
@@ -74,7 +74,7 @@ namespace Axiom.Body
 
         private void EnsureLight()
         {
-            if (FindFirstObjectByType<Light>() != null)
+            if (FindAnyObjectByType<Light>() != null)
             {
                 return;
             }
