@@ -128,6 +128,8 @@ def _journal_search_text(entry: JournalEntry) -> str:
         experience.get("expression", {}).get("content", ""),
         experience.get("before", {}).get("content", ""),
         experience.get("after", {}).get("content", ""),
+        experience.get("before", {}).get("self_name", ""),
+        experience.get("after", {}).get("self_name", ""),
         experience.get("self_name", ""),
         experience.get("subject", ""),
         experience.get("attribute", ""),
