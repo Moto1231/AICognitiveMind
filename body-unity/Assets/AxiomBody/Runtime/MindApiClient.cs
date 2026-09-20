@@ -19,6 +19,30 @@ namespace Axiom.Body
     }
 
     [Serializable]
+    public sealed class VisionObservationRequest
+    {
+        public string image_data_url = string.Empty;
+        public int width;
+        public int height;
+        public string source = "unity-camera";
+    }
+
+    [Serializable]
+    public sealed class AudioObservationRequest
+    {
+        public string audio_data_url = string.Empty;
+        public int duration_ms;
+        public string source = "unity-microphone";
+    }
+
+    [Serializable]
+    public sealed class EmbodiedPerceptionResponse
+    {
+        public string interpretation = string.Empty;
+        public string response_text = string.Empty;
+    }
+
+    [Serializable]
     public sealed class VoiceIntentMetadata
     {
         public float rate = 1f;
@@ -62,6 +86,58 @@ namespace Axiom.Body
             using UnityWebRequest request = UnityWebRequest.Get(Url("/v1/body/face/avatar"));
             await SendAsync(request);
             return request.downloadHandler.data;
+        }
+
+        public async Task ObserveVisionAsync(
+            string imageDataUrl,
+            int width,
+            int height
+        )
+        {
+            VisionObservationRequest payload = new VisionObservationRequest
+            {
+                image_data_url = imageDataUrl,
+                width = width,
+                height = height,
+                source = "unity-camera"
+            };
+            await PostJsonAsync("/v1/body/eyes/observe", JsonUtility.ToJson(payload));
+        }
+
+        public async Task<EmbodiedPerceptionResponse> SeeAsync()
+        {
+            using UnityWebRequest request = new UnityWebRequest(
+                Url("/v1/mind/body/see?express=false"),
+                UnityWebRequest.kHttpVerbPOST
+            );
+            request.downloadHandler = new DownloadHandlerBuffer();
+            await SendAsync(request);
+            return ParsePerception(request.downloadHandler.text, "vision");
+        }
+
+        public async Task ObserveAudioAsync(
+            string audioDataUrl,
+            int durationMs
+        )
+        {
+            AudioObservationRequest payload = new AudioObservationRequest
+            {
+                audio_data_url = audioDataUrl,
+                duration_ms = durationMs,
+                source = "unity-microphone"
+            };
+            await PostJsonAsync("/v1/body/ears/observe", JsonUtility.ToJson(payload));
+        }
+
+        public async Task<EmbodiedPerceptionResponse> HearAsync()
+        {
+            using UnityWebRequest request = new UnityWebRequest(
+                Url("/v1/mind/body/hear?express=false"),
+                UnityWebRequest.kHttpVerbPOST
+            );
+            request.downloadHandler = new DownloadHandlerBuffer();
+            await SendAsync(request);
+            return ParsePerception(request.downloadHandler.text, "audio");
         }
 
         public async Task<VoiceExpressionIntent> NextMouthIntentAsync()
@@ -112,6 +188,36 @@ namespace Axiom.Body
             if (response == null)
             {
                 throw new InvalidOperationException("Mind returned an unreadable interaction response.");
+            }
+
+            return response;
+        }
+
+        private async Task PostJsonAsync(string path, string json)
+        {
+            using UnityWebRequest request = new UnityWebRequest(
+                Url(path),
+                UnityWebRequest.kHttpVerbPOST
+            );
+            request.uploadHandler =
+                new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+            await SendAsync(request);
+        }
+
+        private static EmbodiedPerceptionResponse ParsePerception(
+            string json,
+            string modality
+        )
+        {
+            EmbodiedPerceptionResponse response =
+                JsonUtility.FromJson<EmbodiedPerceptionResponse>(json);
+            if (response == null)
+            {
+                throw new InvalidOperationException(
+                    "Mind returned an unreadable " + modality + " perception response."
+                );
             }
 
             return response;
