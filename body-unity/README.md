@@ -31,7 +31,9 @@ The first slice:
 3. downloads the canonical VRM from `/v1/body/face/avatar`;
 4. loads the VRM at runtime through UniVRM;
 5. frames the avatar automatically;
-6. provides a temporary developer interaction box that posts to `/v1/mind/body/interact`.
+6. provides a temporary developer interaction box that posts to `/v1/mind/body/interact`;
+7. polls `/v1/body/mouth/next` for the Mind's existing VOICE expression intents;
+8. renders those intents through the local Windows System.Speech engine.
 
 UniVRM is pinned through Unity Package Manager to the VRM 1.0 package.
 
@@ -57,7 +59,26 @@ After the bootstrap is proven on Windows:
 
 - native continuous webcam perception
 - native continuous microphone perception
-- desktop voice/TTS adapter
 - expression mapping and lip sync
 - animation/state machine
 - replace the temporary IMGUI developer overlay with the actual Body UI
+
+## Desktop Mouth V0.1
+
+The first Windows Mouth uses the local Windows speech engine through
+`powershell.exe` + `System.Speech`.
+
+It supports:
+
+- installed Windows voice selection when `voice_name` is supplied by the Mind;
+- rate;
+- pitch through SSML prosody;
+- volume;
+- serialized speech so Mouth intents do not overlap.
+
+Speech remains a Body concern. The Mind still emits only transient VOICE
+`ExpressionIntent` objects.
+
+This is intentionally a zero-cost local adapter. A future neural TTS provider
+can replace it behind the same Mouth boundary without changing the Cognitive
+Core or SurrealDB architecture.
