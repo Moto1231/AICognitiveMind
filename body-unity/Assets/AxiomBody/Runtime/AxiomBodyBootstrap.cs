@@ -8,6 +8,7 @@ namespace Axiom.Body
     {
         private MindApiClient _client;
         private AxiomAvatarLoader _avatarLoader;
+        private AxiomMouthRuntime _mouthRuntime;
         private string _status = "Starting Axiom Body...";
         private string _message = string.Empty;
         private string _reply = string.Empty;
@@ -59,6 +60,7 @@ namespace Axiom.Body
 
             _connecting = true;
             _connected = false;
+            _mouthRuntime?.Detach();
             _status = "Connecting to Mind...";
 
             try
@@ -90,8 +92,16 @@ namespace Axiom.Body
                     : _mindUsername.Trim();
 
                 AxiomRuntimeConfig.SaveConnection(_mindUrl, _mindUsername);
+
+                if (_mouthRuntime == null)
+                {
+                    _mouthRuntime = gameObject.AddComponent<AxiomMouthRuntime>();
+                    _mouthRuntime.StatusChanged += HandleBodyStatus;
+                }
+                _mouthRuntime.Attach(_client);
+
                 _connected = true;
-                _status = "Axiom Body connected.";
+                _status = "Axiom Body connected. Voice ready.";
             }
             catch (Exception exception)
             {
@@ -102,6 +112,11 @@ namespace Axiom.Body
             {
                 _connecting = false;
             }
+        }
+
+        private void HandleBodyStatus(string status)
+        {
+            _status = status;
         }
 
         private Camera EnsureCamera()

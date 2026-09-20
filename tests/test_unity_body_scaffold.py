@@ -27,6 +27,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("/health", client)
         self.assertIn("/v1/body/face/avatar", client)
         self.assertIn("/v1/mind/body/interact", client)
+        self.assertIn("/v1/body/mouth/next", client)
         self.assertIn("AXIOM_MIND_URL", config)
         self.assertNotIn("SURREALDB_", combined)
         self.assertNotIn("MONGODB_", combined)
@@ -57,6 +58,31 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("ConnectAsync", bootstrap)
         self.assertIn("Reconnect", bootstrap)
         self.assertIn("Connection failed:", bootstrap)
+
+    def test_unity_body_consumes_mouth_intents_through_windows_speech(self) -> None:
+        client = Path(
+            "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"
+        ).read_text(encoding="utf-8")
+        mouth = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomMouthRuntime.cs"
+        ).read_text(encoding="utf-8")
+        speech = Path(
+            "body-unity/Assets/AxiomBody/Runtime/WindowsSpeechOutput.cs"
+        ).read_text(encoding="utf-8")
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("NextMouthIntentAsync", client)
+        self.assertIn("/v1/body/mouth/next", client)
+        self.assertIn("VoiceExpressionIntent", client)
+        self.assertIn("PollAsync", mouth)
+        self.assertIn("WindowsSpeechOutput", mouth)
+        self.assertIn("powershell.exe", speech)
+        self.assertIn("System.Speech", speech)
+        self.assertIn("SelectVoice", speech)
+        self.assertIn("SpeakSsml", speech)
+        self.assertIn("_mouthRuntime.Attach(_client)", bootstrap)
 
     def test_unity_body_runtime_loads_vrm_and_persists_across_scenes(self) -> None:
         loader = Path(
