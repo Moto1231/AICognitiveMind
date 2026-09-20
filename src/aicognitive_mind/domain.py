@@ -43,6 +43,7 @@ class JournalKind(StrEnum):
     BELIEF_REFRAME = "belief_reframe"
     SENSORY_EVIDENCE = "sensory_evidence"
     EVIDENCE_REVIEW = "evidence_review"
+    IDENTITY_REVISION = "identity_revision"
 
 
 class MindIdentity(BaseModel):

@@ -43,8 +43,13 @@ class MongoRuntime:
 class MongoMindStore:
     """Stores exactly one root cognitive document for this deployment."""
 
-    def __init__(self, database: AsyncDatabase[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        database: AsyncDatabase[dict[str, Any]],
+        policy: PermissionPolicy | None = None,
+    ) -> None:
         self._collection = database["mind"]
+        self._policy = policy or PermissionPolicy()
 
     async def initialize(self, mind: CognitiveMind) -> CognitiveMind:
         if await self._collection.find_one({}, {"_id": 1}) is not None:
@@ -55,6 +60,22 @@ class MongoMindStore:
     async def load(self) -> CognitiveMind | None:
         document = await self._collection.find_one({}, {"_id": 0})
         return CognitiveMind.model_validate(document) if document else None
+
+    async def replace_exact(
+        self,
+        original: CognitiveMind,
+        replacement: CognitiveMind,
+        recorded_by: CognitiveActor,
+    ) -> CognitiveMind | None:
+        self._policy.assert_allowed(
+            recorded_by,
+            CognitiveOperation.APPROVE_IDENTITY_REVISION,
+        )
+        result = await self._collection.replace_one(
+            original.model_dump(mode="python"),
+            replacement.model_dump(mode="python"),
+        )
+        return replacement if result.modified_count == 1 else None
 
 
 class MongoJournalStore:
@@ -108,6 +129,8 @@ class MongoJournalStore:
                 {"experience.expression.content": {"$regex": literal, "$options": "i"}},
                 {"experience.before.content": {"$regex": literal, "$options": "i"}},
                 {"experience.after.content": {"$regex": literal, "$options": "i"}},
+                {"experience.before.self_name": {"$regex": literal, "$options": "i"}},
+                {"experience.after.self_name": {"$regex": literal, "$options": "i"}},
                 {"experience.self_name": {"$regex": literal, "$options": "i"}},
                 {"experience.foundational_values": {"$regex": literal, "$options": "i"}},
                 {"experience.subject": {"$regex": literal, "$options": "i"}},

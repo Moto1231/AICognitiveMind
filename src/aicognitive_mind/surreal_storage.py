@@ -87,8 +87,13 @@ def _document(record: dict[str, Any]) -> dict[str, Any]:
 class SurrealMindStore:
     """Stores exactly one root cognitive document for this deployment."""
 
-    def __init__(self, database: Any) -> None:
+    def __init__(
+        self,
+        database: Any,
+        policy: PermissionPolicy | None = None,
+    ) -> None:
         self._database = database
+        self._policy = policy or PermissionPolicy()
 
     async def initialize(self, mind: CognitiveMind) -> CognitiveMind:
         records = _records(await self._database.select("mind"))
@@ -102,6 +107,27 @@ class SurrealMindStore:
         if not records:
             return None
         return CognitiveMind.model_validate(_document(records[0]))
+
+    async def replace_exact(
+        self,
+        original: CognitiveMind,
+        replacement: CognitiveMind,
+        recorded_by: CognitiveActor,
+    ) -> CognitiveMind | None:
+        self._policy.assert_allowed(
+            recorded_by,
+            CognitiveOperation.APPROVE_IDENTITY_REVISION,
+        )
+        records = _records(await self._database.select("mind"))
+        for record in records:
+            existing = CognitiveMind.model_validate(_document(record))
+            if existing == original and "id" in record:
+                await self._database.update(
+                    record["id"],
+                    replacement.model_dump(mode="json"),
+                )
+                return replacement
+        return None
 
 
 class SurrealJournalStore:

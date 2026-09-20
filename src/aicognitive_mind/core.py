@@ -9,6 +9,7 @@ from aicognitive_mind.domain import (
     ReasoningRequest,
 )
 from aicognitive_mind.engines import ReasoningEngine
+from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 from aicognitive_mind.prompts import CONSCIOUS_WORKSPACE_SYSTEM_PROMPT
@@ -85,6 +86,12 @@ class CognitiveCore:
             memory=self._memory,
             journal=self._journal,
         )
+        governance_steward = GovernanceStewardTool(
+            mind=self._mind,
+            journal=self._journal,
+            input_text=input_text,
+            policy=self._policy,
+        )
         self._policy.assert_allowed(
             CognitiveActor.REASONING_ENGINE,
             CognitiveOperation.PROPOSE_RESPONSE,
@@ -95,7 +102,7 @@ class CognitiveCore:
                 input_text=input_text,
                 system_prompt=CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
             ),
-            tools=(memory_steward, *self._reasoning_tools),
+            tools=(memory_steward, governance_steward, *self._reasoning_tools),
         )
         memory_trace = await memory_steward.complete()
 
@@ -109,6 +116,12 @@ class CognitiveCore:
                         **({"context": input_context} if input_context else {}),
                     },
                     "memory_steward": memory_trace.model_dump(mode="python"),
+                    "governance_steward": {
+                        "decisions": [
+                            decision.model_dump(mode="python")
+                            for decision in governance_steward.decisions
+                        ]
+                    },
                     "expression": {
                         "source": "conscious_workspace",
                         "content": proposal.response_text,

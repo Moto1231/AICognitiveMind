@@ -128,6 +128,15 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         summary["title"] = "Interaction"
         summary["preview"] = input_text or response_text
         summary["search_text"] = f"{input_text} {response_text}".strip()
+    elif entry.kind == JournalKind.IDENTITY_REVISION:
+        before = experience.get("before", {})
+        after = experience.get("after", {})
+        before_name = str(before.get("self_name", ""))
+        after_name = str(after.get("self_name", ""))
+        rationale = str(experience.get("rationale", ""))
+        summary["title"] = "Identity Revision"
+        summary["preview"] = f"{before_name} → {after_name}".strip(" →")
+        summary["search_text"] = f"{before_name} {after_name} {rationale}".strip()
     elif entry.kind == JournalKind.MEMORY_REVISION:
         before = experience.get("before", {})
         after = experience.get("after", {})
@@ -351,6 +360,16 @@ def _reasoning_backend_error_detail(exc: Exception) -> str:
         )
     if class_name in {"APIConnectionError", "ServerError"}:
         return f"The Mind could not connect to the {provider_label} API."
+    if class_name == "ValidationError":
+        return (
+            "The reasoning model produced a cognitive tool call that did not match "
+            "the tool's governed schema."
+        )
+    if isinstance(exc, RuntimeError) and "maximum number of tool rounds" in str(exc):
+        return (
+            "The reasoning process exhausted its cognitive tool rounds before "
+            "reaching a final response."
+        )
 
     return (
         "The reasoning backend failed unexpectedly. "

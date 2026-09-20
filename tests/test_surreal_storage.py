@@ -16,6 +16,7 @@ from aicognitive_mind.domain import (
     SensoryEvidenceArtifact,
 )
 from aicognitive_mind.persistence import create_storage
+from aicognitive_mind.permissions import CognitivePermissionError
 from aicognitive_mind.storage import MindAlreadyInitializedError
 from aicognitive_mind.surreal_storage import (
     SurrealDiagnosticStore,
@@ -90,8 +91,31 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(created, mind)
         self.assertEqual(loaded, mind)
+
+        revised = mind.model_copy(
+            update={
+                "identity": mind.identity.model_copy(
+                    update={"self_name": "Aster"}
+                )
+            }
+        )
+        replaced = await store.replace_exact(
+            mind,
+            revised,
+            recorded_by=CognitiveActor.VALUES_STEWARD,
+        )
+        self.assertEqual(replaced, revised)
+        self.assertEqual(await store.load(), revised)
+
+        with self.assertRaises(CognitivePermissionError):
+            await store.replace_exact(
+                revised,
+                mind,
+                recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+
         with self.assertRaises(MindAlreadyInitializedError):
-            await store.initialize(mind)
+            await store.initialize(revised)
 
     async def test_journal_searches_full_collection_before_paging(self) -> None:
         store = SurrealJournalStore(self.runtime.database)

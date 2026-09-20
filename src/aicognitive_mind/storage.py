@@ -24,6 +24,13 @@ class MindStore(Protocol):
 
     async def load(self) -> CognitiveMind | None: ...
 
+    async def replace_exact(
+        self,
+        original: CognitiveMind,
+        replacement: CognitiveMind,
+        recorded_by: CognitiveActor,
+    ) -> CognitiveMind | None: ...
+
 
 class JournalStore(Protocol):
     async def append(
@@ -121,6 +128,8 @@ def _journal_search_text(entry: JournalEntry) -> str:
         experience.get("expression", {}).get("content", ""),
         experience.get("before", {}).get("content", ""),
         experience.get("after", {}).get("content", ""),
+        experience.get("before", {}).get("self_name", ""),
+        experience.get("after", {}).get("self_name", ""),
         experience.get("self_name", ""),
         experience.get("subject", ""),
         experience.get("attribute", ""),
@@ -212,8 +221,9 @@ def _memory_matches(
 
 
 class InMemoryMindStore:
-    def __init__(self) -> None:
+    def __init__(self, policy: PermissionPolicy | None = None) -> None:
         self._mind: CognitiveMind | None = None
+        self._policy = policy or PermissionPolicy()
 
     async def initialize(self, mind: CognitiveMind) -> CognitiveMind:
         if self._mind is not None:
@@ -223,6 +233,21 @@ class InMemoryMindStore:
 
     async def load(self) -> CognitiveMind | None:
         return deepcopy(self._mind)
+
+    async def replace_exact(
+        self,
+        original: CognitiveMind,
+        replacement: CognitiveMind,
+        recorded_by: CognitiveActor,
+    ) -> CognitiveMind | None:
+        self._policy.assert_allowed(
+            recorded_by,
+            CognitiveOperation.APPROVE_IDENTITY_REVISION,
+        )
+        if self._mind != original:
+            return None
+        self._mind = deepcopy(replacement)
+        return deepcopy(replacement)
 
 
 class InMemoryJournalStore:
