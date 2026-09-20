@@ -69,8 +69,15 @@ class GenesisAvatarV01Tests(unittest.TestCase):
 
         node = model["nodes"][bind["node"]]
         mesh = model["meshes"][node["mesh"]]
-        self.assertEqual(mesh["extras"]["targetNames"], ["happySmile"])
-        self.assertEqual(len(mesh["primitives"][0]["targets"]), 1)
+        self.assertEqual(mesh["extras"]["targetNames"], ["happySmile", "aaOpen"])
+        self.assertEqual(len(mesh["primitives"][0]["targets"]), 2)
+
+        aa = model["extensions"]["VRMC_vrm"]["expressions"]["preset"]["aa"]
+        self.assertEqual(len(aa["morphTargetBinds"]), 1)
+        aa_bind = aa["morphTargetBinds"][0]
+        self.assertEqual(aa_bind["node"], bind["node"])
+        self.assertEqual(aa_bind["index"], 1)
+        self.assertEqual(aa_bind["weight"], 1.0)
 
     def test_body_exposes_default_genesis_avatar_route(self) -> None:
         paths = {route.path for route in app.routes}

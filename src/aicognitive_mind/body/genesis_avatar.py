@@ -6,7 +6,7 @@ import struct
 
 
 def build_genesis_vrm() -> bytes:
-    """Build the owned Genesis V0.2 smooth humanoid VRM as a GLB."""
+    """Build the owned Genesis V0.3 smooth humanoid VRM as a GLB."""
 
     buffer = bytearray()
     buffer_views: list[dict] = []
@@ -137,11 +137,17 @@ def build_genesis_vrm() -> bytes:
         a, b, c, d = index, index + 1, 5 + index + 1, 5 + index
         mouth_indices.extend([a, d, c, a, c, b])
 
-    mouth_delta: list[float] = []
+    mouth_smile_delta: list[float] = []
     smile = [0.04, 0.018, -0.006, 0.018, 0.04]
     for _ in range(2):
         for delta_y in smile:
-            mouth_delta.extend([0.0, delta_y, 0.0])
+            mouth_smile_delta.extend([0.0, delta_y, 0.0])
+
+    mouth_open_delta: list[float] = []
+    for delta_y in (0.016, 0.018, 0.020, 0.018, 0.016):
+        mouth_open_delta.extend([0.0, delta_y, 0.0])
+    for delta_y in (-0.026, -0.030, -0.034, -0.030, -0.026):
+        mouth_open_delta.extend([0.0, delta_y, 0.0])
 
     mouth_position_accessor = add_accessor(
         mouth_positions,
@@ -162,14 +168,23 @@ def build_genesis_vrm() -> bytes:
         [0],
         [9],
     )
-    mouth_target_accessor = add_accessor(
-        mouth_delta,
+    mouth_smile_target_accessor = add_accessor(
+        mouth_smile_delta,
         5126,
         "VEC3",
         10,
         34962,
         [0.0, -0.006, 0.0],
         [0.0, 0.04, 0.0],
+    )
+    mouth_open_target_accessor = add_accessor(
+        mouth_open_delta,
+        5126,
+        "VEC3",
+        10,
+        34962,
+        [0.0, -0.034, 0.0],
+        [0.0, 0.020, 0.0],
     )
 
     def material(
@@ -235,8 +250,8 @@ def build_genesis_vrm() -> bytes:
     meshes.append(
         {
             "name": "Mouth",
-            "weights": [0.0],
-            "extras": {"targetNames": ["happySmile"]},
+            "weights": [0.0, 0.0],
+            "extras": {"targetNames": ["happySmile", "aaOpen"]},
             "primitives": [
                 {
                     "attributes": {
@@ -245,7 +260,10 @@ def build_genesis_vrm() -> bytes:
                     },
                     "indices": mouth_index_accessor,
                     "material": 6,
-                    "targets": [{"POSITION": mouth_target_accessor}],
+                    "targets": [
+                        {"POSITION": mouth_smile_target_accessor},
+                        {"POSITION": mouth_open_target_accessor},
+                    ],
                 }
             ],
         }
@@ -469,7 +487,7 @@ def build_genesis_vrm() -> bytes:
     gltf = {
         "asset": {
             "version": "2.0",
-            "generator": "AICognitiveMind Genesis Avatar Builder V0.2",
+            "generator": "AICognitiveMind Genesis Avatar Builder V0.3",
         },
         "extensionsUsed": ["VRMC_vrm"],
         "extensions": {
@@ -477,7 +495,7 @@ def build_genesis_vrm() -> bytes:
                 "specVersion": "1.0",
                 "meta": {
                     "name": "Genesis",
-                    "version": "0.2",
+                    "version": "0.3",
                     "authors": ["AICognitiveMind"],
                     "licenseUrl": "https://vrm.dev/licenses/1.0/",
                     "avatarPermission": "everyone",
@@ -493,6 +511,15 @@ def build_genesis_vrm() -> bytes:
                             "isBinary": False,
                             "morphTargetBinds": [
                                 {"node": mouth_node, "index": 0, "weight": 1.0}
+                            ],
+                            "overrideBlink": "none",
+                            "overrideLookAt": "none",
+                            "overrideMouth": "none",
+                        },
+                        "aa": {
+                            "isBinary": False,
+                            "morphTargetBinds": [
+                                {"node": mouth_node, "index": 1, "weight": 1.0}
                             ],
                             "overrideBlink": "none",
                             "overrideLookAt": "none",

@@ -14,6 +14,8 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("com.vrmc.vrm", dependencies)
         self.assertIn("UniVRM.git", dependencies["com.vrmc.vrm"])
         self.assertIn("path=/Packages/VRM10", dependencies["com.vrmc.vrm"])
+        self.assertIn("com.unity.modules.unitywebrequest", dependencies)
+        self.assertIn("com.unity.modules.unitywebrequestaudio", dependencies)
 
     def test_unity_body_talks_to_mind_not_storage(self) -> None:
         client = Path(
@@ -103,6 +105,16 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("GetOutputData", lip_sync)
         self.assertIn("ExpressionPreset.aa", lip_sync)
         self.assertIn("Runtime.Expression.SetWeight", lip_sync)
+
+    def test_genesis_avatar_exposes_vrm_aa_mouth_expression(self) -> None:
+        genesis = Path(
+            "src/aicognitive_mind/body/genesis_avatar.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"aaOpen"', genesis)
+        self.assertIn('"aa": {', genesis)
+        self.assertIn('"index": 1', genesis)
+        self.assertIn("mouth_open_delta", genesis)
 
     def test_unity_body_runtime_loads_vrm_and_persists_across_scenes(self) -> None:
         loader = Path(

@@ -34,12 +34,12 @@ class AvatarCustomizationV01Tests(unittest.TestCase):
         )
         self.assertNotIn("Dark", material_names)
 
-    def test_genesis_v02_is_smooth_and_preserves_editor_contract(self) -> None:
+    def test_genesis_v03_is_smooth_and_preserves_editor_contract(self) -> None:
         model = parse_glb_json(build_genesis_vrm())
 
         vrm_meta = model["extensions"]["VRMC_vrm"]["meta"]
-        self.assertEqual(vrm_meta["version"], "0.2")
-        self.assertIn("V0.2", model["asset"]["generator"])
+        self.assertEqual(vrm_meta["version"], "0.3")
+        self.assertIn("V0.3", model["asset"]["generator"])
 
         mesh_names = {mesh["name"] for mesh in model["meshes"]}
         self.assertNotIn("SkinCube", mesh_names)
@@ -56,7 +56,7 @@ class AvatarCustomizationV01Tests(unittest.TestCase):
             }.issubset(mesh_names)
         )
 
-        # The old cube primitive had only 24 vertices. V0.2's rounded surface
+        # The old cube primitive had only 24 vertices. V0.3's rounded surface
         # uses hundreds of smoothly normaled vertices.
         vec3_counts = [
             accessor["count"]
