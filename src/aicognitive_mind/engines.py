@@ -23,13 +23,13 @@ class ReasoningEngine(Protocol):
 
 
 GEMINI_FLASH_PREFERENCE = (
-    "gemini-3.8-flash",
-    "gemini-3.7-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash-lite",
     "gemini-3.6-flash",
     "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
     "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
     "gemini-3-flash-preview",
 )
 
@@ -60,7 +60,7 @@ async def resolve_gemini_model(
             continue
         available[name] = model
 
-    if requested_model:
+    if requested_model and requested_model.lower() != "auto":
         requested = requested_model.removeprefix("models/")
         if requested in available:
             return requested
