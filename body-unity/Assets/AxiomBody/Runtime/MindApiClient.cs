@@ -98,7 +98,7 @@ namespace Axiom.Body
 
             string json = JsonUtility.ToJson(payload);
             using UnityWebRequest request = new UnityWebRequest(
-                Url("/v1/mind/body/interact"),
+                Url("/v1/mind/body/interact?express=false"),
                 UnityWebRequest.kHttpVerbPOST
             );
             request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
