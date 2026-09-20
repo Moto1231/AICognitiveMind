@@ -345,6 +345,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         body=app.state.body,
         interpreter=interpreter,
         evidence=storage.evidence,
+        journal=storage.journal,
     )
     yield
     await storage.runtime.close()
