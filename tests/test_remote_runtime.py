@@ -4,7 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from aicognitive_mind.api import app_access_authorized, lifespan
+from aicognitive_mind.api import (
+    _reasoning_backend_error_detail,
+    app_access_authorized,
+    lifespan,
+)
 from aicognitive_mind.config import Settings
 from aicognitive_mind.persistence import create_storage
 
@@ -78,6 +82,28 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 "MONGODB_URI is not configured for Render",
             ):
                 await create_storage(settings)
+
+    def test_reasoning_backend_errors_are_classified_without_raw_exception_text(self) -> None:
+        auth_error = type("AuthenticationError", (Exception,), {"status_code": 401})(
+            "secret-bearing authentication text"
+        )
+        quota_error = type("RateLimitError", (Exception,), {"status_code": 429})(
+            "raw quota text"
+        )
+        bad_request = type("BadRequestError", (Exception,), {"status_code": 400})(
+            "raw request text"
+        )
+
+        auth_detail = _reasoning_backend_error_detail(auth_error)
+        quota_detail = _reasoning_backend_error_detail(quota_error)
+        request_detail = _reasoning_backend_error_detail(bad_request)
+
+        self.assertIn("authentication failed", auth_detail.lower())
+        self.assertIn("quota or rate-limit", quota_detail.lower())
+        self.assertIn("rejected", request_detail.lower())
+        self.assertNotIn("secret-bearing", auth_detail)
+        self.assertNotIn("raw quota", quota_detail)
+        self.assertNotIn("raw request", request_detail)
 
     def test_render_python_version_is_pinned_to_project_major_minor(self) -> None:
         version = Path(".python-version").read_text(encoding="utf-8").strip()

@@ -314,6 +314,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="interactionMessage"', markup)
         self.assertIn("Send interaction", markup)
         self.assertIn("TEXT INTERACTION COMPLETE", markup)
+        self.assertIn("responseErrorMessage", markup)
         self.assertIn("function frameAvatar(", markup)
         self.assertIn("new THREE.Box3().setFromObject(object)", markup)
         self.assertIn("frameAvatar(vrm.scene)", markup)

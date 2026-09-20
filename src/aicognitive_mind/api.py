@@ -316,6 +316,39 @@ def get_core(request: Request) -> CognitiveCore:
     return cast(CognitiveCore, request.app.state.core)
 
 
+def _reasoning_backend_error_detail(exc: Exception) -> str:
+    status_code = getattr(exc, "status_code", None)
+    class_name = exc.__class__.__name__
+
+    if status_code == 401 or class_name == "AuthenticationError":
+        return (
+            "OpenAI authentication failed. Verify OPENAI_API_KEY in Render "
+            "belongs to an active OpenAI API project."
+        )
+    if status_code == 429 or class_name == "RateLimitError":
+        return (
+            "OpenAI rejected the request for quota or rate-limit reasons. "
+            "Check API billing/credits and project limits."
+        )
+    if status_code == 404 or class_name == "NotFoundError":
+        return (
+            "OpenAI could not access the configured model or API resource. "
+            "Check the model and project permissions."
+        )
+    if status_code == 400 or class_name == "BadRequestError":
+        return (
+            "OpenAI rejected the reasoning request as invalid. "
+            "Check the Render logs for the request error."
+        )
+    if class_name == "APIConnectionError":
+        return "The Mind could not connect to the OpenAI API."
+
+    return (
+        "The reasoning backend failed unexpectedly. "
+        "Check the Render logs for the exception."
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
@@ -694,6 +727,11 @@ async def portal_status(request: Request) -> dict[str, Any]:
     service = cast(CognitiveMcpService, request.app.state.mcp_service)
     try:
         result = await service.status()
+        runtime_settings = get_settings()
+        result["reasoning"] = {
+            "backend": "openai" if runtime_settings.openai_api_key else "echo",
+            "model": runtime_settings.openai_model,
+        }
         result["administration"] = {
             "pin_required": bool(get_settings().admin_pin),
             "memory_editing": True,
@@ -894,6 +932,11 @@ async def interact(body: InteractionRequest, request: Request) -> InteractionRes
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The mind has not been initialized",
         ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_reasoning_backend_error_detail(exc),
+        ) from exc
 
 
 @app.post("/v1/mind/body/interact", response_model=InteractionResult)
@@ -908,6 +951,11 @@ async def embodied_text_interaction(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="The mind has not been initialized",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_reasoning_backend_error_detail(exc),
         ) from exc
 
 
