@@ -9,6 +9,7 @@ namespace Axiom.Body
         private MindApiClient _client;
         private AxiomAvatarLoader _avatarLoader;
         private AxiomMouthRuntime _mouthRuntime;
+        private AxiomSensesRuntime _sensesRuntime;
         private string _status = "Starting Axiom Body...";
         private string _message = string.Empty;
         private string _reply = string.Empty;
@@ -18,6 +19,7 @@ namespace Axiom.Body
         private bool _sending;
         private bool _connecting;
         private bool _connected;
+        private bool _sensesChanging;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CreateRuntime()
@@ -61,6 +63,7 @@ namespace Axiom.Body
             _connecting = true;
             _connected = false;
             _mouthRuntime?.Detach();
+            _sensesRuntime?.Detach();
             _status = "Connecting to Mind...";
 
             try
@@ -100,6 +103,13 @@ namespace Axiom.Body
                 }
                 _mouthRuntime.Attach(_client, _avatarLoader.Instance);
 
+                if (_sensesRuntime == null)
+                {
+                    _sensesRuntime = gameObject.AddComponent<AxiomSensesRuntime>();
+                    _sensesRuntime.StatusChanged += HandleBodyStatus;
+                }
+                _sensesRuntime.Attach(_client);
+
                 _connected = true;
                 _status = "Axiom Body connected. Voice + lip sync ready.";
             }
@@ -117,6 +127,37 @@ namespace Axiom.Body
         private void HandleBodyStatus(string status)
         {
             _status = status;
+        }
+
+        private async Task ToggleSensesAsync()
+        {
+            if (
+                !_connected ||
+                _client == null ||
+                _sensesChanging ||
+                _sensesRuntime == null
+            )
+            {
+                return;
+            }
+
+            _sensesChanging = true;
+            bool enable = !_sensesRuntime.IsEnabled;
+            _status = enable ? "Turning senses on..." : "Turning senses off...";
+
+            try
+            {
+                await _sensesRuntime.SetEnabledAsync(enable);
+            }
+            catch (Exception exception)
+            {
+                _status = "Senses failed: " + exception.Message;
+                Debug.LogException(exception);
+            }
+            finally
+            {
+                _sensesChanging = false;
+            }
         }
 
         private Camera EnsureCamera()
@@ -195,7 +236,7 @@ namespace Axiom.Body
         private void OnGUI()
         {
             const float width = 520f;
-            const float panelHeight = 310f;
+            const float panelHeight = 356f;
 
             Rect panel = new Rect(18f, 18f, width, panelHeight);
             GUI.Box(panel, "Axiom Body — Unity Bootstrap");
@@ -234,10 +275,32 @@ namespace Axiom.Body
                 _status
             );
 
-            GUI.Box(new Rect(34f, 166f, width - 68f, 1f), string.Empty);
+            GUI.enabled =
+                _connected &&
+                !_connecting &&
+                !_sensesChanging &&
+                _sensesRuntime != null;
+            string sensesLabel =
+                _sensesRuntime != null && _sensesRuntime.IsEnabled
+                    ? "Senses Off"
+                    : "Senses On";
+            if (GUI.Button(new Rect(34f, 156f, 112f, 30f), sensesLabel))
+            {
+                _ = ToggleSensesAsync();
+            }
+            GUI.enabled = true;
+
+            GUI.Label(
+                new Rect(160f, 159f, width - 178f, 28f),
+                _sensesRuntime != null && _sensesRuntime.IsEnabled
+                    ? "Eyes + Ears active"
+                    : "Eyes + Ears inactive"
+            );
+
+            GUI.Box(new Rect(34f, 198f, width - 68f, 1f), string.Empty);
 
             _message = GUI.TextField(
-                new Rect(34f, 184f, width - 132f, 30f),
+                new Rect(34f, 216f, width - 132f, 30f),
                 _message,
                 2000
             );
@@ -247,14 +310,14 @@ namespace Axiom.Body
                 !_sending &&
                 !string.IsNullOrWhiteSpace(_message);
 
-            if (GUI.Button(new Rect(width - 82f, 184f, 76f, 30f), "Send"))
+            if (GUI.Button(new Rect(width - 82f, 216f, 76f, 30f), "Send"))
             {
                 _ = SendInteractionAsync();
             }
             GUI.enabled = true;
 
             GUI.Label(
-                new Rect(34f, 224f, width - 68f, 62f),
+                new Rect(34f, 256f, width - 68f, 76f),
                 string.IsNullOrEmpty(_reply)
                     ? "Mind response will appear here."
                     : _reply
