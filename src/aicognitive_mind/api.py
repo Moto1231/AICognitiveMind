@@ -1,3 +1,4 @@
+import os
 import base64
 import binascii
 import hmac
@@ -318,6 +319,11 @@ def get_core(request: Request) -> CognitiveCore:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    if os.getenv("RENDER", "").lower() == "true" and not settings.openai_api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY is not configured for Render. "
+            "Set it in the Render service Environment."
+        )
     storage = await create_storage(settings)
     app.state.runtime = storage.runtime
     app.state.diagnostics = storage.diagnostics
