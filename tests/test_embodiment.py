@@ -183,6 +183,37 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("content_ref", str(input_document))
         self.assertNotIn("data:image", str(input_document))
 
+    async def test_passive_visual_perception_does_not_force_body_expression(self) -> None:
+        core, journal = await self._core()
+        eyes = BrowserVisionIngress()
+        mouth = BrowserVoiceOutput()
+        face = BrowserAvatarOutput()
+        body = BodyRuntime(vision=eyes, voice=mouth, avatar=face)
+        bridge = MindBodyBridge(
+            core=core,
+            body=body,
+            interpreter=FixedInterpreter("Visual perception: A quiet room."),
+            evidence=InMemoryEvidenceStore(),
+            journal=journal,
+        )
+
+        eyes.accept(
+            image_data_url=data_url("image/jpeg", b"passive-jpeg"),
+            width=640,
+            height=480,
+        )
+
+        result = await bridge.see(express=False)
+
+        self.assertEqual(
+            result.response_text,
+            "I heard: Visual perception: A quiet room.",
+        )
+        self.assertIsNone(mouth.consume())
+        self.assertIsNone(face.consume())
+        entries = await journal.read()
+        self.assertEqual(entries[-1].experience["input"]["source"], "body:vision")
+
     async def test_audio_percept_crosses_same_mind_body_bridge(self) -> None:
         core, journal = await self._core()
         ears = BrowserAudioIngress()
@@ -310,6 +341,13 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("getUserMedia({ video: true, audio: false })", markup)
         self.assertIn("getUserMedia({ audio: true, video: false })", markup)
         self.assertIn("releaseSenses", markup)
+        self.assertIn("runSensoryLoop", markup)
+        self.assertIn("/v1/body/eyes/observe", markup)
+        self.assertIn("/v1/mind/body/see?express=false", markup)
+        self.assertIn("/v1/body/ears/observe", markup)
+        self.assertIn("/v1/mind/body/hear?express=false", markup)
+        self.assertIn("AUDIO_WINDOW_MS", markup)
+        self.assertIn("SENSE_PAUSE_MS", markup)
         self.assertNotIn('id="see"', markup)
         self.assertNotIn('id="listen"', markup)
         self.assertNotIn('id="stopCamera"', markup)
