@@ -79,7 +79,7 @@ class GeminiProviderV01Tests(unittest.IsolatedAsyncioTestCase):
         client = FakeGeminiClient([first, second])
         engine = GeminiReasoningEngine(
             "test-key",
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash",
             client=client,
         )
         request = ReasoningRequest(
@@ -96,7 +96,7 @@ class GeminiProviderV01Tests(unittest.IsolatedAsyncioTestCase):
             [{"action": "recall", "focus": "birthday"}],
         )
         self.assertEqual(len(client.models.calls), 2)
-        self.assertEqual(client.models.calls[0]["model"], "gemini-2.5-flash")
+        self.assertEqual(client.models.calls[0]["model"], "gemini-3.5-flash")
         self.assertEqual(
             proposal.diagnostic.implementation["name"],
             "gemini-generate-content",
@@ -108,7 +108,7 @@ class GeminiProviderV01Tests(unittest.IsolatedAsyncioTestCase):
         client = FakeGeminiClient([response])
         interpreter = GeminiPerceptInterpreter(
             "test-key",
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash",
             client=client,
         )
         eyes = BrowserVisionIngress()
@@ -125,7 +125,7 @@ class GeminiProviderV01Tests(unittest.IsolatedAsyncioTestCase):
             "Visual perception: A desk and a window are visible.",
         )
         call = client.models.calls[0]
-        self.assertEqual(call["model"], "gemini-2.5-flash")
+        self.assertEqual(call["model"], "gemini-3.5-flash")
         part = call["contents"][0]
         self.assertEqual(part.inline_data.mime_type, "image/jpeg")
         self.assertEqual(part.inline_data.data, b"jpeg")
@@ -135,7 +135,7 @@ class GeminiProviderV01Tests(unittest.IsolatedAsyncioTestCase):
         client = FakeGeminiClient([response])
         interpreter = GeminiPerceptInterpreter(
             "test-key",
-            model="gemini-2.5-flash",
+            model="gemini-3.5-flash",
             client=client,
         )
         ears = BrowserAudioIngress()

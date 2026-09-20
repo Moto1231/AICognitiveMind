@@ -146,7 +146,7 @@ class GeminiReasoningEngine:
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.5-flash",
         max_tool_rounds: int = 8,
         client: Any | None = None,
     ) -> None:
