@@ -61,7 +61,7 @@ The runtime bootstrap is created automatically after a scene loads, so an empty 
 
 After the bootstrap is proven on Windows:
 
-- desktop operator/admin views for memory, journal, and diagnostics
+- admin memory editing and diagnostics inside the desktop application
 - voice-pack controls inside the desktop application
 - phoneme/viseme refinement beyond amplitude-driven mouth opening
 - broader expression mapping
@@ -142,3 +142,31 @@ defaults.
 Saved appearance is applied before the Unity Mouth attaches so lip-sync uses
 the customized mouth width as its neutral baseline. Live editor changes refresh
 that lip-sync baseline without changing the Mind or SurrealDB.
+
+## Desktop Memory + Journal V0.1
+
+The Unity desktop application now exposes separate **Memory** and **Journal**
+views from the main Body screen.
+
+Both views use the existing protected Mind portal APIs; Unity never reads
+SurrealDB directly.
+
+Memory provides:
+
+- newest-first paging in 12-item pages;
+- full-text search through the existing memory query contract;
+- memory class and formation timestamp;
+- memory content;
+- associations and grounding summaries;
+- previous / next page navigation.
+
+Journal provides:
+
+- newest-first paging in 12-item pages;
+- full-text search through the existing journal query contract;
+- journal kind/title and occurrence timestamp;
+- the existing server-generated journal preview;
+- previous / next page navigation.
+
+This slice is intentionally read-only. Privileged memory revision remains an
+Admin-mode function and is the next desktop consolidation boundary.
