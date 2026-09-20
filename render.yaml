@@ -12,11 +12,19 @@ services:
       - key: APP_NAME
         value: AI Cognitive Mind
       - key: STORAGE_PROVIDER
-        value: mongo
-      - key: MONGODB_DATABASE
-        value: ai_cognitive_mind
-      - key: MONGODB_URI
+        value: surreal
+      - key: SURREALDB_URI
         sync: false
+      - key: SURREALDB_NAMESPACE
+        value: mir_ai
+      - key: SURREALDB_DATABASE
+        value: ai_cognitive_mind
+      - key: SURREALDB_USERNAME
+        sync: false
+      - key: SURREALDB_PASSWORD
+        sync: false
+      - key: SURREALDB_AUTH_LEVEL
+        value: database
       - key: REASONING_PROVIDER
         value: gemini
       - key: GEMINI_API_KEY
