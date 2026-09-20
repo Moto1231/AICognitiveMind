@@ -128,6 +128,15 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
         summary["title"] = "Interaction"
         summary["preview"] = input_text or response_text
         summary["search_text"] = f"{input_text} {response_text}".strip()
+    elif entry.kind == JournalKind.IDENTITY_REVISION:
+        before = experience.get("before", {})
+        after = experience.get("after", {})
+        before_name = str(before.get("self_name", ""))
+        after_name = str(after.get("self_name", ""))
+        rationale = str(experience.get("rationale", ""))
+        summary["title"] = "Identity Revision"
+        summary["preview"] = f"{before_name} → {after_name}".strip(" →")
+        summary["search_text"] = f"{before_name} {after_name} {rationale}".strip()
     elif entry.kind == JournalKind.MEMORY_REVISION:
         before = experience.get("before", {})
         after = experience.get("after", {})
