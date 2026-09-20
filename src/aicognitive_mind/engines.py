@@ -2,6 +2,8 @@ import json
 from typing import Any, Protocol
 
 import httpx
+from google import genai
+from google.genai import types as genai_types
 from openai import AsyncOpenAI
 
 from aicognitive_mind.domain import (
@@ -136,6 +138,112 @@ class OpenAIReasoningEngine:
             )
 
         raise RuntimeError("Reasoning engine exceeded the maximum number of tool rounds")
+
+
+class GeminiReasoningEngine:
+    """Gemini-backed reasoning process; identity and memory remain outside the model."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-2.5-flash",
+        max_tool_rounds: int = 8,
+        client: Any | None = None,
+    ) -> None:
+        self._client = client or genai.Client(api_key=api_key)
+        self._model = model
+        self._max_tool_rounds = max_tool_rounds
+
+    async def propose(
+        self,
+        request: ReasoningRequest,
+        tools: tuple[ReasoningTool, ...] = (),
+    ) -> ReasoningProposal:
+        tools_by_name = {tool.name: tool for tool in tools}
+        declarations = [
+            genai_types.FunctionDeclaration(
+                name=tool.name,
+                description=tool.description,
+                parameters_json_schema=tool.input_schema,
+            )
+            for tool in tools
+        ]
+        configured_tools = (
+            [genai_types.Tool(function_declarations=declarations)]
+            if declarations
+            else None
+        )
+        config = genai_types.GenerateContentConfig(
+            system_instruction=request.system_prompt,
+            tools=configured_tools,
+            automatic_function_calling=genai_types.AutomaticFunctionCallingConfig(
+                disable=True
+            ),
+        )
+        contents: list[Any] = [
+            genai_types.Content(
+                role="user",
+                parts=[genai_types.Part.from_text(text=request.input_text)],
+            )
+        ]
+        tool_calls = 0
+
+        for _ in range(self._max_tool_rounds):
+            response = await self._client.aio.models.generate_content(
+                model=self._model,
+                contents=contents,
+                config=config,
+            )
+            calls = list(response.function_calls or [])
+            if not calls:
+                response_text = (response.text or "").strip()
+                if not response_text:
+                    raise RuntimeError("Gemini reasoning engine returned no response text")
+                return ReasoningProposal(
+                    response_text=response_text,
+                    diagnostic=DiagnosticObservation(
+                        component="reasoning_engine",
+                        operation="propose_response",
+                        implementation={
+                            "name": "gemini-generate-content",
+                            "model": self._model,
+                            "tool_calls": tool_calls,
+                            "tools_exposed": [tool.name for tool in tools],
+                        },
+                    ),
+                )
+
+            candidates = response.candidates or []
+            if not candidates or candidates[0].content is None:
+                raise RuntimeError(
+                    "Gemini reasoning engine returned function calls without model content"
+                )
+            contents.append(candidates[0].content)
+
+            result_parts = []
+            for call in calls:
+                name = call.name or ""
+                tool = tools_by_name.get(name)
+                if tool is None:
+                    raise RuntimeError(
+                        f"Gemini reasoning engine requested unknown tool: {name}"
+                    )
+                arguments = dict(call.args or {})
+                result = await tool.invoke(arguments)
+                response_kwargs: dict[str, Any] = {
+                    "name": name,
+                    "response": {"result": result},
+                }
+                if call.id:
+                    response_kwargs["id"] = call.id
+                result_parts.append(
+                    genai_types.Part.from_function_response(**response_kwargs)
+                )
+                tool_calls += 1
+
+            contents.append(genai_types.Content(role="user", parts=result_parts))
+
+        raise RuntimeError("Gemini reasoning engine exceeded the maximum number of tool rounds")
 
 
 class OllamaReasoningEngine:
