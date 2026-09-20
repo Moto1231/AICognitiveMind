@@ -43,6 +43,21 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("UniGLTF", asmdef["references"])
         self.assertIn("UniGLTF.Utils", asmdef["references"])
 
+    def test_unity_body_exposes_local_connection_settings(self) -> None:
+        config = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomRuntimeConfig.cs"
+        ).read_text(encoding="utf-8")
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("PlayerPrefs.SetString", config)
+        self.assertIn("SaveConnection", config)
+        self.assertIn("GUI.PasswordField", bootstrap)
+        self.assertIn("ConnectAsync", bootstrap)
+        self.assertIn("Reconnect", bootstrap)
+        self.assertIn("Connection failed:", bootstrap)
+
     def test_unity_body_runtime_loads_vrm_and_persists_across_scenes(self) -> None:
         loader = Path(
             "body-unity/Assets/AxiomBody/Runtime/AxiomAvatarLoader.cs"
