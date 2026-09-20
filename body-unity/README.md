@@ -61,8 +61,8 @@ The runtime bootstrap is created automatically after a scene loads, so an empty 
 
 After the bootstrap is proven on Windows:
 
-- avatar/editor controls inside the desktop application
 - desktop operator/admin views for memory, journal, and diagnostics
+- voice-pack controls inside the desktop application
 - phoneme/viseme refinement beyond amplitude-driven mouth opening
 - broader expression mapping
 - animation/state machine
@@ -118,3 +118,27 @@ When Senses are enabled:
 - passive perception does not automatically speak every Mind response.
 
 Turning Senses off releases both camera and microphone hardware.
+
+## Desktop Avatar Editor V0.1
+
+The Unity Body now owns avatar appearance editing instead of requiring the
+browser editor.
+
+The live Body view exposes an **Avatar** selection that opens a separate
+desktop editing view. It carries forward the existing Genesis appearance
+contract:
+
+- skin, hair, shirt, pants, eye, and shoe colors;
+- head size and hair volume;
+- eye size and eye spacing;
+- mouth width;
+- torso and shoulder width;
+- arm and leg thickness.
+
+Changes preview immediately on the loaded VRM. **Save** persists the normalized
+appearance in Unity `PlayerPrefs`; **Reset** returns Genesis to the canonical
+defaults.
+
+Saved appearance is applied before the Unity Mouth attaches so lip-sync uses
+the customized mouth width as its neutral baseline. Live editor changes refresh
+that lip-sync baseline without changing the Mind or SurrealDB.

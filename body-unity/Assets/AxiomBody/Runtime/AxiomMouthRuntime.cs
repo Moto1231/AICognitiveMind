@@ -52,6 +52,16 @@ namespace Axiom.Body
             );
         }
 
+        public void RefreshAvatar(Vrm10Instance avatar)
+        {
+            if (_audioSource == null || _lipSync == null || avatar == null)
+            {
+                return;
+            }
+
+            _lipSync.Attach(avatar, _audioSource);
+        }
+
         public void Detach()
         {
             _client = null;
