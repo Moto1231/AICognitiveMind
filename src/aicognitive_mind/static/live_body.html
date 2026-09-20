@@ -246,6 +246,10 @@
       AvatarCustomizer,
       loadSavedAvatarAppearance
     } from "/static/avatar_customizer.js";
+    import {
+      applyVoicePack,
+      loadSavedVoicePack
+    } from "/static/voice_pack.js";
 
     const stage = document.getElementById("stage");
     const video = document.getElementById("video");
@@ -410,15 +414,34 @@
     function speakIntent(intent) {
       if (!intent?.text || !window.speechSynthesis) return;
       loadVoices();
+
       const metadata = intent.metadata || {};
       const utterance = new SpeechSynthesisUtterance(intent.text);
-      utterance.rate = Number(metadata.rate ?? 1);
-      utterance.pitch = Number(metadata.pitch ?? 1);
-      utterance.volume = Number(metadata.volume ?? 1);
+      applyVoicePack(utterance, loadSavedVoicePack(), voices);
+
+      const requestedRate = Number(metadata.rate ?? 1);
+      const requestedPitch = Number(metadata.pitch ?? 1);
+      const requestedVolume = Number(metadata.volume ?? 1);
+      utterance.rate = Math.max(
+        0.1,
+        Math.min(10, utterance.rate * (Number.isFinite(requestedRate) ? requestedRate : 1))
+      );
+      utterance.pitch = Math.max(
+        0,
+        Math.min(2, utterance.pitch * (Number.isFinite(requestedPitch) ? requestedPitch : 1))
+      );
+      utterance.volume = Math.max(
+        0,
+        Math.min(1, utterance.volume * (Number.isFinite(requestedVolume) ? requestedVolume : 1))
+      );
+
       if (metadata.voice_name) {
-        const voice = voices.find((item) => item.name === metadata.voice_name);
-        if (voice) utterance.voice = voice;
+        const requestedVoice = voices.find(
+          (item) => item.name === metadata.voice_name
+        );
+        if (requestedVoice) utterance.voice = requestedVoice;
       }
+
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     }
