@@ -890,6 +890,21 @@ async def interact(body: InteractionRequest, request: Request) -> InteractionRes
         ) from exc
 
 
+@app.post("/v1/mind/body/interact", response_model=InteractionResult)
+async def embodied_text_interaction(
+    body: InteractionRequest,
+    request: Request,
+) -> InteractionResult:
+    try:
+        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        return await bridge.interact(body.message)
+    except MindNotInitializedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The mind has not been initialized",
+        ) from exc
+
+
 @app.get("/v1/mind/journal", response_model=list[JournalEntry])
 async def read_journal(request: Request) -> list[JournalEntry]:
     try:

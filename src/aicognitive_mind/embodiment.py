@@ -13,6 +13,7 @@ from aicognitive_mind.body import BodyRuntime, Percept, SensoryModality
 from aicognitive_mind.core import CognitiveCore
 from aicognitive_mind.domain import (
     CognitiveActor,
+    InteractionResult,
     JournalEntry,
     JournalKind,
     SensoryEvidenceArtifact,
@@ -214,6 +215,15 @@ class MindBodyBridge:
 
     async def hear(self) -> EmbodiedInteractionResult:
         return await self.perceive(await self._body.hear())
+
+    async def interact(self, message: str) -> InteractionResult:
+        interaction = await self._core.interact(
+            message,
+            source="human",
+            input_context={"interface": "body:live:text"},
+        )
+        await self._body.express(interaction.response_text)
+        return interaction
 
     async def perceive(self, percept: Percept) -> EmbodiedInteractionResult:
         artifact = await self._preserve_evidence(percept)

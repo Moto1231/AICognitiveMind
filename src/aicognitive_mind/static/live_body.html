@@ -29,6 +29,27 @@
     .avatar-field input[type="range"] { width: 100%; }
     .avatar-value { font-variant-numeric: tabular-nums; color: #d7d9df; }
     #avatarEditorStatus { color: #b9bcc4; min-height: 1.4rem; }
+    .interaction-panel { margin: 1rem 0; padding: 1rem; background: #181a20; border-radius: 14px; }
+    .interaction-panel h2 { margin: 0 0 .25rem; }
+    .interaction-panel p { margin-top: 0; }
+    .interaction-form { display: grid; gap: .75rem; }
+    .interaction-form textarea {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 6rem;
+      resize: vertical;
+      padding: .8rem;
+      border: 1px solid #373a44;
+      border-radius: 10px;
+      background: #101114;
+      color: #f2f2f2;
+      font: inherit;
+    }
+    #interactionResponse {
+      white-space: pre-wrap;
+      min-height: 1.5rem;
+      color: #d7d9df;
+    }
   </style>
 
   <script type="importmap">
@@ -47,6 +68,20 @@
     <p>One circuit: sense through the browser, interpret in the Mind, reason with memory, express through Face and Mouth.</p>
 
     <div id="stage"></div>
+
+    <section class="interaction-panel" aria-labelledby="interactionTitle">
+      <h2 id="interactionTitle">Talk to Mind</h2>
+      <p>Typed interaction enters the same Cognitive Core and Memory Steward path, then returns through Face and Mouth.</p>
+      <form id="interactionForm" class="interaction-form">
+        <label for="interactionMessage">Message</label>
+        <textarea id="interactionMessage" maxlength="8000" placeholder="Talk to the Mind..." required></textarea>
+        <div class="controls">
+          <button id="sendInteraction" type="submit">Send interaction</button>
+          <button id="clearInteraction" type="button">Clear</button>
+        </div>
+      </form>
+      <div id="interactionResponse" aria-live="polite"></div>
+    </section>
 
     <section class="avatar-editor" aria-labelledby="avatarEditorTitle">
       <h2 id="avatarEditorTitle">Modify Genesis</h2>
@@ -123,6 +158,11 @@
     const stopSpeechButton = document.getElementById("stopSpeech");
     const statusBox = document.getElementById("status");
     const evidenceArtifactLink = document.getElementById("evidenceArtifact");
+    const interactionForm = document.getElementById("interactionForm");
+    const interactionMessage = document.getElementById("interactionMessage");
+    const sendInteractionButton = document.getElementById("sendInteraction");
+    const clearInteractionButton = document.getElementById("clearInteraction");
+    const interactionResponse = document.getElementById("interactionResponse");
     const avatarInputs = [...document.querySelectorAll("[data-avatar-key]")];
     const avatarValueLabels = [...document.querySelectorAll("[data-avatar-value]")];
     const saveAvatarAppearanceButton = document.getElementById("saveAvatarAppearance");
@@ -297,6 +337,41 @@
         "Mind response:\n" + result.response_text
       );
       await consumeExpressionOutputs();
+    }
+
+    async function submitTextInteraction(event) {
+      event.preventDefault();
+      const message = interactionMessage.value.trim();
+      if (!message) return;
+
+      sendInteractionButton.disabled = true;
+      interactionResponse.textContent = "Thinking...";
+      evidenceArtifactLink.hidden = true;
+
+      try {
+        const response = await fetch("/v1/mind/body/interact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message })
+        });
+        if (!response.ok) throw new Error(await response.text());
+
+        const result = await response.json();
+        interactionResponse.textContent = result.response_text;
+        setStatus(
+          "TEXT INTERACTION COMPLETE\n\n" +
+          "You:\n" + message + "\n\n" +
+          "Mind response:\n" + result.response_text
+        );
+        interactionMessage.value = "";
+        await consumeExpressionOutputs();
+      } catch (error) {
+        interactionResponse.textContent = "Interaction failed: " + error.message;
+        setStatus("Text interaction failed: " + error.message);
+      } finally {
+        sendInteractionButton.disabled = false;
+        interactionMessage.focus();
+      }
     }
 
     async function ensureCamera() {
@@ -477,6 +552,13 @@
       writeAvatarControls(DEFAULT_AVATAR_APPEARANCE);
       avatarCustomizer?.reset();
       avatarEditorStatus.textContent = "Genesis reset to default appearance.";
+    });
+
+    interactionForm.addEventListener("submit", submitTextInteraction);
+    clearInteractionButton.addEventListener("click", () => {
+      interactionMessage.value = "";
+      interactionResponse.textContent = "";
+      interactionMessage.focus();
     });
 
     seeButton.addEventListener("click", seeThroughBody);
