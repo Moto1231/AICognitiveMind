@@ -6,6 +6,8 @@ import hashlib
 from datetime import datetime
 from typing import Any, Protocol
 
+from google import genai
+from google.genai import types as genai_types
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
@@ -190,6 +192,123 @@ class OpenAIPerceptInterpreter:
         }
         extension = extension_by_type.get(media_type, "webm")
         return f"percept.{extension}"
+
+
+class GeminiPerceptInterpreter:
+    """Gemini-backed Mind-side interpretation for preserved visual and audio evidence."""
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        model: str = "gemini-2.5-flash",
+        client: Any | None = None,
+    ) -> None:
+        self._client = client or genai.Client(api_key=api_key)
+        self._model = model
+
+    async def interpret(
+        self,
+        percept: Percept,
+        *,
+        focus: str | None = None,
+    ) -> str:
+        if percept.modality == SensoryModality.VISION:
+            return await self._interpret_vision(percept, focus=focus)
+        if percept.modality == SensoryModality.AUDIO:
+            return await self._interpret_audio(percept, focus=focus)
+
+        summary = (percept.summary or "Uninterpreted sensory observation.").strip()
+        return (
+            f"Body {percept.modality.value} perception from {percept.source}: "
+            f"{summary}"
+        )
+
+    async def _interpret_vision(
+        self,
+        percept: Percept,
+        *,
+        focus: str | None = None,
+    ) -> str:
+        media_type, payload = self._decode_data_url(
+            percept.content_ref,
+            expected_prefix="image/",
+            label="Visual",
+        )
+        prompt = (
+            "Interpret this as direct visual sensory input for a persistent cognitive mind. "
+            "Describe only what is reasonably observable. "
+            "Do not invent identity, intent, or hidden facts."
+        )
+        if focus:
+            prompt += f" Re-examine the original evidence specifically for: {focus}"
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=[
+                genai_types.Part.from_bytes(data=payload, mime_type=media_type),
+                prompt,
+            ],
+        )
+        text = (response.text or "").strip()
+        if not text:
+            raise RuntimeError("Gemini vision interpreter returned no description")
+        return f"Visual perception: {text}"
+
+    async def _interpret_audio(
+        self,
+        percept: Percept,
+        *,
+        focus: str | None = None,
+    ) -> str:
+        media_type, payload = self._decode_data_url(
+            percept.content_ref,
+            expected_prefix="audio/",
+            label="Audio",
+        )
+        prompt = (
+            "Interpret this as direct auditory sensory input for a persistent cognitive mind. "
+            "Transcribe spoken words faithfully and briefly note materially relevant non-speech "
+            "sounds. Do not invent speakers, intent, or hidden facts."
+        )
+        if focus:
+            prompt += f" Re-examine the original evidence specifically for: {focus}"
+
+        response = await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=[
+                genai_types.Part.from_bytes(data=payload, mime_type=media_type),
+                prompt,
+            ],
+        )
+        text = (response.text or "").strip()
+        if not text:
+            raise RuntimeError("Gemini audio interpreter returned no interpretation")
+        return f"Auditory perception: {text}"
+
+    @staticmethod
+    def _decode_data_url(
+        data_url: str | None,
+        *,
+        expected_prefix: str,
+        label: str,
+    ) -> tuple[str, bytes]:
+        if not data_url or not data_url.startswith("data:") or "," not in data_url:
+            raise ValueError(f"{label} percept does not contain a valid data URL")
+        header, encoded = data_url.split(",", 1)
+        if not header.endswith(";base64"):
+            raise ValueError(f"{label} percept does not contain base64 data")
+        descriptor = header.removeprefix("data:").removesuffix(";base64")
+        media_type = descriptor.split(";", 1)[0].lower()
+        if not media_type.startswith(expected_prefix):
+            raise ValueError(f"{label} percept contains an unexpected media type")
+        try:
+            payload = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError(f"{label} percept contains invalid base64 data") from exc
+        if not payload:
+            raise ValueError(f"{label} percept is empty")
+        return media_type, payload
 
 
 class MindBodyBridge:
