@@ -59,6 +59,36 @@ namespace Axiom.Body
             _lipSync?.Detach();
         }
 
+        public async Task SpeakTextAsync(string text)
+        {
+            string spokenText = (text ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(spokenText))
+            {
+                return;
+            }
+
+            while (_polling)
+            {
+                await Task.Yield();
+            }
+
+            _polling = true;
+            try
+            {
+                VoiceExpressionIntent intent = new VoiceExpressionIntent
+                {
+                    modality = "voice",
+                    text = spokenText,
+                    metadata = new VoiceIntentMetadata()
+                };
+                await SpeakIntentAsync(intent);
+            }
+            finally
+            {
+                _polling = false;
+            }
+        }
+
         private void Update()
         {
             if (
@@ -82,8 +112,6 @@ namespace Axiom.Body
             }
 
             _polling = true;
-            string wavPath = string.Empty;
-
             try
             {
                 VoiceExpressionIntent intent = await _client.NextMouthIntentAsync();
@@ -100,6 +128,19 @@ namespace Axiom.Body
                     return;
                 }
 
+                await SpeakIntentAsync(intent);
+            }
+            finally
+            {
+                _polling = false;
+            }
+        }
+
+        private async Task SpeakIntentAsync(VoiceExpressionIntent intent)
+        {
+            string wavPath = string.Empty;
+            try
+            {
                 StatusChanged?.Invoke("Preparing speech...");
                 wavPath = await _speech.SynthesizeWavAsync(intent);
                 _currentAudioPath = wavPath;
@@ -117,6 +158,7 @@ namespace Axiom.Body
             {
                 StatusChanged?.Invoke("Voice failed: " + exception.Message);
                 Debug.LogException(exception);
+                throw;
             }
             finally
             {
@@ -126,7 +168,6 @@ namespace Axiom.Body
                 }
 
                 WindowsSpeechOutput.TryDelete(wavPath);
-                _polling = false;
             }
         }
 
