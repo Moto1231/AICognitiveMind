@@ -10,6 +10,7 @@ namespace Axiom.Body
         private AxiomAvatarLoader _avatarLoader;
         private AxiomMouthRuntime _mouthRuntime;
         private AxiomSensesRuntime _sensesRuntime;
+        private AxiomAvatarEditorRuntime _avatarEditor;
         private string _status = "Starting Axiom Body...";
         private string _message = string.Empty;
         private string _reply = string.Empty;
@@ -20,6 +21,21 @@ namespace Axiom.Body
         private bool _connecting;
         private bool _connected;
         private bool _sensesChanging;
+        private DesktopView _view = DesktopView.Body;
+        private Vector2 _avatarScroll = Vector2.zero;
+        private string _avatarEditorStatus = "Appearance changes preview immediately.";
+        private string _skinColorText = "#b88566";
+        private string _hairColorText = "#090a0d";
+        private string _shirtColorText = "#2e4257";
+        private string _pantsColorText = "#1a1f29";
+        private string _eyeColorText = "#090a0d";
+        private string _shoeColorText = "#090a0d";
+
+        private enum DesktopView
+        {
+            Body,
+            Avatar
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void CreateRuntime()
@@ -95,6 +111,14 @@ namespace Axiom.Body
                     : _mindUsername.Trim();
 
                 AxiomRuntimeConfig.SaveConnection(_mindUrl, _mindUsername);
+
+                if (_avatarEditor == null)
+                {
+                    _avatarEditor =
+                        gameObject.AddComponent<AxiomAvatarEditorRuntime>();
+                }
+                _avatarEditor.Attach(_avatarLoader.Instance);
+                LoadAvatarEditorFields();
 
                 if (_mouthRuntime == null)
                 {
@@ -235,11 +259,22 @@ namespace Axiom.Body
 
         private void OnGUI()
         {
+            if (_view == DesktopView.Avatar)
+            {
+                DrawAvatarEditor();
+                return;
+            }
+
+            DrawBodyView();
+        }
+
+        private void DrawBodyView()
+        {
             const float width = 520f;
-            const float panelHeight = 356f;
+            const float panelHeight = 396f;
 
             Rect panel = new Rect(18f, 18f, width, panelHeight);
-            GUI.Box(panel, "Axiom Body — Unity Bootstrap");
+            GUI.Box(panel, "Axiom Body");
 
             GUI.Label(new Rect(34f, 48f, 90f, 24f), "Mind URL");
             _mindUrl = GUI.TextField(
@@ -264,7 +299,12 @@ namespace Axiom.Body
             );
 
             GUI.enabled = !_connecting;
-            if (GUI.Button(new Rect(34f, 116f, 112f, 30f), _connected ? "Reconnect" : "Connect"))
+            if (
+                GUI.Button(
+                    new Rect(34f, 116f, 112f, 30f),
+                    _connected ? "Reconnect" : "Connect"
+                )
+            )
             {
                 _ = ConnectAsync();
             }
@@ -317,11 +357,321 @@ namespace Axiom.Body
             GUI.enabled = true;
 
             GUI.Label(
-                new Rect(34f, 256f, width - 68f, 76f),
+                new Rect(34f, 256f, width - 68f, 62f),
                 string.IsNullOrEmpty(_reply)
                     ? "Mind response will appear here."
                     : _reply
             );
+
+            GUI.enabled = _connected && _avatarEditor != null;
+            if (GUI.Button(new Rect(34f, 342f, 112f, 30f), "Avatar"))
+            {
+                LoadAvatarEditorFields();
+                _view = DesktopView.Avatar;
+            }
+            GUI.enabled = true;
+
+            GUI.Label(
+                new Rect(160f, 347f, width - 178f, 24f),
+                "Appearance editor"
+            );
+        }
+
+        private void DrawAvatarEditor()
+        {
+            const float width = 520f;
+            float height = Mathf.Min(650f, Mathf.Max(420f, Screen.height - 36f));
+
+            GUI.Box(new Rect(18f, 18f, width, height), "Avatar");
+
+            if (GUI.Button(new Rect(34f, 48f, 112f, 30f), "Back to Body"))
+            {
+                _view = DesktopView.Body;
+                return;
+            }
+
+            GUI.enabled = _avatarEditor != null;
+            if (GUI.Button(new Rect(158f, 48f, 82f, 30f), "Save"))
+            {
+                CommitAvatarColors();
+                _avatarEditor.ApplyPreview();
+                _avatarEditor.Save();
+                _mouthRuntime?.RefreshAvatar(_avatarLoader?.Instance);
+                _avatarEditorStatus = "Appearance saved on this desktop.";
+            }
+
+            if (GUI.Button(new Rect(250f, 48f, 82f, 30f), "Reset"))
+            {
+                _avatarEditor.Reset();
+                LoadAvatarEditorFields();
+                _mouthRuntime?.RefreshAvatar(_avatarLoader?.Instance);
+                _avatarEditorStatus = "Genesis appearance reset.";
+            }
+            GUI.enabled = true;
+
+            GUI.Label(
+                new Rect(344f, 50f, width - 364f, 42f),
+                _avatarEditorStatus
+            );
+
+            if (_avatarEditor == null)
+            {
+                GUI.Label(
+                    new Rect(34f, 100f, width - 68f, 40f),
+                    "Connect to the Mind before editing the avatar."
+                );
+                return;
+            }
+
+            AxiomAvatarAppearance appearance = _avatarEditor.Appearance;
+            Rect viewport = new Rect(34f, 96f, width - 50f, height - 116f);
+            Rect content = new Rect(0f, 0f, width - 86f, 690f);
+            _avatarScroll = GUI.BeginScrollView(
+                viewport,
+                _avatarScroll,
+                content
+            );
+
+            bool previewChanged = false;
+            float y = 4f;
+
+            GUI.Label(new Rect(0f, y, 180f, 24f), "Colors (hex)");
+            y += 30f;
+
+            previewChanged |= DrawColorField(
+                ref _skinColorText,
+                "Skin",
+                ref appearance.skinColor,
+                y
+            );
+            y += 32f;
+            previewChanged |= DrawColorField(
+                ref _hairColorText,
+                "Hair",
+                ref appearance.hairColor,
+                y
+            );
+            y += 32f;
+            previewChanged |= DrawColorField(
+                ref _shirtColorText,
+                "Shirt",
+                ref appearance.shirtColor,
+                y
+            );
+            y += 32f;
+            previewChanged |= DrawColorField(
+                ref _pantsColorText,
+                "Pants",
+                ref appearance.pantsColor,
+                y
+            );
+            y += 32f;
+            previewChanged |= DrawColorField(
+                ref _eyeColorText,
+                "Eyes",
+                ref appearance.eyeColor,
+                y
+            );
+            y += 32f;
+            previewChanged |= DrawColorField(
+                ref _shoeColorText,
+                "Shoes",
+                ref appearance.shoeColor,
+                y
+            );
+            y += 42f;
+
+            GUI.Label(new Rect(0f, y, 180f, 24f), "Proportions");
+            y += 30f;
+
+            previewChanged |= DrawAvatarSlider(
+                ref appearance.headSize,
+                "Head size",
+                0.75f,
+                1.35f,
+                y
+            );
+            y += 38f;
+            previewChanged |= DrawAvatarSlider(
+                ref appearance.hairVolume,
+                "Hair volume",
+                0.60f,
+                1.60f,
+                y
+            );
+            y += 38f;
+            previewChanged |= DrawAvatarSlider(
+                ref appearance.eyeSize,
+                "Eye size",
+                0.60f,
+                1.60f,
+                y
+            );
+            y += 38f;
+            previewChanged |= DrawAvatarSlider(
+                ref appearance.eyeSpacing,
+                "Eye spacing",
+                0.65f,
+                1.45f,
+                y
+            );
+            y += 38f;
+            previewChanged |= DrawAvatarSlider(
+                ref appearance.mouthWidth,
+                "Mouth width",
+                0.60f,
+                1.50f,
+                y
+            );
+            y += 38f;
+            previewChanged |= DrawAvatarSlider(
+                ref appearance.torsoWidth,
+                "Torso width",
+                0.70f,
+                1.40f,
+                y
+            );
+            y += 38f;
+            previewChanged |= DrawAvatarSlider(
+                ref appearance.shoulderWidth,
+                "Shoulder width",
+                0.75f,
+                1.40f,
+                y
+            );
+            y += 38f;
+            previewChanged |= DrawAvatarSlider(
+                ref appearance.armThickness,
+                "Arm thickness",
+                0.65f,
+                1.50f,
+                y
+            );
+            y += 38f;
+            previewChanged |= DrawAvatarSlider(
+                ref appearance.legThickness,
+                "Leg thickness",
+                0.65f,
+                1.50f,
+                y
+            );
+
+            GUI.EndScrollView();
+
+            if (previewChanged)
+            {
+                _avatarEditor.ApplyPreview();
+                _mouthRuntime?.RefreshAvatar(_avatarLoader?.Instance);
+                _avatarEditorStatus = "Previewing unsaved appearance.";
+            }
+        }
+
+        private bool DrawColorField(
+            ref string editorValue,
+            string label,
+            ref string appearanceValue,
+            float y
+        )
+        {
+            GUI.Label(new Rect(0f, y + 2f, 120f, 24f), label);
+            string next = GUI.TextField(
+                new Rect(126f, y, 112f, 26f),
+                editorValue,
+                7
+            );
+
+            if (string.Equals(next, editorValue, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            editorValue = next;
+            if (
+                next.Length == 7 &&
+                next[0] == '#' &&
+                ColorUtility.TryParseHtmlString(next, out _)
+            )
+            {
+                appearanceValue = next;
+                return true;
+            }
+
+            _avatarEditorStatus = "Colors use #RRGGBB.";
+            return false;
+        }
+
+        private static bool DrawAvatarSlider(
+            ref float value,
+            string label,
+            float minimum,
+            float maximum,
+            float y
+        )
+        {
+            GUI.Label(new Rect(0f, y, 122f, 24f), label);
+            float next = GUI.HorizontalSlider(
+                new Rect(126f, y + 6f, 220f, 20f),
+                value,
+                minimum,
+                maximum
+            );
+            GUI.Label(
+                new Rect(356f, y, 58f, 24f),
+                next.ToString("0.00")
+            );
+
+            if (Mathf.Approximately(next, value))
+            {
+                return false;
+            }
+
+            value = next;
+            return true;
+        }
+
+        private void LoadAvatarEditorFields()
+        {
+            if (_avatarEditor == null)
+            {
+                return;
+            }
+
+            AxiomAvatarAppearance appearance = _avatarEditor.Appearance;
+            _skinColorText = appearance.skinColor;
+            _hairColorText = appearance.hairColor;
+            _shirtColorText = appearance.shirtColor;
+            _pantsColorText = appearance.pantsColor;
+            _eyeColorText = appearance.eyeColor;
+            _shoeColorText = appearance.shoeColor;
+        }
+
+        private void CommitAvatarColors()
+        {
+            if (_avatarEditor == null)
+            {
+                return;
+            }
+
+            AxiomAvatarAppearance appearance = _avatarEditor.Appearance;
+            ApplyValidColor(_skinColorText, ref appearance.skinColor);
+            ApplyValidColor(_hairColorText, ref appearance.hairColor);
+            ApplyValidColor(_shirtColorText, ref appearance.shirtColor);
+            ApplyValidColor(_pantsColorText, ref appearance.pantsColor);
+            ApplyValidColor(_eyeColorText, ref appearance.eyeColor);
+            ApplyValidColor(_shoeColorText, ref appearance.shoeColor);
+        }
+
+        private static void ApplyValidColor(string candidate, ref string target)
+        {
+            if (
+                !string.IsNullOrWhiteSpace(candidate) &&
+                candidate.Length == 7 &&
+                candidate[0] == '#' &&
+                ColorUtility.TryParseHtmlString(candidate, out _)
+            )
+            {
+                target = candidate;
+            }
         }
     }
 }
