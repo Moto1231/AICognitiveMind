@@ -109,7 +109,7 @@ namespace Axiom.Body
 
             GUI.Label(
                 new Rect(34f, 206f, width - 68f, 42f),
-                "The PIN is kept in memory only and is not saved to PlayerPrefs."
+                "The PIN is kept in memory only and is not saved to disk."
             );
         }
 
