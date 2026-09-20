@@ -53,7 +53,7 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("value: gemini", blueprint)
         self.assertIn("GEMINI_API_KEY", blueprint)
         self.assertIn("GEMINI_MODEL", blueprint)
-        self.assertIn("gemini-2.5-flash", blueprint)
+        self.assertIn("gemini-3.5-flash", blueprint)
         self.assertIn("APP_ACCESS_PASSWORD", blueprint)
         self.assertGreaterEqual(blueprint.count("sync: false"), 3)
         self.assertIn(
