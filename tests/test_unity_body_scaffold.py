@@ -181,6 +181,38 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("RefreshAvatar(Vrm10Instance avatar)", mouth)
         self.assertIn("_mouthRuntime?.RefreshAvatar", bootstrap)
 
+    def test_unity_body_has_memory_and_journal_views(self) -> None:
+        client = Path(
+            "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"
+        ).read_text(encoding="utf-8")
+        data_runtime = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomMindDataRuntime.cs"
+        ).read_text(encoding="utf-8")
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("/v1/portal/memory?order=newest", client)
+        self.assertIn("/v1/portal/journal?order=newest", client)
+        self.assertIn("UnityWebRequest.EscapeURL", client)
+        self.assertIn("DesktopMemoryPage", client)
+        self.assertIn("DesktopJournalPage", client)
+        self.assertIn("PageSize = 12", data_runtime)
+        self.assertIn("LoadMemoryAsync", data_runtime)
+        self.assertIn("LoadJournalAsync", data_runtime)
+        self.assertIn("NextMemoryAsync", data_runtime)
+        self.assertIn("PreviousMemoryAsync", data_runtime)
+        self.assertIn("NextJournalAsync", data_runtime)
+        self.assertIn("PreviousJournalAsync", data_runtime)
+        self.assertIn("DesktopView.Memory", bootstrap)
+        self.assertIn("DesktopView.Journal", bootstrap)
+        self.assertIn("DrawMemoryView", bootstrap)
+        self.assertIn("DrawJournalView", bootstrap)
+        self.assertIn('"Memory"', bootstrap)
+        self.assertIn('"Journal"', bootstrap)
+        self.assertIn("_mindData.MemorySearch", bootstrap)
+        self.assertIn("_mindData.JournalSearch", bootstrap)
+
     def test_genesis_avatar_exposes_vrm_aa_mouth_expression(self) -> None:
         genesis = Path(
             "src/aicognitive_mind/body/genesis_avatar.py"

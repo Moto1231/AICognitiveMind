@@ -43,6 +43,48 @@ namespace Axiom.Body
     }
 
     [Serializable]
+    public sealed class DesktopMemoryItem
+    {
+        public string memory_class = string.Empty;
+        public string formed_at = string.Empty;
+        public string content = string.Empty;
+        public string[] associations = Array.Empty<string>();
+        public string[] grounding = Array.Empty<string>();
+    }
+
+    [Serializable]
+    public sealed class DesktopMemoryPage
+    {
+        public DesktopMemoryItem[] items = Array.Empty<DesktopMemoryItem>();
+        public int total;
+        public int offset;
+        public int limit;
+        public bool has_more;
+        public int next_offset;
+    }
+
+    [Serializable]
+    public sealed class DesktopJournalItem
+    {
+        public string kind = string.Empty;
+        public string occurred_at = string.Empty;
+        public string title = string.Empty;
+        public string preview = string.Empty;
+        public string search_text = string.Empty;
+    }
+
+    [Serializable]
+    public sealed class DesktopJournalPage
+    {
+        public DesktopJournalItem[] items = Array.Empty<DesktopJournalItem>();
+        public int total;
+        public int offset;
+        public int limit;
+        public bool has_more;
+        public int next_offset;
+    }
+
+    [Serializable]
     public sealed class VoiceIntentMetadata
     {
         public float rate = 1f;
@@ -138,6 +180,78 @@ namespace Axiom.Body
             request.downloadHandler = new DownloadHandlerBuffer();
             await SendAsync(request);
             return ParsePerception(request.downloadHandler.text, "audio");
+        }
+
+        public async Task<DesktopMemoryPage> MemoryPageAsync(
+            string search,
+            int offset,
+            int limit = 12
+        )
+        {
+            string path =
+                "/v1/portal/memory?order=newest&limit=" +
+                Math.Max(1, limit) +
+                "&offset=" +
+                Math.Max(0, offset);
+
+            string query = (search ?? string.Empty).Trim();
+            if (!string.IsNullOrEmpty(query))
+            {
+                path += "&search=" + UnityWebRequest.EscapeURL(query);
+            }
+
+            using UnityWebRequest request = UnityWebRequest.Get(Url(path));
+            await SendAsync(request);
+
+            DesktopMemoryPage page =
+                JsonUtility.FromJson<DesktopMemoryPage>(
+                    request.downloadHandler.text
+                );
+            if (page == null)
+            {
+                throw new InvalidOperationException(
+                    "Mind returned an unreadable memory page."
+                );
+            }
+
+            page.items ??= Array.Empty<DesktopMemoryItem>();
+            return page;
+        }
+
+        public async Task<DesktopJournalPage> JournalPageAsync(
+            string search,
+            int offset,
+            int limit = 12
+        )
+        {
+            string path =
+                "/v1/portal/journal?order=newest&limit=" +
+                Math.Max(1, limit) +
+                "&offset=" +
+                Math.Max(0, offset);
+
+            string query = (search ?? string.Empty).Trim();
+            if (!string.IsNullOrEmpty(query))
+            {
+                path += "&search=" + UnityWebRequest.EscapeURL(query);
+            }
+
+            using UnityWebRequest request = UnityWebRequest.Get(Url(path));
+            await SendAsync(request);
+
+            DesktopJournalPage page =
+                JsonUtility.FromJson<DesktopJournalPage>(
+                    request.downloadHandler.text
+                );
+            if (page == null)
+            {
+                throw new InvalidOperationException(
+                    "Mind returned an unreadable journal page."
+                );
+            }
+
+            page.items ??= Array.Empty<DesktopJournalItem>();
+            return page;
         }
 
         public async Task<VoiceExpressionIntent> NextMouthIntentAsync()
