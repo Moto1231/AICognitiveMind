@@ -39,7 +39,7 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(app_access_authorized(basic("mind", "wrong")))
             self.assertTrue(app_access_authorized(basic("mind", "secret-password")))
 
-    def test_render_blueprint_targets_remote_atlas_runtime(self) -> None:
+    def test_render_blueprint_targets_remote_surreal_runtime(self) -> None:
         blueprint = Path("render.yaml").read_text(encoding="utf-8")
         self.assertIn("type: web", blueprint)
         self.assertIn("runtime: python", blueprint)
@@ -47,15 +47,21 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("region: ohio", blueprint)
         self.assertIn("healthCheckPath: /health", blueprint)
         self.assertIn("STORAGE_PROVIDER", blueprint)
-        self.assertIn("value: mongo", blueprint)
-        self.assertIn("MONGODB_URI", blueprint)
+        self.assertIn("value: surreal", blueprint)
+        self.assertIn("SURREALDB_URI", blueprint)
+        self.assertIn("SURREALDB_NAMESPACE", blueprint)
+        self.assertIn("SURREALDB_DATABASE", blueprint)
+        self.assertIn("SURREALDB_USERNAME", blueprint)
+        self.assertIn("SURREALDB_PASSWORD", blueprint)
+        self.assertIn("SURREALDB_AUTH_LEVEL", blueprint)
+        self.assertNotIn("MONGODB_URI", blueprint)
         self.assertIn("REASONING_PROVIDER", blueprint)
         self.assertIn("value: gemini", blueprint)
         self.assertIn("GEMINI_API_KEY", blueprint)
         self.assertIn("GEMINI_MODEL", blueprint)
         self.assertIn("value: auto", blueprint)
         self.assertIn("APP_ACCESS_PASSWORD", blueprint)
-        self.assertGreaterEqual(blueprint.count("sync: false"), 3)
+        self.assertGreaterEqual(blueprint.count("sync: false"), 5)
         self.assertIn(
             "uvicorn aicognitive_mind.api:app --host 0.0.0.0 --port $PORT",
             blueprint,
@@ -95,6 +101,18 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         with patch.dict("os.environ", {"RENDER": "true"}, clear=False):
             self.assertEqual(_validate_reasoning_configuration(settings), "gemini")
+
+    async def test_render_rejects_local_surreal_fallback(self) -> None:
+        settings = Settings(
+            storage_provider="surreal",
+            surrealdb_uri="surrealkv://.surreal/cognitive_mind",
+        )
+        with patch.dict("os.environ", {"RENDER": "true"}, clear=False):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "SURREALDB_URI is not configured for Render",
+            ):
+                await create_storage(settings)
 
     async def test_render_rejects_local_mongo_fallback(self) -> None:
         settings = Settings(
