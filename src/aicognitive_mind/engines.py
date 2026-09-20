@@ -89,6 +89,50 @@ async def resolve_gemini_model(
     )
 
 
+
+def _schema_accepts_action(schema: Any, action: str) -> bool:
+    """Return whether a tool schema declares an action discriminator value."""
+
+    if isinstance(schema, dict):
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            action_schema = properties.get("action")
+            if isinstance(action_schema, dict):
+                if action_schema.get("const") == action:
+                    return True
+                enum_values = action_schema.get("enum")
+                if isinstance(enum_values, list) and action in enum_values:
+                    return True
+        return any(_schema_accepts_action(value, action) for value in schema.values())
+    if isinstance(schema, list):
+        return any(_schema_accepts_action(value, action) for value in schema)
+    return False
+
+
+def _resolve_gemini_tool_call(
+    name: str,
+    arguments: dict[str, Any],
+    tools_by_name: dict[str, ReasoningTool],
+) -> tuple[ReasoningTool | None, dict[str, Any]]:
+    """Resolve Gemini function calls, including action names emitted as tool aliases."""
+
+    direct = tools_by_name.get(name)
+    if direct is not None:
+        return direct, arguments
+
+    alias_matches = [
+        tool
+        for tool in tools_by_name.values()
+        if _schema_accepts_action(tool.input_schema, name)
+    ]
+    if len(alias_matches) != 1:
+        return None, arguments
+
+    normalized = dict(arguments)
+    normalized.setdefault("action", name)
+    return alias_matches[0], normalized
+
+
 class EchoReasoningEngine:
     """Deterministic implementation used without making it part of the mind."""
 
@@ -290,12 +334,16 @@ class GeminiReasoningEngine:
             result_parts = []
             for call in calls:
                 name = call.name or ""
-                tool = tools_by_name.get(name)
+                arguments = dict(call.args or {})
+                tool, arguments = _resolve_gemini_tool_call(
+                    name,
+                    arguments,
+                    tools_by_name,
+                )
                 if tool is None:
                     raise RuntimeError(
                         f"Gemini reasoning engine requested unknown tool: {name}"
                     )
-                arguments = dict(call.args or {})
                 result = await tool.invoke(arguments)
                 result_parts.append(
                     genai_types.Part.from_function_response(
