@@ -49,6 +49,7 @@ from aicognitive_mind.engines import (
     EchoReasoningEngine,
     GeminiReasoningEngine,
     OpenAIReasoningEngine,
+    resolve_gemini_model,
 )
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.mcp_service import CognitiveMcpService
@@ -413,16 +414,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     if provider == "gemini":
         assert settings.gemini_api_key is not None
+        requested_model = (
+            "auto"
+            if os.getenv("RENDER", "").lower() == "true"
+            else settings.gemini_model
+        )
+        resolved_model = await resolve_gemini_model(
+            settings.gemini_api_key,
+            requested_model,
+        )
+        app.state.reasoning_model = resolved_model
         engine = GeminiReasoningEngine(
             settings.gemini_api_key,
-            settings.gemini_model,
+            resolved_model,
         )
         interpreter = GeminiPerceptInterpreter(
             settings.gemini_api_key,
-            model=settings.gemini_model,
+            model=resolved_model,
         )
     elif provider == "openai":
         assert settings.openai_api_key is not None
+        app.state.reasoning_model = settings.openai_model
         engine = OpenAIReasoningEngine(
             settings.openai_api_key,
             settings.openai_model,
@@ -433,6 +445,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             transcription_model=settings.openai_transcription_model,
         )
     else:
+        app.state.reasoning_model = "deterministic-echo"
         engine = EchoReasoningEngine()
         interpreter = SummaryPerceptInterpreter()
     evidence_review = SensoryEvidenceReviewTool(
@@ -767,16 +780,16 @@ async def portal_status(request: Request) -> dict[str, Any]:
         result = await service.status()
         runtime_settings = get_settings()
         provider = runtime_settings.reasoning_provider.lower()
-        model = (
-            runtime_settings.gemini_model
-            if provider == "gemini"
-            else runtime_settings.openai_model
-            if provider == "openai"
-            else "deterministic-echo"
-        )
         result["reasoning"] = {
             "backend": provider,
-            "model": model,
+            "model": getattr(request.app.state, "reasoning_model", "unknown"),
+            "requested_model": (
+                runtime_settings.gemini_model
+                if provider == "gemini"
+                else runtime_settings.openai_model
+                if provider == "openai"
+                else "deterministic-echo"
+            ),
         }
         result["administration"] = {
             "pin_required": bool(get_settings().admin_pin),
