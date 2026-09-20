@@ -129,6 +129,8 @@ class MongoJournalStore:
                 {"experience.expression.content": {"$regex": literal, "$options": "i"}},
                 {"experience.before.content": {"$regex": literal, "$options": "i"}},
                 {"experience.after.content": {"$regex": literal, "$options": "i"}},
+                {"experience.before.self_name": {"$regex": literal, "$options": "i"}},
+                {"experience.after.self_name": {"$regex": literal, "$options": "i"}},
                 {"experience.self_name": {"$regex": literal, "$options": "i"}},
                 {"experience.foundational_values": {"$regex": literal, "$options": "i"}},
                 {"experience.subject": {"$regex": literal, "$options": "i"}},
