@@ -5,6 +5,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from aicognitive_mind.api import app_access_authorized
+from aicognitive_mind.config import Settings
+from aicognitive_mind.persistence import create_storage
 
 
 def basic(username: str, password: str) -> str:
@@ -12,7 +14,7 @@ def basic(username: str, password: str) -> str:
     return f"Basic {token}"
 
 
-class RemoteRuntimeTests(unittest.TestCase):
+class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
     def test_access_auth_is_open_when_password_is_not_configured(self) -> None:
         settings = SimpleNamespace(
             app_access_username="mind",
@@ -50,6 +52,18 @@ class RemoteRuntimeTests(unittest.TestCase):
             "uvicorn aicognitive_mind.api:app --host 0.0.0.0 --port $PORT",
             blueprint,
         )
+
+    async def test_render_rejects_local_mongo_fallback(self) -> None:
+        settings = Settings(
+            storage_provider="mongo",
+            mongodb_uri="mongodb://mongodb:27017",
+        )
+        with patch.dict("os.environ", {"RENDER": "true"}, clear=False):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "MONGODB_URI is not configured for Render",
+            ):
+                await create_storage(settings)
 
     def test_render_python_version_is_pinned_to_project_major_minor(self) -> None:
         version = Path(".python-version").read_text(encoding="utf-8").strip()
