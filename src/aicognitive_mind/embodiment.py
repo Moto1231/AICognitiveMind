@@ -329,11 +329,11 @@ class MindBodyBridge:
         self._evidence = evidence
         self._journal = journal
 
-    async def see(self) -> EmbodiedInteractionResult:
-        return await self.perceive(await self._body.see())
+    async def see(self, *, express: bool = True) -> EmbodiedInteractionResult:
+        return await self.perceive(await self._body.see(), express=express)
 
-    async def hear(self) -> EmbodiedInteractionResult:
-        return await self.perceive(await self._body.hear())
+    async def hear(self, *, express: bool = True) -> EmbodiedInteractionResult:
+        return await self.perceive(await self._body.hear(), express=express)
 
     async def interact(self, message: str) -> InteractionResult:
         interaction = await self._core.interact(
@@ -344,7 +344,12 @@ class MindBodyBridge:
         await self._body.express(interaction.response_text)
         return interaction
 
-    async def perceive(self, percept: Percept) -> EmbodiedInteractionResult:
+    async def perceive(
+        self,
+        percept: Percept,
+        *,
+        express: bool = True,
+    ) -> EmbodiedInteractionResult:
         artifact = await self._preserve_evidence(percept)
         reference = artifact.reference()
         await self._journal.append(
@@ -373,7 +378,8 @@ class MindBodyBridge:
             source=f"body:{percept.modality.value}",
             input_context=context,
         )
-        await self._body.express(interaction.response_text)
+        if express:
+            await self._body.express(interaction.response_text)
 
         return EmbodiedInteractionResult(
             sensory_modality=percept.modality,
