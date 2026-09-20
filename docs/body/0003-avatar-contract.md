@@ -92,3 +92,10 @@ Lip sync, speech coupling, gestures, animation libraries, and customization UI c
 
 [0004 — Face V0.1](0004-face-v0.1.md) implements the first executable browser VRM renderer and
 routes neutral/happy expression commands through the Body's `ExpressionIntent` boundary.
+
+
+## Implemented customization slice
+
+[0009 — Avatar Customization V0.1](0009-avatar-customization-v0.1.md) adds reusable runtime
+appearance functions and live controls for Genesis materials and proportions without changing
+Mind identity.

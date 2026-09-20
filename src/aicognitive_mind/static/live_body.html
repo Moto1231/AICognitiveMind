@@ -18,6 +18,16 @@
     video { width: 220px; border-radius: 10px; background: #181a20; }
     #cameraPanel { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
     #status { white-space: pre-wrap; background: #181a20; padding: 1rem; border-radius: 10px; margin-top: 1rem; min-height: 6rem; }
+    .avatar-editor { margin: 1rem 0; padding: 1rem; background: #181a20; border-radius: 14px; }
+    .avatar-editor h2 { margin: 0 0 .25rem; }
+    .avatar-editor-note { margin-top: 0; }
+    .avatar-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .85rem; }
+    .avatar-field { display: flex; flex-direction: column; gap: .35rem; }
+    .avatar-field label { color: #b9bcc4; font-size: .9rem; }
+    .avatar-field input[type="color"] { width: 100%; min-height: 2.5rem; }
+    .avatar-field input[type="range"] { width: 100%; }
+    .avatar-value { font-variant-numeric: tabular-nums; color: #d7d9df; }
+    #avatarEditorStatus { color: #b9bcc4; min-height: 1.4rem; }
   </style>
 
   <script type="importmap">
@@ -36,6 +46,38 @@
     <p>One circuit: sense through the browser, interpret in the Mind, reason with memory, express through Face and Mouth.</p>
 
     <div id="stage"></div>
+
+    <section class="avatar-editor" aria-labelledby="avatarEditorTitle">
+      <h2 id="avatarEditorTitle">Modify Genesis</h2>
+      <p class="avatar-editor-note">
+        Appearance belongs to the Body. Changes here do not alter Mind identity or memory.
+      </p>
+
+      <div class="avatar-grid">
+        <div class="avatar-field"><label for="skinColor">Skin</label><input id="skinColor" data-avatar-key="skinColor" type="color" value="#b88566"></div>
+        <div class="avatar-field"><label for="hairColor">Hair</label><input id="hairColor" data-avatar-key="hairColor" type="color" value="#090a0d"></div>
+        <div class="avatar-field"><label for="shirtColor">Shirt</label><input id="shirtColor" data-avatar-key="shirtColor" type="color" value="#2e4257"></div>
+        <div class="avatar-field"><label for="pantsColor">Pants</label><input id="pantsColor" data-avatar-key="pantsColor" type="color" value="#1a1f29"></div>
+        <div class="avatar-field"><label for="eyeColor">Eyes</label><input id="eyeColor" data-avatar-key="eyeColor" type="color" value="#090a0d"></div>
+        <div class="avatar-field"><label for="shoeColor">Shoes</label><input id="shoeColor" data-avatar-key="shoeColor" type="color" value="#090a0d"></div>
+
+        <div class="avatar-field"><label for="headSize">Head size <span class="avatar-value" data-avatar-value="headSize"></span></label><input id="headSize" data-avatar-key="headSize" type="range" min="0.75" max="1.35" step="0.01" value="1"></div>
+        <div class="avatar-field"><label for="hairVolume">Hair volume <span class="avatar-value" data-avatar-value="hairVolume"></span></label><input id="hairVolume" data-avatar-key="hairVolume" type="range" min="0.60" max="1.60" step="0.01" value="1"></div>
+        <div class="avatar-field"><label for="eyeSize">Eye size <span class="avatar-value" data-avatar-value="eyeSize"></span></label><input id="eyeSize" data-avatar-key="eyeSize" type="range" min="0.60" max="1.60" step="0.01" value="1"></div>
+        <div class="avatar-field"><label for="eyeSpacing">Eye spacing <span class="avatar-value" data-avatar-value="eyeSpacing"></span></label><input id="eyeSpacing" data-avatar-key="eyeSpacing" type="range" min="0.65" max="1.45" step="0.01" value="1"></div>
+        <div class="avatar-field"><label for="mouthWidth">Mouth width <span class="avatar-value" data-avatar-value="mouthWidth"></span></label><input id="mouthWidth" data-avatar-key="mouthWidth" type="range" min="0.60" max="1.50" step="0.01" value="1"></div>
+        <div class="avatar-field"><label for="torsoWidth">Torso width <span class="avatar-value" data-avatar-value="torsoWidth"></span></label><input id="torsoWidth" data-avatar-key="torsoWidth" type="range" min="0.70" max="1.40" step="0.01" value="1"></div>
+        <div class="avatar-field"><label for="shoulderWidth">Shoulder width <span class="avatar-value" data-avatar-value="shoulderWidth"></span></label><input id="shoulderWidth" data-avatar-key="shoulderWidth" type="range" min="0.75" max="1.40" step="0.01" value="1"></div>
+        <div class="avatar-field"><label for="armThickness">Arm thickness <span class="avatar-value" data-avatar-value="armThickness"></span></label><input id="armThickness" data-avatar-key="armThickness" type="range" min="0.65" max="1.50" step="0.01" value="1"></div>
+        <div class="avatar-field"><label for="legThickness">Leg thickness <span class="avatar-value" data-avatar-value="legThickness"></span></label><input id="legThickness" data-avatar-key="legThickness" type="range" min="0.65" max="1.50" step="0.01" value="1"></div>
+      </div>
+
+      <div class="controls">
+        <button id="saveAvatarAppearance">Save appearance on this browser</button>
+        <button id="resetAvatarAppearance">Reset Genesis</button>
+      </div>
+      <div id="avatarEditorStatus">Browser-local preset; canonical Body persistence comes later.</div>
+    </section>
 
     <div id="cameraPanel">
       <video id="video" autoplay playsinline muted></video>
@@ -61,6 +103,13 @@
     import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+    import {
+      AvatarCustomizer,
+      DEFAULT_AVATAR_APPEARANCE,
+      clearSavedAvatarAppearance,
+      loadSavedAvatarAppearance,
+      saveAvatarAppearance
+    } from "/static/avatar_customizer.js";
 
     const stage = document.getElementById("stage");
     const video = document.getElementById("video");
@@ -71,6 +120,11 @@
     const stopCameraButton = document.getElementById("stopCamera");
     const stopSpeechButton = document.getElementById("stopSpeech");
     const statusBox = document.getElementById("status");
+    const avatarInputs = [...document.querySelectorAll("[data-avatar-key]")];
+    const avatarValueLabels = [...document.querySelectorAll("[data-avatar-value]")];
+    const saveAvatarAppearanceButton = document.getElementById("saveAvatarAppearance");
+    const resetAvatarAppearanceButton = document.getElementById("resetAvatarAppearance");
+    const avatarEditorStatus = document.getElementById("avatarEditorStatus");
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -95,6 +149,7 @@
 
     const clock = new THREE.Clock();
     let currentVrm = null;
+    let avatarCustomizer = null;
     let cameraStream = null;
     let microphoneStream = null;
     let recorder = null;
@@ -105,6 +160,38 @@
 
     function setStatus(message) {
       statusBox.textContent = message;
+    }
+
+    function readAvatarControls() {
+      const config = {};
+      for (const input of avatarInputs) {
+        config[input.dataset.avatarKey] =
+          input.type === "range" ? Number(input.value) : input.value;
+      }
+      return config;
+    }
+
+    function writeAvatarControls(config) {
+      for (const input of avatarInputs) {
+        const value = config[input.dataset.avatarKey];
+        if (value !== undefined) input.value = String(value);
+      }
+      updateAvatarValueLabels();
+    }
+
+    function updateAvatarValueLabels() {
+      const values = readAvatarControls();
+      for (const label of avatarValueLabels) {
+        const value = values[label.dataset.avatarValue];
+        label.textContent = typeof value === "number" ? value.toFixed(2) : "";
+      }
+    }
+
+    function applyAvatarControls() {
+      updateAvatarValueLabels();
+      if (!avatarCustomizer) return;
+      avatarCustomizer.apply(readAvatarControls());
+      avatarEditorStatus.textContent = "Appearance changed live. Save to keep it in this browser.";
     }
 
     function resize() {
@@ -132,7 +219,12 @@
       vrm.scene.traverse((object) => { object.frustumCulled = false; });
       currentVrm = vrm;
       scene.add(vrm.scene);
+      avatarCustomizer = new AvatarCustomizer(vrm);
+      const savedAppearance = loadSavedAvatarAppearance();
+      writeAvatarControls(savedAppearance);
+      avatarCustomizer.apply(savedAppearance);
       setStatus("LIVE BODY READY\nGenesis attached. Eyes, Ears, Face, and Mouth are connected.");
+      avatarEditorStatus.textContent = "Saved browser appearance loaded.";
     }
 
     function applyFaceIntent(intent) {
@@ -347,6 +439,25 @@
       renderer.render(scene, camera);
     }
 
+    for (const input of avatarInputs) {
+      input.addEventListener("input", applyAvatarControls);
+    }
+
+    saveAvatarAppearanceButton.addEventListener("click", () => {
+      if (!avatarCustomizer) return;
+      const saved = saveAvatarAppearance(readAvatarControls());
+      writeAvatarControls(saved);
+      avatarCustomizer.apply(saved);
+      avatarEditorStatus.textContent = "Appearance saved on this browser.";
+    });
+
+    resetAvatarAppearanceButton.addEventListener("click", () => {
+      clearSavedAvatarAppearance();
+      writeAvatarControls(DEFAULT_AVATAR_APPEARANCE);
+      avatarCustomizer?.reset();
+      avatarEditorStatus.textContent = "Genesis reset to default appearance.";
+    });
+
     seeButton.addEventListener("click", seeThroughBody);
     listenButton.addEventListener("click", listenThroughBody);
     stopListenButton.addEventListener("click", stopListening);
@@ -365,6 +476,7 @@
       window.speechSynthesis?.cancel();
     });
 
+    writeAvatarControls(DEFAULT_AVATAR_APPEARANCE);
     resize();
     animate();
     loader.load(
