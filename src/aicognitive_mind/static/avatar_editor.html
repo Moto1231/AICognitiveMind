@@ -48,8 +48,8 @@
     <div class="page-bar">
       <h1>Avatar Editor</h1>
       <div class="page-links">
+        <a href="/" aria-label="Back to portal">← Portal</a>
         <a href="/body/live">Live Body</a>
-        <a href="/">Portal</a>
       </div>
     </div>
 
@@ -123,6 +123,32 @@
     const clock = new THREE.Clock();
     let currentVrm = null;
     let avatarCustomizer = null;
+    let pageSourceSnapshot = null;
+    let pageRefreshProbeBusy = false;
+
+    async function checkForBodyPageUpdate() {
+      if (document.hidden || pageRefreshProbeBusy) return;
+      pageRefreshProbeBusy = true;
+      try {
+        const response = await fetch(
+          window.location.pathname + "?body_refresh_probe=" + Date.now(),
+          { cache: "no-store" }
+        );
+        if (!response.ok) return;
+        const source = await response.text();
+        if (pageSourceSnapshot === null) {
+          pageSourceSnapshot = source;
+          return;
+        }
+        if (source !== pageSourceSnapshot) {
+          window.location.reload();
+        }
+      } catch {
+        // A failed update probe should not interfere with avatar editing.
+      } finally {
+        pageRefreshProbeBusy = false;
+      }
+    }
 
     function readControls() {
       const config = {};
@@ -229,9 +255,14 @@
     });
 
     window.addEventListener("resize", resize);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) checkForBodyPageUpdate();
+    });
     writeControls(DEFAULT_AVATAR_APPEARANCE);
     resize();
     animate();
+    checkForBodyPageUpdate();
+    window.setInterval(checkForBodyPageUpdate, 12_000);
     loader.load(
       "/v1/body/face/avatar",
       attachAvatar,
