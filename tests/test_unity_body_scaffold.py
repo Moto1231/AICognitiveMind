@@ -145,6 +145,42 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("ToggleSensesAsync", bootstrap)
         self.assertIn("_sensesRuntime.Attach(_client)", bootstrap)
 
+    def test_unity_body_has_separate_avatar_editor_view(self) -> None:
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+        editor = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomAvatarEditorRuntime.cs"
+        ).read_text(encoding="utf-8")
+        mouth = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomMouthRuntime.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("DesktopView.Avatar", bootstrap)
+        self.assertIn("DrawAvatarEditor", bootstrap)
+        self.assertIn('"Avatar"', bootstrap)
+        self.assertIn('"Back to Body"', bootstrap)
+        self.assertIn("AxiomAvatarEditorRuntime", bootstrap)
+        self.assertIn("PlayerPrefs.SetString", editor)
+        self.assertIn("axiom.avatar.appearance.v0.1", editor)
+        self.assertIn("skinColor", editor)
+        self.assertIn("hairColor", editor)
+        self.assertIn("shirtColor", editor)
+        self.assertIn("pantsColor", editor)
+        self.assertIn("eyeColor", editor)
+        self.assertIn("shoeColor", editor)
+        self.assertIn("headSize", editor)
+        self.assertIn("hairVolume", editor)
+        self.assertIn("eyeSize", editor)
+        self.assertIn("eyeSpacing", editor)
+        self.assertIn("mouthWidth", editor)
+        self.assertIn("torsoWidth", editor)
+        self.assertIn("shoulderWidth", editor)
+        self.assertIn("armThickness", editor)
+        self.assertIn("legThickness", editor)
+        self.assertIn("RefreshAvatar(Vrm10Instance avatar)", mouth)
+        self.assertIn("_mouthRuntime?.RefreshAvatar", bootstrap)
+
     def test_genesis_avatar_exposes_vrm_aa_mouth_expression(self) -> None:
         genesis = Path(
             "src/aicognitive_mind/body/genesis_avatar.py"
