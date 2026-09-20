@@ -44,6 +44,7 @@ from aicognitive_mind.embodiment import (
     SummaryPerceptInterpreter,
 )
 from aicognitive_mind.engines import EchoReasoningEngine, OpenAIReasoningEngine
+from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.storage import (
@@ -239,6 +240,18 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
             )
             if value
         )
+    elif entry.kind == JournalKind.EVIDENCE_REVIEW:
+        evidence = experience.get("evidence", {})
+        focus = str(experience.get("focus", ""))
+        interpretation = str(experience.get("interpretation", ""))
+        sha256 = str(evidence.get("sha256", ""))
+        summary["title"] = "Evidence Review"
+        summary["preview"] = (
+            f"{focus} · {sha256[:12]}".strip(" ·")
+        )
+        summary["search_text"] = " ".join(
+            value for value in (focus, interpretation, sha256) if value
+        )
     elif entry.kind == JournalKind.SENSORY_EVIDENCE:
         evidence = experience.get("evidence", {})
         modality = str(evidence.get("modality", "sensory"))
@@ -336,13 +349,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if settings.openai_api_key
         else EchoReasoningEngine()
     )
-    core = CognitiveCore(
-        mind=storage.mind,
-        journal=storage.journal,
-        memory=storage.memory,
-        diagnostics=storage.diagnostics,
-        engine=engine,
-    )
     interpreter = (
         OpenAIPerceptInterpreter(
             settings.openai_api_key,
@@ -352,7 +358,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if settings.openai_api_key
         else SummaryPerceptInterpreter()
     )
+    evidence_review = SensoryEvidenceReviewTool(
+        evidence=storage.evidence,
+        journal=storage.journal,
+        interpreter=interpreter,
+    )
+    core = CognitiveCore(
+        mind=storage.mind,
+        journal=storage.journal,
+        memory=storage.memory,
+        diagnostics=storage.diagnostics,
+        engine=engine,
+        reasoning_tools=(evidence_review,),
+    )
     app.state.core = core
+    app.state.evidence_review = evidence_review
     app.state.mind_body = MindBodyBridge(
         core=core,
         body=app.state.body,

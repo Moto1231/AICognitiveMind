@@ -13,6 +13,7 @@ from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 from aicognitive_mind.prompts import CONSCIOUS_WORKSPACE_SYSTEM_PROMPT
 from aicognitive_mind.storage import DiagnosticStore, JournalStore, MemoryStore, MindStore
+from aicognitive_mind.tooling import ReasoningTool
 
 
 class MindNotInitializedError(LookupError):
@@ -27,6 +28,7 @@ class CognitiveCore:
         memory: MemoryStore,
         diagnostics: DiagnosticStore,
         engine: ReasoningEngine,
+        reasoning_tools: tuple[ReasoningTool, ...] = (),
         policy: PermissionPolicy | None = None,
     ) -> None:
         self._mind = mind
@@ -34,6 +36,7 @@ class CognitiveCore:
         self._memory = memory
         self._diagnostics = diagnostics
         self._engine = engine
+        self._reasoning_tools = reasoning_tools
         self._policy = policy or PermissionPolicy()
 
     async def initialize(
@@ -92,7 +95,7 @@ class CognitiveCore:
                 input_text=input_text,
                 system_prompt=CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
             ),
-            tools=(memory_steward,),
+            tools=(memory_steward, *self._reasoning_tools),
         )
         memory_trace = await memory_steward.complete()
 

@@ -149,6 +149,7 @@ class RecalledExperience(BaseModel):
     kind: str
     occurred_at: str
     excerpt: str
+    evidence_references: tuple[dict[str, Any], ...] = ()
 
 
 class MemoryBrief(BaseModel):
@@ -2244,6 +2245,7 @@ class MemoryStewardTool:
                 kind=entry.kind.value,
                 occurred_at=entry.occurred_at.isoformat(),
                 excerpt=_experience_excerpt(entry),
+                evidence_references=_experience_evidence_references(entry),
             )
             for entry in experiences
         )
@@ -2456,6 +2458,31 @@ def _as_text(value: object) -> str:
     if isinstance(value, (list, tuple, set)):
         return " ".join(_as_text(item) for item in value)
     return str(value)
+
+
+def _experience_evidence_references(
+    entry: JournalEntry,
+) -> tuple[dict[str, Any], ...]:
+    references: list[dict[str, Any]] = []
+
+    direct = entry.experience.get("evidence")
+    if isinstance(direct, dict) and direct.get("sha256") and direct.get("captured_at"):
+        references.append(direct)
+
+    input_document = entry.experience.get("input")
+    if isinstance(input_document, dict):
+        context = input_document.get("context")
+        if isinstance(context, dict):
+            contextual = context.get("evidence")
+            if (
+                isinstance(contextual, dict)
+                and contextual.get("sha256")
+                and contextual.get("captured_at")
+                and contextual not in references
+            ):
+                references.append(contextual)
+
+    return tuple(references)
 
 
 def _experience_excerpt(entry: JournalEntry) -> str:
