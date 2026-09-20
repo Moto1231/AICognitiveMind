@@ -86,6 +86,15 @@ class JournalEntry(BaseModel):
     experience: dict[str, Any]
 
 
+class SensoryEvidenceReference(BaseModel):
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    captured_at: datetime
+    modality: str
+    source: str
+    media_type: str
+    byte_length: int = Field(gt=0)
+
+
 class SensoryEvidenceArtifact(BaseModel):
     """Immutable media admitted into cognition as evidence."""
 
@@ -98,15 +107,15 @@ class SensoryEvidenceArtifact(BaseModel):
     payload_base64: str = Field(min_length=1)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    def reference(self) -> dict[str, Any]:
-        return {
-            "sha256": self.sha256,
-            "captured_at": self.captured_at,
-            "modality": self.modality,
-            "source": self.source,
-            "media_type": self.media_type,
-            "byte_length": self.byte_length,
-        }
+    def reference(self) -> SensoryEvidenceReference:
+        return SensoryEvidenceReference(
+            sha256=self.sha256,
+            captured_at=self.captured_at,
+            modality=self.modality,
+            source=self.source,
+            media_type=self.media_type,
+            byte_length=self.byte_length,
+        )
 
 
 class DiagnosticObservation(BaseModel):
