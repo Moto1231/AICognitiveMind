@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from aicognitive_mind.api import app_access_authorized
+from aicognitive_mind.api import app_access_authorized, lifespan
 from aicognitive_mind.config import Settings
 from aicognitive_mind.persistence import create_storage
 
@@ -52,6 +52,20 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "uvicorn aicognitive_mind.api:app --host 0.0.0.0 --port $PORT",
             blueprint,
         )
+
+    async def test_render_requires_openai_api_key(self) -> None:
+        fake_app = SimpleNamespace(state=SimpleNamespace())
+        with patch.dict("os.environ", {"RENDER": "true"}, clear=False):
+            with patch(
+                "aicognitive_mind.api.get_settings",
+                return_value=SimpleNamespace(openai_api_key=None),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "OPENAI_API_KEY is not configured for Render",
+                ):
+                    async with lifespan(fake_app):
+                        pass
 
     async def test_render_rejects_local_mongo_fallback(self) -> None:
         settings = Settings(
