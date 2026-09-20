@@ -13,11 +13,13 @@ from aicognitive_mind.domain import (
     MemoryArtifact,
     MemoryClass,
     MindIdentity,
+    SensoryEvidenceArtifact,
 )
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.storage import MindAlreadyInitializedError
 from aicognitive_mind.surreal_storage import (
     SurrealDiagnosticStore,
+    SurrealEvidenceStore,
     SurrealJournalStore,
     SurrealMemoryStore,
     SurrealMindStore,
@@ -649,6 +651,55 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(total, 1)
         self.assertEqual(page, [memory])
+
+    async def test_sensory_evidence_round_trips_by_content_hash_and_capture_time(self) -> None:
+        store = SurrealEvidenceStore(self.runtime.database)
+        captured_at = datetime(2026, 9, 20, 3, 0, tzinfo=UTC)
+        artifact = SensoryEvidenceArtifact(
+            captured_at=captured_at,
+            modality="vision",
+            source="browser-camera",
+            media_type="image/jpeg",
+            sha256="a" * 64,
+            byte_length=4,
+            payload_base64="anBlZw==",
+            metadata={"width": 320, "height": 240},
+        )
+
+        preserved = await store.preserve(artifact)
+        loaded = await store.find_exact(
+            sha256=artifact.sha256,
+            captured_at=captured_at,
+        )
+
+        self.assertEqual(preserved, artifact)
+        self.assertEqual(loaded, artifact)
+
+    async def test_provider_factory_exposes_evidence_store(self) -> None:
+        settings = Settings(
+            storage_provider="surreal",
+            surrealdb_uri="mem://",
+            surrealdb_namespace="evidence_factory",
+            surrealdb_database="cognitive_mind",
+        )
+        storage = await create_storage(settings)
+        try:
+            artifact = SensoryEvidenceArtifact(
+                modality="audio",
+                source="browser-microphone",
+                media_type="audio/webm",
+                sha256="b" * 64,
+                byte_length=5,
+                payload_base64="YXVkaW8=",
+            )
+            await storage.evidence.preserve(artifact)
+            loaded = await storage.evidence.find_exact(
+                sha256=artifact.sha256,
+                captured_at=artifact.captured_at,
+            )
+            self.assertEqual(loaded, artifact)
+        finally:
+            await storage.runtime.close()
 
     async def test_diagnostics_round_trip(self) -> None:
         store = SurrealDiagnosticStore(self.runtime.database)
