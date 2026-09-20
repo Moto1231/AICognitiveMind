@@ -84,6 +84,40 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         await core.initialize("AICognitiveMind")
         return core, journal
 
+    async def test_typed_interaction_crosses_mind_and_returns_through_body_outputs(self) -> None:
+        core, journal = await self._core()
+        mouth = BrowserVoiceOutput()
+        face = BrowserAvatarOutput()
+        body = BodyRuntime(voice=mouth, avatar=face)
+        bridge = MindBodyBridge(
+            core=core,
+            body=body,
+            interpreter=FixedInterpreter("unused"),
+            evidence=InMemoryEvidenceStore(),
+            journal=journal,
+        )
+
+        result = await bridge.interact("Hello from Live Body.")
+
+        self.assertEqual(result.response_text, "I heard: Hello from Live Body.")
+        mouth_intent = mouth.consume()
+        face_intent = face.consume()
+        self.assertIsNotNone(mouth_intent)
+        self.assertIsNotNone(face_intent)
+        assert mouth_intent is not None
+        assert face_intent is not None
+        self.assertEqual(mouth_intent.text, result.response_text)
+        self.assertEqual(face_intent.text, result.response_text)
+
+        entries = await journal.read()
+        interaction = entries[-1]
+        self.assertEqual(interaction.kind.value, "interaction")
+        self.assertEqual(interaction.experience["input"]["source"], "human")
+        self.assertEqual(
+            interaction.experience["input"]["context"]["interface"],
+            "body:live:text",
+        )
+
     async def test_visual_percept_crosses_mind_and_returns_through_body_outputs(self) -> None:
         core, journal = await self._core()
         eyes = BrowserVisionIngress()
