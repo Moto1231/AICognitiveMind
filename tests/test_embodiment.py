@@ -118,6 +118,25 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
             "body:live:text",
         )
 
+    async def test_typed_interaction_can_skip_browser_expression_for_desktop_body(self) -> None:
+        core, journal = await self._core()
+        mouth = BrowserVoiceOutput()
+        face = BrowserAvatarOutput()
+        body = BodyRuntime(voice=mouth, avatar=face)
+        bridge = MindBodyBridge(
+            core=core,
+            body=body,
+            interpreter=FixedInterpreter("unused"),
+            evidence=InMemoryEvidenceStore(),
+            journal=journal,
+        )
+
+        result = await bridge.interact("Hello from Unity.", express=False)
+
+        self.assertEqual(result.response_text, "I heard: Hello from Unity.")
+        self.assertIsNone(mouth.consume())
+        self.assertIsNone(face.consume())
+
     async def test_visual_percept_crosses_mind_and_returns_through_body_outputs(self) -> None:
         core, journal = await self._core()
         eyes = BrowserVisionIngress()
