@@ -33,7 +33,9 @@ The first slice:
 5. frames the avatar automatically;
 6. provides a temporary developer interaction box that posts to `/v1/mind/body/interact`;
 7. polls `/v1/body/mouth/next` for the Mind's existing VOICE expression intents;
-8. renders those intents through the local Windows System.Speech engine.
+8. synthesizes those intents to temporary WAV audio through the local Windows System.Speech engine;
+9. plays the WAV through a Unity `AudioSource`;
+10. samples the actual audio amplitude and drives the VRM mouth expression in sync.
 
 UniVRM is pinned through Unity Package Manager to the VRM 1.0 package.
 
@@ -59,14 +61,16 @@ After the bootstrap is proven on Windows:
 
 - native continuous webcam perception
 - native continuous microphone perception
-- expression mapping and lip sync
+- phoneme/viseme refinement beyond amplitude-driven mouth opening
+- broader expression mapping
 - animation/state machine
 - replace the temporary IMGUI developer overlay with the actual Body UI
 
-## Desktop Mouth V0.1
+## Desktop Mouth V0.2
 
-The first Windows Mouth uses the local Windows speech engine through
-`powershell.exe` + `System.Speech`.
+The Windows Mouth uses the local Windows speech engine through
+`powershell.exe` + `System.Speech`. Speech is synthesized to a temporary
+WAV file and then played by Unity so the Body owns the actual audio signal.
 
 It supports:
 
@@ -74,7 +78,9 @@ It supports:
 - rate;
 - pitch through SSML prosody;
 - volume;
-- serialized speech so Mouth intents do not overlap.
+- serialized speech so Mouth intents do not overlap;
+- Unity-owned WAV playback;
+- amplitude-driven VRM mouth movement synchronized to the actual speech audio.
 
 Speech remains a Body concern. The Mind still emits only transient VOICE
 `ExpressionIntent` objects.
@@ -82,3 +88,15 @@ Speech remains a Body concern. The Mind still emits only transient VOICE
 This is intentionally a zero-cost local adapter. A future neural TTS provider
 can replace it behind the same Mouth boundary without changing the Cognitive
 Core or SurrealDB architecture.
+
+### Lip sync
+
+`AxiomLipSync` samples the active Unity `AudioSource` with
+`GetOutputData`, calculates RMS amplitude, smooths attack/release, and maps
+the result to the standard VRM 1.0 `aa` expression through
+`Runtime.Expression.SetWeight`.
+
+This is real audio-reactive synchronization, but it is not yet
+phoneme-specific viseme recognition. The later refinement can distribute
+speech across `aa`, `ih`, `ou`, `ee`, and `oh` while retaining the
+same Mouth/audio pipeline.
