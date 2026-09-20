@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     surrealdb_auth_level: str = "database"
     reasoning_provider: str = "echo"
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.6-terra"
     openai_transcription_model: str = "gpt-4o-transcribe"
