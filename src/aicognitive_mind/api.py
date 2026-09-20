@@ -40,11 +40,16 @@ from aicognitive_mind.domain import (
 )
 from aicognitive_mind.embodiment import (
     EmbodiedInteractionResult,
+    GeminiPerceptInterpreter,
     MindBodyBridge,
     OpenAIPerceptInterpreter,
     SummaryPerceptInterpreter,
 )
-from aicognitive_mind.engines import EchoReasoningEngine, OpenAIReasoningEngine
+from aicognitive_mind.engines import (
+    EchoReasoningEngine,
+    GeminiReasoningEngine,
+    OpenAIReasoningEngine,
+)
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.persistence import create_storage
@@ -317,31 +322,34 @@ def get_core(request: Request) -> CognitiveCore:
 
 
 def _reasoning_backend_error_detail(exc: Exception) -> str:
-    status_code = getattr(exc, "status_code", None)
+    settings = get_settings()
+    provider = settings.reasoning_provider.lower()
+    provider_label = "Gemini" if provider == "gemini" else "OpenAI"
+    status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
     class_name = exc.__class__.__name__
 
-    if status_code == 401 or class_name == "AuthenticationError":
+    if status_code in {401, 403} or class_name == "AuthenticationError":
         return (
-            "OpenAI authentication failed. Verify OPENAI_API_KEY in Render "
-            "belongs to an active OpenAI API project."
+            f"{provider_label} authentication or project permission failed. "
+            f"Verify the configured API key for the {provider_label} project."
         )
     if status_code == 429 or class_name == "RateLimitError":
         return (
-            "OpenAI rejected the request for quota or rate-limit reasons. "
-            "Check API billing/credits and project limits."
+            f"{provider_label} rejected the request for quota or rate-limit reasons. "
+            "Check the project's free-tier usage and limits."
         )
     if status_code == 404 or class_name == "NotFoundError":
         return (
-            "OpenAI could not access the configured model or API resource. "
-            "Check the model and project permissions."
+            f"{provider_label} could not access the configured model or API resource. "
+            "Check the model name and project permissions."
         )
-    if status_code == 400 or class_name == "BadRequestError":
+    if status_code == 400 or class_name in {"BadRequestError", "ClientError"}:
         return (
-            "OpenAI rejected the reasoning request as invalid. "
+            f"{provider_label} rejected the reasoning request as invalid. "
             "Check the Render logs for the request error."
         )
-    if class_name == "APIConnectionError":
-        return "The Mind could not connect to the OpenAI API."
+    if class_name in {"APIConnectionError", "ServerError"}:
+        return f"The Mind could not connect to the {provider_label} API."
 
     return (
         "The reasoning backend failed unexpectedly. "
@@ -349,14 +357,34 @@ def _reasoning_backend_error_detail(exc: Exception) -> str:
     )
 
 
+def _validate_reasoning_configuration(settings: Any) -> str:
+    provider = settings.reasoning_provider.lower().strip()
+    if provider not in {"gemini", "openai", "echo"}:
+        raise RuntimeError("REASONING_PROVIDER must be one of: gemini, openai, echo")
+
+    if os.getenv("RENDER", "").lower() == "true":
+        if provider == "gemini" and not settings.gemini_api_key:
+            raise RuntimeError(
+                "GEMINI_API_KEY is not configured for Render. "
+                "Set it in the Render service Environment."
+            )
+        if provider == "openai" and not settings.openai_api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY is not configured for Render. "
+                "Set it in the Render service Environment."
+            )
+        if provider == "echo":
+            raise RuntimeError(
+                "REASONING_PROVIDER=echo is not allowed on Render. "
+                "Configure gemini or openai explicitly."
+            )
+    return provider
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    if os.getenv("RENDER", "").lower() == "true" and not settings.openai_api_key:
-        raise RuntimeError(
-            "OPENAI_API_KEY is not configured for Render. "
-            "Set it in the Render service Environment."
-        )
+    provider = _validate_reasoning_configuration(settings)
     storage = await create_storage(settings)
     app.state.runtime = storage.runtime
     app.state.diagnostics = storage.diagnostics
@@ -383,20 +411,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         voice=browser_mouth,
         avatar=browser_face,
     )
-    engine = (
-        OpenAIReasoningEngine(settings.openai_api_key, settings.openai_model)
-        if settings.openai_api_key
-        else EchoReasoningEngine()
-    )
-    interpreter = (
-        OpenAIPerceptInterpreter(
+    if provider == "gemini":
+        assert settings.gemini_api_key is not None
+        engine = GeminiReasoningEngine(
+            settings.gemini_api_key,
+            settings.gemini_model,
+        )
+        interpreter = GeminiPerceptInterpreter(
+            settings.gemini_api_key,
+            model=settings.gemini_model,
+        )
+    elif provider == "openai":
+        assert settings.openai_api_key is not None
+        engine = OpenAIReasoningEngine(
+            settings.openai_api_key,
+            settings.openai_model,
+        )
+        interpreter = OpenAIPerceptInterpreter(
             settings.openai_api_key,
             vision_model=settings.openai_model,
             transcription_model=settings.openai_transcription_model,
         )
-        if settings.openai_api_key
-        else SummaryPerceptInterpreter()
-    )
+    else:
+        engine = EchoReasoningEngine()
+        interpreter = SummaryPerceptInterpreter()
     evidence_review = SensoryEvidenceReviewTool(
         evidence=storage.evidence,
         journal=storage.journal,
@@ -728,9 +766,17 @@ async def portal_status(request: Request) -> dict[str, Any]:
     try:
         result = await service.status()
         runtime_settings = get_settings()
+        provider = runtime_settings.reasoning_provider.lower()
+        model = (
+            runtime_settings.gemini_model
+            if provider == "gemini"
+            else runtime_settings.openai_model
+            if provider == "openai"
+            else "deterministic-echo"
+        )
         result["reasoning"] = {
-            "backend": "openai" if runtime_settings.openai_api_key else "echo",
-            "model": runtime_settings.openai_model,
+            "backend": provider,
+            "model": model,
         }
         result["administration"] = {
             "pin_required": bool(get_settings().admin_pin),
