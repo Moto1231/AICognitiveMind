@@ -6,6 +6,7 @@ from typing import Protocol
 from aicognitive_mind.config import Settings
 from aicognitive_mind.mongo_storage import (
     MongoDiagnosticStore,
+    MongoEvidenceStore,
     MongoJournalStore,
     MongoMemoryStore,
     MongoMindStore,
@@ -13,6 +14,7 @@ from aicognitive_mind.mongo_storage import (
 )
 from aicognitive_mind.storage import (
     DiagnosticStore,
+    EvidenceStore,
     JournalStore,
     MemoryStore,
     MindStore,
@@ -30,6 +32,7 @@ class StorageBundle:
     journal: JournalStore
     memory: MemoryStore
     diagnostics: DiagnosticStore
+    evidence: EvidenceStore
 
 
 async def create_storage(settings: Settings) -> StorageBundle:
@@ -44,11 +47,13 @@ async def create_storage(settings: Settings) -> StorageBundle:
             journal=MongoJournalStore(runtime.database),
             memory=MongoMemoryStore(runtime.database),
             diagnostics=MongoDiagnosticStore(runtime.database),
+            evidence=MongoEvidenceStore(runtime.database),
         )
 
     if provider == "surreal":
         from aicognitive_mind.surreal_storage import (
             SurrealDiagnosticStore,
+            SurrealEvidenceStore,
             SurrealJournalStore,
             SurrealMemoryStore,
             SurrealMindStore,
@@ -70,6 +75,7 @@ async def create_storage(settings: Settings) -> StorageBundle:
             journal=SurrealJournalStore(runtime.database),
             memory=SurrealMemoryStore(runtime.database),
             diagnostics=SurrealDiagnosticStore(runtime.database),
+            evidence=SurrealEvidenceStore(runtime.database),
         )
 
     raise RuntimeError("STORAGE_PROVIDER must be one of: mongo, surreal")
