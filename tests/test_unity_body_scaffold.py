@@ -14,6 +14,8 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("com.vrmc.vrm", dependencies)
         self.assertIn("UniVRM.git", dependencies["com.vrmc.vrm"])
         self.assertIn("path=/Packages/VRM10", dependencies["com.vrmc.vrm"])
+        self.assertIn("com.unity.modules.audio", dependencies)
+        self.assertIn("com.unity.modules.imageconversion", dependencies)
         self.assertIn("com.unity.modules.unitywebrequest", dependencies)
         self.assertIn("com.unity.modules.unitywebrequestaudio", dependencies)
 
@@ -116,6 +118,32 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("DefaultExecutionOrder(12000)", lip_sync)
         self.assertIn("CurrentWeight", lip_sync)
         self.assertIn("Lip target:", mouth)
+
+    def test_unity_body_has_desktop_eyes_and_ears(self) -> None:
+        client = Path(
+            "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"
+        ).read_text(encoding="utf-8")
+        senses = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomSensesRuntime.cs"
+        ).read_text(encoding="utf-8")
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("/v1/body/eyes/observe", client)
+        self.assertIn("/v1/mind/body/see?express=false", client)
+        self.assertIn("/v1/body/ears/observe", client)
+        self.assertIn("/v1/mind/body/hear?express=false", client)
+        self.assertIn("WebCamTexture", senses)
+        self.assertIn("ImageConversion.EncodeToJPG", senses)
+        self.assertIn("Microphone.Start", senses)
+        self.assertIn("data:audio/wav;base64,", senses)
+        self.assertIn("EncodePcm16Wav", senses)
+        self.assertIn("SensePauseSeconds = 15f", senses)
+        self.assertIn("AudioWindowSeconds = 4", senses)
+        self.assertIn("Senses On", bootstrap)
+        self.assertIn("ToggleSensesAsync", bootstrap)
+        self.assertIn("_sensesRuntime.Attach(_client)", bootstrap)
 
     def test_genesis_avatar_exposes_vrm_aa_mouth_expression(self) -> None:
         genesis = Path(

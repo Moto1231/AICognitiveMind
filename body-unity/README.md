@@ -35,7 +35,9 @@ The first slice:
 7. polls `/v1/body/mouth/next` for the Mind's existing VOICE expression intents;
 8. synthesizes those intents to temporary WAV audio through the local Windows System.Speech engine;
 9. plays the WAV through a Unity `AudioSource`;
-10. samples the actual audio amplitude and drives the VRM mouth expression in sync.
+10. samples the actual audio amplitude and drives the avatar mouth in sync;
+11. exposes a desktop Senses toggle that activates camera and microphone perception;
+12. preserves Unity camera frames and microphone recordings through the Mind's existing evidence pipeline.
 
 UniVRM is pinned through Unity Package Manager to the VRM 1.0 package.
 
@@ -59,8 +61,8 @@ The runtime bootstrap is created automatically after a scene loads, so an empty 
 
 After the bootstrap is proven on Windows:
 
-- native continuous webcam perception
-- native continuous microphone perception
+- avatar/editor controls inside the desktop application
+- desktop operator/admin views for memory, journal, and diagnostics
 - phoneme/viseme refinement beyond amplitude-driven mouth opening
 - broader expression mapping
 - animation/state machine
@@ -91,12 +93,28 @@ Core or SurrealDB architecture.
 
 ### Lip sync
 
-`AxiomLipSync` samples the active Unity `AudioSource` with
-`GetOutputData`, calculates RMS amplitude, smooths attack/release, and maps
-the result to the standard VRM 1.0 `aa` expression through
-`Runtime.Expression.SetWeight`.
+`AxiomLipSync` samples the active speech `AudioClip` at the current
+playback position, calculates RMS amplitude, and smooths attack/release. It
+uses the standard VRM 1.0 `aa` expression when available and directly
+animates the generated Genesis `MouthVisual` transform as the deterministic
+fallback for the current unskinned Genesis mouth mesh.
 
 This is real audio-reactive synchronization, but it is not yet
 phoneme-specific viseme recognition. The later refinement can distribute
 speech across `aa`, `ih`, `ou`, `ee`, and `oh` while retaining the
 same Mouth/audio pipeline.
+
+## Desktop Senses V0.1
+
+`AxiomSensesRuntime` moves the existing Eyes and Ears loop into Unity.
+
+When Senses are enabled:
+
+- Unity captures JPEG frames from the first available `WebCamTexture`;
+- visual evidence is admitted through `/v1/body/eyes/observe` and interpreted through `/v1/mind/body/see?express=false`;
+- Unity records four-second microphone windows and encodes them as PCM16 WAV;
+- audio evidence is admitted through `/v1/body/ears/observe` and interpreted through `/v1/mind/body/hear?express=false`;
+- vision and hearing alternate with the same 15-second pause used by the browser prototype;
+- passive perception does not automatically speak every Mind response.
+
+Turning Senses off releases both camera and microphone hardware.
