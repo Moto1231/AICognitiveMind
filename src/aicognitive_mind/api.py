@@ -239,6 +239,19 @@ def _journal_summary(entry: JournalEntry) -> dict[str, Any]:
             )
             if value
         )
+    elif entry.kind == JournalKind.SENSORY_EVIDENCE:
+        evidence = experience.get("evidence", {})
+        modality = str(evidence.get("modality", "sensory"))
+        source = str(evidence.get("source", ""))
+        sha256 = str(evidence.get("sha256", ""))
+        media_type = str(evidence.get("media_type", ""))
+        summary["title"] = "Sensory Evidence"
+        summary["preview"] = (
+            f"{modality} · {source} · {sha256[:12]}".strip(" ·")
+        )
+        summary["search_text"] = " ".join(
+            value for value in (modality, source, sha256, media_type) if value
+        )
     elif entry.kind == JournalKind.INITIALIZATION:
         self_name = str(experience.get("self_name", ""))
         values = " ".join(str(value) for value in experience.get("foundational_values", []))
