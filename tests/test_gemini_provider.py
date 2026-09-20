@@ -6,7 +6,7 @@ from typing import Any
 from aicognitive_mind.body import BrowserAudioIngress, BrowserVisionIngress
 from aicognitive_mind.domain import CognitiveMind, MindIdentity, ReasoningRequest
 from aicognitive_mind.embodiment import GeminiPerceptInterpreter
-from aicognitive_mind.engines import GeminiReasoningEngine
+from aicognitive_mind.engines import GeminiReasoningEngine, resolve_gemini_model
 
 
 class RecordingTool:
@@ -30,10 +30,35 @@ class RecordingTool:
         return {"status": "recalled", "focus": arguments["focus"]}
 
 
+class FakeAsyncPager:
+    def __init__(self, models: list[Any]) -> None:
+        self._models = models
+
+    def __aiter__(self):
+        self._iterator = iter(self._models)
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._iterator)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
 class FakeGeminiModels:
-    def __init__(self, responses: list[Any]) -> None:
+    def __init__(
+        self,
+        responses: list[Any],
+        available_models: list[Any] | None = None,
+    ) -> None:
         self.responses = list(responses)
+        self.available_models = list(available_models or [])
         self.calls: list[dict[str, Any]] = []
+        self.list_calls: list[dict[str, Any]] = []
+
+    async def list(self, **kwargs: Any) -> FakeAsyncPager:
+        self.list_calls.append(kwargs)
+        return FakeAsyncPager(self.available_models)
 
     async def generate_content(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
@@ -43,8 +68,12 @@ class FakeGeminiModels:
 
 
 class FakeGeminiClient:
-    def __init__(self, responses: list[Any]) -> None:
-        self.models = FakeGeminiModels(responses)
+    def __init__(
+        self,
+        responses: list[Any],
+        available_models: list[Any] | None = None,
+    ) -> None:
+        self.models = FakeGeminiModels(responses, available_models)
         self.aio = SimpleNamespace(models=self.models)
 
 
@@ -54,6 +83,80 @@ def data_url(media_type: str, payload: bytes) -> str:
 
 
 class GeminiProviderV01Tests(unittest.IsolatedAsyncioTestCase):
+    async def test_model_autodiscovery_prefers_accessible_free_flash_lite(self) -> None:
+        client = FakeGeminiClient(
+            [],
+            available_models=[
+                SimpleNamespace(
+                    name="models/gemini-3.8-flash",
+                    supported_actions=["generateContent"],
+                ),
+                SimpleNamespace(
+                    name="models/gemini-3.5-flash-lite",
+                    supported_actions=["generateContent"],
+                ),
+            ],
+        )
+
+        resolved = await resolve_gemini_model(
+            "test-key",
+            "auto",
+            client=client,
+        )
+
+        self.assertEqual(resolved, "gemini-3.5-flash-lite")
+        self.assertEqual(client.models.list_calls, [{"config": {"page_size": 100}}])
+
+    async def test_model_autodiscovery_uses_requested_model_only_when_visible(self) -> None:
+        client = FakeGeminiClient(
+            [],
+            available_models=[
+                SimpleNamespace(
+                    name="models/gemini-3.6-flash",
+                    supported_actions=["generateContent"],
+                ),
+                SimpleNamespace(
+                    name="models/gemini-3.5-flash-lite",
+                    supported_actions=["generateContent"],
+                ),
+            ],
+        )
+
+        visible = await resolve_gemini_model(
+            "test-key",
+            "gemini-3.6-flash",
+            client=client,
+        )
+        missing = await resolve_gemini_model(
+            "test-key",
+            "gemini-3.5-flash",
+            client=client,
+        )
+
+        self.assertEqual(visible, "gemini-3.6-flash")
+        self.assertEqual(missing, "gemini-3.5-flash-lite")
+
+    async def test_model_autodiscovery_fails_clearly_when_project_has_no_flash_model(self) -> None:
+        client = FakeGeminiClient(
+            [],
+            available_models=[
+                SimpleNamespace(
+                    name="models/gemini-3.1-flash-image",
+                    supported_actions=["generateContent"],
+                )
+            ],
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "exposes no general-purpose Flash model",
+        ):
+            await resolve_gemini_model(
+                "test-key",
+                "auto",
+                client=client,
+            )
+
     async def test_reasoning_engine_runs_memory_tool_loop(self) -> None:
         tool = RecordingTool()
         first = SimpleNamespace(
