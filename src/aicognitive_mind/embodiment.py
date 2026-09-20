@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -10,6 +11,14 @@ from pydantic import BaseModel
 
 from aicognitive_mind.body import BodyRuntime, Percept, SensoryModality
 from aicognitive_mind.core import CognitiveCore
+from aicognitive_mind.domain import (
+    CognitiveActor,
+    JournalEntry,
+    JournalKind,
+    SensoryEvidenceArtifact,
+    SensoryEvidenceReference,
+)
+from aicognitive_mind.storage import EvidenceStore, JournalStore
 
 
 class PerceptInterpreter(Protocol):
@@ -19,6 +28,7 @@ class PerceptInterpreter(Protocol):
 class EmbodiedInteractionResult(BaseModel):
     sensory_modality: SensoryModality
     sensory_source: str
+    evidence: SensoryEvidenceReference
     interpretation: str
     response_text: str
     occurred_at: datetime
@@ -39,7 +49,8 @@ class OpenAIPerceptInterpreter:
     """Mind-side sensory interpreter.
 
     Vision is interpreted as an image input. Audio is transcribed before it is
-    handed to the conscious workspace. Raw media remains transient Body data.
+    handed to the conscious workspace. The admitted source media is preserved
+    separately as immutable sensory evidence before interpretation.
     """
 
     def __init__(
@@ -153,10 +164,14 @@ class MindBodyBridge:
         core: CognitiveCore,
         body: BodyRuntime,
         interpreter: PerceptInterpreter,
+        evidence: EvidenceStore,
+        journal: JournalStore,
     ) -> None:
         self._core = core
         self._body = body
         self._interpreter = interpreter
+        self._evidence = evidence
+        self._journal = journal
 
     async def see(self) -> EmbodiedInteractionResult:
         return await self.perceive(await self._body.see())
@@ -165,11 +180,27 @@ class MindBodyBridge:
         return await self.perceive(await self._body.hear())
 
     async def perceive(self, percept: Percept) -> EmbodiedInteractionResult:
+        artifact = await self._preserve_evidence(percept)
+        reference = artifact.reference()
+        await self._journal.append(
+            JournalEntry(
+                kind=JournalKind.SENSORY_EVIDENCE,
+                occurred_at=percept.observed_at,
+                experience={
+                    "status": "admitted",
+                    "source": f"body:{percept.modality.value}",
+                    "evidence": reference.model_dump(mode="python"),
+                    "metadata": self._journal_safe_metadata(percept.metadata),
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
         interpretation = await self._interpreter.interpret(percept)
         context = {
             "modality": percept.modality.value,
             "source": percept.source,
             "observed_at": percept.observed_at.isoformat(),
+            "evidence": reference.model_dump(mode="json"),
             "metadata": self._journal_safe_metadata(percept.metadata),
         }
         interaction = await self._core.interact(
@@ -182,10 +213,45 @@ class MindBodyBridge:
         return EmbodiedInteractionResult(
             sensory_modality=percept.modality,
             sensory_source=percept.source,
+            evidence=reference,
             interpretation=interpretation,
             response_text=interaction.response_text,
             occurred_at=interaction.occurred_at,
         )
+
+    async def _preserve_evidence(self, percept: Percept) -> SensoryEvidenceArtifact:
+        if not percept.content_ref:
+            raise ValueError("Sensory percept contains no evidence content")
+
+        media_type, payload_base64, payload = self._decode_data_url(percept.content_ref)
+        artifact = SensoryEvidenceArtifact(
+            captured_at=percept.observed_at,
+            modality=percept.modality.value,
+            source=percept.source,
+            media_type=media_type,
+            sha256=hashlib.sha256(payload).hexdigest(),
+            byte_length=len(payload),
+            payload_base64=payload_base64,
+            metadata=self._journal_safe_metadata(percept.metadata),
+        )
+        return await self._evidence.preserve(artifact)
+
+    @staticmethod
+    def _decode_data_url(data_url: str) -> tuple[str, str, bytes]:
+        if not data_url.startswith("data:") or "," not in data_url:
+            raise ValueError("Sensory evidence does not contain a valid data URL")
+        header, encoded = data_url.split(",", 1)
+        if not header.endswith(";base64"):
+            raise ValueError("Sensory evidence does not contain base64 data")
+        descriptor = header.removeprefix("data:").removesuffix(";base64")
+        media_type = descriptor.split(";", 1)[0].lower()
+        try:
+            payload = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("Sensory evidence contains invalid base64 data") from exc
+        if not payload:
+            raise ValueError("Sensory evidence is empty")
+        return media_type, encoded, payload
 
     @staticmethod
     def _journal_safe_metadata(metadata: dict[str, Any]) -> dict[str, Any]:

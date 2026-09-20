@@ -10,6 +10,7 @@ from aicognitive_mind.domain import (
     DiagnosticObservation,
     DurableMemory,
     JournalEntry,
+    SensoryEvidenceArtifact,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 from aicognitive_mind.storage import (
@@ -254,4 +255,37 @@ class SurrealMemoryStore:
                     replacement.model_dump(mode="json"),
                 )
                 return replacement
+        return None
+
+
+
+class SurrealEvidenceStore:
+    """Provider-neutral sensory evidence store for the parked Surreal path."""
+
+    def __init__(self, database: Any) -> None:
+        self._database = database
+
+    async def preserve(self, artifact: SensoryEvidenceArtifact) -> SensoryEvidenceArtifact:
+        records = _records(await self._database.select("evidence"))
+        for record in records:
+            existing = SensoryEvidenceArtifact.model_validate(_document(record))
+            if (
+                existing.sha256 == artifact.sha256
+                and existing.captured_at == artifact.captured_at
+            ):
+                return existing
+        await self._database.create("evidence", artifact.model_dump(mode="json"))
+        return artifact
+
+    async def find_exact(
+        self,
+        *,
+        sha256: str,
+        captured_at: Any,
+    ) -> SensoryEvidenceArtifact | None:
+        records = _records(await self._database.select("evidence"))
+        for record in records:
+            artifact = SensoryEvidenceArtifact.model_validate(_document(record))
+            if artifact.sha256 == sha256 and artifact.captured_at == captured_at:
+                return artifact
         return None

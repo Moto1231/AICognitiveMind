@@ -10,6 +10,7 @@ from aicognitive_mind.domain import (
     DiagnosticObservation,
     DurableMemory,
     JournalEntry,
+    SensoryEvidenceArtifact,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 
@@ -51,6 +52,17 @@ class JournalStore(Protocol):
         kind: str,
         occurred_at: datetime,
     ) -> JournalEntry | None: ...
+
+
+class EvidenceStore(Protocol):
+    async def preserve(self, artifact: SensoryEvidenceArtifact) -> SensoryEvidenceArtifact: ...
+
+    async def find_exact(
+        self,
+        *,
+        sha256: str,
+        captured_at: datetime,
+    ) -> SensoryEvidenceArtifact | None: ...
 
 
 class DiagnosticStore(Protocol):
@@ -136,6 +148,7 @@ def _journal_search_text(entry: JournalEntry) -> str:
         _searchable_text(experience.get("appraisals", {})),
         _searchable_text(experience.get("deliberation", {})),
         _searchable_text(experience.get("current_evidence", [])),
+        _searchable_text(experience.get("evidence", {})),
         " ".join(str(value) for value in experience.get("foundational_values", [])),
     ]
     return " ".join(str(value) for value in values if value).lower()
@@ -337,4 +350,28 @@ class InMemoryMemoryStore:
                 stored = deepcopy(replacement)
                 self._memories[index] = stored
                 return deepcopy(stored)
+        return None
+
+
+class InMemoryEvidenceStore:
+    def __init__(self) -> None:
+        self._artifacts: list[SensoryEvidenceArtifact] = []
+
+    async def preserve(self, artifact: SensoryEvidenceArtifact) -> SensoryEvidenceArtifact:
+        for existing in self._artifacts:
+            if existing.sha256 == artifact.sha256 and existing.captured_at == artifact.captured_at:
+                return deepcopy(existing)
+        stored = deepcopy(artifact)
+        self._artifacts.append(stored)
+        return deepcopy(stored)
+
+    async def find_exact(
+        self,
+        *,
+        sha256: str,
+        captured_at: datetime,
+    ) -> SensoryEvidenceArtifact | None:
+        for artifact in self._artifacts:
+            if artifact.sha256 == sha256 and artifact.captured_at == captured_at:
+                return deepcopy(artifact)
         return None

@@ -56,24 +56,24 @@ When an OpenAI API key is configured:
 When no OpenAI API key is configured, a summary interpreter preserves the architecture and allows
 the loop to run deterministically, but it does not claim semantic understanding of the raw media.
 
-## Memory and journal boundary
+## Evidence, memory, and journal boundary
 
-Raw image and audio payloads remain transient.
+Continuous camera/microphone streams remain transient.
 
-The journal records:
+A deliberate **See** or **Hear** operation changes the status of the exact observation that enters
+cognition: before interpretation, its media bytes are preserved as an immutable sensory evidence
+artifact with capture time, source, media type, byte length, and SHA-256 content hash.
 
-- sensory modality;
-- device source;
-- observation time;
-- safe metadata such as dimensions, duration, and media type;
-- the Mind-side interpretation;
-- the resulting conscious expression.
+The journal first records a `sensory_evidence` admission event containing the artifact reference.
+The later interaction journal entry records that same reference alongside the Mind-side
+interpretation and response. Raw media bytes are kept in the evidence store, not embedded in the
+journal.
 
-It does **not** persist the raw image or audio data URL.
+Evidence is not memory. The interpreted perception still goes through the same Memory Steward path
+as any other conscious input. The Memory Steward remains the sole authority deciding whether a
+semantic conclusion from sensory evidence becomes durable cognitive memory.
 
-The interpreted perception goes through the same Memory Steward path as any other conscious input.
-The Memory Steward therefore remains the sole authority deciding whether anything learned from a
-sensory experience becomes durable memory.
+See [0010 — Sensory Evidence Artifacts V0.1](0010-sensory-evidence-v0.1.md).
 
 ## Expression return
 
@@ -113,11 +113,13 @@ and shows both the Mind-side sensory interpretation and the final response.
 The integration is proven when either a camera frame or microphone clip:
 
 1. enters as a transient Body `Percept`;
-2. is interpreted on the Mind side;
-3. passes through `CognitiveCore` and the Memory Steward;
-4. is journaled with Body provenance but without raw media;
-5. produces a conscious response;
-6. returns through Mouth and Face.
+2. is preserved as immutable sensory evidence;
+3. receives a journaled evidence-admission record;
+4. is interpreted on the Mind side;
+5. passes through `CognitiveCore` and the Memory Steward;
+6. is journaled with an evidence reference;
+7. produces a conscious response;
+8. returns through Mouth and Face.
 
 ## Deliberately not included yet
 

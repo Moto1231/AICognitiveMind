@@ -11,6 +11,7 @@ from aicognitive_mind.domain import (
     DiagnosticObservation,
     DurableMemory,
     JournalEntry,
+    SensoryEvidenceArtifact,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 from aicognitive_mind.storage import MindAlreadyInitializedError
@@ -27,6 +28,10 @@ class MongoRuntime:
         await self.database["memory"].create_index([("formed_at", ASCENDING)])
         await self.database["memory"].create_index([("associations", ASCENDING)])
         await self.database["diagnostics"].create_index([("observed_at", ASCENDING)])
+        await self.database["evidence"].create_index(
+            [("sha256", ASCENDING), ("captured_at", ASCENDING)],
+            unique=True,
+        )
 
     async def ping(self) -> None:
         await self.client.admin.command("ping")
@@ -443,3 +448,34 @@ class MongoMemoryStore:
             replacement.model_dump(mode="python"),
         )
         return replacement if result.matched_count == 1 else None
+
+
+
+class MongoEvidenceStore:
+    """Immutable content-addressed sensory evidence."""
+
+    def __init__(self, database: AsyncDatabase[dict[str, Any]]) -> None:
+        self._collection = database["evidence"]
+
+    async def preserve(self, artifact: SensoryEvidenceArtifact) -> SensoryEvidenceArtifact:
+        selector = {
+            "sha256": artifact.sha256,
+            "captured_at": artifact.captured_at,
+        }
+        existing = await self._collection.find_one(selector, {"_id": 0})
+        if existing is not None:
+            return SensoryEvidenceArtifact.model_validate(existing)
+        await self._collection.insert_one(artifact.model_dump(mode="python"))
+        return artifact
+
+    async def find_exact(
+        self,
+        *,
+        sha256: str,
+        captured_at: datetime,
+    ) -> SensoryEvidenceArtifact | None:
+        document = await self._collection.find_one(
+            {"sha256": sha256, "captured_at": captured_at},
+            {"_id": 0},
+        )
+        return SensoryEvidenceArtifact.model_validate(document) if document else None

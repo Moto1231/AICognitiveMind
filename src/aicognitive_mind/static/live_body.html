@@ -18,6 +18,7 @@
     video { width: 220px; border-radius: 10px; background: #181a20; }
     #cameraPanel { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
     #status { white-space: pre-wrap; background: #181a20; padding: 1rem; border-radius: 10px; margin-top: 1rem; min-height: 6rem; }
+    #evidenceArtifact { display: inline-block; margin-top: .75rem; }
     .avatar-editor { margin: 1rem 0; padding: 1rem; background: #181a20; border-radius: 14px; }
     .avatar-editor h2 { margin: 0 0 .25rem; }
     .avatar-editor-note { margin-top: 0; }
@@ -96,6 +97,7 @@
 
     <canvas id="captureCanvas" hidden></canvas>
     <div id="status">Attaching Genesis...</div>
+    <a id="evidenceArtifact" href="#" target="_blank" rel="noopener" hidden>Open evidence artifact</a>
   </main>
 
   <script type="module">
@@ -120,6 +122,7 @@
     const stopCameraButton = document.getElementById("stopCamera");
     const stopSpeechButton = document.getElementById("stopSpeech");
     const statusBox = document.getElementById("status");
+    const evidenceArtifactLink = document.getElementById("evidenceArtifact");
     const avatarInputs = [...document.querySelectorAll("[data-avatar-key]")];
     const avatarValueLabels = [...document.querySelectorAll("[data-avatar-value]")];
     const saveAvatarAppearanceButton = document.getElementById("saveAvatarAppearance");
@@ -272,8 +275,24 @@
     }
 
     async function showMindResult(result) {
+      const evidence = result.evidence;
+      const evidenceUrl =
+        "/v1/evidence/" + encodeURIComponent(evidence.sha256) +
+        "?captured_at=" + encodeURIComponent(evidence.captured_at);
+
+      evidenceArtifactLink.href = evidenceUrl;
+      evidenceArtifactLink.textContent =
+        evidence.modality === "audio"
+          ? "Open preserved audio evidence"
+          : "Open preserved visual evidence";
+      evidenceArtifactLink.hidden = false;
+
       setStatus(
         "MIND ↔ BODY LOOP COMPLETE\n\n" +
+        "Evidence:\n" +
+        evidence.media_type + "\n" +
+        "sha256: " + evidence.sha256 + "\n" +
+        "captured: " + evidence.captured_at + "\n\n" +
         "Perception:\n" + result.interpretation + "\n\n" +
         "Mind response:\n" + result.response_text
       );
@@ -311,7 +330,8 @@
         canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
         canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        setStatus("Eyes captured a frame. Sending sensation to the Mind...");
+        evidenceArtifactLink.hidden = true;
+        setStatus("Eyes captured a frame. Preserving evidence and sending sensation to the Mind...");
 
         const ingress = await fetch("/v1/body/eyes/observe", {
           method: "POST",
@@ -365,7 +385,8 @@
     }
 
     async function submitAudio(blob, durationMs) {
-      setStatus("Ears captured sound. Sending sensation to the Mind...");
+      evidenceArtifactLink.hidden = true;
+      setStatus("Ears captured sound. Preserving evidence and sending sensation to the Mind...");
       const ingress = await fetch("/v1/body/ears/observe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -20,6 +21,7 @@ from aicognitive_mind.embodiment import (
 from aicognitive_mind.engines import EchoReasoningEngine
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
+    InMemoryEvidenceStore,
     InMemoryJournalStore,
     InMemoryMemoryStore,
     InMemoryMindStore,
@@ -38,6 +40,11 @@ class FixedInterpreter:
     async def interpret(self, percept):
         self.percepts.append(percept)
         return self.text
+
+
+class FailingInterpreter:
+    async def interpret(self, percept):
+        raise RuntimeError("interpretation failed")
 
 
 class FakeResponses:
@@ -84,7 +91,14 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         face = BrowserAvatarOutput()
         body = BodyRuntime(vision=eyes, voice=mouth, avatar=face)
         interpreter = FixedInterpreter("Visual perception: A person is standing by a window.")
-        bridge = MindBodyBridge(core=core, body=body, interpreter=interpreter)
+        evidence = InMemoryEvidenceStore()
+        bridge = MindBodyBridge(
+            core=core,
+            body=body,
+            interpreter=interpreter,
+            evidence=evidence,
+            journal=journal,
+        )
 
         eyes.accept(
             image_data_url=data_url("image/jpeg", b"jpeg"),
@@ -102,6 +116,16 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
             result.response_text,
             "I heard: Visual perception: A person is standing by a window.",
         )
+        self.assertEqual(result.evidence.media_type, "image/jpeg")
+        self.assertEqual(result.evidence.sha256, hashlib.sha256(b"jpeg").hexdigest())
+
+        preserved = await evidence.find_exact(
+            sha256=result.evidence.sha256,
+            captured_at=result.evidence.captured_at,
+        )
+        self.assertIsNotNone(preserved)
+        assert preserved is not None
+        self.assertEqual(base64.b64decode(preserved.payload_base64), b"jpeg")
 
         mouth_intent = mouth.consume()
         face_intent = face.consume()
@@ -118,6 +142,10 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(input_document["source"], "body:vision")
         self.assertEqual(input_document["context"]["modality"], "vision")
         self.assertEqual(input_document["context"]["source"], "browser-camera")
+        self.assertEqual(
+            input_document["context"]["evidence"]["sha256"],
+            hashlib.sha256(b"jpeg").hexdigest(),
+        )
         self.assertNotIn("content_ref", str(input_document))
         self.assertNotIn("data:image", str(input_document))
 
@@ -127,10 +155,13 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         mouth = BrowserVoiceOutput()
         face = BrowserAvatarOutput()
         body = BodyRuntime(audio=ears, voice=mouth, avatar=face)
+        evidence = InMemoryEvidenceStore()
         bridge = MindBodyBridge(
             core=core,
             body=body,
             interpreter=FixedInterpreter("Auditory perception: Good morning."),
+            evidence=evidence,
+            journal=journal,
         )
 
         ears.accept(
@@ -141,9 +172,45 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         result = await bridge.hear()
 
         self.assertEqual(result.sensory_modality.value, "audio")
+        self.assertEqual(result.evidence.media_type, "audio/webm")
+        self.assertEqual(result.evidence.sha256, hashlib.sha256(b"audio").hexdigest())
         self.assertEqual(result.response_text, "I heard: Auditory perception: Good morning.")
         entries = await journal.read()
         self.assertEqual(entries[-1].experience["input"]["source"], "body:audio")
+
+    async def test_evidence_survives_even_when_interpretation_fails(self) -> None:
+        core, journal = await self._core()
+        eyes = BrowserVisionIngress()
+        evidence = InMemoryEvidenceStore()
+        body = BodyRuntime(vision=eyes)
+        bridge = MindBodyBridge(
+            core=core,
+            body=body,
+            interpreter=FailingInterpreter(),
+            evidence=evidence,
+            journal=journal,
+        )
+
+        percept = eyes.accept(
+            image_data_url=data_url("image/jpeg", b"failed-interpretation-image"),
+            width=320,
+            height=240,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "interpretation failed"):
+            await bridge.see()
+
+        sha256 = hashlib.sha256(b"failed-interpretation-image").hexdigest()
+        preserved = await evidence.find_exact(
+            sha256=sha256,
+            captured_at=percept.observed_at,
+        )
+        self.assertIsNotNone(preserved)
+        entries = await journal.read()
+        sensory = entries[-1]
+        self.assertEqual(sensory.kind.value, "sensory_evidence")
+        self.assertEqual(sensory.experience["status"], "admitted")
+        self.assertEqual(sensory.experience["evidence"]["sha256"], sha256)
 
     async def test_openai_interpreter_sends_image_as_multimodal_input(self) -> None:
         client = FakeOpenAIClient()
@@ -197,6 +264,8 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/body/live", paths)
         self.assertIn("/v1/mind/body/see", paths)
         self.assertIn("/v1/mind/body/hear", paths)
+        self.assertIn("/v1/evidence/{sha256}", paths)
+        self.assertIn("/v1/evidence/{sha256}/metadata", paths)
 
         markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
@@ -208,6 +277,8 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/v1/body/face/next", markup)
         self.assertIn("/v1/body/mouth/next", markup)
         self.assertIn("MIND ↔ BODY LOOP COMPLETE", markup)
+        self.assertIn("Open evidence artifact", markup)
+        self.assertIn("/v1/evidence/", markup)
 
 
 if __name__ == "__main__":
