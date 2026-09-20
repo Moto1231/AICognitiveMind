@@ -230,14 +230,11 @@ class GeminiReasoningEngine:
                     )
                 arguments = dict(call.args or {})
                 result = await tool.invoke(arguments)
-                response_kwargs: dict[str, Any] = {
-                    "name": name,
-                    "response": {"result": result},
-                }
-                if call.id:
-                    response_kwargs["id"] = call.id
                 result_parts.append(
-                    genai_types.Part.from_function_response(**response_kwargs)
+                    genai_types.Part.from_function_response(
+                        name=name,
+                        response={"result": result},
+                    )
                 )
                 tool_calls += 1
 
