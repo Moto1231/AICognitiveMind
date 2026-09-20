@@ -35,6 +35,7 @@ from aicognitive_mind.domain import (
     JournalEntry,
     JournalKind,
     MemoryClass,
+    SensoryEvidenceReference,
 )
 from aicognitive_mind.embodiment import (
     EmbodiedInteractionResult,
@@ -47,6 +48,7 @@ from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.storage import (
     DiagnosticStore,
+    EvidenceStore,
     JournalStore,
     MemoryStore,
     MindAlreadyInitializedError,
@@ -293,6 +295,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     storage = await create_storage(settings)
     app.state.runtime = storage.runtime
     app.state.diagnostics = storage.diagnostics
+    app.state.evidence_store = storage.evidence
     app.state.mind_store = storage.mind
     app.state.journal_store = storage.journal
     app.state.memory_store = storage.memory
@@ -341,6 +344,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         core=core,
         body=app.state.body,
         interpreter=interpreter,
+        evidence=storage.evidence,
     )
     yield
     await storage.runtime.close()
@@ -402,6 +406,63 @@ async def mind_hear(request: Request) -> EmbodiedInteractionResult:
             else status.HTTP_409_CONFLICT
         )
         raise HTTPException(status_code=code, detail=str(exc)) from exc
+
+
+@app.get(
+    "/v1/evidence/{sha256}/metadata",
+    response_model=SensoryEvidenceReference,
+)
+async def sensory_evidence_metadata(
+    sha256: str,
+    captured_at: datetime,
+    request: Request,
+) -> SensoryEvidenceReference:
+    evidence_store = cast(EvidenceStore, request.app.state.evidence_store)
+    artifact = await evidence_store.find_exact(
+        sha256=sha256,
+        captured_at=captured_at,
+    )
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sensory evidence artifact was not found",
+        )
+    return artifact.reference()
+
+
+@app.get("/v1/evidence/{sha256}", include_in_schema=False)
+async def sensory_evidence_media(
+    sha256: str,
+    captured_at: datetime,
+    request: Request,
+) -> Response:
+    evidence_store = cast(EvidenceStore, request.app.state.evidence_store)
+    artifact = await evidence_store.find_exact(
+        sha256=sha256,
+        captured_at=captured_at,
+    )
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sensory evidence artifact was not found",
+        )
+    try:
+        payload = base64.b64decode(artifact.payload_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Stored sensory evidence is corrupted",
+        ) from exc
+
+    return Response(
+        content=payload,
+        media_type=artifact.media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Evidence-SHA256": artifact.sha256,
+            "X-Evidence-Captured-At": artifact.captured_at.isoformat(),
+        },
+    )
 
 
 @app.get("/body/eyes", include_in_schema=False)
