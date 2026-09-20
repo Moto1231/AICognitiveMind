@@ -34,6 +34,68 @@ class AvatarCustomizationV01Tests(unittest.TestCase):
         )
         self.assertNotIn("Dark", material_names)
 
+    def test_genesis_v02_is_smooth_and_preserves_editor_contract(self) -> None:
+        model = parse_glb_json(build_genesis_vrm())
+
+        vrm_meta = model["extensions"]["VRMC_vrm"]["meta"]
+        self.assertEqual(vrm_meta["version"], "0.2")
+        self.assertIn("V0.2", model["asset"]["generator"])
+
+        mesh_names = {mesh["name"] for mesh in model["meshes"]}
+        self.assertNotIn("SkinCube", mesh_names)
+        self.assertNotIn("ShirtCube", mesh_names)
+        self.assertNotIn("PantsCube", mesh_names)
+        self.assertTrue(
+            {
+                "SkinSmooth",
+                "ShirtSmooth",
+                "PantsSmooth",
+                "HairCap",
+                "EyeIris",
+                "ShoeSmooth",
+            }.issubset(mesh_names)
+        )
+
+        # The old cube primitive had only 24 vertices. V0.2's rounded surface
+        # uses hundreds of smoothly normaled vertices.
+        vec3_counts = [
+            accessor["count"]
+            for accessor in model["accessors"]
+            if accessor["type"] == "VEC3"
+        ]
+        self.assertGreaterEqual(max(vec3_counts), 400)
+
+        node_names = {node["name"] for node in model["nodes"]}
+        self.assertTrue(
+            {
+                "HeadVisual",
+                "HairVisual",
+                "LeftEyeVisual",
+                "RightEyeVisual",
+                "MouthVisual",
+                "PelvisVisual",
+                "TorsoLowerVisual",
+                "TorsoUpperVisual",
+                "LeftUpperArmVisual",
+                "RightUpperArmVisual",
+                "LeftUpperLegVisual",
+                "RightUpperLegVisual",
+            }.issubset(node_names)
+        )
+        self.assertTrue(
+            {
+                "NoseVisual",
+                "LeftEarVisual",
+                "RightEarVisual",
+                "LeftBrowVisual",
+                "RightBrowVisual",
+                "LeftEyeWhite",
+                "RightEyeWhite",
+                "LeftIrisVisual",
+                "RightIrisVisual",
+            }.issubset(node_names)
+        )
+
     def test_avatar_customizer_exports_runtime_editing_functions(self) -> None:
         source = Path("src/aicognitive_mind/static/avatar_customizer.js").read_text(
             encoding="utf-8"

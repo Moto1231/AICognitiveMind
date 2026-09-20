@@ -73,3 +73,10 @@ Avatar V0.1 is proven when the Codespace-hosted Face page:
 2. renders the humanoid without requiring a local avatar file;
 3. visibly responds to the existing Neutral and Happy expression controls;
 4. still accepts a replacement VRM through the file chooser.
+
+
+## Successor
+
+[0012 — Genesis V0.2: Smooth Humanoid](0012-avatar-genesis-v0.2-smooth-humanoid.md) replaces the
+block-primitive visual form with smooth source-generated humanoid geometry while preserving this
+VRM contract.
