@@ -1032,10 +1032,11 @@ async def interact(body: InteractionRequest, request: Request) -> InteractionRes
 async def embodied_text_interaction(
     body: InteractionRequest,
     request: Request,
+    express: bool = True,
 ) -> InteractionResult:
     try:
         bridge = cast(MindBodyBridge, request.app.state.mind_body)
-        return await bridge.interact(body.message)
+        return await bridge.interact(body.message, express=express)
     except MindNotInitializedError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

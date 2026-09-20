@@ -28,7 +28,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
 
         self.assertIn("/health", client)
         self.assertIn("/v1/body/face/avatar", client)
-        self.assertIn("/v1/mind/body/interact", client)
+        self.assertIn("/v1/mind/body/interact?express=false", client)
         self.assertIn("/v1/body/mouth/next", client)
         self.assertIn("AXIOM_MIND_URL", config)
         self.assertNotIn("SURREALDB_", combined)
@@ -79,6 +79,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("/v1/body/mouth/next", client)
         self.assertIn("VoiceExpressionIntent", client)
         self.assertIn("PollAsync", mouth)
+        self.assertIn("SpeakTextAsync", mouth)
         self.assertIn("WindowsSpeechOutput", mouth)
         self.assertIn("powershell.exe", speech)
         self.assertIn("System.Speech", speech)
@@ -86,6 +87,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("SpeakSsml", speech)
         self.assertIn("SetOutputToWaveFile", speech)
         self.assertIn("_mouthRuntime.Attach(_client, _avatarLoader.Instance)", bootstrap)
+        self.assertIn("await _mouthRuntime.SpeakTextAsync(response.response_text)", bootstrap)
 
     def test_unity_body_drives_vrm_mouth_from_actual_audio(self) -> None:
         mouth = Path(
