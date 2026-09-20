@@ -529,10 +529,13 @@ async def avatar_editor_page() -> FileResponse:
 
 
 @app.post("/v1/mind/body/see", response_model=EmbodiedInteractionResult)
-async def mind_see(request: Request) -> EmbodiedInteractionResult:
+async def mind_see(
+    request: Request,
+    express: bool = True,
+) -> EmbodiedInteractionResult:
     bridge = cast(MindBodyBridge, request.app.state.mind_body)
     try:
-        return await bridge.see()
+        return await bridge.see(express=express)
     except (MindNotInitializedError, RuntimeError, ValueError) as exc:
         code = (
             status.HTTP_404_NOT_FOUND
@@ -543,10 +546,13 @@ async def mind_see(request: Request) -> EmbodiedInteractionResult:
 
 
 @app.post("/v1/mind/body/hear", response_model=EmbodiedInteractionResult)
-async def mind_hear(request: Request) -> EmbodiedInteractionResult:
+async def mind_hear(
+    request: Request,
+    express: bool = True,
+) -> EmbodiedInteractionResult:
     bridge = cast(MindBodyBridge, request.app.state.mind_body)
     try:
-        return await bridge.hear()
+        return await bridge.hear(express=express)
     except (MindNotInitializedError, RuntimeError, ValueError) as exc:
         code = (
             status.HTTP_404_NOT_FOUND
