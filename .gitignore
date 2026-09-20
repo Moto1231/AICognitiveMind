@@ -15,3 +15,16 @@ build/
 .vscode/settings.json
 *.mind-backup
 backups/
+
+# Unity desktop Body generated state
+body-unity/[Ll]ibrary/
+body-unity/[Tt]emp/
+body-unity/[Oo]bj/
+body-unity/[Bb]uild/
+body-unity/[Bb]uilds/
+body-unity/[Ll]ogs/
+body-unity/[Uu]ser[Ss]ettings/
+body-unity/MemoryCaptures/
+body-unity/.vs/
+body-unity/*.csproj
+body-unity/*.sln
