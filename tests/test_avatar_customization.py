@@ -136,6 +136,12 @@ class AvatarCustomizationV01Tests(unittest.TestCase):
         self.assertIn('from "/static/avatar_customizer.js"', editor_markup)
         self.assertIn('href="/body/live"', editor_markup)
 
+        portal_markup = Path("src/aicognitive_mind/static/index.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('href="/body/avatar"', portal_markup)
+        self.assertIn("Avatar Editor", portal_markup)
+
     def test_live_body_still_applies_saved_avatar_appearance(self) -> None:
         markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
