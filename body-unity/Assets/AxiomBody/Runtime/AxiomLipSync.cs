@@ -15,12 +15,17 @@ namespace Axiom.Body
         private Vrm10Instance _avatar;
         private AudioSource _audioSource;
         private SkinnedMeshRenderer _mouthRenderer;
+        private Transform _mouthTransform;
+        private Vector3 _mouthRestScale = Vector3.one;
+        private Vector3 _mouthRestPosition = Vector3.zero;
         private int _mouthBlendShapeIndex = -1;
         private bool _hasVrmMouthExpression;
         private float _weight;
 
         public bool HasMouthTarget =>
-            _hasVrmMouthExpression || _mouthBlendShapeIndex >= 0;
+            _hasVrmMouthExpression ||
+            _mouthBlendShapeIndex >= 0 ||
+            _mouthTransform != null;
 
         public float CurrentWeight => _weight;
 
@@ -28,6 +33,11 @@ namespace Axiom.Body
         {
             get
             {
+                if (_mouthTransform != null)
+                {
+                    return "Genesis MouthVisual transform";
+                }
+
                 if (_hasVrmMouthExpression && _mouthBlendShapeIndex >= 0)
                 {
                     return "VRM aa + aaOpen blendshape";
@@ -56,16 +66,19 @@ namespace Axiom.Body
             ResolveMouthTargets();
             SetVrmWeight(0f);
             SetDirectBlendShapeWeight(0f);
+            SetMouthTransformWeight(0f);
         }
 
         public void Detach()
         {
             SetVrmWeight(0f);
             SetDirectBlendShapeWeight(0f);
+            SetMouthTransformWeight(0f);
 
             _avatar = null;
             _audioSource = null;
             _mouthRenderer = null;
+            _mouthTransform = null;
             _mouthBlendShapeIndex = -1;
             _hasVrmMouthExpression = false;
             _weight = 0f;
@@ -74,6 +87,7 @@ namespace Axiom.Body
         private void ResolveMouthTargets()
         {
             _mouthRenderer = null;
+            _mouthTransform = null;
             _mouthBlendShapeIndex = -1;
             _hasVrmMouthExpression = false;
 
@@ -86,6 +100,26 @@ namespace Axiom.Body
             {
                 _hasVrmMouthExpression =
                     _avatar.Runtime.Expression.GetWeights().ContainsKey(MouthKey);
+            }
+
+            foreach (
+                Transform candidate in
+                _avatar.GetComponentsInChildren<Transform>(true)
+            )
+            {
+                if (
+                    string.Equals(
+                        candidate.name,
+                        "MouthVisual",
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    _mouthTransform = candidate;
+                    _mouthRestScale = candidate.localScale;
+                    _mouthRestPosition = candidate.localPosition;
+                    break;
+                }
             }
 
             foreach (
@@ -140,6 +174,7 @@ namespace Axiom.Body
             // 12000, so the raw blendshape fallback is applied afterward and
             // cannot be overwritten during the same frame.
             SetDirectBlendShapeWeight(_weight);
+            SetMouthTransformWeight(_weight);
         }
 
         private float MeasureCurrentSpeechAmplitude()
@@ -206,16 +241,35 @@ namespace Axiom.Body
             );
         }
 
+        private void SetMouthTransformWeight(float value)
+        {
+            if (_mouthTransform == null)
+            {
+                return;
+            }
+
+            float weight = Mathf.Clamp01(value);
+            _mouthTransform.localScale = new Vector3(
+                _mouthRestScale.x * (1f - 0.12f * weight),
+                _mouthRestScale.y * (1f + 5.5f * weight),
+                _mouthRestScale.z
+            );
+            _mouthTransform.localPosition = _mouthRestPosition +
+                new Vector3(0f, -0.006f * weight, 0f);
+        }
+
         private void OnDisable()
         {
             SetVrmWeight(0f);
             SetDirectBlendShapeWeight(0f);
+            SetMouthTransformWeight(0f);
         }
 
         private void OnDestroy()
         {
             SetVrmWeight(0f);
             SetDirectBlendShapeWeight(0f);
+            SetMouthTransformWeight(0f);
         }
     }
 }
