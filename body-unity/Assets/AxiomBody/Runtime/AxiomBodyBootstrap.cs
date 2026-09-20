@@ -12,6 +12,7 @@ namespace Axiom.Body
         private AxiomSensesRuntime _sensesRuntime;
         private AxiomAvatarEditorRuntime _avatarEditor;
         private AxiomMindDataRuntime _mindData;
+        private AxiomAdminRuntime _adminRuntime;
         private string _status = "Starting Axiom Body...";
         private string _message = string.Empty;
         private string _reply = string.Empty;
@@ -39,7 +40,8 @@ namespace Axiom.Body
             Body,
             Avatar,
             Memory,
-            Journal
+            Journal,
+            Admin
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -130,6 +132,12 @@ namespace Axiom.Body
                     _mindData = gameObject.AddComponent<AxiomMindDataRuntime>();
                 }
                 _mindData.Attach(_client);
+
+                if (_adminRuntime == null)
+                {
+                    _adminRuntime = gameObject.AddComponent<AxiomAdminRuntime>();
+                }
+                _adminRuntime.Attach(_client, _mindData);
 
                 if (_mouthRuntime == null)
                 {
@@ -288,6 +296,21 @@ namespace Axiom.Body
                 return;
             }
 
+            if (_view == DesktopView.Admin)
+            {
+                if (_adminRuntime != null)
+                {
+                    _adminRuntime.DrawGUI(
+                        () => _view = DesktopView.Body
+                    );
+                }
+                else
+                {
+                    _view = DesktopView.Body;
+                }
+                return;
+            }
+
             DrawBodyView();
         }
 
@@ -407,11 +430,17 @@ namespace Axiom.Body
                 _view = DesktopView.Journal;
                 _ = _mindData.LoadJournalAsync(0);
             }
+
+            GUI.enabled = _connected && _adminRuntime != null;
+            if (GUI.Button(new Rect(406f, 342f, 112f, 30f), "Admin"))
+            {
+                _view = DesktopView.Admin;
+            }
             GUI.enabled = true;
 
             GUI.Label(
                 new Rect(34f, 382f, width - 68f, 24f),
-                "Desktop Body · Avatar · Memory · Journal"
+                "Desktop Body · Avatar · Memory · Journal · Admin"
             );
         }
 

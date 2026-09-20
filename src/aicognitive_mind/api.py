@@ -80,6 +80,18 @@ class AdminMemoryRevisionRequest(BaseModel):
     replacement: DurableMemory
 
 
+class DesktopAdminMemoryRevisionRequest(BaseModel):
+    original_memory_class: MemoryClass
+    original_formed_at: datetime
+    original_content: str = Field(min_length=1)
+    original_associations: tuple[str, ...] = ()
+    original_grounding: tuple[str, ...] = ()
+    replacement_memory_class: MemoryClass
+    replacement_content: str = Field(min_length=1)
+    replacement_associations: tuple[str, ...] = ()
+    replacement_grounding: tuple[str, ...] = ()
+
+
 class JournalDetailRequest(BaseModel):
     kind: JournalKind
     occurred_at: datetime
@@ -939,30 +951,23 @@ async def portal_journal_detail(
     )
 
 
-@app.get("/v1/admin/status")
-async def admin_status(request: Request) -> dict[str, bool]:
-    require_admin(request)
-    return {"authorized": True, "memory_editing": True}
-
-
-@app.put("/v1/admin/memory", response_model=DurableMemory)
-async def revise_memory(
-    body: AdminMemoryRevisionRequest,
-    request: Request,
+async def _apply_admin_memory_revision(
+    *,
+    original: DurableMemory,
+    replacement: DurableMemory,
+    memory_store: MemoryStore,
+    journal_store: JournalStore,
+    channel: str,
 ) -> DurableMemory:
-    require_admin(request)
-    memory_store = cast(MemoryStore, request.app.state.memory_store)
-    journal_store = cast(JournalStore, request.app.state.journal_store)
-
-    replacement = body.replacement.model_copy(
+    governed_replacement = replacement.model_copy(
         update={
-            "formed_at": body.original.formed_at,
-            "artifacts": body.original.artifacts,
+            "formed_at": original.formed_at,
+            "artifacts": original.artifacts,
         }
     )
     revised = await memory_store.replace_exact(
-        body.original,
-        replacement,
+        original,
+        governed_replacement,
         recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
     )
     if revised is None:
@@ -976,14 +981,82 @@ async def revise_memory(
             kind=JournalKind.MEMORY_REVISION,
             experience={
                 "source": "human_administrator",
-                "channel": "portal",
-                "before": body.original.model_dump(mode="python"),
+                "channel": channel,
+                "before": original.model_dump(mode="python"),
                 "after": revised.model_dump(mode="python"),
             },
         ),
         recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
     )
     return revised
+
+
+@app.get("/v1/admin/status")
+async def admin_status(request: Request) -> dict[str, bool]:
+    require_admin(request)
+    return {"authorized": True, "memory_editing": True}
+
+
+@app.put("/v1/admin/memory", response_model=DurableMemory)
+async def revise_memory(
+    body: AdminMemoryRevisionRequest,
+    request: Request,
+) -> DurableMemory:
+    require_admin(request)
+    return await _apply_admin_memory_revision(
+        original=body.original,
+        replacement=body.replacement,
+        memory_store=cast(MemoryStore, request.app.state.memory_store),
+        journal_store=cast(JournalStore, request.app.state.journal_store),
+        channel="portal",
+    )
+
+
+@app.put("/v1/admin/desktop/memory", response_model=DurableMemory)
+async def revise_desktop_memory(
+    body: DesktopAdminMemoryRevisionRequest,
+    request: Request,
+) -> DurableMemory:
+    require_admin(request)
+    memory_store = cast(MemoryStore, request.app.state.memory_store)
+    journal_store = cast(JournalStore, request.app.state.journal_store)
+
+    candidates = [
+        memory
+        for memory in await memory_store.read()
+        if (
+            memory.memory_class == body.original_memory_class
+            and memory.formed_at == body.original_formed_at
+            and memory.content == body.original_content
+            and memory.associations == body.original_associations
+            and memory.grounding == body.original_grounding
+        )
+    ]
+    if len(candidates) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "The durable memory could not be resolved uniquely; "
+                "refresh memory before editing"
+            ),
+        )
+
+    original = candidates[0]
+    replacement = DurableMemory(
+        memory_class=body.replacement_memory_class,
+        formed_at=original.formed_at,
+        content=body.replacement_content,
+        associations=body.replacement_associations,
+        grounding=body.replacement_grounding,
+        artifacts=original.artifacts,
+    )
+    return await _apply_admin_memory_revision(
+        original=original,
+        replacement=replacement,
+        memory_store=memory_store,
+        journal_store=journal_store,
+        channel="desktop",
+    )
 
 
 @app.post(

@@ -85,6 +85,27 @@ namespace Axiom.Body
     }
 
     [Serializable]
+    public sealed class AdminStatusResponse
+    {
+        public bool authorized;
+        public bool memory_editing;
+    }
+
+    [Serializable]
+    public sealed class DesktopAdminMemoryRevisionRequest
+    {
+        public string original_memory_class = string.Empty;
+        public string original_formed_at = string.Empty;
+        public string original_content = string.Empty;
+        public string[] original_associations = Array.Empty<string>();
+        public string[] original_grounding = Array.Empty<string>();
+        public string replacement_memory_class = string.Empty;
+        public string replacement_content = string.Empty;
+        public string[] replacement_associations = Array.Empty<string>();
+        public string[] replacement_grounding = Array.Empty<string>();
+    }
+
+    [Serializable]
     public sealed class VoiceIntentMetadata
     {
         public float rate = 1f;
@@ -254,6 +275,90 @@ namespace Axiom.Body
             return page;
         }
 
+        public async Task<AdminStatusResponse> AdminStatusAsync(string pin)
+        {
+            using UnityWebRequest request =
+                UnityWebRequest.Get(Url("/v1/admin/status"));
+            ApplyAdminPin(request, pin);
+            await SendAsync(request);
+
+            AdminStatusResponse response =
+                JsonUtility.FromJson<AdminStatusResponse>(
+                    request.downloadHandler.text
+                );
+            if (response == null)
+            {
+                throw new InvalidOperationException(
+                    "Mind returned an unreadable admin status."
+                );
+            }
+
+            return response;
+        }
+
+        public async Task<DesktopMemoryItem> ReviseMemoryAsync(
+            string pin,
+            DesktopMemoryItem original,
+            string replacementMemoryClass,
+            string replacementContent,
+            string[] replacementAssociations,
+            string[] replacementGrounding
+        )
+        {
+            if (original == null)
+            {
+                throw new ArgumentNullException(nameof(original));
+            }
+
+            DesktopAdminMemoryRevisionRequest payload =
+                new DesktopAdminMemoryRevisionRequest
+                {
+                    original_memory_class = original.memory_class,
+                    original_formed_at = original.formed_at,
+                    original_content = original.content,
+                    original_associations =
+                        original.associations ?? Array.Empty<string>(),
+                    original_grounding =
+                        original.grounding ?? Array.Empty<string>(),
+                    replacement_memory_class =
+                        replacementMemoryClass ?? string.Empty,
+                    replacement_content =
+                        replacementContent ?? string.Empty,
+                    replacement_associations =
+                        replacementAssociations ?? Array.Empty<string>(),
+                    replacement_grounding =
+                        replacementGrounding ?? Array.Empty<string>()
+                };
+
+            using UnityWebRequest request = new UnityWebRequest(
+                Url("/v1/admin/desktop/memory"),
+                UnityWebRequest.kHttpVerbPUT
+            );
+            request.uploadHandler = new UploadHandlerRaw(
+                Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload))
+            );
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+            ApplyAdminPin(request, pin);
+
+            await SendAsync(request);
+
+            DesktopMemoryItem revised =
+                JsonUtility.FromJson<DesktopMemoryItem>(
+                    request.downloadHandler.text
+                );
+            if (revised == null)
+            {
+                throw new InvalidOperationException(
+                    "Mind returned an unreadable revised memory."
+                );
+            }
+
+            revised.associations ??= Array.Empty<string>();
+            revised.grounding ??= Array.Empty<string>();
+            return revised;
+        }
+
         public async Task<VoiceExpressionIntent> NextMouthIntentAsync()
         {
             using UnityWebRequest request =
@@ -352,6 +457,17 @@ namespace Axiom.Body
                 throw new InvalidOperationException(
                     $"Mind API request failed ({request.responseCode}): {request.error}"
                 );
+            }
+        }
+
+        private static void ApplyAdminPin(
+            UnityWebRequest request,
+            string pin
+        )
+        {
+            if (!string.IsNullOrEmpty(pin))
+            {
+                request.SetRequestHeader("X-Admin-Pin", pin);
             }
         }
 

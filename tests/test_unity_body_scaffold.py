@@ -213,6 +213,35 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("_mindData.MemorySearch", bootstrap)
         self.assertIn("_mindData.JournalSearch", bootstrap)
 
+    def test_unity_body_has_session_only_admin_memory_editing(self) -> None:
+        client = Path(
+            "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"
+        ).read_text(encoding="utf-8")
+        admin = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomAdminRuntime.cs"
+        ).read_text(encoding="utf-8")
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+        api = Path(
+            "src/aicognitive_mind/api.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("/v1/admin/status", client)
+        self.assertIn("/v1/admin/desktop/memory", client)
+        self.assertIn("X-Admin-Pin", client)
+        self.assertIn("AdminStatusAsync", client)
+        self.assertIn("ReviseMemoryAsync", client)
+        self.assertIn("AxiomAdminRuntime", bootstrap)
+        self.assertIn("DesktopView.Admin", bootstrap)
+        self.assertIn('"Admin"', bootstrap)
+        self.assertIn("GUI.PasswordField", admin)
+        self.assertIn("Save Revision", admin)
+        self.assertIn("memory_revision", api.lower())
+        self.assertIn('channel="desktop"', api)
+        self.assertIn("artifacts=original.artifacts", api)
+        self.assertNotIn("PlayerPrefs", admin)
+
     def test_genesis_avatar_exposes_vrm_aa_mouth_expression(self) -> None:
         genesis = Path(
             "src/aicognitive_mind/body/genesis_avatar.py"
