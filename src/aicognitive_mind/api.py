@@ -360,6 +360,16 @@ def _reasoning_backend_error_detail(exc: Exception) -> str:
         )
     if class_name in {"APIConnectionError", "ServerError"}:
         return f"The Mind could not connect to the {provider_label} API."
+    if class_name == "ValidationError":
+        return (
+            "The reasoning model produced a cognitive tool call that did not match "
+            "the tool's governed schema."
+        )
+    if isinstance(exc, RuntimeError) and "maximum number of tool rounds" in str(exc):
+        return (
+            "The reasoning process exhausted its cognitive tool rounds before "
+            "reaching a final response."
+        )
 
     return (
         "The reasoning backend failed unexpectedly. "
