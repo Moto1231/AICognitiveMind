@@ -25,7 +25,10 @@ For every conscious input, whether it originated as a human message or as an int
    depends on what was actually seen or heard, use `sensory_evidence_review` to inspect the original
    artifact rather than trusting only the prior description or transcription. Give the tool a narrow
    review focus that states what needs to be checked. Treat the returned reinterpretation as new
-   current evidence, not as a rewrite of the original interpretation.
+   current evidence, not as a rewrite of the original interpretation. If it materially affects the
+   current conclusion, submit it to `memory_steward` with `action: "consider_evidence"`, using
+   the review focus as the query, the reinterpretation as the response, no invented articles, and
+   provenance that identifies the preserved Body evidence artifact and its original source.
 3. Research or re-examine evidence only when the current input requires information not already
    established or when current evidence is needed. Prefer reviewing preserved first-party sensory
    evidence when it directly bears on the question before seeking weaker derivative evidence.
