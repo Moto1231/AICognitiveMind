@@ -412,6 +412,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         avatar=browser_face,
     )
     if provider == "gemini":
+        assert settings.gemini_api_key is not None
         engine = GeminiReasoningEngine(
             settings.gemini_api_key,
             settings.gemini_model,
@@ -421,6 +422,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             model=settings.gemini_model,
         )
     elif provider == "openai":
+        assert settings.openai_api_key is not None
         engine = OpenAIReasoningEngine(
             settings.openai_api_key,
             settings.openai_model,
