@@ -18,6 +18,25 @@ namespace Axiom.Body
         public string response_text = string.Empty;
     }
 
+    [Serializable]
+    public sealed class VoiceIntentMetadata
+    {
+        public float rate = 1f;
+        public float pitch = 1f;
+        public float volume = 1f;
+        public string voice_name = string.Empty;
+        public bool transient;
+        public string transport = string.Empty;
+    }
+
+    [Serializable]
+    public sealed class VoiceExpressionIntent
+    {
+        public string modality = string.Empty;
+        public string text = string.Empty;
+        public VoiceIntentMetadata metadata = new VoiceIntentMetadata();
+    }
+
     public sealed class MindApiClient
     {
         private readonly string _baseUrl;
@@ -43,6 +62,31 @@ namespace Axiom.Body
             using UnityWebRequest request = UnityWebRequest.Get(Url("/v1/body/face/avatar"));
             await SendAsync(request);
             return request.downloadHandler.data;
+        }
+
+        public async Task<VoiceExpressionIntent> NextMouthIntentAsync()
+        {
+            using UnityWebRequest request =
+                UnityWebRequest.Get(Url("/v1/body/mouth/next"));
+            await SendAsync(request);
+
+            string json = request.downloadHandler.text?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(json) || json == "null")
+            {
+                return null;
+            }
+
+            VoiceExpressionIntent intent =
+                JsonUtility.FromJson<VoiceExpressionIntent>(json);
+            if (intent == null)
+            {
+                throw new InvalidOperationException(
+                    "Mind returned an unreadable Mouth intent."
+                );
+            }
+
+            intent.metadata ??= new VoiceIntentMetadata();
+            return intent;
         }
 
         public async Task<MindInteractionResponse> InteractAsync(string message)
