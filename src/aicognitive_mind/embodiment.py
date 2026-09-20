@@ -335,13 +335,19 @@ class MindBodyBridge:
     async def hear(self, *, express: bool = True) -> EmbodiedInteractionResult:
         return await self.perceive(await self._body.hear(), express=express)
 
-    async def interact(self, message: str) -> InteractionResult:
+    async def interact(
+        self,
+        message: str,
+        *,
+        express: bool = True,
+    ) -> InteractionResult:
         interaction = await self._core.interact(
             message,
             source="human",
             input_context={"interface": "body:live:text"},
         )
-        await self._body.express(interaction.response_text)
+        if express:
+            await self._body.express(interaction.response_text)
         return interaction
 
     async def perceive(
