@@ -414,9 +414,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     if provider == "gemini":
         assert settings.gemini_api_key is not None
+        requested_model = (
+            "auto"
+            if os.getenv("RENDER", "").lower() == "true"
+            else settings.gemini_model
+        )
         resolved_model = await resolve_gemini_model(
             settings.gemini_api_key,
-            settings.gemini_model,
+            requested_model,
         )
         app.state.reasoning_model = resolved_model
         engine = GeminiReasoningEngine(
