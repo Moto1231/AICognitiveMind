@@ -148,3 +148,10 @@ Preserving evidence does **not** allow the Body to write cognitive memory.
 
 The Memory Steward remains responsible for deciding whether an interpretation, fact, relationship,
 or belief should influence the Mind beyond the immediate interaction.
+
+
+## Implemented review slice
+
+[0011 — Sensory Evidence Review V0.1](0011-sensory-evidence-review-v0.1.md) gives the conscious
+reasoning process a focused, integrity-checked path back to the original evidence while preserving
+every interpretation as separate history.
