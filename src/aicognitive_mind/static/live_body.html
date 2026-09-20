@@ -10,7 +10,16 @@
     main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
     h1 { margin-bottom: .25rem; }
     p { color: #b9bcc4; }
-    #stage { width: 100%; height: min(58vh, 620px); min-height: 400px; background: #181a20; border-radius: 14px; overflow: hidden; }
+    #stage {
+      width: 100%;
+      height: clamp(320px, 48vh, 520px);
+      background: #181a20;
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    @media (max-width: 700px) {
+      #stage { height: clamp(280px, 44vh, 420px); }
+    }
     #stage canvas { display: block; width: 100%; height: 100%; }
     .controls { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0; }
     button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
@@ -175,11 +184,11 @@
     stage.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 30);
-    camera.position.set(0, 1.35, 2.7);
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+    camera.position.set(0, 1.15, 4.0);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 1.25, 0);
+    controls.target.set(0, 1.05, 0);
     controls.enableDamping = true;
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 2.0));
@@ -249,6 +258,31 @@
       voices = window.speechSynthesis?.getVoices?.() || [];
     }
 
+    function frameAvatar(object, padding = 1.22) {
+      const box = new THREE.Box3().setFromObject(object);
+      if (box.isEmpty()) return;
+
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      const aspect = Math.max(0.25, camera.aspect || 1);
+      const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+      const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect);
+
+      const distanceForHeight =
+        (size.y * padding) / (2 * Math.tan(verticalFov / 2));
+      const distanceForWidth =
+        (size.x * padding) / (2 * Math.tan(horizontalFov / 2));
+      const distance = Math.max(distanceForHeight, distanceForWidth, 1.5);
+
+      camera.position.set(center.x, center.y, center.z + distance);
+      camera.near = Math.max(0.01, distance / 100);
+      camera.far = Math.max(50, distance * 20);
+      camera.updateProjectionMatrix();
+
+      controls.target.copy(center);
+      controls.update();
+    }
+
     function attachAvatar(gltf) {
       const vrm = gltf.userData.vrm;
       if (!vrm) {
@@ -262,6 +296,7 @@
       vrm.scene.traverse((object) => { object.frustumCulled = false; });
       currentVrm = vrm;
       scene.add(vrm.scene);
+      frameAvatar(vrm.scene);
       avatarCustomizer = new AvatarCustomizer(vrm);
       const savedAppearance = loadSavedAvatarAppearance();
       writeAvatarControls(savedAppearance);
