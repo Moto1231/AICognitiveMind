@@ -67,9 +67,15 @@ Camera / Microphone / Screen
 
 The Body does not write durable memory.
 
-Camera frames, audio buffers, and other raw sensory input are transient. The Mind may interpret sensory experience and decide, through its existing memory governance, whether anything should become durable memory.
+Continuous camera frames, microphone buffers, and other unselected sensory streams are transient.
 
-This preserves one memory authority.
+When the Mind deliberately **sees** or **hears**, the exact observation admitted into cognition is
+preserved as immutable sensory evidence before interpretation. Evidence remains distinct from
+memory: the Memory Steward still decides whether any interpreted conclusion becomes durable
+cognitive memory.
+
+This preserves one memory authority while retaining the source evidence needed for later
+re-evaluation.
 
 ## Device contracts
 
@@ -144,3 +150,10 @@ hardware bridge. Raw audio becomes an AUDIO `Percept` and is consumed through
 [0008 — Mind ↔ Body Integration V0.1](0008-mind-body-integration-v0.1.md) connects transient
 Eyes/Ears percepts to Mind-side interpretation, the existing CognitiveCore and Memory Steward,
 then returns conscious expression through Mouth and Face.
+
+
+## Implemented sensory evidence slice
+
+[0010 — Sensory Evidence Artifacts V0.1](0010-sensory-evidence-v0.1.md) preserves deliberate
+See/Hear observations as immutable, content-addressed evidence before interpretation while leaving
+continuous sensory streams transient.
