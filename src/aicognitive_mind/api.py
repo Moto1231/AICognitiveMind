@@ -555,6 +555,11 @@ async def mind_see(
             else status.HTTP_409_CONFLICT
         )
         raise HTTPException(status_code=code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_reasoning_backend_error_detail(exc),
+        ) from exc
 
 
 @app.post("/v1/mind/body/hear", response_model=EmbodiedInteractionResult)
@@ -572,6 +577,11 @@ async def mind_hear(
             else status.HTTP_409_CONFLICT
         )
         raise HTTPException(status_code=code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_reasoning_backend_error_detail(exc),
+        ) from exc
 
 
 @app.get(
