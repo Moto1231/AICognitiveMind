@@ -395,8 +395,28 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("journal_experience_count", bootstrap)
         self.assertIn("await _mindData.LoadSummaryAsync()", bootstrap)
         self.assertIn('"Primary: External Host · "', bootstrap)
-        self.assertIn('"Fallback: "', bootstrap)
+        self.assertIn('"Fallback (Body): "', bootstrap)
         self.assertIn("external_host_protocol", client)
+        self.assertIn("standalone_fallback_provider", client)
+        self.assertIn("standalone_fallback_model", client)
+
+    def test_portal_status_declares_external_host_primary_reasoning(self) -> None:
+        api = Path(
+            "src/aicognitive_mind/api.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('"primary_mode": "external_host"', api)
+        self.assertIn('"external_host_protocol": "MCP"', api)
+        self.assertIn(
+            '"external_host_reasoning_owner": "connected MCP host"',
+            api,
+        )
+        self.assertIn('"standalone_fallback_provider": provider', api)
+        self.assertIn('"standalone_fallback_model": model', api)
+        self.assertNotIn(
+            "runtime__effective_standalone_reasoning_provider",
+            api,
+        )
 
     def test_unity_body_has_memory_and_journal_views(self) -> None:
         client = Path(
