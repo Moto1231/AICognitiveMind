@@ -11,7 +11,25 @@ namespace Axiom.Body
         private static readonly ExpressionKey MouthKey =
             ExpressionKey.CreateFromPreset(ExpressionPreset.aa);
 
+        private static readonly string[] MouthBlendShapeNames =
+        {
+            "aaOpen",
+            "MouthOpen",
+            "JawOpen",
+            "vrc.v_aa",
+            "AA",
+            "A"
+        };
+
+        private static readonly string[] MouthTransformNames =
+        {
+            "MouthVisual",
+            "Mouth",
+            "mouth"
+        };
+
         private readonly float[] _samples = new float[SampleCount];
+        private GameObject _avatarRoot;
         private Vrm10Instance _avatar;
         private AudioSource _audioSource;
         private SkinnedMeshRenderer _mouthRenderer;
@@ -20,6 +38,7 @@ namespace Axiom.Body
         private Vector3 _mouthRestPosition = Vector3.zero;
         private int _mouthBlendShapeIndex = -1;
         private bool _hasVrmMouthExpression;
+        private bool _genesisMouthTransform;
         private float _weight;
 
         public bool HasMouthTarget =>
@@ -35,12 +54,21 @@ namespace Axiom.Body
             {
                 if (_mouthTransform != null)
                 {
-                    return "Genesis MouthVisual transform";
+                    return _genesisMouthTransform
+                        ? "Genesis MouthVisual transform"
+                        : _mouthTransform.name + " transform";
                 }
 
-                if (_hasVrmMouthExpression && _mouthBlendShapeIndex >= 0)
+                if (
+                    _hasVrmMouthExpression &&
+                    _mouthBlendShapeIndex >= 0
+                )
                 {
-                    return "VRM aa + aaOpen blendshape";
+                    return "VRM aa + " +
+                        _mouthRenderer.sharedMesh.GetBlendShapeName(
+                            _mouthBlendShapeIndex
+                        ) +
+                        " blendshape";
                 }
 
                 if (_hasVrmMouthExpression)
@@ -50,16 +78,35 @@ namespace Axiom.Body
 
                 if (_mouthBlendShapeIndex >= 0)
                 {
-                    return "aaOpen blendshape";
+                    return _mouthRenderer.sharedMesh.GetBlendShapeName(
+                        _mouthBlendShapeIndex
+                    ) + " blendshape";
                 }
 
                 return "no mouth animation target";
             }
         }
 
-        public void Attach(Vrm10Instance avatar, AudioSource audioSource)
+        public void Attach(
+            Vrm10Instance avatar,
+            AudioSource audioSource
+        )
         {
-            _avatar = avatar;
+            Attach(
+                avatar != null ? avatar.gameObject : null,
+                avatar,
+                audioSource
+            );
+        }
+
+        public void Attach(
+            GameObject avatarRoot,
+            Vrm10Instance vrmAvatar,
+            AudioSource audioSource
+        )
+        {
+            _avatarRoot = avatarRoot;
+            _avatar = vrmAvatar;
             _audioSource = audioSource;
             _weight = 0f;
 
@@ -75,12 +122,14 @@ namespace Axiom.Body
             SetDirectBlendShapeWeight(0f);
             SetMouthTransformWeight(0f);
 
+            _avatarRoot = null;
             _avatar = null;
             _audioSource = null;
             _mouthRenderer = null;
             _mouthTransform = null;
             _mouthBlendShapeIndex = -1;
             _hasVrmMouthExpression = false;
+            _genesisMouthTransform = false;
             _weight = 0f;
         }
 
@@ -90,41 +139,62 @@ namespace Axiom.Body
             _mouthTransform = null;
             _mouthBlendShapeIndex = -1;
             _hasVrmMouthExpression = false;
+            _genesisMouthTransform = false;
 
-            if (_avatar == null)
+            if (_avatarRoot == null)
             {
                 return;
             }
 
-            if (_avatar.Runtime?.Expression != null)
+            if (_avatar?.Runtime?.Expression != null)
             {
                 _hasVrmMouthExpression =
-                    _avatar.Runtime.Expression.GetWeights().ContainsKey(MouthKey);
+                    _avatar.Runtime.Expression
+                        .GetWeights()
+                        .ContainsKey(MouthKey);
             }
 
             foreach (
                 Transform candidate in
-                _avatar.GetComponentsInChildren<Transform>(true)
+                _avatarRoot.GetComponentsInChildren<Transform>(true)
             )
             {
-                if (
-                    string.Equals(
-                        candidate.name,
-                        "MouthVisual",
-                        StringComparison.Ordinal
-                    )
+                for (
+                    int index = 0;
+                    index < MouthTransformNames.Length;
+                    index++
                 )
                 {
-                    _mouthTransform = candidate;
-                    _mouthRestScale = candidate.localScale;
-                    _mouthRestPosition = candidate.localPosition;
+                    if (
+                        string.Equals(
+                            candidate.name,
+                            MouthTransformNames[index],
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        _mouthTransform = candidate;
+                        _mouthRestScale = candidate.localScale;
+                        _mouthRestPosition = candidate.localPosition;
+                        _genesisMouthTransform =
+                            string.Equals(
+                                candidate.name,
+                                "MouthVisual",
+                                StringComparison.Ordinal
+                            );
+                        break;
+                    }
+                }
+
+                if (_mouthTransform != null)
+                {
                     break;
                 }
             }
 
             foreach (
                 SkinnedMeshRenderer renderer in
-                _avatar.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                _avatarRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true)
             )
             {
                 Mesh mesh = renderer.sharedMesh;
@@ -133,20 +203,14 @@ namespace Axiom.Body
                     continue;
                 }
 
-                for (int index = 0; index < mesh.blendShapeCount; index++)
+                for (
+                    int index = 0;
+                    index < mesh.blendShapeCount;
+                    index++
+                )
                 {
                     string name = mesh.GetBlendShapeName(index);
-                    if (
-                        string.Equals(
-                            name,
-                            "aaOpen",
-                            StringComparison.OrdinalIgnoreCase
-                        ) ||
-                        name.EndsWith(
-                            ".aaOpen",
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                    )
+                    if (IsMouthBlendShape(name))
                     {
                         _mouthRenderer = renderer;
                         _mouthBlendShapeIndex = index;
@@ -156,23 +220,56 @@ namespace Axiom.Body
             }
         }
 
+        private static bool IsMouthBlendShape(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            for (
+                int index = 0;
+                index < MouthBlendShapeNames.Length;
+                index++
+            )
+            {
+                string candidate = MouthBlendShapeNames[index];
+                if (
+                    string.Equals(
+                        name,
+                        candidate,
+                        StringComparison.OrdinalIgnoreCase
+                    ) ||
+                    name.EndsWith(
+                        "." + candidate,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void Update()
         {
             float target = MeasureCurrentSpeechAmplitude();
 
             float attack = target > _weight ? 24f : 14f;
-            float blend = 1f - Mathf.Exp(-attack * Time.unscaledDeltaTime);
+            float blend =
+                1f -
+                Mathf.Exp(
+                    -attack * Time.unscaledDeltaTime
+                );
             _weight = Mathf.Lerp(_weight, target, blend);
 
-            // Feed UniVRM before its LateUpdate applies expression weights.
             SetVrmWeight(_weight);
         }
 
         private void LateUpdate()
         {
-            // UniVRM processes at execution order 11000. This component runs at
-            // 12000, so the raw blendshape fallback is applied afterward and
-            // cannot be overwritten during the same frame.
             SetDirectBlendShapeWeight(_weight);
             SetMouthTransformWeight(_weight);
         }
@@ -190,34 +287,52 @@ namespace Axiom.Body
 
             AudioClip clip = _audioSource.clip;
             int channels = Mathf.Max(1, clip.channels);
-            int framesInWindow = Mathf.Max(1, SampleCount / channels);
-            int latestStart = Mathf.Max(0, clip.samples - framesInWindow);
-            int offset = Mathf.Clamp(_audioSource.timeSamples, 0, latestStart);
+            int framesInWindow =
+                Mathf.Max(1, SampleCount / channels);
+            int latestStart =
+                Mathf.Max(0, clip.samples - framesInWindow);
+            int offset = Mathf.Clamp(
+                _audioSource.timeSamples,
+                0,
+                latestStart
+            );
 
-            Array.Clear(_samples, 0, _samples.Length);
+            Array.Clear(
+                _samples,
+                0,
+                _samples.Length
+            );
             if (!clip.GetData(_samples, offset))
             {
                 return 0f;
             }
 
             float energy = 0f;
-            for (int index = 0; index < _samples.Length; index++)
+            for (
+                int index = 0;
+                index < _samples.Length;
+                index++
+            )
             {
                 float sample = _samples[index];
                 energy += sample * sample;
             }
 
-            float rms = Mathf.Sqrt(energy / _samples.Length);
-
-            // Windows SAPI speech WAVs generally have conservative levels.
-            // Lift normal spoken RMS into a clear but still graded mouth range.
-            float normalized = Mathf.Clamp01((rms - 0.0015f) * 38f);
+            float rms = Mathf.Sqrt(
+                energy / _samples.Length
+            );
+            float normalized = Mathf.Clamp01(
+                (rms - 0.0015f) * 38f
+            );
             return Mathf.Pow(normalized, 0.65f);
         }
 
         private void SetVrmWeight(float value)
         {
-            if (!_hasVrmMouthExpression || _avatar?.Runtime?.Expression == null)
+            if (
+                !_hasVrmMouthExpression ||
+                _avatar?.Runtime?.Expression == null
+            )
             {
                 return;
             }
@@ -230,7 +345,10 @@ namespace Axiom.Body
 
         private void SetDirectBlendShapeWeight(float value)
         {
-            if (_mouthRenderer == null || _mouthBlendShapeIndex < 0)
+            if (
+                _mouthRenderer == null ||
+                _mouthBlendShapeIndex < 0
+            )
             {
                 return;
             }
@@ -249,13 +367,33 @@ namespace Axiom.Body
             }
 
             float weight = Mathf.Clamp01(value);
+
+            if (_genesisMouthTransform)
+            {
+                _mouthTransform.localScale = new Vector3(
+                    _mouthRestScale.x *
+                        (1f - 0.12f * weight),
+                    _mouthRestScale.y *
+                        (1f + 5.5f * weight),
+                    _mouthRestScale.z
+                );
+                _mouthTransform.localPosition =
+                    _mouthRestPosition +
+                    new Vector3(
+                        0f,
+                        -0.006f * weight,
+                        0f
+                    );
+                return;
+            }
+
             _mouthTransform.localScale = new Vector3(
-                _mouthRestScale.x * (1f - 0.12f * weight),
-                _mouthRestScale.y * (1f + 5.5f * weight),
+                _mouthRestScale.x *
+                    (1f - 0.06f * weight),
+                _mouthRestScale.y *
+                    (1f + 0.45f * weight),
                 _mouthRestScale.z
             );
-            _mouthTransform.localPosition = _mouthRestPosition +
-                new Vector3(0f, -0.006f * weight, 0f);
         }
 
         private void OnDisable()
