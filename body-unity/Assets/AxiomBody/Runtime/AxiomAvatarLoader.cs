@@ -245,6 +245,12 @@ namespace Axiom.Body
             FrameAvatar(targetCamera, _root);
         }
 
+        public void Unload()
+        {
+            DestroyCurrent();
+            _currentBodyName = GenesisBodyName;
+        }
+
         private void DestroyCurrent()
         {
             if (_root != null)
