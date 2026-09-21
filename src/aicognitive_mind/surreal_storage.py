@@ -1,3 +1,8 @@
+# Copyright (c) 2026 William Enright. All rights reserved.
+# Use, reproduction, modification, distribution, or commercial exploitation
+# of this file is prohibited without prior written permission from the
+# copyright holder.
+
 from __future__ import annotations
 
 from typing import Any
