@@ -796,7 +796,7 @@ namespace Axiom.Body
 
             GUI.Box(
                 new Rect(18f, 18f, width, height),
-                "Bodies"
+                "Genesis Bodies"
             );
 
             if (
@@ -911,7 +911,7 @@ namespace Axiom.Body
             {
                 GUI.Label(
                     new Rect(34f, y, width - 68f, 52f),
-                    "This is a predefined body. Axiom keeps the " +
+                    "This is a predefined Genesis body. Axiom keeps the " +
                     "same Mind, voice, senses, memory, and identity; " +
                     "only the rendered Body changes."
                 );
@@ -932,8 +932,8 @@ namespace Axiom.Body
                     width - 68f,
                     46f
                 ),
-                "Preset assets are auto-discovered from " +
-                "Assets/Resources/AxiomBodies/."
+                "Genesis Bodies assets are auto-discovered from " +
+                "Assets/Resources/GenesisBodies/."
             );
         }
 
