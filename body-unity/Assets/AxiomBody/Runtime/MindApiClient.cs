@@ -155,6 +155,13 @@ namespace Axiom.Body
             return request.downloadHandler.text;
         }
 
+        public async Task AuthenticateAsync()
+        {
+            using UnityWebRequest request =
+                UnityWebRequest.Get(Url("/v1/mind"));
+            await SendAsync(request);
+        }
+
         public async Task<byte[]> DownloadAvatarAsync()
         {
             using UnityWebRequest request = UnityWebRequest.Get(Url("/v1/body/face/avatar"));
