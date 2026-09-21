@@ -30,7 +30,11 @@ from aicognitive_mind.body import (
     Percept,
 )
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
-from aicognitive_mind.backup import backup_filename, build_backup_archive
+from aicognitive_mind.backup import (
+    backup_filename,
+    build_backup_archive,
+    evidence_references_from_journal,
+)
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
@@ -1016,18 +1020,30 @@ async def admin_backup(request: Request) -> Response:
     journal_store = cast(JournalStore, request.app.state.journal_store)
     memory_store = cast(MemoryStore, request.app.state.memory_store)
     diagnostics_store = cast(DiagnosticStore, request.app.state.diagnostics)
-    evidence_store = cast(EvidenceStore, request.app.state.evidence_store)
-
     created_at = datetime.now(UTC)
-    archive = build_backup_archive(
-        mind=await mind_store.load(),
-        journal=await journal_store.read(),
-        memory=await memory_store.read(),
-        diagnostics=await diagnostics_store.read(),
-        evidence=await evidence_store.read(),
-        storage_provider=get_settings().storage_provider.lower(),
-        created_at=created_at,
-    )
+    try:
+        mind = await mind_store.load()
+        journal = await journal_store.read()
+        memory = await memory_store.read()
+        diagnostics = await diagnostics_store.read()
+        evidence = evidence_references_from_journal(journal)
+        archive = build_backup_archive(
+            mind=mind,
+            journal=journal,
+            memory=memory,
+            diagnostics=diagnostics,
+            evidence=evidence,
+            storage_provider=get_settings().storage_provider.lower(),
+            created_at=created_at,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Backup snapshot failed while reading or serializing cognitive state: "
+                f"{exc.__class__.__name__}"
+            ),
+        ) from exc
     filename = backup_filename(created_at)
     return Response(
         content=archive,
