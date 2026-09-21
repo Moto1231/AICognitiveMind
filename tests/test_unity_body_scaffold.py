@@ -327,6 +327,31 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("RefreshAvatar(Vrm10Instance avatar)", mouth)
         self.assertIn("_mouthRuntime?.RefreshAvatar", bootstrap)
 
+    def test_unity_body_supports_transparent_desktop_summary_chat_rail(self) -> None:
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+        transparency = Path(
+            "body-unity/Assets/AxiomBody/Runtime/WindowsDesktopTransparency.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("WindowsDesktopTransparency", bootstrap)
+        self.assertIn("_desktopTransparency.Apply(camera)", bootstrap)
+        self.assertIn("Application.runInBackground = true", bootstrap)
+        self.assertIn("Screen.width * 0.36f", bootstrap)
+        self.assertIn('"Chat"', bootstrap)
+        self.assertIn("GUI.TextArea", bootstrap)
+        self.assertIn("SendInteractionAsync", bootstrap)
+        self.assertIn("AppendChat", bootstrap)
+        self.assertIn("_chatTranscript", bootstrap)
+        self.assertIn("0.82f", bootstrap)
+
+        self.assertIn("DwmExtendFrameIntoClientArea", transparency)
+        self.assertIn("GetActiveWindow", transparency)
+        self.assertIn("new Color(0f, 0f, 0f, 0f)", transparency)
+        self.assertIn("UNITY_STANDALONE_WIN", transparency)
+        self.assertIn("!UNITY_EDITOR", transparency)
+
     def test_unity_body_restores_summary_view(self) -> None:
         client = Path(
             "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"

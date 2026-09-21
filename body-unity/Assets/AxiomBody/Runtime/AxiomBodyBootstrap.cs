@@ -19,9 +19,11 @@ namespace Axiom.Body
         private AxiomAvatarEditorRuntime _avatarEditor;
         private AxiomMindDataRuntime _mindData;
         private AxiomAdminRuntime _adminRuntime;
+        private WindowsDesktopTransparency _desktopTransparency;
         private string _status = "Starting Axiom Body...";
         private string _message = string.Empty;
         private string _reply = string.Empty;
+        private string _chatTranscript = string.Empty;
         private string _mindUrl = string.Empty;
         private string _mindUsername = string.Empty;
         private string _mindPassword = string.Empty;
@@ -41,6 +43,7 @@ namespace Axiom.Body
         private Vector2 _avatarScroll = Vector2.zero;
         private Vector2 _memoryScroll = Vector2.zero;
         private Vector2 _journalScroll = Vector2.zero;
+        private Vector2 _chatScroll = Vector2.zero;
         private string _avatarEditorStatus = "Appearance changes preview immediately.";
         private string _skinColorText = "#b88566";
         private string _hairColorText = "#090a0d";
@@ -106,8 +109,13 @@ namespace Axiom.Body
             _mindPassword = AxiomRuntimeConfig.MindPassword;
             _bodyModelPolicy = AxiomRuntimeConfig.ModelPolicy;
 
-            EnsureCamera();
+            Camera camera = EnsureCamera();
             EnsureLight();
+
+            _desktopTransparency =
+                gameObject.AddComponent<WindowsDesktopTransparency>();
+            _desktopTransparency.Apply(camera);
+            Application.runInBackground = true;
 
             _status = "Not connected.";
             _connectionDialogOpen = true;
@@ -381,8 +389,11 @@ namespace Axiom.Body
 
             try
             {
-                MindInteractionResponse response = await _client.InteractAsync(outgoing);
+                AppendChat("You", outgoing);
+                MindInteractionResponse response =
+                    await _client.InteractAsync(outgoing);
                 _reply = response.response_text;
+                AppendChat("Axiom", response.response_text);
                 _message = string.Empty;
 
                 if (_mouthRuntime != null)
@@ -851,15 +862,25 @@ namespace Axiom.Body
                 return;
             }
 
-            const float width = 430f;
-            const float height = 330f;
-            float left = Mathf.Max(18f, Screen.width - width - 28f);
-            float top = 62f;
+            float width = Mathf.Clamp(
+                Screen.width * 0.36f,
+                380f,
+                520f
+            );
+            float left = Screen.width - width - 12f;
+            const float top = 58f;
+            float height = Mathf.Max(
+                420f,
+                Screen.height - top - 12f
+            );
 
+            Color priorColor = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, 0.82f);
             GUI.Box(
                 new Rect(left, top, width, height),
-                "Mind Summary"
+                string.Empty
             );
+            GUI.color = priorColor;
 
             DesktopPortalStatus summary =
                 _mindData.Summary ?? new DesktopPortalStatus();
@@ -868,23 +889,57 @@ namespace Axiom.Body
             DesktopMindIdentity identity =
                 mind.identity ?? new DesktopMindIdentity();
 
-            float y = top + 36f;
+            float innerLeft = left + 18f;
+            float innerWidth = width - 36f;
+            float y = top + 14f;
+
+            GUIStyle heading = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 16,
+                fontStyle = FontStyle.Bold
+            };
             GUI.Label(
-                new Rect(left + 20f, y, width - 40f, 24f),
+                new Rect(innerLeft, y, innerWidth - 92f, 26f),
+                "Mind Summary",
+                heading
+            );
+
+            GUI.enabled = !_mindData.LoadingSummary;
+            if (
+                GUI.Button(
+                    new Rect(
+                        left + width - 94f,
+                        y - 2f,
+                        76f,
+                        26f
+                    ),
+                    "Refresh"
+                )
+            )
+            {
+                _ = _mindData.LoadSummaryAsync();
+            }
+            GUI.enabled = true;
+            y += 32f;
+
+            GUI.Label(
+                new Rect(innerLeft, y, innerWidth, 22f),
                 "Identity: " +
-                (string.IsNullOrWhiteSpace(identity.self_name)
-                    ? "—"
-                    : identity.self_name) +
+                (
+                    string.IsNullOrWhiteSpace(identity.self_name)
+                        ? "—"
+                        : identity.self_name
+                ) +
                 (
                     string.IsNullOrWhiteSpace(identity.pronouns)
                         ? string.Empty
                         : " · " + identity.pronouns
                 )
             );
-            y += 28f;
+            y += 23f;
 
             GUI.Label(
-                new Rect(left + 20f, y, width - 40f, 24f),
+                new Rect(innerLeft, y, innerWidth, 22f),
                 "Development: " +
                 (
                     string.IsNullOrWhiteSpace(mind.developmental_state)
@@ -892,21 +947,16 @@ namespace Axiom.Body
                         : mind.developmental_state
                 )
             );
-            y += 28f;
+            y += 23f;
 
             GUI.Label(
-                new Rect(left + 20f, y, width - 40f, 24f),
-                "Durable memory: " +
-                summary.durable_memory_count
-            );
-            y += 28f;
-
-            GUI.Label(
-                new Rect(left + 20f, y, width - 40f, 24f),
-                "Journal experiences: " +
+                new Rect(innerLeft, y, innerWidth, 22f),
+                "Memory: " +
+                summary.durable_memory_count +
+                " durable · Journal: " +
                 summary.journal_experience_count
             );
-            y += 28f;
+            y += 23f;
 
             string reasoning =
                 summary.reasoning != null
@@ -917,54 +967,47 @@ namespace Axiom.Body
                     ).Trim(' ', '·')
                     : string.Empty;
             GUI.Label(
-                new Rect(left + 20f, y, width - 40f, 24f),
+                new Rect(innerLeft, y, innerWidth, 22f),
                 "Reasoning: " +
-                (string.IsNullOrWhiteSpace(reasoning)
-                    ? "—"
-                    : reasoning)
-            );
-            y += 28f;
-
-            GUI.Label(
-                new Rect(left + 20f, y, width - 40f, 24f),
-                "Protocol: " +
                 (
-                    summary.integration == null ||
-                    string.IsNullOrWhiteSpace(
-                        summary.integration.protocol
-                    )
+                    string.IsNullOrWhiteSpace(reasoning)
                         ? "—"
-                        : summary.integration.protocol
+                        : reasoning
                 )
             );
-            y += 28f;
+            y += 23f;
+
+            string protocol =
+                summary.integration == null
+                    ? string.Empty
+                    : summary.integration.protocol;
+            GUI.Label(
+                new Rect(innerLeft, y, innerWidth, 22f),
+                "Protocol: " +
+                (
+                    string.IsNullOrWhiteSpace(protocol)
+                        ? "—"
+                        : protocol
+                )
+            );
+            y += 23f;
 
             GUI.Label(
-                new Rect(left + 20f, y, width - 40f, 24f),
+                new Rect(innerLeft, y, innerWidth, 22f),
                 "Body: " +
                 (
                     _avatarLoader == null
                         ? "—"
                         : _avatarLoader.CurrentBodyName
-                )
-            );
-            y += 28f;
-
-            GUI.Label(
-                new Rect(left + 20f, y, width - 40f, 24f),
-                "Mode: " +
+                ) +
+                " · Mode: " +
                 (
                     _bodyModelPolicy ==
                     BodyModelPolicy.FullBodyModel
-                        ? "Full Body Model"
-                        : "Cognitive Only"
-                )
-            );
-            y += 28f;
-
-            GUI.Label(
-                new Rect(left + 20f, y, width - 40f, 24f),
-                "Senses: " +
+                        ? "Full Body"
+                        : "Cognitive"
+                ) +
+                " · Senses: " +
                 (
                     _sensesRuntime != null &&
                     _sensesRuntime.IsEnabled
@@ -972,33 +1015,148 @@ namespace Axiom.Body
                         : "Off"
                 )
             );
+            y += 28f;
 
-            GUI.enabled = !_mindData.LoadingSummary;
+            GUI.Label(
+                new Rect(innerLeft, y, innerWidth, 22f),
+                _mindData.SummaryStatus
+            );
+            y += 30f;
+
+            GUI.Box(
+                new Rect(innerLeft, y, innerWidth, 1f),
+                string.Empty
+            );
+            y += 12f;
+
+            GUI.Label(
+                new Rect(innerLeft, y, innerWidth, 24f),
+                "Chat",
+                heading
+            );
+            y += 28f;
+
+            float inputHeight = 78f;
+            float sendHeight = 30f;
+            float footerGap = 14f;
+            float transcriptHeight =
+                Mathf.Max(
+                    110f,
+                    top + height -
+                    y -
+                    inputHeight -
+                    sendHeight -
+                    footerGap -
+                    24f
+                );
+
+            GUIStyle transcriptStyle =
+                new GUIStyle(GUI.skin.label)
+                {
+                    wordWrap = true,
+                    alignment = TextAnchor.UpperLeft,
+                    padding = new RectOffset(8, 8, 8, 8)
+                };
+
+            string transcript =
+                string.IsNullOrWhiteSpace(_chatTranscript)
+                    ? "Chat with Axiom here."
+                    : _chatTranscript;
+
+            float transcriptContentHeight = Mathf.Max(
+                transcriptHeight - 4f,
+                transcriptStyle.CalcHeight(
+                    new GUIContent(transcript),
+                    innerWidth - 30f
+                ) + 16f
+            );
+
+            _chatScroll = GUI.BeginScrollView(
+                new Rect(
+                    innerLeft,
+                    y,
+                    innerWidth,
+                    transcriptHeight
+                ),
+                _chatScroll,
+                new Rect(
+                    0f,
+                    0f,
+                    innerWidth - 18f,
+                    transcriptContentHeight
+                )
+            );
+            GUI.Label(
+                new Rect(
+                    0f,
+                    0f,
+                    innerWidth - 24f,
+                    transcriptContentHeight
+                ),
+                transcript,
+                transcriptStyle
+            );
+            GUI.EndScrollView();
+
+            y += transcriptHeight + 8f;
+            _message = GUI.TextArea(
+                new Rect(
+                    innerLeft,
+                    y,
+                    innerWidth,
+                    inputHeight
+                ),
+                _message ?? string.Empty,
+                4000
+            );
+            y += inputHeight + 6f;
+
+            GUI.enabled =
+                _connected &&
+                !_sending &&
+                !string.IsNullOrWhiteSpace(_message);
             if (
                 GUI.Button(
                     new Rect(
-                        left + width - 104f,
-                        top + height - 42f,
-                        84f,
-                        26f
+                        left + width - 108f,
+                        y,
+                        90f,
+                        sendHeight
                     ),
-                    "Refresh"
+                    _sending ? "Sending..." : "Send"
                 )
             )
             {
-                _ = _mindData.LoadSummaryAsync();
+                _ = SendInteractionAsync();
             }
             GUI.enabled = true;
 
             GUI.Label(
                 new Rect(
-                    left + 20f,
-                    top + height - 40f,
-                    width - 132f,
+                    innerLeft,
+                    y + 5f,
+                    innerWidth - 104f,
                     24f
                 ),
-                _mindData.SummaryStatus
+                CompactText(_status, 100)
             );
+        }
+
+        private void AppendChat(string speaker, string text)
+        {
+            string content = (text ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_chatTranscript))
+            {
+                _chatTranscript += "\n\n";
+            }
+
+            _chatTranscript += speaker + ": " + content;
+            _chatScroll.y = float.MaxValue;
         }
 
         private void DrawMemoryView()
