@@ -7,20 +7,23 @@ Render deployment, or SurrealDB instance.
 
 ## What is backed up
 
-Each checkpoint contains three independent recovery assets:
+Each checkpoint contains four independent recovery assets:
 
 1. **repository.bundle** — complete Git history, branches, and refs;
 2. **working-project.zip** — the current working project, including tracked and
    untracked project assets such as local Genesis Bodies, while excluding
    generated Unity caches and local secret files;
-3. **axiom-mind.zip** — a portable snapshot produced by the running Mind,
-   containing:
-   - governed Mind identity;
-   - append-only journal;
-   - durable memory;
-   - diagnostics;
-   - sensory evidence metadata;
-   - exact preserved image/audio evidence bytes.
+3. **axiom-mind.zip** — a portable cognitive snapshot produced by the running
+   Mind, containing governed identity, append-only journal, durable memory,
+   diagnostics, and the sensory-evidence index;
+4. **axiom-evidence.zip** — the exact preserved image/audio evidence bytes plus
+   their index.
+
+The evidence archive is assembled on the operator machine. Render returns only
+the lightweight cognitive snapshot and evidence references; the backup script
+downloads each evidence artifact separately and verifies both byte length and
+SHA-256 before archiving it. This avoids loading Axiom's entire sensory history
+into Render memory at once.
 
 The Mind archive intentionally contains no database credentials, API keys, app
 passwords, or Admin PIN.
@@ -48,9 +51,10 @@ destination can be supplied explicitly, for example an external drive:
 )
 ```
 
-The script verifies the Git bundle, validates the Mind ZIP, calculates SHA-256
-hashes, copies each checkpoint to every destination, and verifies copied file
-hashes.
+The script verifies the Git bundle, validates the Mind ZIP, downloads and
+cryptographically verifies each sensory artifact, creates the evidence ZIP,
+calculates SHA-256 hashes for checkpoint files, copies each checkpoint to every
+destination, and verifies copied file hashes.
 
 ## Credentials
 
