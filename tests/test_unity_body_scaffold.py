@@ -88,7 +88,8 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("SelectVoice", speech)
         self.assertIn("SpeakSsml", speech)
         self.assertIn("SetOutputToWaveFile", speech)
-        self.assertIn("_mouthRuntime.Attach(_client, _avatarLoader.Instance)", bootstrap)
+        self.assertIn("_avatarLoader.Root", bootstrap)
+        self.assertIn("_avatarLoader.Instance", bootstrap)
         self.assertIn("await _mouthRuntime.SpeakTextAsync(response.response_text)", bootstrap)
 
     def test_unity_body_drives_vrm_mouth_from_actual_audio(self) -> None:
@@ -164,6 +165,39 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("SetVisionStatus", senses)
         self.assertIn("SetAudioStatus", senses)
         self.assertIn("_visionStatus + \" | \" + _audioStatus", senses)
+
+    def test_unity_body_supports_genesis_bodies_library(self) -> None:
+        loader = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomAvatarLoader.cs"
+        ).read_text(encoding="utf-8")
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+        mouth = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomMouthRuntime.cs"
+        ).read_text(encoding="utf-8")
+        lip_sync = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomLipSync.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('PresetResourcePath = "GenesisBodies"', loader)
+        self.assertNotIn('"AxiomBodies"', loader + bootstrap)
+        self.assertIn("AvailableBodies", loader)
+        self.assertIn("RefreshBodyCatalog", loader)
+        self.assertIn("EnsureBodyCatalog", loader)
+        self.assertIn("_presetAssets", loader)
+        self.assertIn("Resources.LoadAll<GameObject>", loader)
+        self.assertIn("SelectBodyAsync", loader)
+        self.assertIn("LoadSelectedAsync", loader)
+        self.assertIn("axiom.body.selected.v0.1", loader)
+        self.assertIn("DesktopView.Bodies", bootstrap)
+        self.assertIn("Genesis Bodies", bootstrap)
+        self.assertIn("Edit Genesis", bootstrap)
+        self.assertIn("Assets/Resources/GenesisBodies/", bootstrap)
+        self.assertIn("GameObject avatarRoot", mouth)
+        self.assertIn("GameObject avatarRoot", lip_sync)
+        self.assertIn("MouthOpen", lip_sync)
+        self.assertIn("JawOpen", lip_sync)
 
     def test_unity_body_has_separate_avatar_editor_view(self) -> None:
         bootstrap = Path(
