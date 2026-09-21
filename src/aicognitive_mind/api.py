@@ -887,6 +887,11 @@ async def portal_status(request: Request) -> dict[str, Any]:
             "primary_mode": "external_host",
             "external_host_protocol": "MCP",
             "external_host_reasoning_owner": "connected MCP host",
+            "standalone_fallback": {
+                "provider": provider,
+                "model": model,
+                "requested_model": requested_model,
+            },
             "standalone_fallback_provider": provider,
             "standalone_fallback_model": model,
             "standalone_fallback_requested_model": requested_model,
