@@ -127,6 +127,11 @@ namespace Axiom.Body
         public string primary_mode = string.Empty;
         public string external_host_protocol = string.Empty;
         public string external_host_reasoning_owner = string.Empty;
+        public string standalone_fallback_provider = string.Empty;
+        public string standalone_fallback_model = string.Empty;
+        public string standalone_fallback_requested_model = string.Empty;
+
+        // Backwards-compatible fields for older Mind servers.
         public string backend = string.Empty;
         public string model = string.Empty;
         public string requested_model = string.Empty;
