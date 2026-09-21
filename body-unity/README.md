@@ -135,9 +135,10 @@ microphone hardware.
 The Unity Body now owns avatar appearance editing instead of requiring the
 browser editor.
 
-The live Body view exposes an **Avatar** selection that opens a separate
-desktop editing view. It carries forward the existing Genesis appearance
-contract:
+The live Body view exposes a **Bodies** selection. **Genesis** remains the
+editable body, while predefined **Genesis Bodies** can be selected from the
+same desktop surface. Choosing **Edit Genesis** opens the appearance editor
+and carries forward the existing Genesis appearance contract:
 
 - skin, hair, shirt, pants, eye, and shoe colors;
 - head size and hair volume;
@@ -206,3 +207,31 @@ revision:
 - refresh Memory and Journal after a successful revision.
 
 Unity still has no direct SurrealDB credentials or storage access.
+
+## Genesis Bodies V0.1
+
+The desktop Body now supports two body modes without changing Axiom's Mind:
+
+- **Genesis** — the generated, editable VRM body;
+- **Genesis Bodies** — predefined Unity GameObject assets.
+
+Genesis Bodies are auto-discovered from:
+
+`Assets/Resources/GenesisBodies/`
+
+A root prefab or imported model GameObject placed there becomes selectable by
+its Unity asset name the next time Play mode starts. The body catalog is cached
+for the session so the UI does not repeatedly rescan Unity Resources.
+
+The selected body name is persisted locally in Unity `PlayerPrefs`. Switching
+bodies does not change Axiom's Mind, memory, senses, identity, or voice.
+
+The loader automatically reframes the camera around the selected body's
+renderers. The Mouth runtime accepts both VRM and non-VRM bodies. Lip sync uses,
+in order of availability, a VRM `aa` expression, a recognized mouth/jaw
+blendshape such as `aaOpen`, `MouthOpen`, or `JawOpen`, or a compatible
+mouth transform. A predefined asset with no supported mouth target can still be
+used as Axiom's body; speech continues even when that particular body cannot
+visually animate its mouth.
+
+Genesis appearance settings remain independent of Genesis Bodies.
