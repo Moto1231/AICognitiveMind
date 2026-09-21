@@ -37,8 +37,8 @@ class GovernanceStewardTool:
         "Govern identity revisions that the Memory Steward may not perform. "
         "V0.1 supports only propose_self_name, and only when the current human "
         "interaction explicitly asks the Mind to choose, select, or change its own name. "
-        "Foundational values, commitments, relationships, developmental state, and creation "
-        "history cannot be changed by this tool."
+        "Pronouns, foundational values, commitments, relationships, developmental state, and "
+        "creation history cannot be changed by this tool."
     )
     input_schema = ProposeSelfNameCall.model_json_schema()
 
@@ -120,8 +120,10 @@ class GovernanceStewardTool:
         revised = current.model_copy(update={"identity": revised_identity})
 
         # Guard the V0.1 boundary explicitly: the proposal may change only self_name.
+        # Pronouns are governed identity state and remain protected here.
         if (
-            revised.identity.foundational_values
+            revised.identity.pronouns != current.identity.pronouns
+            or revised.identity.foundational_values
             != current.identity.foundational_values
             or revised.identity.commitments != current.identity.commitments
             or revised.identity.relationships != current.identity.relationships
