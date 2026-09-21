@@ -33,6 +33,8 @@ namespace Axiom.Body
         private int _editClassIndex;
 
         public bool Authorized => _authorized;
+        public bool Busy => _busy;
+        public bool EditingMemory => _selected != null;
         public string Status => _status;
 
         public void Attach(
@@ -103,7 +105,7 @@ namespace Axiom.Body
             GUI.enabled = !_busy && _client != null;
             if (GUI.Button(new Rect(348f, 156f, 110f, 30f), "Authorize"))
             {
-                _ = AuthorizeAsync();
+                _ = AuthorizeAsync(_pin);
             }
             GUI.enabled = true;
 
@@ -240,7 +242,7 @@ namespace Axiom.Body
             GUI.enabled = true;
         }
 
-        private void DrawMemoryEditor(float width, float height)
+        public void DrawMemoryEditor(float width, float height)
         {
             DesktopMemoryItem original = _selected;
             if (original == null)
@@ -323,13 +325,14 @@ namespace Axiom.Body
             );
         }
 
-        private async Task AuthorizeAsync()
+        public async Task AuthorizeAsync(string pin)
         {
             if (_client == null || _busy)
             {
                 return;
             }
 
+            _pin = pin ?? string.Empty;
             _busy = true;
             _status = "Authorizing administrator...";
             try
@@ -360,7 +363,15 @@ namespace Axiom.Body
             }
         }
 
-        private void BeginEdit(DesktopMemoryItem memory)
+        public void Deauthorize()
+        {
+            _pin = string.Empty;
+            _authorized = false;
+            _selected = null;
+            _status = "Administrator authorization required.";
+        }
+
+        public void BeginEdit(DesktopMemoryItem memory)
         {
             _selected = memory;
             _editContent = memory.content ?? string.Empty;

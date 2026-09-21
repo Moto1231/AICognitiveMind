@@ -10,23 +10,61 @@ namespace Axiom.Body
 
         private MindApiClient _client;
 
+        public DesktopPortalStatus Summary { get; private set; } =
+            new DesktopPortalStatus();
         public DesktopMemoryPage MemoryPage { get; private set; } =
             new DesktopMemoryPage();
         public DesktopJournalPage JournalPage { get; private set; } =
             new DesktopJournalPage();
 
         public string MemorySearch { get; set; } = string.Empty;
-        public string JournalSearch { get; set; } = string.Empty;
+        public string MemoryClass { get; set; } = string.Empty;
+        public string MemoryAssociation { get; set; } = string.Empty;
+        public string MemoryGrounding { get; set; } = string.Empty;
+        public string MemoryFrom { get; set; } = string.Empty;
+        public string MemoryTo { get; set; } = string.Empty;
 
+        public string JournalSearch { get; set; } = string.Empty;
+        public string JournalKind { get; set; } = string.Empty;
+        public string JournalFrom { get; set; } = string.Empty;
+        public string JournalTo { get; set; } = string.Empty;
+
+        public bool LoadingSummary { get; private set; }
         public bool LoadingMemory { get; private set; }
         public bool LoadingJournal { get; private set; }
 
+        public string SummaryStatus { get; private set; } = "Summary not loaded.";
         public string MemoryStatus { get; private set; } = "Memory not loaded.";
         public string JournalStatus { get; private set; } = "Journal not loaded.";
 
         public void Attach(MindApiClient client)
         {
             _client = client;
+        }
+
+        public async Task LoadSummaryAsync()
+        {
+            if (_client == null || LoadingSummary)
+            {
+                return;
+            }
+
+            LoadingSummary = true;
+            SummaryStatus = "Loading summary...";
+            try
+            {
+                Summary = await _client.PortalStatusAsync();
+                SummaryStatus = "Summary current.";
+            }
+            catch (Exception exception)
+            {
+                SummaryStatus = "Summary failed: " + exception.Message;
+                Debug.LogException(exception);
+            }
+            finally
+            {
+                LoadingSummary = false;
+            }
         }
 
         public async Task LoadMemoryAsync(int offset = 0)
@@ -42,6 +80,11 @@ namespace Axiom.Body
             {
                 MemoryPage = await _client.MemoryPageAsync(
                     MemorySearch,
+                    MemoryClass,
+                    MemoryAssociation,
+                    MemoryGrounding,
+                    MemoryFrom,
+                    MemoryTo,
                     Mathf.Max(0, offset),
                     PageSize
                 );
@@ -76,6 +119,9 @@ namespace Axiom.Body
             {
                 JournalPage = await _client.JournalPageAsync(
                     JournalSearch,
+                    JournalKind,
+                    JournalFrom,
+                    JournalTo,
                     Mathf.Max(0, offset),
                     PageSize
                 );
@@ -133,6 +179,7 @@ namespace Axiom.Body
 
         public async Task RefreshAllAsync()
         {
+            await LoadSummaryAsync();
             await LoadMemoryAsync(0);
             await LoadJournalAsync(0);
         }
