@@ -1193,7 +1193,7 @@ namespace Axiom.Body
 
             GUI.Box(new Rect(18f, 18f, width, height), "Genesis Editor");
 
-            if (GUI.Button(new Rect(34f, 48f, 112f, 30f), "Back to Bodies"))
+            if (GUI.Button(new Rect(34f, 48f, 112f, 30f), "Back to Body"))
             {
                 _view = DesktopView.Body;
                 return;
