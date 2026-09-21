@@ -48,6 +48,16 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("UniGLTF", asmdef["references"])
         self.assertIn("UniGLTF.Utils", asmdef["references"])
 
+    def test_unity_body_surfaces_api_error_detail(self) -> None:
+        client = Path(
+            "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("MindApiErrorResponse", client)
+        self.assertIn("ApiErrorDetail", client)
+        self.assertIn("response.detail", client)
+        self.assertIn("Mind API request failed", client)
+
     def test_unity_body_exposes_local_connection_settings(self) -> None:
         config = Path(
             "body-unity/Assets/AxiomBody/Runtime/AxiomRuntimeConfig.cs"
