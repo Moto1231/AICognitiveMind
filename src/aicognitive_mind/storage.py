@@ -64,6 +64,8 @@ class JournalStore(Protocol):
 class EvidenceStore(Protocol):
     async def preserve(self, artifact: SensoryEvidenceArtifact) -> SensoryEvidenceArtifact: ...
 
+    async def read(self) -> list[SensoryEvidenceArtifact]: ...
+
     async def find_exact(
         self,
         *,
@@ -389,6 +391,9 @@ class InMemoryEvidenceStore:
         stored = deepcopy(artifact)
         self._artifacts.append(stored)
         return deepcopy(stored)
+
+    async def read(self) -> list[SensoryEvidenceArtifact]:
+        return deepcopy(self._artifacts)
 
     async def find_exact(
         self,
