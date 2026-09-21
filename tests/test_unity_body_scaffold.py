@@ -70,7 +70,9 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("SaveConnection", config)
         self.assertIn("GUI.PasswordField", bootstrap)
         self.assertIn("ConnectAsync", bootstrap)
-        self.assertIn("Reconnect", bootstrap)
+        self.assertIn("DrawConnectionDialog", bootstrap)
+        self.assertIn('"Connect"', bootstrap)
+        self.assertIn('"Cancel"', bootstrap)
         self.assertIn("Connection failed:", bootstrap)
 
     def test_unity_body_has_switchable_model_policy_and_local_motion(self) -> None:
@@ -101,8 +103,8 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("AudioRequiresModel", senses)
         self.assertIn("model skipped", senses)
         self.assertIn("SetModelPolicy", senses)
-        self.assertIn("Model: Cognitive", bootstrap)
-        self.assertIn("Model: Full Body", bootstrap)
+        self.assertIn("Mode: Cognitive", bootstrap)
+        self.assertIn("Mode: Full Body", bootstrap)
         self.assertIn("ToggleBodyModelPolicy", bootstrap)
 
         self.assertIn("AxiomBodyMotionRuntime", bootstrap)
@@ -116,6 +118,36 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("AuthenticateAsync", client)
         self.assertIn('Url("/v1/mind")', client)
         self.assertIn("await _client.AuthenticateAsync()", bootstrap)
+
+    def test_unity_body_uses_connection_dialog_and_slim_control_strip(self) -> None:
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+        loader = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomAvatarLoader.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("_connectionDialogOpen = true", bootstrap)
+        self.assertIn("DrawConnectionDialog", bootstrap)
+        self.assertIn("DrawControlStrip", bootstrap)
+        self.assertIn('"POWER"', bootstrap)
+        self.assertIn("0.20f, 0.78f, 0.30f", bootstrap)
+        self.assertIn("0.86f, 0.22f, 0.22f", bootstrap)
+        self.assertIn("DrawModeDropdown", bootstrap)
+        self.assertIn("DrawBodyDropdown", bootstrap)
+        self.assertIn('"SENSES OFF"', bootstrap)
+        self.assertIn('"Memory"', bootstrap)
+        self.assertIn('"Journal"', bootstrap)
+        self.assertIn('"Admin"', bootstrap)
+        self.assertIn("Disconnect(showConnectionDialog: true)", bootstrap)
+        self.assertIn("_avatarLoader?.Unload()", bootstrap)
+        self.assertIn("public void Unload()", loader)
+
+        start = bootstrap[
+            bootstrap.index("private void Start()"):
+            bootstrap.index("private async Task ConnectAsync()")
+        ]
+        self.assertNotIn("ConnectAsync()", start)
 
     def test_unity_body_consumes_mouth_intents_through_windows_speech(self) -> None:
         client = Path(
@@ -203,7 +235,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("_audioBusy", senses)
         self.assertNotIn("RunSensoryLoopAsync", senses)
         self.assertNotIn("private bool _busy", senses)
-        self.assertIn("Senses On", bootstrap)
+        self.assertIn("SENSES ON", bootstrap)
         self.assertIn("ToggleSensesAsync", bootstrap)
         self.assertIn("_sensesRuntime.Attach(_client)", bootstrap)
 
@@ -272,7 +304,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("DesktopView.Avatar", bootstrap)
         self.assertIn("DrawAvatarEditor", bootstrap)
         self.assertIn('"Genesis Editor"', bootstrap)
-        self.assertIn('"Back to Bodies"', bootstrap)
+        self.assertIn('"Back to Body"', bootstrap)
         self.assertIn("AxiomAvatarEditorRuntime", bootstrap)
         self.assertIn("PlayerPrefs.SetString", editor)
         self.assertIn("axiom.avatar.appearance.v0.1", editor)
