@@ -59,7 +59,7 @@ namespace Axiom.Body
         public static string MindPassword =>
             Environment.GetEnvironmentVariable("AXIOM_MIND_PASSWORD") ?? string.Empty;
 
-        public static BodyModelPolicy BodyModelPolicy
+        public static BodyModelPolicy ModelPolicy
         {
             get
             {
