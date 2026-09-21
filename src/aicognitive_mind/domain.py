@@ -48,6 +48,7 @@ class JournalKind(StrEnum):
 
 class MindIdentity(BaseModel):
     self_name: str = Field(min_length=1, max_length=120)
+    pronouns: str = Field(default="she/her", min_length=1, max_length=80)
     foundational_values: tuple[str, ...] = ()
     commitments: tuple[str, ...] = ()
     relationships: tuple[dict[str, Any], ...] = ()
