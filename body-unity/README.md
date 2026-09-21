@@ -117,8 +117,9 @@ When Senses are enabled:
   PCM16 WAV, and independently calls `/v1/body/ears/observe` then
   `/v1/mind/body/hear?express=false`;
 - Eyes and Ears have separate busy state and separate scheduling loops;
-- neither sensory modality waits for the other to finish;
-- visual and audio interpretation requests may overlap in time;
+- camera and microphone acquisition remain independent and can overlap;
+- remote interpretation and Cognitive Core work pass through one shared
+  cognition gate, preventing simultaneous Gemini/reasoning bursts;
 - both workers retain a conservative 15-second interpretation cadence so
   continuous hardware capture does not become uncontrolled reasoning usage;
 - the combined desktop status reports both Eyes and Ears state;
