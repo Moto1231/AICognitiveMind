@@ -12,7 +12,7 @@ namespace Axiom.Body
         public const string GenesisBodyName = "Genesis";
 
         private const string SelectedBodyKey = "axiom.body.selected.v0.1";
-        private const string PresetResourcePath = "AxiomBodies";
+        private const string PresetResourcePath = "GenesisBodies";
 
         private Vrm10Instance _instance;
         private GameObject _root;
