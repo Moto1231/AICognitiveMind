@@ -394,6 +394,9 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("durable_memory_count", bootstrap)
         self.assertIn("journal_experience_count", bootstrap)
         self.assertIn("await _mindData.LoadSummaryAsync()", bootstrap)
+        self.assertIn('"Primary: External Host · "', bootstrap)
+        self.assertIn('"Fallback: "', bootstrap)
+        self.assertIn("external_host_protocol", client)
 
     def test_unity_body_has_memory_and_journal_views(self) -> None:
         client = Path(

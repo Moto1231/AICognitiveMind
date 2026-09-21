@@ -354,10 +354,22 @@ def get_core(request: Request) -> CognitiveCore:
     return cast(CognitiveCore, request.app.state.core)
 
 
+def _effective_standalone_reasoning_provider(settings: Any) -> str:
+    explicit = getattr(settings, "standalone_reasoning_provider", None)
+    legacy = getattr(settings, "reasoning_provider", "echo")
+    return str(explicit or legacy or "echo").strip().lower()
+
+
 def _reasoning_backend_error_detail(exc: Exception) -> str:
     settings = get_settings()
-    provider = settings.reasoning_provider.lower()
-    provider_label = "Gemini" if provider == "gemini" else "OpenAI"
+    provider = _effective_standalone_reasoning_provider(settings)
+    provider_label = (
+        "Gemini"
+        if provider == "gemini"
+        else "OpenAI"
+        if provider == "openai"
+        else provider.title()
+    )
     status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
     class_name = exc.__class__.__name__
 
@@ -401,9 +413,12 @@ def _reasoning_backend_error_detail(exc: Exception) -> str:
 
 
 def _validate_reasoning_configuration(settings: Any) -> str:
-    provider = settings.reasoning_provider.lower().strip()
+    provider = _effective_standalone_reasoning_provider(settings)
     if provider not in {"gemini", "openai", "echo"}:
-        raise RuntimeError("REASONING_PROVIDER must be one of: gemini, openai, echo")
+        raise RuntimeError(
+            "STANDALONE_REASONING_PROVIDER must be one of: gemini, openai, echo "
+            "(legacy REASONING_PROVIDER is still accepted)"
+        )
 
     if os.getenv("RENDER", "").lower() == "true":
         if provider == "gemini" and not settings.gemini_api_key:
@@ -419,7 +434,9 @@ def _validate_reasoning_configuration(settings: Any) -> str:
         if provider == "echo":
             raise RuntimeError(
                 "REASONING_PROVIDER=echo is not allowed on Render. "
-                "Configure gemini or openai explicitly."
+                "This is the standalone fallback provider; configure "
+                "STANDALONE_REASONING_PROVIDER=gemini or openai "
+                "(legacy REASONING_PROVIDER is still accepted)."
             )
     return provider
 
@@ -842,8 +859,11 @@ async def portal_status(request: Request) -> dict[str, Any]:
     try:
         result = await service.status()
         runtime_settings = get_settings()
-        provider = runtime_settings.reasoning_provider.lower()
+        provider = runtime__effective_standalone_reasoning_provider(settings)
         result["reasoning"] = {
+            "primary_mode": "external_host",
+            "external_host_protocol": "MCP",
+            "external_host_reasoning_owner": "connected MCP host",
             "backend": provider,
             "model": getattr(request.app.state, "reasoning_model", "unknown"),
             "requested_model": (
@@ -853,6 +873,14 @@ async def portal_status(request: Request) -> dict[str, Any]:
                 if provider == "openai"
                 else "deterministic-echo"
             ),
+            "standalone_fallback": {
+                "provider": provider,
+                "model": getattr(
+                    request.app.state,
+                    "reasoning_model",
+                    "unknown",
+                ),
+            },
         }
         result["administration"] = {
             "pin_required": bool(get_settings().admin_pin),

@@ -124,6 +124,9 @@ namespace Axiom.Body
     [Serializable]
     public sealed class DesktopReasoningStatus
     {
+        public string primary_mode = string.Empty;
+        public string external_host_protocol = string.Empty;
+        public string external_host_reasoning_owner = string.Empty;
         public string backend = string.Empty;
         public string model = string.Empty;
         public string requested_model = string.Empty;
