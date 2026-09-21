@@ -120,6 +120,17 @@ class PortableBackupTests(unittest.TestCase):
                 "Axiom",
             )
 
+
+    def test_admin_backup_endpoint_is_governed(self) -> None:
+        api = open(
+            "src/aicognitive_mind/api.py",
+            encoding="utf-8",
+        ).read()
+        self.assertIn('/v1/admin/backup', api)
+        self.assertIn("require_admin(request)", api)
+        self.assertIn("build_backup_archive", api)
+        self.assertIn('"Cache-Control": "private, no-store"', api)
+
     def test_archive_does_not_contain_provider_credentials(self) -> None:
         payload = build_backup_archive(
             mind=None,
