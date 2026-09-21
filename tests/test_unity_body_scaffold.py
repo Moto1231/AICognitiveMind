@@ -212,8 +212,8 @@ class UnityBodyScaffoldTests(unittest.TestCase):
 
         self.assertIn("DesktopView.Avatar", bootstrap)
         self.assertIn("DrawAvatarEditor", bootstrap)
-        self.assertIn('"Avatar"', bootstrap)
-        self.assertIn('"Back to Body"', bootstrap)
+        self.assertIn('"Genesis Editor"', bootstrap)
+        self.assertIn('"Back to Bodies"', bootstrap)
         self.assertIn("AxiomAvatarEditorRuntime", bootstrap)
         self.assertIn("PlayerPrefs.SetString", editor)
         self.assertIn("axiom.avatar.appearance.v0.1", editor)
