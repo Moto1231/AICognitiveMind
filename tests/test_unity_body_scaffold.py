@@ -130,12 +130,12 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("_connectionDialogOpen = true", bootstrap)
         self.assertIn("DrawConnectionDialog", bootstrap)
         self.assertIn("DrawControlStrip", bootstrap)
-        self.assertIn('"POWER"', bootstrap)
+        self.assertIn('"ON" : "OFF"', bootstrap)
         self.assertIn("0.20f, 0.78f, 0.30f", bootstrap)
         self.assertIn("0.86f, 0.22f, 0.22f", bootstrap)
         self.assertIn("DrawModeDropdown", bootstrap)
         self.assertIn("DrawBodyDropdown", bootstrap)
-        self.assertIn('"SENSES OFF"', bootstrap)
+        self.assertIn('"Senses"', bootstrap)
         self.assertIn('"Memory"', bootstrap)
         self.assertIn('"Journal"', bootstrap)
         self.assertIn('"Summary"', bootstrap)
@@ -149,6 +149,27 @@ class UnityBodyScaffoldTests(unittest.TestCase):
             bootstrap.index("private async Task ConnectAsync()")
         ]
         self.assertNotIn("ConnectAsync()", start)
+
+    def test_unity_body_keeps_controls_and_chat_on_right_rail(self) -> None:
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Screen.width - railWidth - 10f", bootstrap)
+        self.assertIn("Screen.height - 18f", bootstrap)
+        self.assertIn('"ON" : "OFF"', bootstrap)
+        self.assertIn('"Cognitive ▼"', bootstrap)
+        self.assertIn('"Full ▼"', bootstrap)
+        self.assertIn('"Senses"', bootstrap)
+        self.assertIn('"Home"', bootstrap)
+        self.assertIn('"Memory"', bootstrap)
+        self.assertIn('"Journal"', bootstrap)
+        self.assertIn('"Admin ✓" : "Admin"', bootstrap)
+        self.assertIn("DrawControlStrip();", bootstrap)
+        self.assertIn("DrawSummaryView();", bootstrap)
+        self.assertIn('"Chat"', bootstrap)
+        self.assertIn("SendInteractionAsync", bootstrap)
+        self.assertIn("new Color(1f, 1f, 1f, 0.36f)", bootstrap)
 
     def test_unity_body_consumes_mouth_intents_through_windows_speech(self) -> None:
         client = Path(
@@ -236,7 +257,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("_audioBusy", senses)
         self.assertNotIn("RunSensoryLoopAsync", senses)
         self.assertNotIn("private bool _busy", senses)
-        self.assertIn("SENSES ON", bootstrap)
+        self.assertIn('"Senses"', bootstrap)
         self.assertIn("ToggleSensesAsync", bootstrap)
         self.assertIn("_sensesRuntime.Attach(_client)", bootstrap)
 
@@ -338,13 +359,13 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("WindowsDesktopTransparency", bootstrap)
         self.assertIn("_desktopTransparency.Apply(camera)", bootstrap)
         self.assertIn("Application.runInBackground = true", bootstrap)
-        self.assertIn("Screen.width * 0.36f", bootstrap)
+        self.assertIn("Screen.width * 0.34f", bootstrap)
         self.assertIn('"Chat"', bootstrap)
         self.assertIn("GUI.TextArea", bootstrap)
         self.assertIn("SendInteractionAsync", bootstrap)
         self.assertIn("AppendChat", bootstrap)
         self.assertIn("_chatTranscript", bootstrap)
-        self.assertIn("0.82f", bootstrap)
+        self.assertIn("0.36f", bootstrap)
 
         self.assertIn("DwmExtendFrameIntoClientArea", transparency)
         self.assertIn("GetActiveWindow", transparency)
@@ -369,7 +390,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("LoadSummaryAsync", data_runtime)
         self.assertIn("DesktopView.Summary", bootstrap)
         self.assertIn("DrawSummaryView", bootstrap)
-        self.assertIn('"Mind Summary"', bootstrap)
+        self.assertIn('"Summary"', bootstrap)
         self.assertIn("durable_memory_count", bootstrap)
         self.assertIn("journal_experience_count", bootstrap)
         self.assertIn("await _mindData.LoadSummaryAsync()", bootstrap)
