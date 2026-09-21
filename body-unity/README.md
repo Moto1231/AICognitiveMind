@@ -104,20 +104,31 @@ phoneme-specific viseme recognition. The later refinement can distribute
 speech across `aa`, `ih`, `ou`, `ee`, and `oh` while retaining the
 same Mouth/audio pipeline.
 
-## Desktop Senses V0.1
+## Desktop Senses V0.2
 
-`AxiomSensesRuntime` moves the existing Eyes and Ears loop into Unity.
+`AxiomSensesRuntime` owns independent Eyes and Ears workers in Unity.
 
 When Senses are enabled:
 
-- Unity captures JPEG frames from the first available `WebCamTexture`;
-- visual evidence is admitted through `/v1/body/eyes/observe` and interpreted through `/v1/mind/body/see?express=false`;
-- Unity records four-second microphone windows and encodes them as PCM16 WAV;
-- audio evidence is admitted through `/v1/body/ears/observe` and interpreted through `/v1/mind/body/hear?express=false`;
-- vision and hearing alternate with the same 15-second pause used by the browser prototype;
-- passive perception does not automatically speak every Mind response.
+- Unity keeps the first available `WebCamTexture` active for visual capture;
+- the Eyes worker captures JPEG evidence and independently calls
+  `/v1/body/eyes/observe` then `/v1/mind/body/see?express=false`;
+- the Ears worker records four-second microphone windows, encodes them as
+  PCM16 WAV, and independently calls `/v1/body/ears/observe` then
+  `/v1/mind/body/hear?express=false`;
+- Eyes and Ears have separate busy state and separate scheduling loops;
+- neither sensory modality waits for the other to finish;
+- visual and audio interpretation requests may overlap in time;
+- both workers retain a conservative 15-second interpretation cadence so
+  continuous hardware capture does not become uncontrolled reasoning usage;
+- the combined desktop status reports both Eyes and Ears state;
+- passive perception still does not automatically speak every Mind response.
 
-Turning Senses off releases both camera and microphone hardware.
+This is the concurrency foundation for scene tracking, person tracking, speaker
+diarization, identity recognition, and later audio/visual fusion.
+
+Turning Senses off cancels both workers by generation and releases camera and
+microphone hardware.
 
 ## Desktop Avatar Editor V0.1
 
