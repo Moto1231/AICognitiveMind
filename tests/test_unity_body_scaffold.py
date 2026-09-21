@@ -73,6 +73,50 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("Reconnect", bootstrap)
         self.assertIn("Connection failed:", bootstrap)
 
+    def test_unity_body_has_switchable_model_policy_and_local_motion(self) -> None:
+        config = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomRuntimeConfig.cs"
+        ).read_text(encoding="utf-8")
+        senses = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomSensesRuntime.cs"
+        ).read_text(encoding="utf-8")
+        motion = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyMotionRuntime.cs"
+        ).read_text(encoding="utf-8")
+        mouth = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomMouthRuntime.cs"
+        ).read_text(encoding="utf-8")
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+        client = Path(
+            "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("BodyModelPolicy.CognitiveOnly", config)
+        self.assertIn("BodyModelPolicy.FullBodyModel", config)
+        self.assertIn("AXIOM_BODY_MODEL_POLICY", config)
+        self.assertIn("SaveBodyModelPolicy", config)
+        self.assertIn("VisionRequiresModel", senses)
+        self.assertIn("AudioRequiresModel", senses)
+        self.assertIn("model skipped", senses)
+        self.assertIn("SetModelPolicy", senses)
+        self.assertIn("Model: Cognitive", bootstrap)
+        self.assertIn("Model: Full Body", bootstrap)
+        self.assertIn("ToggleBodyModelPolicy", bootstrap)
+
+        self.assertIn("AxiomBodyMotionRuntime", bootstrap)
+        self.assertIn("DefaultExecutionOrder(12500)", motion)
+        self.assertIn("breath", motion)
+        self.assertIn("sway", motion)
+        self.assertIn("HumanBodyBones.Head", motion)
+        self.assertIn("IsSpeaking", mouth)
+        self.assertIn("_bodyMotionRuntime?.Attach", bootstrap)
+
+        self.assertIn("AuthenticateAsync", client)
+        self.assertIn('Url("/v1/mind")', client)
+        self.assertIn("await _client.AuthenticateAsync()", bootstrap)
+
     def test_unity_body_consumes_mouth_intents_through_windows_speech(self) -> None:
         client = Path(
             "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"

@@ -1,3 +1,8 @@
+// Copyright (c) 2026 William Enright. All rights reserved.
+// Use, reproduction, modification, distribution, or commercial exploitation
+// of this file is prohibited without prior written permission from the
+// copyright holder.
+
 using System;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -10,6 +15,7 @@ namespace Axiom.Body
         private AxiomAvatarLoader _avatarLoader;
         private AxiomMouthRuntime _mouthRuntime;
         private AxiomSensesRuntime _sensesRuntime;
+        private AxiomBodyMotionRuntime _bodyMotionRuntime;
         private AxiomAvatarEditorRuntime _avatarEditor;
         private AxiomMindDataRuntime _mindData;
         private AxiomAdminRuntime _adminRuntime;
@@ -24,6 +30,8 @@ namespace Axiom.Body
         private bool _connected;
         private bool _sensesChanging;
         private bool _bodySwitching;
+        private BodyModelPolicy _bodyModelPolicy =
+            BodyModelPolicy.CognitiveOnly;
         private DesktopView _view = DesktopView.Body;
         private Vector2 _avatarScroll = Vector2.zero;
         private Vector2 _memoryScroll = Vector2.zero;
@@ -64,6 +72,7 @@ namespace Axiom.Body
             _mindUrl = AxiomRuntimeConfig.MindBaseUrl;
             _mindUsername = AxiomRuntimeConfig.MindUsername;
             _mindPassword = AxiomRuntimeConfig.MindPassword;
+            _bodyModelPolicy = AxiomRuntimeConfig.ModelPolicy;
 
             EnsureCamera();
             EnsureLight();
@@ -89,6 +98,7 @@ namespace Axiom.Body
             _connected = false;
             _mouthRuntime?.Detach();
             _sensesRuntime?.Detach();
+            _bodyMotionRuntime?.Detach();
             _status = "Connecting to Mind...";
 
             try
@@ -100,6 +110,7 @@ namespace Axiom.Body
                 );
 
                 await _client.HealthAsync();
+                await _client.AuthenticateAsync();
 
                 Camera camera = EnsureCamera();
                 _status = "Loading Axiom...";
@@ -169,6 +180,17 @@ namespace Axiom.Body
                     _sensesRuntime.StatusChanged += HandleBodyStatus;
                 }
                 _sensesRuntime.Attach(_client);
+                _sensesRuntime.SetModelPolicy(_bodyModelPolicy);
+
+                if (_bodyMotionRuntime == null)
+                {
+                    _bodyMotionRuntime =
+                        gameObject.AddComponent<AxiomBodyMotionRuntime>();
+                }
+                _bodyMotionRuntime.Attach(
+                    _avatarLoader.Root,
+                    _mouthRuntime
+                );
 
                 _connected = true;
                 _status = "Axiom Body connected. Voice + lip sync ready.";
@@ -187,6 +209,22 @@ namespace Axiom.Body
         private void HandleBodyStatus(string status)
         {
             _status = status;
+        }
+
+        private void ToggleBodyModelPolicy()
+        {
+            _bodyModelPolicy =
+                _bodyModelPolicy == BodyModelPolicy.CognitiveOnly
+                    ? BodyModelPolicy.FullBodyModel
+                    : BodyModelPolicy.CognitiveOnly;
+
+            AxiomRuntimeConfig.SaveBodyModelPolicy(_bodyModelPolicy);
+            _sensesRuntime?.SetModelPolicy(_bodyModelPolicy);
+
+            _status =
+                _bodyModelPolicy == BodyModelPolicy.FullBodyModel
+                    ? "Body model policy: Full Body Model."
+                    : "Body model policy: Cognitive Only.";
         }
 
         private async Task ToggleSensesAsync()
@@ -400,11 +438,25 @@ namespace Axiom.Body
             GUI.enabled = true;
 
             GUI.Label(
-                new Rect(160f, 159f, width - 178f, 28f),
+                new Rect(160f, 159f, 170f, 28f),
                 _sensesRuntime != null && _sensesRuntime.IsEnabled
                     ? "Eyes + Ears active"
                     : "Eyes + Ears inactive"
             );
+
+            string modelPolicyLabel =
+                _bodyModelPolicy == BodyModelPolicy.FullBodyModel
+                    ? "Model: Full Body"
+                    : "Model: Cognitive";
+            if (
+                GUI.Button(
+                    new Rect(340f, 156f, 178f, 30f),
+                    modelPolicyLabel
+                )
+            )
+            {
+                ToggleBodyModelPolicy();
+            }
 
             GUI.Box(new Rect(34f, 198f, width - 68f, 1f), string.Empty);
 
@@ -766,6 +818,10 @@ namespace Axiom.Body
                 _mouthRuntime?.RefreshAvatar(
                     _avatarLoader.Root,
                     _avatarLoader.Instance
+                );
+                _bodyMotionRuntime?.Attach(
+                    _avatarLoader.Root,
+                    _mouthRuntime
                 );
 
                 _status =

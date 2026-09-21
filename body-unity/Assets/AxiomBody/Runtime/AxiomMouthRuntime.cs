@@ -1,3 +1,8 @@
+// Copyright (c) 2026 William Enright. All rights reserved.
+// Use, reproduction, modification, distribution, or commercial exploitation
+// of this file is prohibited without prior written permission from the
+// copyright holder.
+
 using System;
 using System.Threading.Tasks;
 using UniVRM10;
@@ -19,6 +24,9 @@ namespace Axiom.Body
         private float _nextPollAt;
 
         public event Action<string> StatusChanged;
+
+        public bool IsSpeaking =>
+            _audioSource != null && _audioSource.isPlaying;
 
         public void Attach(MindApiClient client, Vrm10Instance avatar)
         {
