@@ -1,3 +1,8 @@
+# Copyright (c) 2026 William Enright. All rights reserved.
+# Use, reproduction, modification, distribution, or commercial exploitation
+# of this file is prohibited without prior written permission from the
+# copyright holder.
+
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -58,6 +63,7 @@ class CognitiveCore:
                 kind=JournalKind.INITIALIZATION,
                 experience={
                     "self_name": mind.identity.self_name,
+                    "pronouns": mind.identity.pronouns,
                     "foundational_values": list(mind.identity.foundational_values),
                     "developmental_state": mind.developmental_state,
                 },
