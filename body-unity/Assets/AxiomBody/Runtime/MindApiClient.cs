@@ -1,3 +1,8 @@
+// Copyright (c) 2026 William Enright. All rights reserved.
+// Use, reproduction, modification, distribution, or commercial exploitation
+// of this file is prohibited without prior written permission from the
+// copyright holder.
+
 using System;
 using System.Text;
 using System.Threading.Tasks;
@@ -6,6 +11,12 @@ using UnityEngine.Networking;
 
 namespace Axiom.Body
 {
+    [Serializable]
+    public sealed class MindApiErrorResponse
+    {
+        public string detail = string.Empty;
+    }
+
     [Serializable]
     public sealed class MindInteractionRequest
     {
@@ -454,10 +465,45 @@ namespace Axiom.Body
 
             if (request.result != UnityWebRequest.Result.Success)
             {
+                string detail = ApiErrorDetail(request);
                 throw new InvalidOperationException(
-                    $"Mind API request failed ({request.responseCode}): {request.error}"
+                    $"Mind API request failed ({request.responseCode}): {detail}"
                 );
             }
+        }
+
+        private static string ApiErrorDetail(UnityWebRequest request)
+        {
+            string body = request.downloadHandler?.text?.Trim() ?? string.Empty;
+            if (!string.IsNullOrEmpty(body))
+            {
+                try
+                {
+                    MindApiErrorResponse response =
+                        JsonUtility.FromJson<MindApiErrorResponse>(body);
+                    if (
+                        response != null &&
+                        !string.IsNullOrWhiteSpace(response.detail)
+                    )
+                    {
+                        return response.detail.Trim();
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    // Fall through to a compact raw body if the server did
+                    // not return FastAPI's normal {"detail": "..."} shape.
+                }
+
+                const int maxLength = 300;
+                return body.Length <= maxLength
+                    ? body
+                    : body.Substring(0, maxLength - 1) + "…";
+            }
+
+            return string.IsNullOrWhiteSpace(request.error)
+                ? "Unknown HTTP error"
+                : request.error;
         }
 
         private static void ApplyAdminPin(
