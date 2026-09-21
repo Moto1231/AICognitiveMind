@@ -30,6 +30,9 @@ namespace Axiom.Body
         private bool _connected;
         private bool _sensesChanging;
         private bool _bodySwitching;
+        private bool _connectionDialogOpen = true;
+        private bool _modeDropdownOpen;
+        private bool _bodyDropdownOpen;
         private BodyModelPolicy _bodyModelPolicy =
             BodyModelPolicy.CognitiveOnly;
         private DesktopView _view = DesktopView.Body;
@@ -67,7 +70,7 @@ namespace Axiom.Body
             runtime.AddComponent<AxiomBodyBootstrap>();
         }
 
-        private async void Start()
+        private void Start()
         {
             _mindUrl = AxiomRuntimeConfig.MindBaseUrl;
             _mindUsername = AxiomRuntimeConfig.MindUsername;
@@ -77,7 +80,8 @@ namespace Axiom.Body
             EnsureCamera();
             EnsureLight();
 
-            await ConnectAsync();
+            _status = "Not connected.";
+            _connectionDialogOpen = true;
         }
 
         private async Task ConnectAsync()
@@ -96,6 +100,9 @@ namespace Axiom.Body
 
             _connecting = true;
             _connected = false;
+            _view = DesktopView.Body;
+            _modeDropdownOpen = false;
+            _bodyDropdownOpen = false;
             _mouthRuntime?.Detach();
             _sensesRuntime?.Detach();
             _bodyMotionRuntime?.Detach();
@@ -193,10 +200,17 @@ namespace Axiom.Body
                 );
 
                 _connected = true;
-                _status = "Axiom Body connected. Voice + lip sync ready.";
+                _connectionDialogOpen = false;
+                _status = "Connected.";
             }
             catch (Exception exception)
             {
+                _connected = false;
+                _avatarLoader?.Unload();
+                _mouthRuntime?.Detach();
+                _sensesRuntime?.Detach();
+                _bodyMotionRuntime?.Detach();
+                _connectionDialogOpen = true;
                 _status = "Connection failed: " + exception.Message;
                 Debug.LogException(exception);
             }
@@ -211,20 +225,46 @@ namespace Axiom.Body
             _status = status;
         }
 
-        private void ToggleBodyModelPolicy()
+        private void Disconnect(bool showConnectionDialog)
         {
-            _bodyModelPolicy =
-                _bodyModelPolicy == BodyModelPolicy.CognitiveOnly
-                    ? BodyModelPolicy.FullBodyModel
-                    : BodyModelPolicy.CognitiveOnly;
+            _sensesRuntime?.Detach();
+            _mouthRuntime?.Detach();
+            _bodyMotionRuntime?.Detach();
+            _avatarLoader?.Unload();
 
+            _client = null;
+            _connected = false;
+            _connecting = false;
+            _sending = false;
+            _sensesChanging = false;
+            _bodySwitching = false;
+            _modeDropdownOpen = false;
+            _bodyDropdownOpen = false;
+            _view = DesktopView.Body;
+            _status = "Not connected.";
+            _connectionDialogOpen = showConnectionDialog;
+        }
+
+        private void SetBodyModelPolicy(BodyModelPolicy policy)
+        {
+            _bodyModelPolicy = policy;
             AxiomRuntimeConfig.SaveBodyModelPolicy(_bodyModelPolicy);
             _sensesRuntime?.SetModelPolicy(_bodyModelPolicy);
+            _modeDropdownOpen = false;
 
             _status =
                 _bodyModelPolicy == BodyModelPolicy.FullBodyModel
-                    ? "Body model policy: Full Body Model."
-                    : "Body model policy: Cognitive Only.";
+                    ? "Mode: Full Body Model."
+                    : "Mode: Cognitive Only.";
+        }
+
+        private void ToggleBodyModelPolicy()
+        {
+            SetBodyModelPolicy(
+                _bodyModelPolicy == BodyModelPolicy.CognitiveOnly
+                    ? BodyModelPolicy.FullBodyModel
+                    : BodyModelPolicy.CognitiveOnly
+            );
         }
 
         private async Task ToggleSensesAsync()
@@ -333,9 +373,9 @@ namespace Axiom.Body
 
         private void OnGUI()
         {
-            if (_view == DesktopView.Bodies)
+            if (_connectionDialogOpen)
             {
-                DrawBodiesView();
+                DrawConnectionDialog();
                 return;
             }
 
@@ -372,34 +412,47 @@ namespace Axiom.Body
                 return;
             }
 
-            DrawBodyView();
+            DrawControlStrip();
         }
 
-        private void DrawBodyView()
+        private void DrawConnectionDialog()
         {
-            const float width = 520f;
-            const float panelHeight = 424f;
+            const float width = 500f;
+            const float height = 246f;
+            float left = Mathf.Max(18f, (Screen.width - width) * 0.5f);
+            float top = Mathf.Max(18f, (Screen.height - height) * 0.5f);
 
-            Rect panel = new Rect(18f, 18f, width, panelHeight);
-            GUI.Box(panel, "Axiom Body");
+            GUI.Box(
+                new Rect(left, top, width, height),
+                "Connect Axiom"
+            );
 
-            GUI.Label(new Rect(34f, 48f, 90f, 24f), "Mind URL");
+            GUI.Label(
+                new Rect(left + 24f, top + 42f, 90f, 24f),
+                "Mind URL"
+            );
             _mindUrl = GUI.TextField(
-                new Rect(124f, 46f, width - 142f, 28f),
+                new Rect(left + 116f, top + 38f, width - 140f, 30f),
                 _mindUrl,
                 500
             );
 
-            GUI.Label(new Rect(34f, 82f, 90f, 24f), "Username");
+            GUI.Label(
+                new Rect(left + 24f, top + 82f, 90f, 24f),
+                "Username"
+            );
             _mindUsername = GUI.TextField(
-                new Rect(124f, 80f, 180f, 28f),
+                new Rect(left + 116f, top + 78f, width - 140f, 30f),
                 _mindUsername,
                 120
             );
 
-            GUI.Label(new Rect(314f, 82f, 80f, 24f), "Password");
+            GUI.Label(
+                new Rect(left + 24f, top + 122f, 90f, 24f),
+                "Password"
+            );
             _mindPassword = GUI.PasswordField(
-                new Rect(390f, 80f, width - 408f, 28f),
+                new Rect(left + 116f, top + 118f, width - 140f, 30f),
                 _mindPassword,
                 '*',
                 240
@@ -408,114 +461,254 @@ namespace Axiom.Body
             GUI.enabled = !_connecting;
             if (
                 GUI.Button(
-                    new Rect(34f, 116f, 112f, 30f),
-                    _connected ? "Reconnect" : "Connect"
+                    new Rect(left + 116f, top + 166f, 108f, 32f),
+                    _connecting ? "Connecting..." : "Connect"
                 )
             )
             {
                 _ = ConnectAsync();
             }
+
+            if (
+                GUI.Button(
+                    new Rect(left + 236f, top + 166f, 108f, 32f),
+                    "Cancel"
+                )
+            )
+            {
+                _connectionDialogOpen = false;
+                _status = "Not connected.";
+            }
             GUI.enabled = true;
 
-            GUI.Label(
-                new Rect(160f, 119f, width - 178f, 48f),
-                _status
-            );
+            if (!string.IsNullOrWhiteSpace(_status))
+            {
+                GUI.Label(
+                    new Rect(left + 24f, top + 208f, width - 48f, 28f),
+                    _status
+                );
+            }
+        }
 
+        private void DrawControlStrip()
+        {
+            const float top = 8f;
+            const float height = 38f;
+            float x = 8f;
+
+            Color previousBackground = GUI.backgroundColor;
+            GUIStyle powerStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 17,
+                fontStyle = FontStyle.Bold
+            };
+
+            GUI.backgroundColor = _connected
+                ? new Color(0.20f, 0.78f, 0.30f)
+                : new Color(0.86f, 0.22f, 0.22f);
+            if (
+                GUI.Button(
+                    new Rect(x, top, 58f, height),
+                    "POWER",
+                    powerStyle
+                )
+            )
+            {
+                if (_connected)
+                {
+                    Disconnect(showConnectionDialog: true);
+                }
+                else
+                {
+                    _connectionDialogOpen = true;
+                }
+            }
+            GUI.backgroundColor = previousBackground;
+            x += 64f;
+
+            string modeLabel =
+                _bodyModelPolicy == BodyModelPolicy.FullBodyModel
+                    ? "Mode: Full Body ▼"
+                    : "Mode: Cognitive ▼";
+            if (GUI.Button(new Rect(x, top, 150f, height), modeLabel))
+            {
+                _modeDropdownOpen = !_modeDropdownOpen;
+                _bodyDropdownOpen = false;
+            }
+            float modeX = x;
+            x += 156f;
+
+            string bodyName =
+                _avatarLoader != null && _avatarLoader.Root != null
+                    ? _avatarLoader.CurrentBodyName
+                    : "Body";
+            GUI.enabled = _connected && _avatarLoader != null;
+            if (
+                GUI.Button(
+                    new Rect(x, top, 150f, height),
+                    bodyName + " ▼"
+                )
+            )
+            {
+                _bodyDropdownOpen = !_bodyDropdownOpen;
+                _modeDropdownOpen = false;
+            }
+            float bodyX = x;
+            GUI.enabled = true;
+            x += 156f;
+
+            bool sensesOn =
+                _connected &&
+                _sensesRuntime != null &&
+                _sensesRuntime.IsEnabled;
+            GUI.backgroundColor = sensesOn
+                ? new Color(0.20f, 0.78f, 0.30f)
+                : new Color(0.86f, 0.22f, 0.22f);
             GUI.enabled =
                 _connected &&
-                !_connecting &&
                 !_sensesChanging &&
                 _sensesRuntime != null;
-            string sensesLabel =
-                _sensesRuntime != null && _sensesRuntime.IsEnabled
-                    ? "Senses Off"
-                    : "Senses On";
-            if (GUI.Button(new Rect(34f, 156f, 112f, 30f), sensesLabel))
+            if (
+                GUI.Button(
+                    new Rect(x, top, 92f, height),
+                    sensesOn ? "SENSES ON" : "SENSES OFF"
+                )
+            )
             {
                 _ = ToggleSensesAsync();
             }
             GUI.enabled = true;
-
-            GUI.Label(
-                new Rect(160f, 159f, 170f, 28f),
-                _sensesRuntime != null && _sensesRuntime.IsEnabled
-                    ? "Eyes + Ears active"
-                    : "Eyes + Ears inactive"
-            );
-
-            string modelPolicyLabel =
-                _bodyModelPolicy == BodyModelPolicy.FullBodyModel
-                    ? "Model: Full Body"
-                    : "Model: Cognitive";
-            if (
-                GUI.Button(
-                    new Rect(340f, 156f, 178f, 30f),
-                    modelPolicyLabel
-                )
-            )
-            {
-                ToggleBodyModelPolicy();
-            }
-
-            GUI.Box(new Rect(34f, 198f, width - 68f, 1f), string.Empty);
-
-            _message = GUI.TextField(
-                new Rect(34f, 216f, width - 132f, 30f),
-                _message,
-                2000
-            );
-
-            GUI.enabled =
-                _connected &&
-                !_sending &&
-                !string.IsNullOrWhiteSpace(_message);
-
-            if (GUI.Button(new Rect(width - 82f, 216f, 76f, 30f), "Send"))
-            {
-                _ = SendInteractionAsync();
-            }
-            GUI.enabled = true;
-
-            GUI.Label(
-                new Rect(34f, 256f, width - 68f, 62f),
-                string.IsNullOrEmpty(_reply)
-                    ? "Mind response will appear here."
-                    : _reply
-            );
-
-            GUI.enabled = _connected && _avatarLoader != null;
-            if (GUI.Button(new Rect(34f, 342f, 112f, 30f), "Bodies"))
-            {
-                _view = DesktopView.Bodies;
-            }
+            GUI.backgroundColor = previousBackground;
+            x += 98f;
 
             GUI.enabled = _connected && _mindData != null;
-            if (GUI.Button(new Rect(158f, 342f, 112f, 30f), "Memory"))
+            if (GUI.Button(new Rect(x, top, 76f, height), "Memory"))
             {
                 _memoryScroll = Vector2.zero;
                 _view = DesktopView.Memory;
                 _ = _mindData.LoadMemoryAsync(0);
             }
+            x += 82f;
 
-            if (GUI.Button(new Rect(282f, 342f, 112f, 30f), "Journal"))
+            if (GUI.Button(new Rect(x, top, 76f, height), "Journal"))
             {
                 _journalScroll = Vector2.zero;
                 _view = DesktopView.Journal;
                 _ = _mindData.LoadJournalAsync(0);
             }
+            x += 82f;
 
             GUI.enabled = _connected && _adminRuntime != null;
-            if (GUI.Button(new Rect(406f, 342f, 112f, 30f), "Admin"))
+            if (GUI.Button(new Rect(x, top, 68f, height), "Admin"))
             {
                 _view = DesktopView.Admin;
             }
             GUI.enabled = true;
+            x += 74f;
 
-            GUI.Label(
-                new Rect(34f, 382f, width - 68f, 24f),
-                "Desktop Body · Bodies · Memory · Journal · Admin"
+            if (Screen.width > x + 100f)
+            {
+                GUI.Label(
+                    new Rect(x + 4f, top + 8f, Screen.width - x - 16f, 24f),
+                    CompactText(_status, 120)
+                );
+            }
+
+            if (_modeDropdownOpen)
+            {
+                DrawModeDropdown(modeX, top + height + 4f);
+            }
+
+            if (_bodyDropdownOpen)
+            {
+                DrawBodyDropdown(bodyX, top + height + 4f);
+            }
+        }
+
+        private void DrawModeDropdown(float left, float top)
+        {
+            const float width = 150f;
+            const float rowHeight = 30f;
+            GUI.Box(
+                new Rect(left, top, width, (rowHeight * 2f) + 8f),
+                string.Empty
             );
+
+            if (
+                GUI.Button(
+                    new Rect(left + 4f, top + 4f, width - 8f, rowHeight),
+                    "Cognitive Only"
+                )
+            )
+            {
+                SetBodyModelPolicy(BodyModelPolicy.CognitiveOnly);
+            }
+
+            if (
+                GUI.Button(
+                    new Rect(
+                        left + 4f,
+                        top + 4f + rowHeight,
+                        width - 8f,
+                        rowHeight
+                    ),
+                    "Full Body Model"
+                )
+            )
+            {
+                SetBodyModelPolicy(BodyModelPolicy.FullBodyModel);
+            }
+        }
+
+        private void DrawBodyDropdown(float left, float top)
+        {
+            if (_avatarLoader == null)
+            {
+                _bodyDropdownOpen = false;
+                return;
+            }
+
+            string[] bodies = _avatarLoader.AvailableBodies;
+            const float width = 150f;
+            const float rowHeight = 30f;
+            float boxHeight =
+                Mathf.Max(rowHeight + 8f, (bodies.Length * rowHeight) + 8f);
+
+            GUI.Box(
+                new Rect(left, top, width, boxHeight),
+                string.Empty
+            );
+
+            GUI.enabled = !_bodySwitching;
+            for (int index = 0; index < bodies.Length; index++)
+            {
+                string bodyName = bodies[index];
+                if (
+                    GUI.Button(
+                        new Rect(
+                            left + 4f,
+                            top + 4f + (index * rowHeight),
+                            width - 8f,
+                            rowHeight
+                        ),
+                        bodyName
+                    )
+                )
+                {
+                    _bodyDropdownOpen = false;
+                    if (
+                        !string.Equals(
+                            bodyName,
+                            _avatarLoader.CurrentBodyName,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        _ = SwitchBodyAsync(bodyName);
+                    }
+                }
+            }
+            GUI.enabled = true;
         }
 
         private void DrawMemoryView()
@@ -1000,9 +1193,9 @@ namespace Axiom.Body
 
             GUI.Box(new Rect(18f, 18f, width, height), "Genesis Editor");
 
-            if (GUI.Button(new Rect(34f, 48f, 112f, 30f), "Back to Bodies"))
+            if (GUI.Button(new Rect(34f, 48f, 112f, 30f), "Back to Body"))
             {
-                _view = DesktopView.Bodies;
+                _view = DesktopView.Body;
                 return;
             }
 
