@@ -51,6 +51,47 @@ function Assert-Command {
     }
 }
 
+function Invoke-VerifiedDownload {
+    param(
+        [string]$Uri,
+        [hashtable]$Headers,
+        [string]$OutFile
+    )
+
+    try {
+        $request = @{
+            Uri = $Uri
+            Headers = $Headers
+            OutFile = $OutFile
+            UseBasicParsing = $true
+        }
+        Invoke-WebRequest @request
+    }
+    catch {
+        $detail = $_.Exception.Message
+        try {
+            if ($null -ne $_.Exception.Response) {
+                $stream = $_.Exception.Response.GetResponseStream()
+                if ($null -ne $stream) {
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    try {
+                        $body = $reader.ReadToEnd()
+                        if (-not [string]::IsNullOrWhiteSpace($body)) {
+                            $detail += " Server response: " + $body
+                        }
+                    }
+                    finally {
+                        $reader.Dispose()
+                    }
+                }
+            }
+        }
+        catch {
+        }
+        throw $detail
+    }
+}
+
 if (-not $Destination -or $Destination.Count -eq 0) {
     $Destination = Add-DefaultDestinations
 }
@@ -65,8 +106,7 @@ $Destination = @(
 if ($Destination.Count -lt 2) {
     Write-Warning (
         "Only one backup destination is available. " +
-        "Add a second destination such as an external drive with " +
-        "-Destination @('C:\path1','E:\AxiomBackups')."
+        "Add a second independent destination such as OneDrive or an external drive."
     )
 }
 
@@ -93,16 +133,22 @@ if ($null -eq $AdminPin) {
 $timestamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
 $checkpointName = "Axiom-$timestamp"
 $tempRoot = Join-Path ([IO.Path]::GetTempPath()) $checkpointName
+$evidenceStage = Join-Path ([IO.Path]::GetTempPath()) ($checkpointName + "-evidence")
 
 if (Test-Path $tempRoot) {
     Remove-Item $tempRoot -Recurse -Force
 }
+if (Test-Path $evidenceStage) {
+    Remove-Item $evidenceStage -Recurse -Force
+}
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
+New-Item -ItemType Directory -Path $evidenceStage | Out-Null
 
 try {
     $gitBundle = Join-Path $tempRoot "repository.bundle"
     $projectZip = Join-Path $tempRoot "working-project.zip"
     $mindZip = Join-Path $tempRoot "axiom-mind.zip"
+    $evidenceZip = Join-Path $tempRoot "axiom-evidence.zip"
 
     Write-Host "Creating complete Git history bundle..."
     & git -C $RepoRoot bundle create $gitBundle --all
@@ -146,13 +192,7 @@ try {
         $headers["X-Admin-Pin"] = $AdminPin
     }
 
-    $request = @{
-        Uri = "$MindUrl/v1/admin/backup"
-        Headers = $headers
-        OutFile = $mindZip
-        UseBasicParsing = $true
-    }
-    Invoke-WebRequest @request
+    Invoke-VerifiedDownload -Uri "$MindUrl/v1/admin/backup" -Headers $headers -OutFile $mindZip
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($mindZip)
@@ -161,9 +201,91 @@ try {
         if ($null -eq $manifestEntry) {
             throw "Mind snapshot does not contain manifest.json"
         }
+
+        $indexEntry = $archive.GetEntry("evidence/index.json")
+        if ($null -eq $indexEntry) {
+            throw "Mind snapshot does not contain evidence/index.json"
+        }
+
+        $reader = New-Object System.IO.StreamReader($indexEntry.Open())
+        try {
+            $indexJson = $reader.ReadToEnd()
+        }
+        finally {
+            $reader.Dispose()
+        }
     }
     finally {
         $archive.Dispose()
+    }
+
+    $evidenceItems = @()
+    if (-not [string]::IsNullOrWhiteSpace($indexJson)) {
+        $parsedEvidence = $indexJson | ConvertFrom-Json
+        if ($null -ne $parsedEvidence) {
+            $evidenceItems = @($parsedEvidence)
+        }
+    }
+
+    $indexJson | Set-Content -Path (Join-Path $evidenceStage "index.json") -Encoding UTF8
+
+    Write-Host (
+        "Downloading sensory evidence one artifact at a time (" +
+        $evidenceItems.Count +
+        " artifact(s))..."
+    )
+
+    foreach ($item in $evidenceItems) {
+        $relativePath = [string]$item.archive_path
+        if (
+            [string]::IsNullOrWhiteSpace($relativePath) -or
+            $relativePath.Contains("..")
+        ) {
+            throw "Mind snapshot contains an unsafe evidence archive path"
+        }
+
+        $relativePath = $relativePath.Replace(
+            "/",
+            [IO.Path]::DirectorySeparatorChar
+        )
+        $targetFile = Join-Path $evidenceStage $relativePath
+        $targetDirectory = Split-Path -Parent $targetFile
+        New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+
+        $capturedAt = [Uri]::EscapeDataString([string]$item.captured_at)
+        $evidenceUri = (
+            "$MindUrl/v1/evidence/" +
+            [string]$item.sha256 +
+            "?captured_at=" +
+            $capturedAt
+        )
+
+        Invoke-VerifiedDownload -Uri $evidenceUri -Headers $headers -OutFile $targetFile
+
+        $downloaded = Get-Item $targetFile
+        if ($downloaded.Length -ne [long]$item.byte_length) {
+            throw (
+                "Evidence byte-length verification failed for " +
+                [string]$item.sha256
+            )
+        }
+
+        $actualHash = (
+            Get-FileHash -Path $targetFile -Algorithm SHA256
+        ).Hash.ToLowerInvariant()
+        $expectedHash = ([string]$item.sha256).ToLowerInvariant()
+        if ($actualHash -ne $expectedHash) {
+            throw (
+                "Evidence SHA-256 verification failed for " +
+                [string]$item.sha256
+            )
+        }
+    }
+
+    Write-Host "Archiving verified sensory evidence..."
+    & tar.exe -a -c -f $evidenceZip -C $evidenceStage .
+    if ($LASTEXITCODE -ne 0) {
+        throw "sensory evidence archive failed"
     }
 
     $head = (& git -C $RepoRoot rev-parse HEAD).Trim()
@@ -176,10 +298,12 @@ try {
         git_head = $head
         git_branch = $branch
         mind_url = $MindUrl
+        evidence_count = $evidenceItems.Count
         contents = @(
             "repository.bundle",
             "working-project.zip",
             "axiom-mind.zip",
+            "axiom-evidence.zip",
             "working-tree-status.txt",
             "SHA256SUMS.txt"
         )
@@ -235,5 +359,8 @@ finally {
 
     if (Test-Path $tempRoot) {
         Remove-Item $tempRoot -Recurse -Force
+    }
+    if (Test-Path $evidenceStage) {
+        Remove-Item $evidenceStage -Recurse -Force
     }
 }
