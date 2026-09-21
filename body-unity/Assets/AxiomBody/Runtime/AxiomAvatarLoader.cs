@@ -14,9 +14,15 @@ namespace Axiom.Body
         private const string SelectedBodyKey = "axiom.body.selected.v0.1";
         private const string PresetResourcePath = "GenesisBodies";
 
+        private readonly Dictionary<string, GameObject> _presetAssets =
+            new Dictionary<string, GameObject>(
+                StringComparer.OrdinalIgnoreCase
+            );
+
         private Vrm10Instance _instance;
         private GameObject _root;
         private string _currentBodyName = GenesisBodyName;
+        private string[] _availableBodies;
 
         public Vrm10Instance Instance => _instance;
         public GameObject Root => _root;
@@ -32,46 +38,60 @@ namespace Axiom.Body
         {
             get
             {
-                List<string> names = new List<string>
-                {
-                    GenesisBodyName
-                };
+                EnsureBodyCatalog();
+                return (string[])_availableBodies.Clone();
+            }
+        }
 
-                foreach (
-                    GameObject asset in
-                    Resources.LoadAll<GameObject>(PresetResourcePath)
+        public void RefreshBodyCatalog()
+        {
+            _availableBodies = null;
+            _presetAssets.Clear();
+            EnsureBodyCatalog();
+        }
+
+        private void EnsureBodyCatalog()
+        {
+            if (_availableBodies != null)
+            {
+                return;
+            }
+
+            _presetAssets.Clear();
+
+            foreach (
+                GameObject asset in
+                Resources.LoadAll<GameObject>(PresetResourcePath)
+            )
+            {
+                if (
+                    asset == null ||
+                    string.IsNullOrWhiteSpace(asset.name) ||
+                    string.Equals(
+                        asset.name,
+                        GenesisBodyName,
+                        StringComparison.OrdinalIgnoreCase
+                    ) ||
+                    _presetAssets.ContainsKey(asset.name)
                 )
                 {
-                    if (
-                        asset != null &&
-                        !string.IsNullOrWhiteSpace(asset.name) &&
-                        !names.Contains(
-                            asset.name,
-                            StringComparer.OrdinalIgnoreCase
-                        )
-                    )
-                    {
-                        names.Add(asset.name);
-                    }
+                    continue;
                 }
 
-                if (names.Count > 1)
-                {
-                    string genesis = names[0];
-                    string[] presets = names
-                        .Skip(1)
-                        .OrderBy(
-                            value => value,
-                            StringComparer.OrdinalIgnoreCase
-                        )
-                        .ToArray();
-                    names.Clear();
-                    names.Add(genesis);
-                    names.AddRange(presets);
-                }
-
-                return names.ToArray();
+                _presetAssets[asset.name] = asset;
             }
+
+            List<string> names = new List<string>
+            {
+                GenesisBodyName
+            };
+            names.AddRange(
+                _presetAssets.Keys.OrderBy(
+                    value => value,
+                    StringComparer.OrdinalIgnoreCase
+                )
+            );
+            _availableBodies = names.ToArray();
         }
 
         public async Task<Vrm10Instance> LoadAsync(
@@ -196,17 +216,11 @@ namespace Axiom.Body
             Camera targetCamera
         )
         {
-            GameObject asset = Resources
-                .LoadAll<GameObject>(PresetResourcePath)
-                .FirstOrDefault(
-                    candidate =>
-                        candidate != null &&
-                        string.Equals(
-                            candidate.name,
-                            bodyName,
-                            StringComparison.OrdinalIgnoreCase
-                        )
-                );
+            EnsureBodyCatalog();
+            _presetAssets.TryGetValue(
+                bodyName,
+                out GameObject asset
+            );
 
             if (asset == null)
             {
