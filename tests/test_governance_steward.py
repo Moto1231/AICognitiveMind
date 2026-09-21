@@ -1,3 +1,8 @@
+# Copyright (c) 2026 William Enright. All rights reserved.
+# Use, reproduction, modification, distribution, or commercial exploitation
+# of this file is prohibited without prior written permission from the
+# copyright holder.
+
 import unittest
 
 from aicognitive_mind.core import CognitiveCore
@@ -79,6 +84,7 @@ class GovernanceSelfNameV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.response_text, "I've chosen Aster.")
         revised = await core.load_mind()
         self.assertEqual(revised.identity.self_name, "Aster")
+        self.assertEqual(revised.identity.pronouns, "she/her")
         self.assertEqual(
             revised.identity.foundational_values,
             original.identity.foundational_values,
@@ -97,12 +103,19 @@ class GovernanceSelfNameV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(identity_event["before"]["self_name"], "AICognitiveMind")
         self.assertEqual(identity_event["after"]["self_name"], "Aster")
         self.assertTrue(identity_event["protected_state_preserved"])
+        initialization = entries[0].experience
+        self.assertEqual(initialization["pronouns"], "she/her")
 
         interaction = entries[-1]
         decisions = interaction.experience["governance_steward"]["decisions"]
         self.assertEqual(len(decisions), 1)
         self.assertTrue(decisions[0]["accepted"])
         self.assertEqual(decisions[0]["current_name"], "Aster")
+
+    async def test_existing_identity_defaults_to_she_her_pronouns(self) -> None:
+        identity = MindIdentity(self_name="Axiom")
+
+        self.assertEqual(identity.pronouns, "she/her")
 
     async def test_name_question_alone_does_not_authorize_identity_change(self) -> None:
         mind_store = InMemoryMindStore()
