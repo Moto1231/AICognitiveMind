@@ -66,6 +66,7 @@ from aicognitive_mind.storage import (
     JournalStore,
     MemoryStore,
     MindAlreadyInitializedError,
+    MindStore,
 )
 
 
