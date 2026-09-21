@@ -67,6 +67,58 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(durable[0]["content"], "Will's birthday is February 7.")
 
 
+    async def test_reasoning_host_handoff_preserves_axiom_continuity(self) -> None:
+        mind = InMemoryMindStore()
+        journal = InMemoryJournalStore()
+        memory = InMemoryMemoryStore()
+
+        host_a = CognitiveMcpService(
+            mind=mind,
+            journal=journal,
+            memory=memory,
+        )
+        await host_a.initialize(
+            "Axiom",
+            (
+                "Understanding before Recommending",
+                "Preserve continuity of identity",
+            ),
+        )
+        await host_a.complete_interaction(
+            user_message="Remember that Project Atlas uses SurrealDB.",
+            response_text="I will preserve that as durable knowledge.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="Project Atlas uses SurrealDB.",
+                    associations=("Project Atlas", "SurrealDB"),
+                    grounding=("direct host interaction",),
+                ),
+            ),
+        )
+
+        # A different reasoning host connects later to the same Mind stores.
+        host_b = CognitiveMcpService(
+            mind=mind,
+            journal=journal,
+            memory=memory,
+        )
+
+        status = await host_b.status()
+        self.assertEqual(status["mind"]["identity"]["self_name"], "Axiom")
+        self.assertEqual(status["durable_memory_count"], 1)
+        self.assertEqual(status["journal_experience_count"], 2)
+
+        resumed = await host_b.begin_interaction(
+            "What database does Project Atlas use?"
+        )
+        recalled = resumed["recalled_context"]["durable_memory"]
+        self.assertEqual(len(recalled), 1)
+        self.assertEqual(
+            recalled[0]["content"],
+            "Project Atlas uses SurrealDB.",
+        )
+
     async def test_memory_artifacts_are_materialized_by_steward_and_recalled(self) -> None:
         completed = await self.service.complete_interaction(
             user_message="My birthday is February 7.",

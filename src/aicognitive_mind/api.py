@@ -445,6 +445,7 @@ def _validate_reasoning_configuration(settings: Any) -> str:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     provider = _validate_reasoning_configuration(settings)
+    app.state.standalone_reasoning_provider = provider
     storage = await create_storage(settings)
     app.state.runtime = storage.runtime
     app.state.diagnostics = storage.diagnostics
@@ -859,31 +860,48 @@ async def portal_status(request: Request) -> dict[str, Any]:
     try:
         result = await service.status()
         runtime_settings = get_settings()
-        provider = runtime__effective_standalone_reasoning_provider(settings)
+        provider = str(
+            getattr(
+                request.app.state,
+                "standalone_reasoning_provider",
+                runtime_settings.effective_standalone_reasoning_provider,
+            )
+        ).strip().lower()
+        model = getattr(
+            request.app.state,
+            "reasoning_model",
+            "unknown",
+        )
+        requested_model = (
+            runtime_settings.gemini_model
+            if provider == "gemini"
+            else runtime_settings.openai_model
+            if provider == "openai"
+            else "deterministic-echo"
+        )
+
+        # Axiom's canonical reasoning owner is the external AI host using MCP.
+        # The embedded provider exists only so the standalone Body/API can
+        # reason when no external host is driving the interaction.
         result["reasoning"] = {
             "primary_mode": "external_host",
             "external_host_protocol": "MCP",
             "external_host_reasoning_owner": "connected MCP host",
-            "backend": provider,
-            "model": getattr(request.app.state, "reasoning_model", "unknown"),
-            "requested_model": (
-                runtime_settings.gemini_model
-                if provider == "gemini"
-                else runtime_settings.openai_model
-                if provider == "openai"
-                else "deterministic-echo"
-            ),
             "standalone_fallback": {
                 "provider": provider,
-                "model": getattr(
-                    request.app.state,
-                    "reasoning_model",
-                    "unknown",
-                ),
+                "model": model,
+                "requested_model": requested_model,
             },
+            "standalone_fallback_provider": provider,
+            "standalone_fallback_model": model,
+            "standalone_fallback_requested_model": requested_model,
+            # Backwards-compatible fields for older Body clients.
+            "backend": provider,
+            "model": model,
+            "requested_model": requested_model,
         }
         result["administration"] = {
-            "pin_required": bool(get_settings().admin_pin),
+            "pin_required": bool(runtime_settings.admin_pin),
             "memory_editing": True,
         }
         return result
