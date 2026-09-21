@@ -138,6 +138,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn('"SENSES OFF"', bootstrap)
         self.assertIn('"Memory"', bootstrap)
         self.assertIn('"Journal"', bootstrap)
+        self.assertIn('"Summary"', bootstrap)
         self.assertIn('"Admin"', bootstrap)
         self.assertIn("Disconnect(showConnectionDialog: true)", bootstrap)
         self.assertIn("_avatarLoader?.Unload()", bootstrap)
@@ -326,6 +327,28 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("RefreshAvatar(Vrm10Instance avatar)", mouth)
         self.assertIn("_mouthRuntime?.RefreshAvatar", bootstrap)
 
+    def test_unity_body_restores_summary_view(self) -> None:
+        client = Path(
+            "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"
+        ).read_text(encoding="utf-8")
+        data_runtime = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomMindDataRuntime.cs"
+        ).read_text(encoding="utf-8")
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("/v1/portal/status", client)
+        self.assertIn("DesktopPortalStatus", client)
+        self.assertIn("PortalStatusAsync", client)
+        self.assertIn("LoadSummaryAsync", data_runtime)
+        self.assertIn("DesktopView.Summary", bootstrap)
+        self.assertIn("DrawSummaryView", bootstrap)
+        self.assertIn('"Mind Summary"', bootstrap)
+        self.assertIn("durable_memory_count", bootstrap)
+        self.assertIn("journal_experience_count", bootstrap)
+        self.assertIn("await _mindData.LoadSummaryAsync()", bootstrap)
+
     def test_unity_body_has_memory_and_journal_views(self) -> None:
         client = Path(
             "body-unity/Assets/AxiomBody/Runtime/MindApiClient.cs"
@@ -356,7 +379,19 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn('"Memory"', bootstrap)
         self.assertIn('"Journal"', bootstrap)
         self.assertIn("_mindData.MemorySearch", bootstrap)
+        self.assertIn("_mindData.MemoryClass", bootstrap)
+        self.assertIn("_mindData.MemoryAssociation", bootstrap)
+        self.assertIn("_mindData.MemoryGrounding", bootstrap)
+        self.assertIn("_mindData.MemoryFrom", bootstrap)
+        self.assertIn("_mindData.MemoryTo", bootstrap)
         self.assertIn("_mindData.JournalSearch", bootstrap)
+        self.assertIn("_mindData.JournalKind", bootstrap)
+        self.assertIn("_mindData.JournalFrom", bootstrap)
+        self.assertIn("_mindData.JournalTo", bootstrap)
+        self.assertIn('AppendQuery(path, "memory_class"', client)
+        self.assertIn('AppendQuery(path, "association"', client)
+        self.assertIn('AppendQuery(path, "grounding"', client)
+        self.assertIn('AppendQuery(path, "kind"', client)
 
     def test_unity_body_has_session_only_admin_memory_editing(self) -> None:
         client = Path(
@@ -378,8 +413,16 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("AdminStatusAsync", client)
         self.assertIn("ReviseMemoryAsync", client)
         self.assertIn("AxiomAdminRuntime", bootstrap)
-        self.assertIn("DesktopView.Admin", bootstrap)
+        self.assertNotIn("DesktopView.Admin", bootstrap)
         self.assertIn('"Admin"', bootstrap)
+        self.assertIn("DrawAdminAuthorization", bootstrap)
+        self.assertIn("AuthorizeAdminAsync", bootstrap)
+        self.assertIn("_adminRuntime.Authorized", bootstrap)
+        self.assertIn("_adminRuntime.BeginEdit(item)", bootstrap)
+        self.assertIn("DrawMemoryEditor(width, height)", bootstrap)
+        self.assertIn("public async Task AuthorizeAsync(string pin)", admin)
+        self.assertIn("public void Deauthorize()", admin)
+        self.assertIn("public void BeginEdit", admin)
         self.assertIn("GUI.PasswordField", admin)
         self.assertIn("Save Revision", admin)
         self.assertIn("memory_revision", api.lower())
