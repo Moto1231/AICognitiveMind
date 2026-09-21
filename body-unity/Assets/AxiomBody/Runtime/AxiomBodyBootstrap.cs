@@ -983,7 +983,7 @@ namespace Axiom.Body
             );
             y += 21f;
 
-            string reasoning =
+            string fallbackReasoning =
                 summary.reasoning != null
                     ? (
                         (summary.reasoning.backend ?? string.Empty) +
@@ -991,6 +991,14 @@ namespace Axiom.Body
                         (summary.reasoning.model ?? string.Empty)
                     ).Trim(' ', '·')
                     : string.Empty;
+            string hostProtocol =
+                summary.reasoning != null &&
+                !string.IsNullOrWhiteSpace(
+                    summary.reasoning.external_host_protocol
+                )
+                    ? summary.reasoning.external_host_protocol
+                    : "MCP";
+
             GUI.Label(
                 new Rect(innerLeft, y, innerWidth, 20f),
                 "Memory " +
@@ -1002,10 +1010,17 @@ namespace Axiom.Body
 
             GUI.Label(
                 new Rect(innerLeft, y, innerWidth, 20f),
+                "Primary: External Host · " + hostProtocol
+            );
+            y += 21f;
+
+            GUI.Label(
+                new Rect(innerLeft, y, innerWidth, 20f),
+                "Fallback: " +
                 (
-                    string.IsNullOrWhiteSpace(reasoning)
-                        ? "No reasoning backend"
-                        : reasoning
+                    string.IsNullOrWhiteSpace(fallbackReasoning)
+                        ? "Not configured"
+                        : fallbackReasoning
                 )
             );
             y += 21f;
