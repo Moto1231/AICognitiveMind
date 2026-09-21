@@ -983,14 +983,36 @@ namespace Axiom.Body
             );
             y += 21f;
 
+            string fallbackProvider =
+                summary.reasoning == null
+                    ? string.Empty
+                    : summary.reasoning.standalone_fallback_provider;
+            if (string.IsNullOrWhiteSpace(fallbackProvider))
+            {
+                fallbackProvider =
+                    summary.reasoning == null
+                        ? string.Empty
+                        : summary.reasoning.backend;
+            }
+
+            string fallbackModel =
+                summary.reasoning == null
+                    ? string.Empty
+                    : summary.reasoning.standalone_fallback_model;
+            if (string.IsNullOrWhiteSpace(fallbackModel))
+            {
+                fallbackModel =
+                    summary.reasoning == null
+                        ? string.Empty
+                        : summary.reasoning.model;
+            }
+
             string fallbackReasoning =
-                summary.reasoning != null
-                    ? (
-                        (summary.reasoning.backend ?? string.Empty) +
-                        " · " +
-                        (summary.reasoning.model ?? string.Empty)
-                    ).Trim(' ', '·')
-                    : string.Empty;
+                (
+                    (fallbackProvider ?? string.Empty) +
+                    " · " +
+                    (fallbackModel ?? string.Empty)
+                ).Trim(' ', '·');
             string hostProtocol =
                 summary.reasoning != null &&
                 !string.IsNullOrWhiteSpace(
@@ -1016,7 +1038,7 @@ namespace Axiom.Body
 
             GUI.Label(
                 new Rect(innerLeft, y, innerWidth, 20f),
-                "Fallback: " +
+                "Fallback (Body): " +
                 (
                     string.IsNullOrWhiteSpace(fallbackReasoning)
                         ? "Not configured"
