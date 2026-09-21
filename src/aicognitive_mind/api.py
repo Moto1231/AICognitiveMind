@@ -433,8 +433,9 @@ def _validate_reasoning_configuration(settings: Any) -> str:
             )
         if provider == "echo":
             raise RuntimeError(
-                "Standalone fallback reasoning cannot use echo on Render. "
-                "Configure STANDALONE_REASONING_PROVIDER=gemini or openai "
+                "REASONING_PROVIDER=echo is not allowed on Render. "
+                "This is the standalone fallback provider; configure "
+                "STANDALONE_REASONING_PROVIDER=gemini or openai "
                 "(legacy REASONING_PROVIDER is still accepted)."
             )
     return provider
