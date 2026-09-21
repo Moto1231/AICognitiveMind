@@ -1,3 +1,8 @@
+// Copyright (c) 2026 William Enright. All rights reserved.
+// Use, reproduction, modification, distribution, or commercial exploitation
+// of this file is prohibited without prior written permission from the
+// copyright holder.
+
 using System;
 using System.IO;
 using System.Text;
@@ -13,6 +18,11 @@ namespace Axiom.Body
         private const float AudioIntervalSeconds = 15f;
         private const int AudioWindowSeconds = 4;
         private const int AudioSampleRate = 16000;
+        private const int VisionSignatureColumns = 12;
+        private const int VisionSignatureRows = 8;
+        private const float VisionChangeThreshold = 0.045f;
+        private const float AudioRmsThreshold = 0.008f;
+        private const float AudioPeakThreshold = 0.06f;
 
         private readonly SemaphoreSlim _cognitionGate =
             new SemaphoreSlim(1, 1);
@@ -25,12 +35,34 @@ namespace Axiom.Body
         private int _generation;
         private string _visionStatus = "Eyes idle";
         private string _audioStatus = "Ears idle";
+        private BodyModelPolicy _modelPolicy = BodyModelPolicy.CognitiveOnly;
+        private float[] _visionBaseline;
 
         public event Action<string> StatusChanged;
 
         public bool IsEnabled => _enabled;
         public bool VisionBusy => _visionBusy;
         public bool AudioBusy => _audioBusy;
+        public BodyModelPolicy ModelPolicy => _modelPolicy;
+
+        public void SetModelPolicy(BodyModelPolicy policy)
+        {
+            if (_modelPolicy == policy)
+            {
+                return;
+            }
+
+            _modelPolicy = policy;
+            _visionBaseline = null;
+            if (_enabled)
+            {
+                StatusChanged?.Invoke(
+                    policy == BodyModelPolicy.FullBodyModel
+                        ? "Body model policy: Full Body Model."
+                        : "Body model policy: Cognitive Only."
+                );
+            }
+        }
 
         public void Attach(MindApiClient client)
         {
@@ -237,7 +269,19 @@ namespace Axiom.Body
 
             try
             {
-                frame.SetPixels32(_camera.GetPixels32());
+                Color32[] pixels = _camera.GetPixels32();
+                if (
+                    _modelPolicy == BodyModelPolicy.CognitiveOnly &&
+                    !VisionRequiresModel(pixels, width, height)
+                )
+                {
+                    SetVisionStatus(
+                        "Eyes: scene unchanged; model skipped."
+                    );
+                    return;
+                }
+
+                frame.SetPixels32(pixels);
                 frame.Apply(false, false);
                 byte[] jpeg =
                     ImageConversion.EncodeToJPG(frame, 72);
@@ -355,6 +399,17 @@ namespace Axiom.Body
 
                 Microphone.End(device);
 
+                if (
+                    _modelPolicy == BodyModelPolicy.CognitiveOnly &&
+                    !AudioRequiresModel(clip)
+                )
+                {
+                    SetAudioStatus(
+                        "Ears: quiet/background audio; model skipped."
+                    );
+                    return;
+                }
+
                 byte[] wav = EncodePcm16Wav(clip);
                 int durationMs = Mathf.RoundToInt(
                     (clip.samples / (float)clip.frequency) * 1000f
@@ -460,6 +515,7 @@ namespace Axiom.Body
             _generation += 1;
             _visionStatus = "Eyes idle";
             _audioStatus = "Ears idle";
+            _visionBaseline = null;
 
             if (_camera != null)
             {
@@ -479,6 +535,117 @@ namespace Axiom.Body
                     Microphone.End(device);
                 }
             }
+        }
+
+        private bool VisionRequiresModel(
+            Color32[] pixels,
+            int width,
+            int height
+        )
+        {
+            float[] signature = BuildVisionSignature(
+                pixels,
+                width,
+                height
+            );
+
+            if (_visionBaseline == null)
+            {
+                _visionBaseline = signature;
+                return true;
+            }
+
+            float difference = 0f;
+            for (int index = 0; index < signature.Length; index++)
+            {
+                difference += Mathf.Abs(
+                    signature[index] - _visionBaseline[index]
+                );
+            }
+
+            difference /= signature.Length;
+            if (difference < VisionChangeThreshold)
+            {
+                return false;
+            }
+
+            _visionBaseline = signature;
+            return true;
+        }
+
+        private static float[] BuildVisionSignature(
+            Color32[] pixels,
+            int width,
+            int height
+        )
+        {
+            float[] signature = new float[
+                VisionSignatureColumns * VisionSignatureRows
+            ];
+
+            int signatureIndex = 0;
+            for (int row = 0; row < VisionSignatureRows; row++)
+            {
+                int y = Mathf.Clamp(
+                    Mathf.RoundToInt(
+                        ((row + 0.5f) / VisionSignatureRows) *
+                        (height - 1)
+                    ),
+                    0,
+                    height - 1
+                );
+
+                for (
+                    int column = 0;
+                    column < VisionSignatureColumns;
+                    column++
+                )
+                {
+                    int x = Mathf.Clamp(
+                        Mathf.RoundToInt(
+                            ((column + 0.5f) / VisionSignatureColumns) *
+                            (width - 1)
+                        ),
+                        0,
+                        width - 1
+                    );
+                    Color32 pixel = pixels[(y * width) + x];
+                    signature[signatureIndex++] =
+                        (
+                            (0.2126f * pixel.r) +
+                            (0.7152f * pixel.g) +
+                            (0.0722f * pixel.b)
+                        ) / 255f;
+                }
+            }
+
+            return signature;
+        }
+
+        private static bool AudioRequiresModel(AudioClip clip)
+        {
+            int channels = Mathf.Max(1, clip.channels);
+            int sampleCount = clip.samples * channels;
+            float[] samples = new float[sampleCount];
+            clip.GetData(samples, 0);
+
+            double sumSquares = 0d;
+            float peak = 0f;
+            for (int index = 0; index < samples.Length; index++)
+            {
+                float value = Mathf.Abs(samples[index]);
+                peak = Mathf.Max(peak, value);
+                sumSquares += value * value;
+            }
+
+            float rms = samples.Length == 0
+                ? 0f
+                : Mathf.Sqrt(
+                    (float)(sumSquares / samples.Length)
+                );
+
+            return rms >= AudioRmsThreshold ||
+                peak >= AudioPeakThreshold;
         }
 
         private static byte[] EncodePcm16Wav(AudioClip clip)
