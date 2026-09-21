@@ -135,7 +135,7 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("0.86f, 0.22f, 0.22f", bootstrap)
         self.assertIn("DrawModeDropdown", bootstrap)
         self.assertIn("DrawBodyDropdown", bootstrap)
-        self.assertIn('"SENSES OFF"', bootstrap)
+        self.assertIn('"Senses"', bootstrap)
         self.assertIn('"Memory"', bootstrap)
         self.assertIn('"Journal"', bootstrap)
         self.assertIn('"Summary"', bootstrap)
@@ -149,6 +149,27 @@ class UnityBodyScaffoldTests(unittest.TestCase):
             bootstrap.index("private async Task ConnectAsync()")
         ]
         self.assertNotIn("ConnectAsync()", start)
+
+    def test_unity_body_keeps_controls_and_chat_on_right_rail(self) -> None:
+        bootstrap = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomBodyBootstrap.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Screen.width - railWidth - 10f", bootstrap)
+        self.assertIn("Screen.height - top - 10f", bootstrap)
+        self.assertIn('"ON" : "OFF"', bootstrap)
+        self.assertIn('"Cognitive ▼"', bootstrap)
+        self.assertIn('"Full ▼"', bootstrap)
+        self.assertIn('"Senses"', bootstrap)
+        self.assertIn('"Home"', bootstrap)
+        self.assertIn('"Memory"', bootstrap)
+        self.assertIn('"Journal"', bootstrap)
+        self.assertIn('"Admin ✓" : "Admin"', bootstrap)
+        self.assertIn("DrawControlStrip();", bootstrap)
+        self.assertIn("DrawSummaryView();", bootstrap)
+        self.assertIn('"Chat"', bootstrap)
+        self.assertIn("SendInteractionAsync", bootstrap)
+        self.assertIn("new Color(1f, 1f, 1f, 0.36f)", bootstrap)
 
     def test_unity_body_consumes_mouth_intents_through_windows_speech(self) -> None:
         client = Path(
