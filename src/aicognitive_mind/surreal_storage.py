@@ -303,6 +303,17 @@ class SurrealEvidenceStore:
         await self._database.create("evidence", artifact.model_dump(mode="json"))
         return artifact
 
+    async def read(self) -> list[SensoryEvidenceArtifact]:
+        records = _records(await self._database.select("evidence"))
+        artifacts = [
+            SensoryEvidenceArtifact.model_validate(_document(record))
+            for record in records
+        ]
+        return sorted(
+            artifacts,
+            key=lambda artifact: artifact.captured_at,
+        )
+
     async def find_exact(
         self,
         *,
