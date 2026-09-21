@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
@@ -12,6 +13,9 @@ namespace Axiom.Body
         private const float AudioIntervalSeconds = 15f;
         private const int AudioWindowSeconds = 4;
         private const int AudioSampleRate = 16000;
+
+        private readonly SemaphoreSlim _cognitionGate =
+            new SemaphoreSlim(1, 1);
 
         private MindApiClient _client;
         private WebCamTexture _camera;
@@ -70,8 +74,9 @@ namespace Axiom.Body
             _audioStatus = "Ears active";
             EmitStatus();
 
-            // Eyes and Ears are independent sensory workers. Neither waits
-            // for the other before capturing or interpreting evidence.
+            // Eyes and Ears capture independently. Remote interpretation
+            // and Cognitive Core work are serialized by _cognitionGate so
+            // concurrent hardware sensing does not create reasoning bursts.
             _ = RunVisionLoopAsync(generation);
             _ = RunAudioLoopAsync(generation);
         }
@@ -240,20 +245,38 @@ namespace Axiom.Body
                     "data:image/jpeg;base64," +
                     Convert.ToBase64String(jpeg);
 
-                SetVisionStatus("Eyes observing...");
-                await _client.ObserveVisionAsync(
-                    dataUrl,
-                    width,
-                    height
-                );
-                EmbodiedPerceptionResponse result =
-                    await _client.SeeAsync();
-
-                if (_enabled && generation == _generation)
+                SetVisionStatus("Eyes waiting for cognition...");
+                await _cognitionGate.WaitAsync();
+                try
                 {
-                    SetVisionStatus(
-                        "Eyes: " + Compact(result.interpretation)
+                    if (
+                        !_enabled ||
+                        generation != _generation ||
+                        _client == null
+                    )
+                    {
+                        return;
+                    }
+
+                    SetVisionStatus("Eyes interpreting...");
+                    await _client.ObserveVisionAsync(
+                        dataUrl,
+                        width,
+                        height
                     );
+                    EmbodiedPerceptionResponse result =
+                        await _client.SeeAsync();
+
+                    if (_enabled && generation == _generation)
+                    {
+                        SetVisionStatus(
+                            "Eyes: " + Compact(result.interpretation)
+                        );
+                    }
+                }
+                finally
+                {
+                    _cognitionGate.Release();
                 }
             }
             finally
@@ -340,19 +363,37 @@ namespace Axiom.Body
                     "data:audio/wav;base64," +
                     Convert.ToBase64String(wav);
 
-                SetAudioStatus("Ears interpreting...");
-                await _client.ObserveAudioAsync(
-                    dataUrl,
-                    durationMs
-                );
-                EmbodiedPerceptionResponse result =
-                    await _client.HearAsync();
-
-                if (_enabled && generation == _generation)
+                SetAudioStatus("Ears waiting for cognition...");
+                await _cognitionGate.WaitAsync();
+                try
                 {
-                    SetAudioStatus(
-                        "Ears: " + Compact(result.interpretation)
+                    if (
+                        !_enabled ||
+                        generation != _generation ||
+                        _client == null
+                    )
+                    {
+                        return;
+                    }
+
+                    SetAudioStatus("Ears interpreting...");
+                    await _client.ObserveAudioAsync(
+                        dataUrl,
+                        durationMs
                     );
+                    EmbodiedPerceptionResponse result =
+                        await _client.HearAsync();
+
+                    if (_enabled && generation == _generation)
+                    {
+                        SetAudioStatus(
+                            "Ears: " + Compact(result.interpretation)
+                        );
+                    }
+                }
+                finally
+                {
+                    _cognitionGate.Release();
                 }
             }
             finally
