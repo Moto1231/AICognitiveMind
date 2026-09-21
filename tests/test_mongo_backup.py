@@ -117,7 +117,8 @@ class MongoBackupTests(unittest.TestCase):
                 {"mind": 1, "journal": 1, "memory": 1, "diagnostics": 1},
             )
             self.assertEqual(verify_backup(backup), exported)
-            self.assertEqual(os.stat(backup).st_mode & 0o777, 0o600)
+            if os.name != "nt":  # Windows permissions use ACLs, not POSIX mode bits.
+                self.assertEqual(os.stat(backup).st_mode & 0o777, 0o600)
 
             restored = restore_backup(backup, target)
 

@@ -240,7 +240,10 @@ function renderStatus(status) {
   el.journalCount.textContent = Number(status.journal_experience_count).toLocaleString();
 
   el.protocolValue.textContent = integration.protocol;
-  el.reasoningOwner.textContent = integration.reasoning_owner;
+  const host = status.reasoning?.active_host;
+  el.reasoningOwner.textContent = host
+    ? `External Host: ${host.name} (${host.model})`
+    : `External Host: not attached; standalone fallback ${status.reasoning?.fallback_enabled ? "enabled" : "disabled"}`;
   el.identityOwner.textContent = integration.identity_owner;
   el.memoryOwner.textContent = integration.memory_owner;
   el.adminMindName.textContent = mind.identity.self_name;

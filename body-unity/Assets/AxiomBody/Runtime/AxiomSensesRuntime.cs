@@ -310,6 +310,7 @@ namespace Axiom.Body
                     );
                     EmbodiedPerceptionResponse result =
                         await _client.SeeAsync();
+                    _visionBaseline = BuildVisionSignature(pixels, width, height);
 
                     if (_enabled && generation == _generation)
                     {
@@ -551,7 +552,6 @@ namespace Axiom.Body
 
             if (_visionBaseline == null)
             {
-                _visionBaseline = signature;
                 return true;
             }
 
@@ -569,7 +569,6 @@ namespace Axiom.Body
                 return false;
             }
 
-            _visionBaseline = signature;
             return true;
         }
 

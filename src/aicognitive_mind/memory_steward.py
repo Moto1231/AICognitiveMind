@@ -1377,11 +1377,12 @@ class MemoryStewardTool:
         )
 
     async def _recall(self, requested_focus: str) -> MemoryBrief:
-        memories = await self._memory.read()
-        experiences = await self._journal.read()
+        from aicognitive_mind.retrieval import candidates
         focus = f"{self._input_text}\n{requested_focus}"
 
         focus_tokens = _tokens(focus)
+        memories = await candidates(self._memory, focus_tokens)
+        experiences = await candidates(self._journal, focus_tokens)
         directly_related = [
             memory
             for memory in memories
@@ -1391,6 +1392,9 @@ class MemoryStewardTool:
         for memory in directly_related:
             expanded_tokens.update(_tokens(" ".join(memory.associations)))
 
+        if expanded_tokens != focus_tokens:
+            memories = await candidates(self._memory, expanded_tokens)
+            experiences = await candidates(self._journal, expanded_tokens)
         ranked_memories = _rank(memories, expanded_tokens, self._recall_limit)
         ranked_experiences = _rank(experiences, expanded_tokens, self._recall_limit)
         self._brief = self._build_brief(

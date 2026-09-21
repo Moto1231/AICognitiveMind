@@ -21,6 +21,23 @@
   </style>
 </head>
 <body>
+  <script>
+    const bodySessionId = crypto.randomUUID();
+    async function bodyFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set("X-Body-Session", bodySessionId);
+      const response = await fetch(url, { ...options, headers, signal: options.signal || AbortSignal.timeout(130000) });
+      const receipt = response.headers.get("X-Body-Delivery");
+      if (response.ok && receipt) {
+        await response.clone().arrayBuffer();
+        const ack = await fetch(String(url).split("?")[0].replace(/\/next$/, "/ack") + "?delivery_id=" + encodeURIComponent(receipt),
+          { method: "POST", headers, signal: AbortSignal.timeout(10000) });
+        if (!ack.ok) throw new Error("Body delivery acknowledgment failed");
+      }
+      return response;
+    }
+  </script>
+
   <main>
     <h1>Mouth V0.1</h1>
     <p>The Body sends a transient VOICE ExpressionIntent; this browser turns it into sound through the local speakers.</p>
@@ -134,7 +151,7 @@
     }
 
     async function consumeNextIntent() {
-      const response = await fetch("/v1/body/mouth/next", { cache: "no-store" });
+      const response = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
       if (!response.ok) {
         setStatus("Could not read Mouth output: " + await response.text());
         return;
@@ -154,7 +171,7 @@
       loadVoices();
       window.speechSynthesis.cancel();
 
-      const response = await fetch("/v1/body/mouth/speak", {
+      const response = await bodyFetch("/v1/body/mouth/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
