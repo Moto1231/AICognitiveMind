@@ -33,9 +33,11 @@ namespace Axiom.Body
         private bool _connectionDialogOpen = true;
         private bool _modeDropdownOpen;
         private bool _bodyDropdownOpen;
+        private bool _adminPromptOpen;
+        private string _adminPinInput = string.Empty;
         private BodyModelPolicy _bodyModelPolicy =
             BodyModelPolicy.CognitiveOnly;
-        private DesktopView _view = DesktopView.Body;
+        private DesktopView _view = DesktopView.Summary;
         private Vector2 _avatarScroll = Vector2.zero;
         private Vector2 _memoryScroll = Vector2.zero;
         private Vector2 _journalScroll = Vector2.zero;
@@ -50,11 +52,11 @@ namespace Axiom.Body
         private enum DesktopView
         {
             Body,
+            Summary,
             Bodies,
             Avatar,
             Memory,
-            Journal,
-            Admin
+            Journal
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -100,7 +102,7 @@ namespace Axiom.Body
 
             _connecting = true;
             _connected = false;
-            _view = DesktopView.Body;
+            _view = DesktopView.Summary;
             _modeDropdownOpen = false;
             _bodyDropdownOpen = false;
             _mouthRuntime?.Detach();
@@ -201,7 +203,9 @@ namespace Axiom.Body
 
                 _connected = true;
                 _connectionDialogOpen = false;
+                _view = DesktopView.Summary;
                 _status = "Connected.";
+                await _mindData.LoadSummaryAsync();
             }
             catch (Exception exception)
             {
@@ -240,7 +244,10 @@ namespace Axiom.Body
             _bodySwitching = false;
             _modeDropdownOpen = false;
             _bodyDropdownOpen = false;
-            _view = DesktopView.Body;
+            _view = DesktopView.Summary;
+            _adminPromptOpen = false;
+            _adminPinInput = string.Empty;
+            _adminRuntime?.Deauthorize();
             _status = "Not connected.";
             _connectionDialogOpen = showConnectionDialog;
         }
@@ -379,6 +386,19 @@ namespace Axiom.Body
                 return;
             }
 
+            DrawControlStrip();
+
+            if (_adminPromptOpen)
+            {
+                DrawAdminAuthorization();
+            }
+
+            if (_view == DesktopView.Summary)
+            {
+                DrawSummaryView();
+                return;
+            }
+
             if (_view == DesktopView.Avatar)
             {
                 DrawAvatarEditor();
@@ -394,25 +414,7 @@ namespace Axiom.Body
             if (_view == DesktopView.Journal)
             {
                 DrawJournalView();
-                return;
             }
-
-            if (_view == DesktopView.Admin)
-            {
-                if (_adminRuntime != null)
-                {
-                    _adminRuntime.DrawGUI(
-                        () => _view = DesktopView.Body
-                    );
-                }
-                else
-                {
-                    _view = DesktopView.Body;
-                }
-                return;
-            }
-
-            DrawControlStrip();
         }
 
         private void DrawConnectionDialog()
@@ -582,6 +584,13 @@ namespace Axiom.Body
             x += 98f;
 
             GUI.enabled = _connected && _mindData != null;
+            if (GUI.Button(new Rect(x, top, 78f, height), "Summary"))
+            {
+                _view = DesktopView.Summary;
+                _ = _mindData.LoadSummaryAsync();
+            }
+            x += 84f;
+
             if (GUI.Button(new Rect(x, top, 76f, height), "Memory"))
             {
                 _memoryScroll = Vector2.zero;
@@ -599,12 +608,34 @@ namespace Axiom.Body
             x += 82f;
 
             GUI.enabled = _connected && _adminRuntime != null;
-            if (GUI.Button(new Rect(x, top, 68f, height), "Admin"))
+            bool adminOn =
+                _adminRuntime != null && _adminRuntime.Authorized;
+            GUI.backgroundColor = adminOn
+                ? new Color(0.20f, 0.78f, 0.30f)
+                : previousBackground;
+            if (
+                GUI.Button(
+                    new Rect(x, top, 78f, height),
+                    adminOn ? "Admin ON" : "Admin"
+                )
+            )
             {
-                _view = DesktopView.Admin;
+                if (adminOn)
+                {
+                    _adminRuntime.Deauthorize();
+                    _adminPromptOpen = false;
+                    _adminPinInput = string.Empty;
+                    _status = "Administrator mode off.";
+                }
+                else
+                {
+                    _adminPromptOpen = true;
+                    _adminPinInput = string.Empty;
+                }
             }
+            GUI.backgroundColor = previousBackground;
             GUI.enabled = true;
-            x += 74f;
+            x += 84f;
 
             if (Screen.width > x + 100f)
             {
@@ -622,6 +653,81 @@ namespace Axiom.Body
             if (_bodyDropdownOpen)
             {
                 DrawBodyDropdown(bodyX, top + height + 4f);
+            }
+        }
+
+        private void DrawAdminAuthorization()
+        {
+            const float width = 390f;
+            const float height = 146f;
+            float left = Mathf.Max(18f, (Screen.width - width) * 0.5f);
+            float top = 62f;
+
+            GUI.Box(
+                new Rect(left, top, width, height),
+                "Administrator Authorization"
+            );
+            GUI.Label(
+                new Rect(left + 20f, top + 38f, 86f, 24f),
+                "Admin PIN"
+            );
+            _adminPinInput = GUI.PasswordField(
+                new Rect(left + 106f, top + 34f, width - 126f, 30f),
+                _adminPinInput,
+                '*',
+                120
+            );
+
+            GUI.enabled =
+                _adminRuntime != null &&
+                !_adminRuntime.Busy;
+            if (
+                GUI.Button(
+                    new Rect(left + 106f, top + 82f, 100f, 30f),
+                    "Authorize"
+                )
+            )
+            {
+                _ = AuthorizeAdminAsync();
+            }
+            if (
+                GUI.Button(
+                    new Rect(left + 216f, top + 82f, 90f, 30f),
+                    "Cancel"
+                )
+            )
+            {
+                _adminPromptOpen = false;
+                _adminPinInput = string.Empty;
+            }
+            GUI.enabled = true;
+
+            if (_adminRuntime != null)
+            {
+                GUI.Label(
+                    new Rect(left + 20f, top + 116f, width - 40f, 24f),
+                    CompactText(_adminRuntime.Status, 90)
+                );
+            }
+        }
+
+        private async Task AuthorizeAdminAsync()
+        {
+            if (_adminRuntime == null)
+            {
+                return;
+            }
+
+            await _adminRuntime.AuthorizeAsync(_adminPinInput);
+            if (_adminRuntime.Authorized)
+            {
+                _adminPromptOpen = false;
+                _adminPinInput = string.Empty;
+                _status = "Administrator mode on.";
+            }
+            else
+            {
+                _status = _adminRuntime.Status;
             }
         }
 
@@ -709,6 +815,163 @@ namespace Axiom.Body
                 }
             }
             GUI.enabled = true;
+        }
+
+        private void DrawSummaryView()
+        {
+            if (_mindData == null)
+            {
+                return;
+            }
+
+            const float width = 430f;
+            const float height = 330f;
+            float left = Mathf.Max(18f, Screen.width - width - 28f);
+            float top = 62f;
+
+            GUI.Box(
+                new Rect(left, top, width, height),
+                "Mind Summary"
+            );
+
+            DesktopPortalStatus summary =
+                _mindData.Summary ?? new DesktopPortalStatus();
+            DesktopMindSummary mind =
+                summary.mind ?? new DesktopMindSummary();
+            DesktopMindIdentity identity =
+                mind.identity ?? new DesktopMindIdentity();
+
+            float y = top + 36f;
+            GUI.Label(
+                new Rect(left + 20f, y, width - 40f, 24f),
+                "Identity: " +
+                (string.IsNullOrWhiteSpace(identity.self_name)
+                    ? "—"
+                    : identity.self_name) +
+                (
+                    string.IsNullOrWhiteSpace(identity.pronouns)
+                        ? string.Empty
+                        : " · " + identity.pronouns
+                )
+            );
+            y += 28f;
+
+            GUI.Label(
+                new Rect(left + 20f, y, width - 40f, 24f),
+                "Development: " +
+                (
+                    string.IsNullOrWhiteSpace(mind.developmental_state)
+                        ? "—"
+                        : mind.developmental_state
+                )
+            );
+            y += 28f;
+
+            GUI.Label(
+                new Rect(left + 20f, y, width - 40f, 24f),
+                "Durable memory: " +
+                summary.durable_memory_count
+            );
+            y += 28f;
+
+            GUI.Label(
+                new Rect(left + 20f, y, width - 40f, 24f),
+                "Journal experiences: " +
+                summary.journal_experience_count
+            );
+            y += 28f;
+
+            string reasoning =
+                summary.reasoning != null
+                    ? (
+                        (summary.reasoning.backend ?? string.Empty) +
+                        " · " +
+                        (summary.reasoning.model ?? string.Empty)
+                    ).Trim(' ', '·')
+                    : string.Empty;
+            GUI.Label(
+                new Rect(left + 20f, y, width - 40f, 24f),
+                "Reasoning: " +
+                (string.IsNullOrWhiteSpace(reasoning)
+                    ? "—"
+                    : reasoning)
+            );
+            y += 28f;
+
+            GUI.Label(
+                new Rect(left + 20f, y, width - 40f, 24f),
+                "Protocol: " +
+                (
+                    summary.integration == null ||
+                    string.IsNullOrWhiteSpace(
+                        summary.integration.protocol
+                    )
+                        ? "—"
+                        : summary.integration.protocol
+                )
+            );
+            y += 28f;
+
+            GUI.Label(
+                new Rect(left + 20f, y, width - 40f, 24f),
+                "Body: " +
+                (
+                    _avatarLoader == null
+                        ? "—"
+                        : _avatarLoader.CurrentBodyName
+                )
+            );
+            y += 28f;
+
+            GUI.Label(
+                new Rect(left + 20f, y, width - 40f, 24f),
+                "Mode: " +
+                (
+                    _bodyModelPolicy ==
+                    BodyModelPolicy.FullBodyModel
+                        ? "Full Body Model"
+                        : "Cognitive Only"
+                )
+            );
+            y += 28f;
+
+            GUI.Label(
+                new Rect(left + 20f, y, width - 40f, 24f),
+                "Senses: " +
+                (
+                    _sensesRuntime != null &&
+                    _sensesRuntime.IsEnabled
+                        ? "On"
+                        : "Off"
+                )
+            );
+
+            GUI.enabled = !_mindData.LoadingSummary;
+            if (
+                GUI.Button(
+                    new Rect(
+                        left + width - 104f,
+                        top + height - 42f,
+                        84f,
+                        26f
+                    ),
+                    "Refresh"
+                )
+            )
+            {
+                _ = _mindData.LoadSummaryAsync();
+            }
+            GUI.enabled = true;
+
+            GUI.Label(
+                new Rect(
+                    left + 20f,
+                    top + height - 40f,
+                    width - 132f,
+                    24f
+                ),
+                _mindData.SummaryStatus
+            );
         }
 
         private void DrawMemoryView()
