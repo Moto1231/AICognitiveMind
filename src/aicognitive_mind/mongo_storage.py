@@ -491,6 +491,16 @@ class MongoEvidenceStore:
         await self._collection.insert_one(artifact.model_dump(mode="python"))
         return artifact
 
+    async def read(self) -> list[SensoryEvidenceArtifact]:
+        cursor = self._collection.find(
+            {},
+            {"_id": 0},
+        ).sort("captured_at", ASCENDING)
+        return [
+            SensoryEvidenceArtifact.model_validate(document)
+            async for document in cursor
+        ]
+
     async def find_exact(
         self,
         *,
