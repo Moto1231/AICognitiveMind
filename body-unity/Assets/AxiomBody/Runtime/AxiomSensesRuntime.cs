@@ -8,19 +8,25 @@ namespace Axiom.Body
 {
     public sealed class AxiomSensesRuntime : MonoBehaviour
     {
-        private const float SensePauseSeconds = 15f;
+        private const float VisionIntervalSeconds = 15f;
+        private const float AudioIntervalSeconds = 15f;
         private const int AudioWindowSeconds = 4;
         private const int AudioSampleRate = 16000;
 
         private MindApiClient _client;
         private WebCamTexture _camera;
         private bool _enabled;
-        private bool _busy;
+        private bool _visionBusy;
+        private bool _audioBusy;
         private int _generation;
+        private string _visionStatus = "Eyes idle";
+        private string _audioStatus = "Ears idle";
 
         public event Action<string> StatusChanged;
 
         public bool IsEnabled => _enabled;
+        public bool VisionBusy => _visionBusy;
+        public bool AudioBusy => _audioBusy;
 
         public void Attach(MindApiClient client)
         {
@@ -37,13 +43,17 @@ namespace Axiom.Body
             if (!enabled)
             {
                 Disable();
-                StatusChanged?.Invoke("Senses off. Camera and microphone released.");
+                StatusChanged?.Invoke(
+                    "Senses off. Camera and microphone released."
+                );
                 return;
             }
 
             if (_client == null)
             {
-                throw new InvalidOperationException("Mind connection is not available.");
+                throw new InvalidOperationException(
+                    "Mind connection is not available."
+                );
             }
 
             _generation += 1;
@@ -56,8 +66,14 @@ namespace Axiom.Body
             }
 
             _enabled = true;
-            StatusChanged?.Invoke("Senses on. Eyes and Ears are active.");
-            _ = RunSensoryLoopAsync(generation);
+            _visionStatus = "Eyes active";
+            _audioStatus = "Ears active";
+            EmitStatus();
+
+            // Eyes and Ears are independent sensory workers. Neither waits
+            // for the other before capturing or interpreting evidence.
+            _ = RunVisionLoopAsync(generation);
+            _ = RunAudioLoopAsync(generation);
         }
 
         public void Detach()
@@ -70,11 +86,18 @@ namespace Axiom.Body
         {
             if (WebCamTexture.devices.Length == 0)
             {
-                throw new InvalidOperationException("No camera is available.");
+                throw new InvalidOperationException(
+                    "No camera is available."
+                );
             }
 
             string deviceName = WebCamTexture.devices[0].name;
-            _camera = new WebCamTexture(deviceName, 960, 540, 15);
+            _camera = new WebCamTexture(
+                deviceName,
+                960,
+                540,
+                15
+            );
             _camera.Play();
 
             float timeoutAt = Time.realtimeSinceStartup + 5f;
@@ -95,7 +118,9 @@ namespace Axiom.Body
                 !_camera.isPlaying
             )
             {
-                throw new InvalidOperationException("Camera startup was interrupted.");
+                throw new InvalidOperationException(
+                    "Camera startup was interrupted."
+                );
             }
 
             if (_camera.width <= 16 || _camera.height <= 16)
@@ -106,22 +131,22 @@ namespace Axiom.Body
             }
         }
 
-        private async Task RunSensoryLoopAsync(int generation)
+        private async Task RunVisionLoopAsync(int generation)
         {
             while (_enabled && generation == _generation)
             {
-                if (!_busy)
+                if (!_visionBusy)
                 {
                     try
                     {
-                        _busy = true;
+                        _visionBusy = true;
                         await PerceiveVisionAsync(generation);
                     }
                     catch (Exception exception)
                     {
                         if (_enabled && generation == _generation)
                         {
-                            StatusChanged?.Invoke(
+                            SetVisionStatus(
                                 "Eyes failed: " + exception.Message
                             );
                             Debug.LogException(exception);
@@ -129,27 +154,38 @@ namespace Axiom.Body
                     }
                     finally
                     {
-                        _busy = false;
+                        _visionBusy = false;
                     }
                 }
 
-                if (!await WaitAsync(SensePauseSeconds, generation))
+                if (
+                    !await WaitAsync(
+                        VisionIntervalSeconds,
+                        generation
+                    )
+                )
                 {
                     return;
                 }
+            }
+        }
 
-                if (!_busy)
+        private async Task RunAudioLoopAsync(int generation)
+        {
+            while (_enabled && generation == _generation)
+            {
+                if (!_audioBusy)
                 {
                     try
                     {
-                        _busy = true;
+                        _audioBusy = true;
                         await PerceiveAudioAsync(generation);
                     }
                     catch (Exception exception)
                     {
                         if (_enabled && generation == _generation)
                         {
-                            StatusChanged?.Invoke(
+                            SetAudioStatus(
                                 "Ears failed: " + exception.Message
                             );
                             Debug.LogException(exception);
@@ -157,11 +193,16 @@ namespace Axiom.Body
                     }
                     finally
                     {
-                        _busy = false;
+                        _audioBusy = false;
                     }
                 }
 
-                if (!await WaitAsync(SensePauseSeconds, generation))
+                if (
+                    !await WaitAsync(
+                        AudioIntervalSeconds,
+                        generation
+                    )
+                )
                 {
                     return;
                 }
@@ -193,18 +234,24 @@ namespace Axiom.Body
             {
                 frame.SetPixels32(_camera.GetPixels32());
                 frame.Apply(false, false);
-                byte[] jpeg = ImageConversion.EncodeToJPG(frame, 72);
+                byte[] jpeg =
+                    ImageConversion.EncodeToJPG(frame, 72);
                 string dataUrl =
                     "data:image/jpeg;base64," +
                     Convert.ToBase64String(jpeg);
 
-                StatusChanged?.Invoke("Eyes observing...");
-                await _client.ObserveVisionAsync(dataUrl, width, height);
-                EmbodiedPerceptionResponse result = await _client.SeeAsync();
+                SetVisionStatus("Eyes observing...");
+                await _client.ObserveVisionAsync(
+                    dataUrl,
+                    width,
+                    height
+                );
+                EmbodiedPerceptionResponse result =
+                    await _client.SeeAsync();
 
                 if (_enabled && generation == _generation)
                 {
-                    StatusChanged?.Invoke(
+                    SetVisionStatus(
                         "Eyes: " + Compact(result.interpretation)
                     );
                 }
@@ -224,7 +271,9 @@ namespace Axiom.Body
 
             if (Microphone.devices.Length == 0)
             {
-                throw new InvalidOperationException("No microphone is available.");
+                throw new InvalidOperationException(
+                    "No microphone is available."
+                );
             }
 
             string device = Microphone.devices[0];
@@ -232,7 +281,7 @@ namespace Axiom.Body
 
             try
             {
-                StatusChanged?.Invoke("Ears listening...");
+                SetAudioStatus("Ears listening...");
                 clip = Microphone.Start(
                     device,
                     false,
@@ -247,7 +296,8 @@ namespace Axiom.Body
                     );
                 }
 
-                float startupTimeout = Time.realtimeSinceStartup + 2f;
+                float startupTimeout =
+                    Time.realtimeSinceStartup + 2f;
                 while (
                     _enabled &&
                     generation == _generation &&
@@ -270,7 +320,12 @@ namespace Axiom.Body
                     );
                 }
 
-                if (!await WaitAsync(AudioWindowSeconds, generation))
+                if (
+                    !await WaitAsync(
+                        AudioWindowSeconds,
+                        generation
+                    )
+                )
                 {
                     return;
                 }
@@ -285,12 +340,17 @@ namespace Axiom.Body
                     "data:audio/wav;base64," +
                     Convert.ToBase64String(wav);
 
-                await _client.ObserveAudioAsync(dataUrl, durationMs);
-                EmbodiedPerceptionResponse result = await _client.HearAsync();
+                SetAudioStatus("Ears interpreting...");
+                await _client.ObserveAudioAsync(
+                    dataUrl,
+                    durationMs
+                );
+                EmbodiedPerceptionResponse result =
+                    await _client.HearAsync();
 
                 if (_enabled && generation == _generation)
                 {
-                    StatusChanged?.Invoke(
+                    SetAudioStatus(
                         "Ears: " + Compact(result.interpretation)
                     );
                 }
@@ -309,7 +369,10 @@ namespace Axiom.Body
             }
         }
 
-        private async Task<bool> WaitAsync(float seconds, int generation)
+        private async Task<bool> WaitAsync(
+            float seconds,
+            int generation
+        )
         {
             float until = Time.realtimeSinceStartup + seconds;
             while (
@@ -324,11 +387,38 @@ namespace Axiom.Body
             return _enabled && generation == _generation;
         }
 
+        private void SetVisionStatus(string status)
+        {
+            _visionStatus = status;
+            EmitStatus();
+        }
+
+        private void SetAudioStatus(string status)
+        {
+            _audioStatus = status;
+            EmitStatus();
+        }
+
+        private void EmitStatus()
+        {
+            if (!_enabled)
+            {
+                return;
+            }
+
+            StatusChanged?.Invoke(
+                _visionStatus + " | " + _audioStatus
+            );
+        }
+
         private void Disable()
         {
             _enabled = false;
-            _busy = false;
+            _visionBusy = false;
+            _audioBusy = false;
             _generation += 1;
+            _visionStatus = "Eyes idle";
+            _audioStatus = "Ears idle";
 
             if (_camera != null)
             {
@@ -381,10 +471,22 @@ namespace Axiom.Body
             writer.Write(Encoding.ASCII.GetBytes("data"));
             writer.Write(dataLength);
 
-            for (int index = 0; index < samples.Length; index++)
+            for (
+                int index = 0;
+                index < samples.Length;
+                index++
+            )
             {
-                float clamped = Mathf.Clamp(samples[index], -1f, 1f);
-                writer.Write((short)Mathf.RoundToInt(clamped * short.MaxValue));
+                float clamped = Mathf.Clamp(
+                    samples[index],
+                    -1f,
+                    1f
+                );
+                writer.Write(
+                    (short)Mathf.RoundToInt(
+                        clamped * short.MaxValue
+                    )
+                );
             }
 
             writer.Flush();
@@ -400,7 +502,10 @@ namespace Axiom.Body
                 return value;
             }
 
-            return value.Substring(0, maxLength - 1) + "…";
+            return value.Substring(
+                0,
+                maxLength - 1
+            ) + "…";
         }
 
         private void OnDisable()
