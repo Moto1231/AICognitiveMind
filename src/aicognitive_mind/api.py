@@ -354,9 +354,15 @@ def get_core(request: Request) -> CognitiveCore:
     return cast(CognitiveCore, request.app.state.core)
 
 
+def _effective_standalone_reasoning_provider(settings: Any) -> str:
+    explicit = getattr(settings, "standalone_reasoning_provider", None)
+    legacy = getattr(settings, "reasoning_provider", "echo")
+    return str(explicit or legacy or "echo").strip().lower()
+
+
 def _reasoning_backend_error_detail(exc: Exception) -> str:
     settings = get_settings()
-    provider = settings.effective_standalone_reasoning_provider
+    provider = _effective_standalone_reasoning_provider(settings)
     provider_label = (
         "Gemini"
         if provider == "gemini"
@@ -407,7 +413,7 @@ def _reasoning_backend_error_detail(exc: Exception) -> str:
 
 
 def _validate_reasoning_configuration(settings: Any) -> str:
-    provider = settings.effective_standalone_reasoning_provider
+    provider = _effective_standalone_reasoning_provider(settings)
     if provider not in {"gemini", "openai", "echo"}:
         raise RuntimeError(
             "STANDALONE_REASONING_PROVIDER must be one of: gemini, openai, echo "
@@ -852,7 +858,7 @@ async def portal_status(request: Request) -> dict[str, Any]:
     try:
         result = await service.status()
         runtime_settings = get_settings()
-        provider = runtime_settings.effective_standalone_reasoning_provider
+        provider = runtime__effective_standalone_reasoning_provider(settings)
         result["reasoning"] = {
             "primary_mode": "external_host",
             "external_host_protocol": "MCP",
