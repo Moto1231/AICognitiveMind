@@ -165,6 +165,11 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("SetVisionStatus", senses)
         self.assertIn("SetAudioStatus", senses)
         self.assertIn("_visionStatus + \" | \" + _audioStatus", senses)
+        self.assertIn("SemaphoreSlim", senses)
+        self.assertIn("_cognitionGate.WaitAsync()", senses)
+        self.assertIn("_cognitionGate.Release()", senses)
+        self.assertIn("Eyes waiting for cognition...", senses)
+        self.assertIn("Ears waiting for cognition...", senses)
 
     def test_unity_body_supports_genesis_bodies_library(self) -> None:
         loader = Path(
