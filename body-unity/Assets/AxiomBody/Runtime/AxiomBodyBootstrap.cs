@@ -72,7 +72,7 @@ namespace Axiom.Body
             _mindUrl = AxiomRuntimeConfig.MindBaseUrl;
             _mindUsername = AxiomRuntimeConfig.MindUsername;
             _mindPassword = AxiomRuntimeConfig.MindPassword;
-            _bodyModelPolicy = AxiomRuntimeConfig.BodyModelPolicy;
+            _bodyModelPolicy = AxiomRuntimeConfig.ModelPolicy;
 
             EnsureCamera();
             EnsureLight();
