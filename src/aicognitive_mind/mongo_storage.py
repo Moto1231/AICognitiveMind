@@ -1,3 +1,8 @@
+# Copyright (c) 2026 William Enright. All rights reserved.
+# Use, reproduction, modification, distribution, or commercial exploitation
+# of this file is prohibited without prior written permission from the
+# copyright holder.
+
 import re
 from datetime import datetime
 from typing import Any
@@ -490,6 +495,16 @@ class MongoEvidenceStore:
             return SensoryEvidenceArtifact.model_validate(existing)
         await self._collection.insert_one(artifact.model_dump(mode="python"))
         return artifact
+
+    async def read(self) -> list[SensoryEvidenceArtifact]:
+        cursor = self._collection.find(
+            {},
+            {"_id": 0},
+        ).sort("captured_at", ASCENDING)
+        return [
+            SensoryEvidenceArtifact.model_validate(document)
+            async for document in cursor
+        ]
 
     async def find_exact(
         self,

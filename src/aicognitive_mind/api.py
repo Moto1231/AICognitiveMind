@@ -1,3 +1,8 @@
+# Copyright (c) 2026 William Enright. All rights reserved.
+# Use, reproduction, modification, distribution, or commercial exploitation
+# of this file is prohibited without prior written permission from the
+# copyright holder.
+
 import os
 import base64
 import binascii
@@ -25,6 +30,7 @@ from aicognitive_mind.body import (
     Percept,
 )
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
+from aicognitive_mind.backup import backup_filename, build_backup_archive
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
@@ -60,6 +66,7 @@ from aicognitive_mind.storage import (
     JournalStore,
     MemoryStore,
     MindAlreadyInitializedError,
+    MindStore,
 )
 
 
@@ -999,6 +1006,37 @@ async def _apply_admin_memory_revision(
         recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
     )
     return revised
+
+
+@app.get("/v1/admin/backup", include_in_schema=False)
+async def admin_backup(request: Request) -> Response:
+    require_admin(request)
+
+    mind_store = cast(MindStore, request.app.state.mind_store)
+    journal_store = cast(JournalStore, request.app.state.journal_store)
+    memory_store = cast(MemoryStore, request.app.state.memory_store)
+    diagnostics_store = cast(DiagnosticStore, request.app.state.diagnostics)
+    evidence_store = cast(EvidenceStore, request.app.state.evidence_store)
+
+    created_at = datetime.now(UTC)
+    archive = build_backup_archive(
+        mind=await mind_store.load(),
+        journal=await journal_store.read(),
+        memory=await memory_store.read(),
+        diagnostics=await diagnostics_store.read(),
+        evidence=await evidence_store.read(),
+        storage_provider=get_settings().storage_provider.lower(),
+        created_at=created_at,
+    )
+    filename = backup_filename(created_at)
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @app.get("/v1/admin/status")

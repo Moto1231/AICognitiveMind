@@ -1,3 +1,8 @@
+# Copyright (c) 2026 William Enright. All rights reserved.
+# Use, reproduction, modification, distribution, or commercial exploitation
+# of this file is prohibited without prior written permission from the
+# copyright holder.
+
 from __future__ import annotations
 
 from typing import Any
@@ -302,6 +307,17 @@ class SurrealEvidenceStore:
                 return existing
         await self._database.create("evidence", artifact.model_dump(mode="json"))
         return artifact
+
+    async def read(self) -> list[SensoryEvidenceArtifact]:
+        records = _records(await self._database.select("evidence"))
+        artifacts = [
+            SensoryEvidenceArtifact.model_validate(_document(record))
+            for record in records
+        ]
+        return sorted(
+            artifacts,
+            key=lambda artifact: artifact.captured_at,
+        )
 
     async def find_exact(
         self,
