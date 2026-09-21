@@ -22,6 +22,19 @@ namespace Axiom.Body
 
         public void Attach(MindApiClient client, Vrm10Instance avatar)
         {
+            Attach(
+                client,
+                avatar != null ? avatar.gameObject : null,
+                avatar
+            );
+        }
+
+        public void Attach(
+            MindApiClient client,
+            GameObject avatarRoot,
+            Vrm10Instance vrmAvatar
+        )
+        {
             _client = client;
             _nextPollAt = 0f;
 
@@ -46,7 +59,11 @@ namespace Axiom.Body
                 }
             }
 
-            _lipSync.Attach(avatar, _audioSource);
+            _lipSync.Attach(
+                avatarRoot,
+                vrmAvatar,
+                _audioSource
+            );
             StatusChanged?.Invoke(
                 "Axiom Body connected. Lip target: " + _lipSync.TargetDescription
             );
@@ -54,12 +71,31 @@ namespace Axiom.Body
 
         public void RefreshAvatar(Vrm10Instance avatar)
         {
-            if (_audioSource == null || _lipSync == null || avatar == null)
+            RefreshAvatar(
+                avatar != null ? avatar.gameObject : null,
+                avatar
+            );
+        }
+
+        public void RefreshAvatar(
+            GameObject avatarRoot,
+            Vrm10Instance vrmAvatar
+        )
+        {
+            if (
+                _audioSource == null ||
+                _lipSync == null ||
+                avatarRoot == null
+            )
             {
                 return;
             }
 
-            _lipSync.Attach(avatar, _audioSource);
+            _lipSync.Attach(
+                avatarRoot,
+                vrmAvatar,
+                _audioSource
+            );
         }
 
         public void Detach()
