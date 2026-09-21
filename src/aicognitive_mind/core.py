@@ -58,6 +58,7 @@ class CognitiveCore:
                 kind=JournalKind.INITIALIZATION,
                 experience={
                     "self_name": mind.identity.self_name,
+                    "pronouns": mind.identity.pronouns,
                     "foundational_values": list(mind.identity.foundational_values),
                     "developmental_state": mind.developmental_state,
                 },
