@@ -139,11 +139,31 @@ class UnityBodyScaffoldTests(unittest.TestCase):
         self.assertIn("Microphone.Start", senses)
         self.assertIn("data:audio/wav;base64,", senses)
         self.assertIn("EncodePcm16Wav", senses)
-        self.assertIn("SensePauseSeconds = 15f", senses)
+        self.assertIn("VisionIntervalSeconds = 15f", senses)
+        self.assertIn("AudioIntervalSeconds = 15f", senses)
         self.assertIn("AudioWindowSeconds = 4", senses)
+        self.assertIn("RunVisionLoopAsync", senses)
+        self.assertIn("RunAudioLoopAsync", senses)
+        self.assertIn("_visionBusy", senses)
+        self.assertIn("_audioBusy", senses)
+        self.assertNotIn("RunSensoryLoopAsync", senses)
+        self.assertNotIn("private bool _busy", senses)
         self.assertIn("Senses On", bootstrap)
         self.assertIn("ToggleSensesAsync", bootstrap)
         self.assertIn("_sensesRuntime.Attach(_client)", bootstrap)
+
+    def test_unity_eyes_and_ears_run_as_independent_workers(self) -> None:
+        senses = Path(
+            "body-unity/Assets/AxiomBody/Runtime/AxiomSensesRuntime.cs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("_ = RunVisionLoopAsync(generation);", senses)
+        self.assertIn("_ = RunAudioLoopAsync(generation);", senses)
+        self.assertIn("VisionBusy => _visionBusy", senses)
+        self.assertIn("AudioBusy => _audioBusy", senses)
+        self.assertIn("SetVisionStatus", senses)
+        self.assertIn("SetAudioStatus", senses)
+        self.assertIn("_visionStatus + \" | \" + _audioStatus", senses)
 
     def test_unity_body_has_separate_avatar_editor_view(self) -> None:
         bootstrap = Path(
