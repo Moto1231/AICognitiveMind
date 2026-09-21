@@ -96,6 +96,61 @@ namespace Axiom.Body
     }
 
     [Serializable]
+    public sealed class DesktopMindIdentity
+    {
+        public string self_name = string.Empty;
+        public string pronouns = string.Empty;
+        public string[] foundational_values = Array.Empty<string>();
+        public string[] commitments = Array.Empty<string>();
+    }
+
+    [Serializable]
+    public sealed class DesktopMindSummary
+    {
+        public DesktopMindIdentity identity = new DesktopMindIdentity();
+        public string developmental_state = string.Empty;
+        public string created_at = string.Empty;
+    }
+
+    [Serializable]
+    public sealed class DesktopIntegrationStatus
+    {
+        public string protocol = string.Empty;
+        public string reasoning_owner = string.Empty;
+        public string identity_owner = string.Empty;
+        public string memory_owner = string.Empty;
+    }
+
+    [Serializable]
+    public sealed class DesktopReasoningStatus
+    {
+        public string backend = string.Empty;
+        public string model = string.Empty;
+        public string requested_model = string.Empty;
+    }
+
+    [Serializable]
+    public sealed class DesktopAdministrationStatus
+    {
+        public bool pin_required;
+        public bool memory_editing;
+    }
+
+    [Serializable]
+    public sealed class DesktopPortalStatus
+    {
+        public DesktopMindSummary mind = new DesktopMindSummary();
+        public int durable_memory_count;
+        public int journal_experience_count;
+        public DesktopIntegrationStatus integration =
+            new DesktopIntegrationStatus();
+        public DesktopReasoningStatus reasoning =
+            new DesktopReasoningStatus();
+        public DesktopAdministrationStatus administration =
+            new DesktopAdministrationStatus();
+    }
+
+    [Serializable]
     public sealed class AdminStatusResponse
     {
         public bool authorized;
@@ -162,6 +217,36 @@ namespace Axiom.Body
             await SendAsync(request);
         }
 
+        public async Task<DesktopPortalStatus> PortalStatusAsync()
+        {
+            using UnityWebRequest request =
+                UnityWebRequest.Get(Url("/v1/portal/status"));
+            await SendAsync(request);
+
+            DesktopPortalStatus response =
+                JsonUtility.FromJson<DesktopPortalStatus>(
+                    request.downloadHandler.text
+                );
+            if (response == null)
+            {
+                throw new InvalidOperationException(
+                    "Mind returned an unreadable summary status."
+                );
+            }
+
+            response.mind ??= new DesktopMindSummary();
+            response.mind.identity ??= new DesktopMindIdentity();
+            response.mind.identity.foundational_values ??=
+                Array.Empty<string>();
+            response.mind.identity.commitments ??=
+                Array.Empty<string>();
+            response.integration ??= new DesktopIntegrationStatus();
+            response.reasoning ??= new DesktopReasoningStatus();
+            response.administration ??=
+                new DesktopAdministrationStatus();
+            return response;
+        }
+
         public async Task<byte[]> DownloadAvatarAsync()
         {
             using UnityWebRequest request = UnityWebRequest.Get(Url("/v1/body/face/avatar"));
@@ -223,6 +308,11 @@ namespace Axiom.Body
 
         public async Task<DesktopMemoryPage> MemoryPageAsync(
             string search,
+            string memoryClass,
+            string association,
+            string grounding,
+            string fromDate,
+            string toDate,
             int offset,
             int limit = 12
         )
@@ -233,11 +323,12 @@ namespace Axiom.Body
                 "&offset=" +
                 Math.Max(0, offset);
 
-            string query = (search ?? string.Empty).Trim();
-            if (!string.IsNullOrEmpty(query))
-            {
-                path += "&search=" + UnityWebRequest.EscapeURL(query);
-            }
+            path = AppendQuery(path, "search", search);
+            path = AppendQuery(path, "memory_class", memoryClass);
+            path = AppendQuery(path, "association", association);
+            path = AppendQuery(path, "grounding", grounding);
+            path = AppendQuery(path, "from", fromDate);
+            path = AppendQuery(path, "to", toDate);
 
             using UnityWebRequest request = UnityWebRequest.Get(Url(path));
             await SendAsync(request);
@@ -259,6 +350,9 @@ namespace Axiom.Body
 
         public async Task<DesktopJournalPage> JournalPageAsync(
             string search,
+            string kind,
+            string fromDate,
+            string toDate,
             int offset,
             int limit = 12
         )
@@ -269,11 +363,10 @@ namespace Axiom.Body
                 "&offset=" +
                 Math.Max(0, offset);
 
-            string query = (search ?? string.Empty).Trim();
-            if (!string.IsNullOrEmpty(query))
-            {
-                path += "&search=" + UnityWebRequest.EscapeURL(query);
-            }
+            path = AppendQuery(path, "search", search);
+            path = AppendQuery(path, "kind", kind);
+            path = AppendQuery(path, "from", fromDate);
+            path = AppendQuery(path, "to", toDate);
 
             using UnityWebRequest request = UnityWebRequest.Get(Url(path));
             await SendAsync(request);
@@ -428,6 +521,25 @@ namespace Axiom.Body
             }
 
             return response;
+        }
+
+        private static string AppendQuery(
+            string path,
+            string name,
+            string value
+        )
+        {
+            string normalized = (value ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return path;
+            }
+
+            return path +
+                "&" +
+                name +
+                "=" +
+                UnityWebRequest.EscapeURL(normalized);
         }
 
         private async Task PostJsonAsync(string path, string json)
