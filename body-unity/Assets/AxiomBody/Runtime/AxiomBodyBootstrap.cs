@@ -437,8 +437,8 @@ namespace Axiom.Body
                 DrawJournalView();
             }
 
-            DrawControlStrip();
             DrawSummaryView();
+            DrawControlStrip();
 
             if (_adminPromptOpen)
             {
@@ -534,19 +534,6 @@ namespace Axiom.Body
             const float gap = 5f;
             float innerLeft = left + 10f;
             float innerWidth = railWidth - 20f;
-
-            Color priorColor = GUI.color;
-            GUI.color = new Color(1f, 1f, 1f, 0.36f);
-            GUI.Box(
-                new Rect(
-                    left,
-                    top,
-                    railWidth,
-                    Screen.height - top - 10f
-                ),
-                string.Empty
-            );
-            GUI.color = priorColor;
 
             Color priorBackground = GUI.backgroundColor;
             GUIStyle smallButton = new GUIStyle(GUI.skin.button)
@@ -920,6 +907,19 @@ namespace Axiom.Body
                 360f,
                 Screen.height - top - 18f
             );
+
+            Color priorColor = GUI.color;
+            GUI.color = new Color(1f, 1f, 1f, 0.36f);
+            GUI.Box(
+                new Rect(
+                    left,
+                    8f,
+                    width,
+                    Screen.height - 18f
+                ),
+                string.Empty
+            );
+            GUI.color = priorColor;
 
             DesktopPortalStatus summary =
                 _mindData.Summary ?? new DesktopPortalStatus();
