@@ -23,6 +23,7 @@ namespace Axiom.Body
         private bool _connecting;
         private bool _connected;
         private bool _sensesChanging;
+        private bool _bodySwitching;
         private DesktopView _view = DesktopView.Body;
         private Vector2 _avatarScroll = Vector2.zero;
         private Vector2 _memoryScroll = Vector2.zero;
@@ -38,6 +39,7 @@ namespace Axiom.Body
         private enum DesktopView
         {
             Body,
+            Bodies,
             Avatar,
             Memory,
             Journal,
@@ -107,9 +109,12 @@ namespace Axiom.Body
                     _avatarLoader = gameObject.AddComponent<AxiomAvatarLoader>();
                 }
 
-                if (_avatarLoader.Instance == null)
+                if (_avatarLoader.Root == null)
                 {
-                    await _avatarLoader.LoadAsync(_client, camera);
+                    await _avatarLoader.LoadSelectedAsync(
+                        _client,
+                        camera
+                    );
                 }
 
                 _mindUrl = normalizedUrl;
@@ -124,8 +129,16 @@ namespace Axiom.Body
                     _avatarEditor =
                         gameObject.AddComponent<AxiomAvatarEditorRuntime>();
                 }
-                _avatarEditor.Attach(_avatarLoader.Instance);
-                LoadAvatarEditorFields();
+                if (
+                    _avatarLoader.IsGenesis &&
+                    _avatarLoader.Instance != null
+                )
+                {
+                    _avatarEditor.Attach(
+                        _avatarLoader.Instance
+                    );
+                    LoadAvatarEditorFields();
+                }
 
                 if (_mindData == null)
                 {
@@ -144,7 +157,11 @@ namespace Axiom.Body
                     _mouthRuntime = gameObject.AddComponent<AxiomMouthRuntime>();
                     _mouthRuntime.StatusChanged += HandleBodyStatus;
                 }
-                _mouthRuntime.Attach(_client, _avatarLoader.Instance);
+                _mouthRuntime.Attach(
+                    _client,
+                    _avatarLoader.Root,
+                    _avatarLoader.Instance
+                );
 
                 if (_sensesRuntime == null)
                 {
@@ -278,6 +295,12 @@ namespace Axiom.Body
 
         private void OnGUI()
         {
+            if (_view == DesktopView.Bodies)
+            {
+                DrawBodiesView();
+                return;
+            }
+
             if (_view == DesktopView.Avatar)
             {
                 DrawAvatarEditor();
@@ -409,11 +432,10 @@ namespace Axiom.Body
                     : _reply
             );
 
-            GUI.enabled = _connected && _avatarEditor != null;
-            if (GUI.Button(new Rect(34f, 342f, 112f, 30f), "Avatar"))
+            GUI.enabled = _connected && _avatarLoader != null;
+            if (GUI.Button(new Rect(34f, 342f, 112f, 30f), "Bodies"))
             {
-                LoadAvatarEditorFields();
-                _view = DesktopView.Avatar;
+                _view = DesktopView.Bodies;
             }
 
             GUI.enabled = _connected && _mindData != null;
@@ -440,7 +462,7 @@ namespace Axiom.Body
 
             GUI.Label(
                 new Rect(34f, 382f, width - 68f, 24f),
-                "Desktop Body · Avatar · Memory · Journal · Admin"
+                "Desktop Body · Bodies · Memory · Journal · Admin"
             );
         }
 
@@ -706,16 +728,238 @@ namespace Axiom.Body
             return text.Substring(0, Mathf.Max(0, maxLength - 1)) + "…";
         }
 
+        private async Task SwitchBodyAsync(string bodyName)
+        {
+            if (
+                _bodySwitching ||
+                !_connected ||
+                _client == null ||
+                _avatarLoader == null
+            )
+            {
+                return;
+            }
+
+            _bodySwitching = true;
+            _status = "Switching body to " + bodyName + "...";
+
+            try
+            {
+                await _avatarLoader.SelectBodyAsync(
+                    bodyName,
+                    _client,
+                    EnsureCamera()
+                );
+
+                if (
+                    _avatarLoader.IsGenesis &&
+                    _avatarLoader.Instance != null &&
+                    _avatarEditor != null
+                )
+                {
+                    _avatarEditor.Attach(
+                        _avatarLoader.Instance
+                    );
+                    LoadAvatarEditorFields();
+                }
+
+                _mouthRuntime?.RefreshAvatar(
+                    _avatarLoader.Root,
+                    _avatarLoader.Instance
+                );
+
+                _status =
+                    "Body selected: " +
+                    _avatarLoader.CurrentBodyName +
+                    ".";
+            }
+            catch (Exception exception)
+            {
+                _status =
+                    "Body switch failed: " +
+                    exception.Message;
+                Debug.LogException(exception);
+            }
+            finally
+            {
+                _bodySwitching = false;
+            }
+        }
+
+        private void DrawBodiesView()
+        {
+            const float width = 560f;
+            float height = Mathf.Min(
+                620f,
+                Mathf.Max(420f, Screen.height - 36f)
+            );
+
+            GUI.Box(
+                new Rect(18f, 18f, width, height),
+                "Genesis Bodies"
+            );
+
+            if (
+                GUI.Button(
+                    new Rect(34f, 48f, 112f, 30f),
+                    "Back to Body"
+                )
+            )
+            {
+                _view = DesktopView.Body;
+                return;
+            }
+
+            if (_avatarLoader == null)
+            {
+                GUI.Label(
+                    new Rect(34f, 96f, width - 68f, 40f),
+                    "Connect to the Mind before selecting a body."
+                );
+                return;
+            }
+
+            string[] bodies = _avatarLoader.AvailableBodies;
+            int currentIndex = Array.FindIndex(
+                bodies,
+                value => string.Equals(
+                    value,
+                    _avatarLoader.CurrentBodyName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
+            if (currentIndex < 0)
+            {
+                currentIndex = 0;
+            }
+
+            GUI.Label(
+                new Rect(34f, 96f, width - 68f, 24f),
+                "Select Axiom's body"
+            );
+
+            int columns = Mathf.Min(
+                3,
+                Mathf.Max(1, bodies.Length)
+            );
+            int rows = Mathf.CeilToInt(
+                bodies.Length / (float)columns
+            );
+            float gridHeight = Mathf.Max(34f, rows * 34f);
+
+            GUI.enabled = !_bodySwitching;
+            int selectedIndex = GUI.SelectionGrid(
+                new Rect(
+                    34f,
+                    126f,
+                    width - 68f,
+                    gridHeight
+                ),
+                currentIndex,
+                bodies,
+                columns
+            );
+            GUI.enabled = true;
+
+            if (
+                selectedIndex != currentIndex &&
+                selectedIndex >= 0 &&
+                selectedIndex < bodies.Length &&
+                !_bodySwitching
+            )
+            {
+                _ = SwitchBodyAsync(
+                    bodies[selectedIndex]
+                );
+            }
+
+            float y = 142f + gridHeight;
+            GUI.Label(
+                new Rect(34f, y, width - 68f, 28f),
+                "Current: " +
+                _avatarLoader.CurrentBodyName
+            );
+            y += 34f;
+
+            if (_avatarLoader.IsGenesis)
+            {
+                GUI.Label(
+                    new Rect(34f, y, width - 68f, 44f),
+                    "Genesis is Axiom's editable body. " +
+                    "Its saved appearance remains independent " +
+                    "of predefined bodies."
+                );
+                y += 52f;
+
+                GUI.enabled =
+                    !_bodySwitching &&
+                    _avatarLoader.Instance != null &&
+                    _avatarEditor != null;
+                if (
+                    GUI.Button(
+                        new Rect(34f, y, 140f, 30f),
+                        "Edit Genesis"
+                    )
+                )
+                {
+                    LoadAvatarEditorFields();
+                    _view = DesktopView.Avatar;
+                }
+                GUI.enabled = true;
+            }
+            else
+            {
+                GUI.Label(
+                    new Rect(34f, y, width - 68f, 52f),
+                    "This is a predefined Genesis body. Axiom keeps the " +
+                    "same Mind, voice, senses, memory, and identity; " +
+                    "only the rendered Body changes."
+                );
+                y += 62f;
+
+                GUI.Label(
+                    new Rect(34f, y, width - 68f, 52f),
+                    "Lip sync will use a VRM mouth expression, " +
+                    "a common mouth blendshape, or a Mouth transform " +
+                    "when the asset exposes one."
+                );
+            }
+
+            GUI.Label(
+                new Rect(
+                    34f,
+                    height - 72f,
+                    width - 68f,
+                    46f
+                ),
+                "Genesis Bodies assets are auto-discovered from " +
+                "Assets/Resources/GenesisBodies/."
+            );
+        }
+
         private void DrawAvatarEditor()
         {
             const float width = 520f;
             float height = Mathf.Min(650f, Mathf.Max(420f, Screen.height - 36f));
 
-            GUI.Box(new Rect(18f, 18f, width, height), "Avatar");
+            GUI.Box(new Rect(18f, 18f, width, height), "Genesis Editor");
 
-            if (GUI.Button(new Rect(34f, 48f, 112f, 30f), "Back to Body"))
+            if (GUI.Button(new Rect(34f, 48f, 112f, 30f), "Back to Bodies"))
             {
-                _view = DesktopView.Body;
+                _view = DesktopView.Bodies;
+                return;
+            }
+
+            if (
+                _avatarLoader == null ||
+                !_avatarLoader.IsGenesis ||
+                _avatarLoader.Instance == null
+            )
+            {
+                GUI.Label(
+                    new Rect(34f, 100f, width - 68f, 42f),
+                    "Select Genesis before editing its appearance."
+                );
                 return;
             }
 
