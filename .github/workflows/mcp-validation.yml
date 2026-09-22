@@ -51,6 +51,13 @@ jobs:
       - name: Validate MCP server import
         run: python -c "import aicognitive_mind.mcp_server; print('MCP server import OK')"
 
+      - name: Validate ChatGPT MCP deployment assembly
+        env:
+          STORAGE_PROVIDER: surreal
+          APP_ACCESS_USERNAME: mind
+          APP_ACCESS_PASSWORD: ci-test-password
+        run: python -c "from aicognitive_mind.deployment import app; assert app is not None"
+
       - name: Validate canonical Surreal migration utility
         run: python scripts/surreal_canonical.py --help
 
