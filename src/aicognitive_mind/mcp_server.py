@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.types import CallToolResult, ImageContent, AudioContent, TextContent
 
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.governance_steward import GovernanceStewardTool
@@ -160,7 +161,7 @@ async def propose_self_name(user_message: str, candidate_name: str, rationale: s
 
 
 @mcp.tool()
-async def read_sensory_evidence(sha256: str, captured_at: str, ctx: Context[AppState]) -> dict[str, Any]:
+async def read_sensory_evidence(sha256: str, captured_at: str, ctx: Context[AppState]) -> CallToolResult:
     """Read integrity-checked original media for host-side interpretation without invoking fallback inference."""
     import base64
     import hashlib
@@ -172,8 +173,16 @@ async def read_sensory_evidence(sha256: str, captured_at: str, ctx: Context[AppS
     payload = base64.b64decode(artifact.payload_base64, validate=True)
     if hashlib.sha256(payload).hexdigest() != artifact.sha256:
         raise ValueError("Sensory evidence integrity check failed")
-    return {"evidence": artifact.reference().model_dump(mode="json"),
-            "data_url": f"data:{artifact.media_type};base64,{artifact.payload_base64}"}
+    import json
+    reference = artifact.reference().model_dump(mode="json")
+    if artifact.media_type.startswith("image/"):
+        media = ImageContent(type="image", data=artifact.payload_base64, mime_type=artifact.media_type)
+    elif artifact.media_type.startswith("audio/"):
+        media = AudioContent(type="audio", data=artifact.payload_base64, mime_type=artifact.media_type)
+    else:
+        raise ValueError("Unsupported sensory media type")
+    return CallToolResult(content=[TextContent(type="text", text=json.dumps(reference)), media],
+                          structured_content={"evidence": reference, "integrity_verified": True})
 
 
 class McpTokenAuth:

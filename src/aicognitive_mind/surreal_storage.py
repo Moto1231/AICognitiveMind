@@ -300,9 +300,9 @@ class SurrealEvidenceStore:
         sha256: str,
         captured_at: Any,
     ) -> SensoryEvidenceArtifact | None:
-        records = _records(await self._database.select("evidence"))
-        for record in records:
-            artifact = SensoryEvidenceArtifact.model_validate(_document(record))
-            if artifact.sha256 == sha256 and artifact.captured_at == captured_at:
-                return artifact
-        return None
+        from aicognitive_mind.retrieval import json_time
+        records = await self._database.query(
+            "SELECT * FROM evidence WHERE sha256 = $sha AND captured_at = $captured LIMIT 1;",
+            {"sha": sha256, "captured": json_time(captured_at)},
+        )
+        return SensoryEvidenceArtifact.model_validate(_document(records[0])) if records else None

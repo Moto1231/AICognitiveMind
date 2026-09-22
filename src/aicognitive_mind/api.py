@@ -789,6 +789,8 @@ async def face_status(request: Request) -> DeviceStatus:
 @app.get("/v1/body/face/next", response_model=ExpressionIntent | None)
 async def next_face_intent(request: Request, response: Response) -> ExpressionIntent | None:
     face = cast(BrowserAvatarOutput, request.app.state.browser_face)
+    if body_session.get() == "legacy":
+        return await face.consume()
     intent, receipt = await face.deliver()
     if receipt:
         response.headers["X-Body-Delivery"] = receipt
@@ -835,6 +837,8 @@ async def mouth_status(request: Request) -> DeviceStatus:
 @app.get("/v1/body/mouth/next", response_model=ExpressionIntent | None)
 async def next_mouth_intent(request: Request, response: Response) -> ExpressionIntent | None:
     mouth = cast(BrowserVoiceOutput, request.app.state.browser_mouth)
+    if body_session.get() == "legacy":
+        return await mouth.consume()
     intent, receipt = await mouth.deliver()
     if receipt:
         response.headers["X-Body-Delivery"] = receipt

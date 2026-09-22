@@ -37,7 +37,7 @@ The browser filters unchanged visual samples and quiet audio before requesting i
 
 ## Body transport
 
-Browser pages and Unity clients send an `X-Body-Session` header. Each session has bounded, storage-backed FIFO queues, so API workers share the same pending observations and output. Clients omitting the header use the compatibility `legacy` session and should be limited to one Body.
+Browser pages and Unity clients send an `X-Body-Session` header. Each session has bounded, storage-backed FIFO queues, so API workers share the same pending observations and output. Clients omitting the header use the compatibility `legacy` session and should be limited to one Body. Legacy output GETs retain destructive consumption so older clients do not repeat speech while waiting for acknowledgments they cannot send.
 
 Output GETs return `X-Body-Delivery`. The client acknowledges that receipt through `/v1/body/{face|mouth}/ack?delivery_id=...` after receiving the payload. Unacknowledged output remains available. Acknowledgment means delivery to the client, not successful audio playback. Queue capacity is 32; full queues reject new entries rather than silently discarding existing output. Observation consumption remains destructive, and clients should not blindly replay uncertain observe/consume pairs.
 

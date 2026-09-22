@@ -64,6 +64,11 @@ class ApiReliability(unittest.IsolatedAsyncioTestCase):
                     self.assertIsNone(
                         (await client.get("/v1/body/mouth/next", headers=headers)).json()
                     )
+                    await client.post("/v1/body/mouth/speak", json={"text": "Legacy"})
+                    legacy = await client.get("/v1/body/mouth/next")
+                    self.assertEqual(legacy.json()["text"], "Legacy")
+                    self.assertNotIn("X-Body-Delivery", legacy.headers)
+                    self.assertIsNone((await client.get("/v1/body/mouth/next")).json())
                     backup = await client.get("/v1/admin/backup")
                     self.assertEqual(
                         backup.status_code, 200, backup.text if backup.status_code != 200 else ""
