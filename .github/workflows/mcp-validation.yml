@@ -14,11 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    services:
-      mongodb:
-        image: mongo:7
-        ports:
-          - 27017:27017
+    env:
+      MONGODB_TEST_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true
 
     steps:
       - name: Check out repository
@@ -34,6 +31,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .
 
+      - name: Start disposable Mongo replica set for transaction tests
+        run: |
+          docker run -d --name axiom-test-mongo -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 30); do
+            if docker exec axiom-test-mongo mongosh --quiet --eval 'db.adminCommand({ping:1})'; then break; fi
+            sleep 1
+          done
+          docker exec axiom-test-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"localhost:27017"}]})'
+          for attempt in $(seq 1 30); do
+            if docker exec axiom-test-mongo mongosh --quiet --eval 'if (!db.hello().isWritablePrimary) { quit(1); }'; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
@@ -42,6 +53,9 @@ jobs:
 
       - name: Validate canonical Surreal migration utility
         run: python scripts/surreal_canonical.py --help
+
+      - name: Validate two-process persistent host handoff
+        run: python scripts/mcp_handoff_smoke.py
 
       - name: Run MCP stdio continuity smoke test on SurrealDB
         env:

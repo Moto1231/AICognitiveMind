@@ -16,6 +16,23 @@
   </style>
 </head>
 <body>
+  <script>
+    const bodySessionId = crypto.randomUUID();
+    async function bodyFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set("X-Body-Session", bodySessionId);
+      const response = await fetch(url, { ...options, headers, signal: options.signal || AbortSignal.timeout(130000) });
+      const receipt = response.headers.get("X-Body-Delivery");
+      if (response.ok && receipt) {
+        await response.clone().arrayBuffer();
+        const ack = await fetch(String(url).split("?")[0].replace(/\/next$/, "/ack") + "?delivery_id=" + encodeURIComponent(receipt),
+          { method: "POST", headers, signal: AbortSignal.timeout(10000) });
+        if (!ack.ok) throw new Error("Body delivery acknowledgment failed");
+      }
+      return response;
+    }
+  </script>
+
   <h1>Eyes V0.1</h1>
   <p>The camera stays attached to this device. The browser sends one transient JPEG frame to the remote Body runtime.</p>
 
@@ -89,7 +106,7 @@
 
       setStatus("Sending one transient frame to the Body...");
 
-      const ingressResponse = await fetch("/v1/body/eyes/observe", {
+      const ingressResponse = await bodyFetch("/v1/body/eyes/observe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -106,7 +123,7 @@
         return;
       }
 
-      const seeResponse = await fetch("/v1/body/eyes/see");
+      const seeResponse = await bodyFetch("/v1/body/eyes/see");
       if (!seeResponse.ok) {
         const detail = await seeResponse.text();
         setStatus("Frame arrived, but BodyRuntime.see() failed: " + detail);

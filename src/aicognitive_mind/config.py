@@ -5,6 +5,8 @@
 
 from functools import lru_cache
 
+from pydantic import Field
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,7 +27,11 @@ class Settings(BaseSettings):
     # host is actively driving cognition. REASONING_PROVIDER remains a
     # backwards-compatible environment setting for existing deployments.
     standalone_reasoning_provider: str | None = None
-    reasoning_provider: str = "echo"
+    reasoning_provider: str = "disabled"
+    mcp_access_token: str | None = None
+    standalone_calls_per_minute: int = Field(default=6, ge=1, le=120)
+    standalone_quota_cooldown_seconds: int = Field(default=300, ge=1)
+    reasoning_timeout_seconds: int = Field(default=120, ge=1)
 
     gemini_api_key: str | None = None
     gemini_model: str = "auto"

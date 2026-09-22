@@ -128,14 +128,6 @@ async def _check(settings: Settings) -> None:
         await runtime.close()
 
 
-async def _rollback_surreal(runtime: SurrealRuntime) -> None:
-    for table in COGNITIVE_TABLES:
-        try:
-            await runtime.database.delete(table)
-        except Exception:
-            pass
-
-
 async def _migrate_from_atlas(settings: Settings) -> None:
     source = await _atlas_models(settings)
     if len(source["mind"]) != 1:
@@ -170,24 +162,24 @@ async def _migrate_from_atlas(settings: Settings) -> None:
             {table: len(source[table]) for table in COGNITIVE_TABLES},
         )
 
-        try:
-            for table in COGNITIVE_TABLES:
-                for model in source[table]:
-                    await runtime.database.create(
-                        table,
-                        model.model_dump(mode="json"),
-                    )
-
-            target = await _surreal_models(runtime)
-            for table in COGNITIVE_TABLES:
-                if _normalized(source[table]) != _normalized(target[table]):
-                    raise RuntimeError(
-                        f"Verification mismatch after migrating table: {table}"
-                    )
-        except Exception:
-            await _rollback_surreal(runtime)
-            print("Migration failed; Surreal cognitive tables rolled back.")
-            raise
+        # One database transaction owns the entire import. A failed import never
+        # compensates by deleting tables that another process may have written.
+        from aicognitive_mind.commit import surreal_query
+        statements = ["BEGIN TRANSACTION;"]
+        variables = {}
+        for table in COGNITIVE_TABLES:
+            statements.append(f"IF array::len(SELECT * FROM {table} LIMIT 1) > 0 {{ THROW 'Migration target is not empty'; }};")
+            for index, model in enumerate(source[table]):
+                name = f"{table}_{index}"
+                variables[name] = model.model_dump(mode="json")
+                target_record = f"{table}:root" if table == "mind" else table
+                statements.append(f"CREATE {target_record} CONTENT ${name};")
+        statements.append("COMMIT TRANSACTION;")
+        await surreal_query(runtime.database, "\n".join(statements), variables)
+        target = await _surreal_models(runtime)
+        for table in COGNITIVE_TABLES:
+            if _normalized(source[table]) != _normalized(target[table]):
+                raise RuntimeError(f"Post-commit verification differs for {table}; target preserved for inspection")
 
         print("Canonical Surreal migration: COMPLETE")
         mind = source["mind"][0]

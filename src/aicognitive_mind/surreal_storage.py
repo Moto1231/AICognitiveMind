@@ -101,10 +101,13 @@ class SurrealMindStore:
         self._policy = policy or PermissionPolicy()
 
     async def initialize(self, mind: CognitiveMind) -> CognitiveMind:
-        records = _records(await self._database.select("mind"))
-        if records:
-            raise MindAlreadyInitializedError("This instance already contains its mind")
-        await self._database.create("mind", mind.model_dump(mode="json"))
+        from aicognitive_mind.commit import commit
+        try:
+            await commit({"mind": self}, [("mind", "initialize", None, mind)], None, {})
+        except Exception as exc:
+            if await self.load() is not None:
+                raise MindAlreadyInitializedError("This instance already contains its mind") from exc
+            raise
         return mind
 
     async def load(self) -> CognitiveMind | None:
@@ -123,16 +126,13 @@ class SurrealMindStore:
             recorded_by,
             CognitiveOperation.APPROVE_IDENTITY_REVISION,
         )
-        records = _records(await self._database.select("mind"))
-        for record in records:
-            existing = CognitiveMind.model_validate(_document(record))
-            if existing == original and "id" in record:
-                await self._database.update(
-                    record["id"],
-                    replacement.model_dump(mode="json"),
-                )
-                return replacement
-        return None
+        changed = await self._database.query(
+            "UPDATE mind CONTENT $replacement "
+            "WHERE " + " AND ".join(f"{field} = $original.{field}" for field in type(original).model_fields) + " RETURN AFTER;",
+            {"original": original.model_dump(mode="json"),
+             "replacement": replacement.model_dump(mode="json")},
+        )
+        return replacement if changed else None
 
 
 class SurrealJournalStore:
@@ -171,20 +171,10 @@ class SurrealJournalStore:
         occurred_from: Any = None,
         occurred_to: Any = None,
     ) -> tuple[list[JournalEntry], int]:
-        entries = await self.read()
-        matching = [
-            entry
-            for entry in entries
-            if _journal_matches(
-                entry,
-                kind=kind,
-                search=search,
-                occurred_from=occurred_from,
-                occurred_to=occurred_to,
-            )
-        ]
-        matching.sort(key=lambda entry: entry.occurred_at, reverse=newest_first)
-        return matching[offset : offset + limit], len(matching)
+        from aicognitive_mind.retrieval import surreal_page
+        return await surreal_page(self._database, "journal", JournalEntry, offset=offset,
+            limit=limit, newest_first=newest_first, search=search, kind=kind, occurred_from=occurred_from, occurred_to=occurred_to)
+
 
     async def find_exact(
         self,
@@ -253,22 +243,10 @@ class SurrealMemoryStore:
         formed_from: Any = None,
         formed_to: Any = None,
     ) -> tuple[list[DurableMemory], int]:
-        memories = await self.read()
-        matching = [
-            memory
-            for memory in memories
-            if _memory_matches(
-                memory,
-                memory_class=memory_class,
-                search=search,
-                association=association,
-                grounding=grounding,
-                formed_from=formed_from,
-                formed_to=formed_to,
-            )
-        ]
-        matching.sort(key=lambda memory: memory.formed_at, reverse=newest_first)
-        return matching[offset : offset + limit], len(matching)
+        from aicognitive_mind.retrieval import surreal_page
+        return await surreal_page(self._database, "memory", DurableMemory, offset=offset,
+            limit=limit, newest_first=newest_first, search=search, memory_class=memory_class, association=association, grounding=grounding, formed_from=formed_from, formed_to=formed_to)
+
 
     async def replace_exact(
         self,
@@ -277,16 +255,13 @@ class SurrealMemoryStore:
         recorded_by: CognitiveActor,
     ) -> DurableMemory | None:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
-        records = _records(await self._database.select("memory"))
-        for record in records:
-            existing = DurableMemory.model_validate(_document(record))
-            if existing == original and "id" in record:
-                await self._database.update(
-                    record["id"],
-                    replacement.model_dump(mode="json"),
-                )
-                return replacement
-        return None
+        changed = await self._database.query(
+            "UPDATE memory CONTENT $replacement "
+            "WHERE " + " AND ".join(f"{field} = $original.{field}" for field in type(original).model_fields) + " RETURN AFTER;",
+            {"original": original.model_dump(mode="json"),
+             "replacement": replacement.model_dump(mode="json")},
+        )
+        return replacement if changed else None
 
 
 
@@ -325,9 +300,9 @@ class SurrealEvidenceStore:
         sha256: str,
         captured_at: Any,
     ) -> SensoryEvidenceArtifact | None:
-        records = _records(await self._database.select("evidence"))
-        for record in records:
-            artifact = SensoryEvidenceArtifact.model_validate(_document(record))
-            if artifact.sha256 == sha256 and artifact.captured_at == captured_at:
-                return artifact
-        return None
+        from aicognitive_mind.retrieval import json_time
+        records = await self._database.query(
+            "SELECT * FROM evidence WHERE sha256 = $sha AND captured_at = $captured LIMIT 1;",
+            {"sha": sha256, "captured": json_time(captured_at)},
+        )
+        return SensoryEvidenceArtifact.model_validate(_document(records[0])) if records else None

@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from aicognitive_mind.commit import atomic
+
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -65,6 +67,7 @@ class GovernanceStewardTool:
     def decisions(self) -> tuple[GovernanceDecision, ...]:
         return tuple(self._decisions)
 
+    @atomic
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
         call = ProposeSelfNameCall.model_validate(arguments)
         current = await self._mind.load()
@@ -72,6 +75,8 @@ class GovernanceStewardTool:
             raise RuntimeError("The Mind is not initialized")
 
         candidate = " ".join(call.candidate_name.split()).strip()
+        if not candidate:
+            raise ValueError("Self-name cannot be blank")
         decision = await self._consider_self_name(
             current,
             candidate_name=candidate,
@@ -176,19 +181,13 @@ class GovernanceStewardTool:
 
     @staticmethod
     def _interaction_authorizes_self_name_selection(input_text: str) -> bool:
-        text = " ".join(input_text.casefold().split())
-        if "name" not in text:
-            return False
-        patterns = (
-            r"\bchoose\b.*\bname\b",
-            r"\bselect\b.*\bname\b",
-            r"\bpick\b.*\bname\b",
-            r"\bdecide\b.*\bname\b",
-            r"\bname\s+yourself\b",
-            r"\bcall\s+yourself\b",
-            r"\brename\s+yourself\b",
-            r"\byour\s+own\s+name\b",
-            r"\bselect\s+yourself\b.*\bname\b",
-            r"\bchoose\s+yourself\b.*\bname\b",
+        # Deliberately accept only complete, affirmative self-name commands.
+        # Questions, quotations, negations and additional clauses fail closed.
+        text = " ".join(input_text.casefold().split()).rstrip(".! ")
+        commands = (
+            r"(?:please )?(?:choose|select|pick) (?:yourself )?(?:a|a new|your own) name",
+            r"(?:please )?(?:rename|name) yourself",
+            r"you know, you have to select yourself a name",
+            r"i authorize you to (?:choose|select|pick) (?:a|a new|your own) name",
         )
-        return any(re.search(pattern, text) for pattern in patterns)
+        return any(re.fullmatch(pattern, text) for pattern in commands)

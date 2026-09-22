@@ -3,6 +3,8 @@
 # of this file is prohibited without prior written permission from the
 # copyright holder.
 
+from aicognitive_mind.commit import atomic
+
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -45,6 +47,7 @@ class CognitiveCore:
         self._reasoning_tools = reasoning_tools
         self._policy = policy or PermissionPolicy()
 
+    @atomic
     async def initialize(
         self,
         self_name: str,
@@ -78,6 +81,7 @@ class CognitiveCore:
             raise MindNotInitializedError("This instance has not initialized its mind")
         return mind
 
+    @atomic
     async def interact(
         self,
         input_text: str,
@@ -136,7 +140,12 @@ class CognitiveCore:
             ),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
-        await self._diagnostics.record(proposal.diagnostic)
+        # Diagnostics must not turn a committed cognitive operation into a retry.
+        try:
+            await self._diagnostics.record(proposal.diagnostic)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning("Diagnostic recording failed", exc_info=True)
 
         return InteractionResult(
             response_text=proposal.response_text,

@@ -189,6 +189,23 @@
   </script>
 </head>
 <body>
+  <script>
+    const bodySessionId = crypto.randomUUID();
+    async function bodyFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set("X-Body-Session", bodySessionId);
+      const response = await fetch(url, { ...options, headers, signal: options.signal || AbortSignal.timeout(130000) });
+      const receipt = response.headers.get("X-Body-Delivery");
+      if (response.ok && receipt) {
+        await response.clone().arrayBuffer();
+        const ack = await fetch(String(url).split("?")[0].replace(/\/next$/, "/ack") + "?delivery_id=" + encodeURIComponent(receipt),
+          { method: "POST", headers, signal: AbortSignal.timeout(10000) });
+        if (!ack.ok) throw new Error("Body delivery acknowledgment failed");
+      }
+      return response;
+    }
+  </script>
+
   <main>
     <nav class="page-bar" aria-label="Body navigation">
       <div class="page-links">
@@ -317,7 +334,7 @@
       if (document.hidden || pageRefreshProbeBusy) return;
       pageRefreshProbeBusy = true;
       try {
-        const response = await fetch(
+        const response = await bodyFetch(
           window.location.pathname + "?body_refresh_probe=" + Date.now(),
           { cache: "no-store" }
         );
@@ -448,8 +465,8 @@
 
     async function consumeExpressionOutputs() {
       const [faceResponse, mouthResponse] = await Promise.all([
-        fetch("/v1/body/face/next", { cache: "no-store" }),
-        fetch("/v1/body/mouth/next", { cache: "no-store" })
+        bodyFetch("/v1/body/face/next", { cache: "no-store" }),
+        bodyFetch("/v1/body/mouth/next", { cache: "no-store" })
       ]);
 
       if (faceResponse.ok) {
@@ -529,7 +546,7 @@
       evidenceArtifactLink.hidden = true;
 
       try {
-        const response = await fetch("/v1/mind/body/interact", {
+        const response = await bodyFetch("/v1/mind/body/interact", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message })
@@ -595,10 +612,16 @@
       canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
       canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
 
+      const signature = frameSignature();
+      if (lastSuccessfulFrame) {
+        let difference = 0;
+        for (let i = 0; i < signature.length; i++) difference += Math.abs(signature[i] - lastSuccessfulFrame[i]);
+        if (difference / signature.length / 255 < 0.045) return;
+      }
       sensoryRequestInFlight = true;
       try {
         setStatus("SENSES ON\nSeeing...");
-        const ingress = await fetch("/v1/body/eyes/observe", {
+        const ingress = await bodyFetch("/v1/body/eyes/observe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -611,13 +634,14 @@
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
-        const response = await fetch(
+        const response = await bodyFetch(
           "/v1/mind/body/see?express=false",
           { method: "POST" }
         );
         if (!response.ok) throw new Error(await responseErrorMessage(response));
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
+        lastSuccessfulFrame = signature;
         await showMindResult(await response.json(), { consumeOutputs: false });
       } finally {
         sensoryRequestInFlight = false;
@@ -685,6 +709,25 @@
       });
     }
 
+    async function audioHasSpeechEnergy(blob) {
+      const context = new AudioContext();
+      try {
+        const buffer = await context.decodeAudioData(await blob.arrayBuffer());
+        const samples = buffer.getChannelData(0);
+        let sum = 0, peak = 0;
+        for (const sample of samples) { sum += sample * sample; peak = Math.max(peak, Math.abs(sample)); }
+        return Math.sqrt(sum / Math.max(samples.length, 1)) >= 0.008 && peak >= 0.06;
+      } finally { await context.close(); }
+    }
+    let lastSuccessfulFrame = null;
+    function frameSignature() {
+      const scratch = document.createElement("canvas");
+      scratch.width = 12; scratch.height = 8;
+      const context = scratch.getContext("2d");
+      context.drawImage(canvas, 0, 0, 12, 8);
+      return context.getImageData(0, 0, 12, 8).data;
+    }
+
     async function perceiveAudio(generation) {
       if (window.speechSynthesis?.speaking) return;
 
@@ -698,9 +741,10 @@
         return;
       }
 
+      if (!await audioHasSpeechEnergy(recording.blob)) return;
       sensoryRequestInFlight = true;
       try {
-        const ingress = await fetch("/v1/body/ears/observe", {
+        const ingress = await bodyFetch("/v1/body/ears/observe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -712,7 +756,7 @@
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
-        const response = await fetch(
+        const response = await bodyFetch(
           "/v1/mind/body/hear?express=false",
           { method: "POST" }
         );

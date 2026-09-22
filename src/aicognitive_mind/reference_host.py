@@ -202,6 +202,7 @@ class CognitiveMindHost:
                 {
                     "user_message": user_message,
                     "response_text": reasoning.response_text,
+                    "idempotency_key": begun.get("idempotency_key"),
                     "proposed_memories": [
                         memory.model_dump(mode="json")
                         for memory in reasoning.proposed_memories

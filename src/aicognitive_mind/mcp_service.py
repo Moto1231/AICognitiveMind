@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+from aicognitive_mind.commit import atomic
 
 from aicognitive_mind.domain import (
     CognitiveActor,
@@ -60,6 +63,7 @@ class CognitiveMcpService:
         self._journal = journal
         self._memory = memory
 
+    @atomic
     async def initialize(
         self,
         self_name: str,
@@ -91,12 +95,13 @@ class CognitiveMcpService:
 
     async def status(self) -> dict[str, Any]:
         mind = await self._require_mind()
-        memories = await self._memory.read()
-        journal = await self._journal.read()
+        from aicognitive_mind.retrieval import count
+        memory_count = await count(self._memory)
+        journal_count = await count(self._journal)
         return {
             "mind": mind.model_dump(mode="json"),
-            "durable_memory_count": len(memories),
-            "journal_experience_count": len(journal),
+            "durable_memory_count": memory_count,
+            "journal_experience_count": journal_count,
             "integration": {
                 "protocol": "MCP",
                 "reasoning_owner": "connected MCP host",
@@ -122,6 +127,7 @@ class CognitiveMcpService:
         )
         return {
             "status": "ready_to_reason",
+            "idempotency_key": uuid4().hex,
             "mind": mind.model_dump(mode="json"),
             "recalled_context": recalled["context"],
             "conscious_workspace_contract": CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
@@ -135,10 +141,12 @@ class CognitiveMcpService:
                 "propose the exact competing values in belief_reframes only when the evidence-backed "
                 "finding supplies explicit scopes for both values. "
                 "Before presenting the final answer, call complete_interaction with the response "
-                "text and only stable memory proposals that should influence future interactions."
+                "text and only stable memory proposals that should influence future interactions. "
+                "Pass the returned idempotency_key unchanged on completion and any retry."
             ),
         }
 
+    @atomic
     async def complete_interaction(
         self,
         user_message: str,
@@ -147,6 +155,7 @@ class CognitiveMcpService:
         current_evidence: tuple[ResearchObservation, ...] = (),
         belief_transitions: tuple[BeliefTransitionProposal, ...] = (),
         belief_reframes: tuple[BeliefReframeProposal, ...] = (),
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """Let the Steward review proposed learning, commit accepted memory, and journal the experience."""
         mind = await self._require_mind()

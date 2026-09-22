@@ -1032,7 +1032,10 @@ namespace Axiom.Body
 
             GUI.Label(
                 new Rect(innerLeft, y, innerWidth, 20f),
-                "Primary: External Host · " + hostProtocol
+                "Primary: External Host · " + hostProtocol +
+                (summary.reasoning?.active_host != null
+                    ? " · " + summary.reasoning.active_host.name
+                    : " · Not attached")
             );
             y += 21f;
 

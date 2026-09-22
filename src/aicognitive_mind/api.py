@@ -3,10 +3,10 @@
 # of this file is prohibited without prior written permission from the
 # copyright holder.
 
-import os
 import base64
 import binascii
 import hmac
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time
@@ -18,6 +18,11 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from aicognitive_mind.backup import (
+    backup_filename,
+    build_backup_archive,
+    evidence_references_from_journal,
+)
 from aicognitive_mind.body import (
     BodyRuntime,
     BrowserAudioIngress,
@@ -30,11 +35,7 @@ from aicognitive_mind.body import (
     Percept,
 )
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
-from aicognitive_mind.backup import (
-    backup_filename,
-    build_backup_archive,
-    evidence_references_from_journal,
-)
+from aicognitive_mind.body_sessions import BodyQueue, body_session
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
@@ -50,20 +51,18 @@ from aicognitive_mind.domain import (
 )
 from aicognitive_mind.embodiment import (
     EmbodiedInteractionResult,
-    GeminiPerceptInterpreter,
     MindBodyBridge,
-    OpenAIPerceptInterpreter,
-    SummaryPerceptInterpreter,
-)
-from aicognitive_mind.engines import (
-    EchoReasoningEngine,
-    GeminiReasoningEngine,
-    OpenAIReasoningEngine,
-    resolve_gemini_model,
 )
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
+from aicognitive_mind.host_runtime import (
+    HostAwareCore,
+    HostAwareInterpreter,
+    HostRuntime,
+    RuntimeRecords,
+)
 from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.persistence import create_storage
+from aicognitive_mind.standalone import ProviderUnavailable, StandaloneRuntime
 from aicognitive_mind.storage import (
     DiagnosticStore,
     EvidenceStore,
@@ -72,7 +71,6 @@ from aicognitive_mind.storage import (
     MindAlreadyInitializedError,
     MindStore,
 )
-
 
 STATIC_DIR = Path(__file__).with_name("static")
 
@@ -361,6 +359,8 @@ def _effective_standalone_reasoning_provider(settings: Any) -> str:
 
 
 def _reasoning_backend_error_detail(exc: Exception) -> str:
+    if isinstance(exc, ProviderUnavailable):
+        return str(exc)
     settings = get_settings()
     provider = _effective_standalone_reasoning_provider(settings)
     provider_label = (
@@ -414,7 +414,7 @@ def _reasoning_backend_error_detail(exc: Exception) -> str:
 
 def _validate_reasoning_configuration(settings: Any) -> str:
     provider = _effective_standalone_reasoning_provider(settings)
-    if provider not in {"gemini", "openai", "echo"}:
+    if provider not in {"gemini", "openai", "echo", "disabled"}:
         raise RuntimeError(
             "STANDALONE_REASONING_PROVIDER must be one of: gemini, openai, echo "
             "(legacy REASONING_PROVIDER is still accepted)"
@@ -444,7 +444,7 @@ def _validate_reasoning_configuration(settings: Any) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    provider = _validate_reasoning_configuration(settings)
+    provider = settings.effective_standalone_reasoning_provider
     app.state.standalone_reasoning_provider = provider
     storage = await create_storage(settings)
     app.state.runtime = storage.runtime
@@ -458,10 +458,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         journal=storage.journal,
         memory=storage.memory,
     )
-    browser_eyes = BrowserVisionIngress()
-    browser_ears = BrowserAudioIngress()
-    browser_face = BrowserAvatarOutput()
-    browser_mouth = BrowserVoiceOutput()
+    records = RuntimeRecords(storage.mind)
+    browser_eyes = BodyQueue(records, "eyes", BrowserVisionIngress())
+    browser_ears = BodyQueue(records, "ears", BrowserAudioIngress())
+    browser_face = BodyQueue(records, "face", BrowserAvatarOutput())
+    browser_mouth = BodyQueue(records, "mouth", BrowserVoiceOutput())
     app.state.browser_eyes = browser_eyes
     app.state.browser_ears = browser_ears
     app.state.browser_face = browser_face
@@ -472,42 +473,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         voice=browser_mouth,
         avatar=browser_face,
     )
-    if provider == "gemini":
-        assert settings.gemini_api_key is not None
-        requested_model = (
-            "auto"
-            if os.getenv("RENDER", "").lower() == "true"
-            else settings.gemini_model
-        )
-        resolved_model = await resolve_gemini_model(
-            settings.gemini_api_key,
-            requested_model,
-        )
-        app.state.reasoning_model = resolved_model
-        engine = GeminiReasoningEngine(
-            settings.gemini_api_key,
-            resolved_model,
-        )
-        interpreter = GeminiPerceptInterpreter(
-            settings.gemini_api_key,
-            model=resolved_model,
-        )
-    elif provider == "openai":
-        assert settings.openai_api_key is not None
-        app.state.reasoning_model = settings.openai_model
-        engine = OpenAIReasoningEngine(
-            settings.openai_api_key,
-            settings.openai_model,
-        )
-        interpreter = OpenAIPerceptInterpreter(
-            settings.openai_api_key,
-            vision_model=settings.openai_model,
-            transcription_model=settings.openai_transcription_model,
-        )
-    else:
-        app.state.reasoning_model = "deterministic-echo"
-        engine = EchoReasoningEngine()
-        interpreter = SummaryPerceptInterpreter()
+    fallback = StandaloneRuntime(settings, records)
+    app.state.standalone = fallback
+    hosts = HostRuntime(storage.mind, app.state.mcp_service, settings.reasoning_timeout_seconds)
+    app.state.hosts = hosts
+    engine = fallback
+    interpreter = HostAwareInterpreter(fallback, hosts)
     evidence_review = SensoryEvidenceReviewTool(
         evidence=storage.evidence,
         journal=storage.journal,
@@ -521,6 +492,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         engine=engine,
         reasoning_tools=(evidence_review,),
     )
+    core = HostAwareCore(core, hosts)
     app.state.core = core
     app.state.evidence_review = evidence_review
     app.state.mind_body = MindBodyBridge(
@@ -530,13 +502,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         evidence=storage.evidence,
         journal=storage.journal,
     )
-    yield
-    await storage.runtime.close()
+    try:
+        yield
+    finally:
+        await storage.runtime.close()
 
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def select_body_session(request: Request, call_next: Any) -> Response:
+    import re
+    session = request.headers.get("x-body-session", "legacy")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session):
+        return Response("Invalid Body session", status_code=400)
+    token = body_session.set(session)
+    try:
+        return await call_next(request)
+    finally:
+        body_session.reset(token)
 
 
 @app.middleware("http")
@@ -682,7 +669,7 @@ async def receive_browser_observation(
 ) -> Percept:
     eyes = cast(BrowserVisionIngress, request.app.state.browser_eyes)
     try:
-        return eyes.accept(
+        return await eyes.accept(
             image_data_url=body.image_data_url,
             width=body.width,
             height=body.height,
@@ -725,7 +712,7 @@ async def receive_browser_audio_observation(
 ) -> Percept:
     ears = cast(BrowserAudioIngress, request.app.state.browser_ears)
     try:
-        return ears.accept(
+        return await ears.accept(
             audio_data_url=body.audio_data_url,
             duration_ms=body.duration_ms,
             source=body.source,
@@ -800,9 +787,14 @@ async def face_status(request: Request) -> DeviceStatus:
 
 
 @app.get("/v1/body/face/next", response_model=ExpressionIntent | None)
-async def next_face_intent(request: Request) -> ExpressionIntent | None:
+async def next_face_intent(request: Request, response: Response) -> ExpressionIntent | None:
     face = cast(BrowserAvatarOutput, request.app.state.browser_face)
-    return face.consume()
+    if body_session.get() == "legacy":
+        return await face.consume()
+    intent, receipt = await face.deliver()
+    if receipt:
+        response.headers["X-Body-Delivery"] = receipt
+    return intent
 
 
 @app.get("/body/mouth", include_in_schema=False)
@@ -843,9 +835,23 @@ async def mouth_status(request: Request) -> DeviceStatus:
 
 
 @app.get("/v1/body/mouth/next", response_model=ExpressionIntent | None)
-async def next_mouth_intent(request: Request) -> ExpressionIntent | None:
+async def next_mouth_intent(request: Request, response: Response) -> ExpressionIntent | None:
     mouth = cast(BrowserVoiceOutput, request.app.state.browser_mouth)
-    return mouth.consume()
+    if body_session.get() == "legacy":
+        return await mouth.consume()
+    intent, receipt = await mouth.deliver()
+    if receipt:
+        response.headers["X-Body-Delivery"] = receipt
+    return intent
+
+
+@app.post("/v1/body/{modality}/ack")
+async def acknowledge_body_output(modality: str, request: Request, delivery_id: str = Query(min_length=1, max_length=64)) -> dict[str, bool]:
+    if modality not in {"face", "mouth"}:
+        raise HTTPException(404, "Unknown output modality")
+    queue = getattr(request.app.state, "browser_" + modality)
+    await queue.acknowledge(delivery_id)
+    return {"acknowledged": True}
 
 
 @app.get("/health")
@@ -870,7 +876,7 @@ async def portal_status(request: Request) -> dict[str, Any]:
         model = getattr(
             request.app.state,
             "reasoning_model",
-            "unknown",
+            getattr(getattr(request.app.state, "standalone", None), "model", "not started"),
         )
         requested_model = (
             runtime_settings.gemini_model
@@ -885,6 +891,8 @@ async def portal_status(request: Request) -> dict[str, Any]:
         # reason when no external host is driving the interaction.
         result["reasoning"] = {
             "primary_mode": "external_host",
+            "active_host": await request.app.state.hosts.active() if hasattr(request.app.state, "hosts") else None,
+            "fallback_enabled": provider != "disabled",
             "external_host_protocol": "MCP",
             "external_host_reasoning_owner": "connected MCP host",
             "standalone_fallback": {
@@ -1026,36 +1034,44 @@ async def _apply_admin_memory_revision(
     journal_store: JournalStore,
     channel: str,
 ) -> DurableMemory:
-    governed_replacement = replacement.model_copy(
-        update={
-            "formed_at": original.formed_at,
-            "artifacts": original.artifacts,
-        }
-    )
-    revised = await memory_store.replace_exact(
-        original,
-        governed_replacement,
-        recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
-    )
-    if revised is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="The durable memory changed before this revision could be applied",
-        )
+    from aicognitive_mind.commit import atomic
+    class Revision:
+        def __init__(self):
+            self._memory, self._journal = memory_store, journal_store
 
-    await journal_store.append(
-        JournalEntry(
-            kind=JournalKind.MEMORY_REVISION,
-            experience={
-                "source": "human_administrator",
-                "channel": channel,
-                "before": original.model_dump(mode="python"),
-                "after": revised.model_dump(mode="python"),
-            },
-        ),
-        recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
-    )
-    return revised
+        @atomic
+        async def apply(self):
+            governed_replacement = replacement.model_copy(
+                update={
+                    "formed_at": original.formed_at,
+                    "artifacts": original.artifacts,
+                }
+            )
+            revised = await self._memory.replace_exact(
+                original,
+                governed_replacement,
+                recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+            )
+            if revised is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="The durable memory changed before this revision could be applied",
+                )
+
+            await self._journal.append(
+                JournalEntry(
+                    kind=JournalKind.MEMORY_REVISION,
+                    experience={
+                        "source": "human_administrator",
+                        "channel": channel,
+                        "before": original.model_dump(mode="python"),
+                        "after": revised.model_dump(mode="python"),
+                    },
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+            )
+            return revised
+    return await Revision().apply()
 
 
 @app.get("/v1/admin/backup", include_in_schema=False)
@@ -1068,10 +1084,9 @@ async def admin_backup(request: Request) -> Response:
     diagnostics_store = cast(DiagnosticStore, request.app.state.diagnostics)
     created_at = datetime.now(UTC)
     try:
-        mind = await mind_store.load()
-        journal = await journal_store.read()
-        memory = await memory_store.read()
-        diagnostics = await diagnostics_store.read()
+        from aicognitive_mind.snapshot import cognitive_snapshot
+        snapshot = await cognitive_snapshot(mind_store, journal_store, memory_store, diagnostics_store)
+        mind, journal, memory, diagnostics = (snapshot[key] for key in ("mind", "journal", "memory", "diagnostics"))
         evidence = evidence_references_from_journal(journal)
         archive = build_backup_archive(
             mind=mind,

@@ -122,8 +122,18 @@ namespace Axiom.Body
     }
 
     [Serializable]
+    public sealed class DesktopActiveHost
+    {
+        public string name = string.Empty;
+        public string model = string.Empty;
+        public double expires;
+    }
+
+    [Serializable]
     public sealed class DesktopReasoningStatus
     {
+        public DesktopActiveHost active_host;
+        public bool fallback_enabled;
         public string primary_mode = string.Empty;
         public string external_host_protocol = string.Empty;
         public string external_host_reasoning_owner = string.Empty;
@@ -580,8 +590,12 @@ namespace Axiom.Body
             return response;
         }
 
+        private readonly string _bodySession = Guid.NewGuid().ToString("N");
+
         private async Task SendAsync(UnityWebRequest request)
         {
+            request.timeout = 130;
+            request.SetRequestHeader("X-Body-Session", _bodySession);
             ApplyAuthorization(request);
 
             UnityWebRequestAsyncOperation operation = request.SendWebRequest();
@@ -596,6 +610,15 @@ namespace Axiom.Body
                 throw new InvalidOperationException(
                     $"Mind API request failed ({request.responseCode}): {detail}"
                 );
+            }
+            string receipt = request.GetResponseHeader("X-Body-Delivery");
+            if (!string.IsNullOrEmpty(receipt))
+            {
+                string ackUrl = request.url.Split('?')[0].Replace("/next", "/ack") +
+                    "?delivery_id=" + UnityWebRequest.EscapeURL(receipt);
+                using UnityWebRequest ack = new UnityWebRequest(ackUrl, "POST");
+                ack.downloadHandler = new DownloadHandlerBuffer();
+                await SendAsync(ack);
             }
         }
 

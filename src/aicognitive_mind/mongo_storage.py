@@ -59,7 +59,11 @@ class MongoMindStore:
     async def initialize(self, mind: CognitiveMind) -> CognitiveMind:
         if await self._collection.find_one({}, {"_id": 1}) is not None:
             raise MindAlreadyInitializedError("This instance already contains its mind")
-        await self._collection.insert_one(mind.model_dump(mode="python"))
+        from pymongo.errors import DuplicateKeyError
+        try:
+            await self._collection.insert_one({"_id": "root", **mind.model_dump(mode="python")})
+        except DuplicateKeyError as exc:
+            raise MindAlreadyInitializedError("This instance already contains its mind") from exc
         return mind
 
     async def load(self) -> CognitiveMind | None:
