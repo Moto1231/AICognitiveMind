@@ -1,0 +1,20 @@
+{
+  "name": "axiom-local",
+  "interface": {
+    "displayName": "Axiom"
+  },
+  "plugins": [
+    {
+      "name": "axiom-mind",
+      "source": {
+        "source": "local",
+        "path": "./plugins/axiom-mind"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
