@@ -41,7 +41,7 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.provider.authenticate("mind", "secret"))
         self.assertFalse(self.provider.authenticate("mind", "wrong"))
 
-        callback = self.provider.approve(request_id)
+        callback = await self.provider.approve(request_id)
         callback_params = parse_qs(urlparse(callback).query)
         self.assertEqual(callback_params["state"], ["state-1"])
         code_value = callback_params["code"][0]
@@ -84,7 +84,7 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
         )
         login_url = await self.provider.authorize(self.client, params)
         request_id = parse_qs(urlparse(login_url).query)["request"][0]
-        callback = self.provider.deny(request_id)
+        callback = await self.provider.deny(request_id)
         values = parse_qs(urlparse(callback).query)
         self.assertEqual(values["error"], ["access_denied"])
         self.assertEqual(values["state"], ["deny-state"])
