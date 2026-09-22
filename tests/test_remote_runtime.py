@@ -63,7 +63,7 @@ class RemoteRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("APP_ACCESS_PASSWORD", blueprint)
         self.assertGreaterEqual(blueprint.count("sync: false"), 5)
         self.assertIn(
-            "uvicorn aicognitive_mind.api:app --host 0.0.0.0 --port $PORT",
+            "uvicorn aicognitive_mind.deployment:app --host 0.0.0.0 --port $PORT",
             blueprint,
         )
 
