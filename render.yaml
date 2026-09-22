@@ -6,7 +6,7 @@ services:
     plan: free
     branch: main
     buildCommand: pip install .
-    startCommand: uvicorn aicognitive_mind.api:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn aicognitive_mind.deployment:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: APP_NAME
