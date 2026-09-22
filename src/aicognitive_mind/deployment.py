@@ -98,6 +98,8 @@ async def _combined_lifespan(host_app):
     # Starlette does not automatically run a mounted sub-application's lifespan.
     # Run both the MCP session manager and the existing Axiom portal/API lifespan.
     async with AsyncExitStack() as stack:
+        await oauth_provider.start()
+        stack.push_async_callback(oauth_provider.close)
         await stack.enter_async_context(_mcp_lifespan(host_app))
         await stack.enter_async_context(portal_app.router.lifespan_context(portal_app))
         yield
