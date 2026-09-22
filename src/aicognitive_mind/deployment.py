@@ -83,11 +83,18 @@ app = axiom_mcp.streamable_http_app(
     stateless_http=True,
     transport_security=transport_security,
     host="0.0.0.0",
-    custom_starlette_routes=[
+)
+
+# The installed MCPServer wrapper does not accept custom routes as a transport
+# argument. The returned object is an ordinary Starlette app, so append Axiom's
+# login endpoints and portal after MCP/OAuth discovery routes are constructed.
+# Mount("/") must remain last because it matches every remaining path.
+app.router.routes.extend(
+    [
         Route("/oauth/login", endpoint=_oauth_login_get, methods=["GET"]),
         Route("/oauth/login", endpoint=_oauth_login_post, methods=["POST"]),
         Mount("/", app=portal_app),
-    ],
+    ]
 )
 
 _mcp_lifespan = app.router.lifespan_context
