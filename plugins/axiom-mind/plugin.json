@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "axiom-mind",
+  "version": "0.1.0",
+  "description": "Use Axiom as the persistent Mind behind a replaceable AI reasoning host.",
+  "author": {
+    "name": "William Enright"
+  },
+  "repository": "https://github.com/Moto1231/AICognitiveMind",
+  "keywords": [
+    "axiom",
+    "memory",
+    "identity",
+    "continuity",
+    "mcp"
+  ]
+}
