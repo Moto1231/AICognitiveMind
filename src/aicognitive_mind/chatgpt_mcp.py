@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent
+from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import AnyHttpUrl
 
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
@@ -66,7 +66,7 @@ def build_chatgpt_mcp(
         auth_server_provider=provider,
     )
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
         """Read Axiom's persistent identity and continuity status.
 
@@ -75,7 +75,7 @@ def build_chatgpt_mcp(
         """
         return await ctx.request_context.lifespan_context.mind_service.status()
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def begin_interaction(
         user_message: str,
         ctx: Context[AppState],
@@ -90,7 +90,7 @@ def build_chatgpt_mcp(
             user_message
         )
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     async def complete_interaction(
         user_message: str,
         response_text: str,
@@ -114,7 +114,7 @@ def build_chatgpt_mcp(
             idempotency_key=idempotency_key,
         )
 
-    @server.tool()
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def read_sensory_evidence(
         sha256: str,
         captured_at: str,
