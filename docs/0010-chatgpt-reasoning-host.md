@@ -46,8 +46,9 @@ The interactive authorization page uses the same `APP_ACCESS_USERNAME` and
 `APP_ACCESS_PASSWORD` configured for the Axiom portal.
 
 OAuth clients, access tokens, refresh tokens, and pending grants are operational state rather
-than Mind state. The first implementation keeps them in process memory. A Render restart may
-therefore require ChatGPT to authorize again; it does not affect Axiom's identity or memory.
+than Mind state. They are stored in the existing `runtime_records` persistence so the free Render
+service can restart without discarding ChatGPT's registration or refresh-token state. This does
+not make OAuth credentials part of Axiom's identity or cognitive memory.
 
 ## ChatGPT connection
 
