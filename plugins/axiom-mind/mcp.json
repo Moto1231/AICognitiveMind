@@ -3,7 +3,7 @@
   "mcpServers": {
     "axiom": {
       "type": "streamable-http",
-      "url": "https://ai-cognitive-mind-zgk9.onrender.com/mcp"
+      "url": "https://ai-cognitive-mind.onrender.com/mcp"
     }
   }
 }
