@@ -459,6 +459,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory=storage.memory,
     )
     records = RuntimeRecords(storage.mind)
+    from aicognitive_mind.voice_settings import VoiceSettings
+
+    app.state.voice_settings = VoiceSettings(storage.mind)
     browser_eyes = BodyQueue(records, "eyes", BrowserVisionIngress())
     browser_ears = BodyQueue(records, "ears", BrowserAudioIngress())
     browser_face = BodyQueue(records, "face", BrowserAvatarOutput())
@@ -549,6 +552,12 @@ async def portal() -> FileResponse:
 @app.get("/body/live", include_in_schema=False)
 async def live_body_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "live_body.html")
+
+
+@app.get("/v1/body/voice/settings")
+async def body_voice_settings(request: Request) -> dict[str, Any]:
+    """Read voice preferences shared with Axiom's ChatGPT MCP host."""
+    return await request.app.state.voice_settings.read()
 
 
 @app.get("/body/avatar", include_in_schema=False)
