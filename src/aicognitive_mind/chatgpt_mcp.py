@@ -11,10 +11,12 @@ from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, T
 from pydantic import AnyHttpUrl
 
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
+from aicognitive_mind.config import get_settings
+from aicognitive_mind.host_runtime import HostRuntime
 from aicognitive_mind.mcp_server import AppState, lifespan
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
-
+from aicognitive_mind.voice_settings import VoiceSettings
 
 HOST_INSTRUCTIONS = """
 Axiom is the persistent Cognitive Mind. You are the replaceable reasoning host.
@@ -74,6 +76,69 @@ def build_chatgpt_mcp(
         of whichever reasoning host or model is currently connected.
         """
         return await ctx.request_context.lifespan_context.mind_service.status()
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def get_body_voice_settings(ctx: Context[AppState]) -> dict[str, Any]:
+        """Read the phone Body's shared voice, speaking rate, pitch, and volume.
+
+        The browser chooses from voices installed on that device. This does not start its mic.
+        """
+        storage = ctx.request_context.lifespan_context.storage
+        return await VoiceSettings(storage.mind).read()
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def get_body_reasoning_status(ctx: Context[AppState]) -> dict[str, Any]:
+        """Read the phone Body's external host and configured fallback provider/model.
+
+        This reports configuration; it does not guarantee provider quota or availability.
+        """
+        state = ctx.request_context.lifespan_context
+        settings = get_settings()
+        provider_name = settings.effective_standalone_reasoning_provider
+        requested_model = (
+            settings.gemini_model if provider_name == "gemini"
+            else settings.openai_model if provider_name == "openai"
+            else None
+        )
+        return {
+            "active_external_host": await HostRuntime(
+                state.storage.mind, state.mind_service
+            ).active(),
+            "fallback_provider": provider_name,
+            "fallback_requested_model": requested_model,
+        }
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    async def set_body_voice_settings(
+        expected_revision: int,
+        ctx: Context[AppState],
+        voice_name: str | None = None,
+        rate: float | None = None,
+        pitch: float | None = None,
+        volume: float | None = None,
+    ) -> dict[str, Any]:
+        """Change the phone Body's persisted voice preferences at the user's request.
+
+        First call get_body_voice_settings and pass its revision to prevent lost edits.
+        Use voice_name only for a voice known to exist on the user's phone; an unknown
+        name falls back to the browser's default voice. This cannot remotely turn on
+        a microphone or override the browser's permission requirement.
+        """
+        storage = ctx.request_context.lifespan_context.storage
+        return await VoiceSettings(storage.mind).update(
+            expected_revision=expected_revision,
+            voice_name=voice_name,
+            rate=rate,
+            pitch=pitch,
+            volume=volume,
+        )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def begin_interaction(

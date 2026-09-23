@@ -32,17 +32,16 @@ class VoicePackV01Tests(unittest.TestCase):
         self.assertIn('from "/static/voice_pack.js"', markup)
         self.assertIn("speechSynthesis.getVoices()", markup)
 
-    def test_live_body_uses_saved_voice_pack_for_mouth_output(self) -> None:
+    def test_live_body_uses_saved_or_shared_voice_pack_for_mouth_output(self) -> None:
         markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
         )
 
         self.assertIn('from "/static/voice_pack.js"', markup)
         self.assertIn("loadSavedVoicePack()", markup)
-        self.assertIn(
-            "applyVoicePack(utterance, loadSavedVoicePack(), voices)",
-            markup,
-        )
+        self.assertIn("sharedVoicePack = loadSavedVoicePack()", markup)
+        self.assertIn("applyVoicePack(utterance, sharedVoicePack, voices)", markup)
+        self.assertIn("/v1/body/voice/settings", markup)
         self.assertIn("SpeechSynthesisUtterance", markup)
 
 

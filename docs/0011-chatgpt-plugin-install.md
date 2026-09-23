@@ -51,6 +51,24 @@ human-facing response
 A successful `complete_interaction` is what closes the cognitive turn and
 allows Axiom's independent Memory Steward and journal to process the experience.
 
+## Phone Body controls
+
+The ChatGPT plugin also exposes `get_body_reasoning_status`,
+`get_body_voice_settings`, and `set_body_voice_settings`. Voice settings are
+stored in Axiom's shared runtime records and the Live Body page refreshes them
+on load and every ten seconds while visible. A change to voice name, rate,
+pitch, or volume made through ChatGPT therefore applies to future spoken
+responses in the phone browser session. A voice name unavailable on that phone
+falls back to its default voice. The settings update requires the revision
+returned by the read tool, so stale changes cannot silently overwrite one
+another.
+
+The browser owns microphone permission and the listening loop. The plugin
+cannot remotely start the mic. `get_body_reasoning_status` reports the attached
+external host and configured fallback provider/model; it does not switch models
+or guarantee quota. Live Body uses its configured fallback when no external
+host is attached.
+
 ## Current account-surface caveat
 
 Axiom itself exposes the complete read/write MCP contract. ChatGPT may still

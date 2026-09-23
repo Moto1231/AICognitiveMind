@@ -1,6 +1,6 @@
 ---
 name: axiom-mind
-description: Use when Axiom Mind is selected or when the user wants the current reasoning model to operate through Axiom's persistent identity, memory, continuity, journal, or embodied experience.
+description: Use when Axiom Mind is selected or when the user wants the current reasoning model to operate through Axiom's persistent identity, memory, continuity, journal, embodied experience, or phone Body voice settings.
 ---
 
 # Axiom Mind host protocol
@@ -28,3 +28,18 @@ For every human turn while Axiom Mind is active:
 - If completion cannot be committed, say that Axiom could not commit the interaction; do not claim the memory/journal update succeeded.
 - Do not treat the host model's identity, provider, or context window as Axiom's identity.
 - `mind_status` is diagnostic and does not replace the begin/complete interaction protocol.
+
+## Phone Body voice settings
+
+When the user asks to change Axiom's phone voice, speed, pitch, or volume, call
+`get_body_voice_settings` before `set_body_voice_settings`. Pass the returned
+`revision` as `expected_revision`, then report the committed values. A named
+voice must exist on the user's phone; otherwise the browser uses its default.
+The phone Body refreshes shared settings while open. These tools cannot start
+its microphone remotely or bypass browser microphone permission. Continue the
+normal begin/complete protocol for the human turn.
+
+Use `get_body_reasoning_status` to report whether an external host is attached
+and which fallback provider/model is configured. Do not interpret a configured
+model as proof that its API quota is available. Model switching is not exposed
+by this plugin yet.

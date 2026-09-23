@@ -312,6 +312,8 @@
     let microphoneStream = null;
     let recorder = null;
     let voices = [];
+    let sharedVoicePack = loadSavedVoicePack();
+    let sharedVoiceRevision = -1;
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition = null;
     let talkEnabled = false;
@@ -444,7 +446,7 @@
 
       const metadata = intent.metadata || {};
       const utterance = new SpeechSynthesisUtterance(intent.text);
-      applyVoicePack(utterance, loadSavedVoicePack(), voices);
+      applyVoicePack(utterance, sharedVoicePack, voices);
 
       const requestedRate = Number(metadata.rate ?? 1);
       const requestedPitch = Number(metadata.pitch ?? 1);
@@ -490,6 +492,28 @@
         try { recognition.start(); }
         catch (error) { setStatus("Voice listening could not restart: " + error.message); }
       }, 450);
+    }
+
+    async function refreshSharedVoiceSettings() {
+      if (document.hidden) return;
+      try {
+        const response = await bodyFetch("/v1/body/voice/settings", { cache: "no-store" });
+        if (!response.ok) return;
+        const settings = await response.json();
+        if (settings.revision === sharedVoiceRevision) return;
+        sharedVoiceRevision = settings.revision;
+        if (!settings.revision) return;
+        sharedVoicePack = {
+          ...loadSavedVoicePack(),
+          voiceName: settings.voiceName,
+          voiceURI: "",
+          rate: settings.rate,
+          pitch: settings.pitch,
+          volume: settings.volume
+        };
+      } catch (_) {
+        // Keep the last working voice while the network is unavailable.
+      }
     }
 
     function stopTalking(message = "Hands-free conversation stopped.") {
@@ -998,7 +1022,7 @@
     window.addEventListener("resize", resize);
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) recognition?.stop();
-      else { checkForBodyPageUpdate(); resumeTalking(); }
+      else { checkForBodyPageUpdate(); refreshSharedVoiceSettings(); resumeTalking(); }
     });
     window.addEventListener("beforeunload", () => {
       stopTalking();
@@ -1007,6 +1031,8 @@
     });
 
     resize();
+    refreshSharedVoiceSettings();
+    window.setInterval(refreshSharedVoiceSettings, 10_000);
     animate();
     checkForBodyPageUpdate();
     window.setInterval(checkForBodyPageUpdate, 12_000);
