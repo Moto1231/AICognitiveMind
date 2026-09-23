@@ -134,6 +134,7 @@
       background: #315f8d;
       color: #fff;
     }
+    #talkToggle.on { border-color: #65d39b; color: #d9f6e8; }
     .sense-panel {
       margin-top: 1rem;
       padding: .8rem 1rem;
@@ -233,6 +234,7 @@
         ></textarea>
         <div class="interaction-actions">
           <button id="clearInteraction" type="button" title="Clear conversation">Clear</button>
+          <button id="talkToggle" type="button" aria-pressed="false" aria-label="Start hands-free conversation">Talk</button>
           <button id="sendInteraction" type="submit" aria-label="Send interaction">Send</button>
         </div>
       </form>
@@ -277,6 +279,7 @@
     const interactionForm = document.getElementById("interactionForm");
     const interactionMessage = document.getElementById("interactionMessage");
     const sendInteractionButton = document.getElementById("sendInteraction");
+    const talkToggle = document.getElementById("talkToggle");
     const clearInteractionButton = document.getElementById("clearInteraction");
     const interactionHistory = document.getElementById("interactionHistory");
     const chatEmpty = document.getElementById("chatEmpty");
@@ -309,6 +312,13 @@
     let microphoneStream = null;
     let recorder = null;
     let voices = [];
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let talkEnabled = false;
+    let talkListening = false;
+    let talkBusy = false;
+    let talkSpeaking = false;
+    let talkRestartTimer = null;
     let sensesEnabled = false;
     let sensoryLoopGeneration = 0;
     let sensoryRequestInFlight = false;
@@ -459,8 +469,71 @@
         if (requestedVoice) utterance.voice = requestedVoice;
       }
 
+      if (talkEnabled) {
+        talkSpeaking = true;
+        recognition?.stop();
+        utterance.onend = utterance.onerror = () => {
+          talkSpeaking = false;
+          resumeTalking();
+        };
+      }
+
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
+    }
+
+    function resumeTalking() {
+      if (!talkEnabled || talkBusy || talkSpeaking || talkListening || document.hidden) return;
+      clearTimeout(talkRestartTimer);
+      talkRestartTimer = window.setTimeout(() => {
+        if (!talkEnabled || talkBusy || talkSpeaking || talkListening || document.hidden) return;
+        try { recognition.start(); }
+        catch (error) { setStatus("Voice listening could not restart: " + error.message); }
+      }, 450);
+    }
+
+    function stopTalking(message = "Hands-free conversation stopped.") {
+      talkEnabled = false;
+      clearTimeout(talkRestartTimer);
+      recognition?.stop();
+      talkToggle.classList.remove("on");
+      talkToggle.setAttribute("aria-pressed", "false");
+      talkToggle.textContent = "Talk";
+      setStatus(message);
+    }
+
+    function startTalking() {
+      if (!Recognition || !window.speechSynthesis) {
+        setStatus("Hands-free voice is unavailable in this browser. Try Chrome on Android.");
+        return;
+      }
+      if (sensesEnabled) releaseSenses();
+      if (!recognition) {
+        recognition = new Recognition();
+        recognition.lang = navigator.language || "en-US";
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.onstart = () => { talkListening = true; setStatus("Listening…"); };
+        recognition.onend = () => { talkListening = false; resumeTalking(); };
+        recognition.onerror = (event) => {
+          if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+            stopTalking("Microphone or speech recognition permission was denied.");
+          } else if (event.error !== "no-speech" && event.error !== "aborted") {
+            setStatus("Voice recognition: " + event.error);
+          }
+        };
+        recognition.onresult = (event) => {
+          const message = Array.from(event.results).map((result) => result[0]?.transcript || "").join(" ").trim();
+          if (!message || talkBusy) return;
+          interactionMessage.value = message;
+          interactionForm.requestSubmit();
+        };
+      }
+      talkEnabled = true;
+      talkToggle.classList.add("on");
+      talkToggle.setAttribute("aria-pressed", "true");
+      talkToggle.textContent = "Stop talking";
+      resumeTalking();
     }
 
     async function consumeExpressionOutputs() {
@@ -542,6 +615,8 @@
       resizeComposer();
 
       sendInteractionButton.disabled = true;
+      talkBusy = true;
+      recognition?.stop();
       const thinkingMessage = appendChatMessage("mind", "Thinking...");
       evidenceArtifactLink.hidden = true;
 
@@ -562,13 +637,16 @@
         );
         interactionHistory.scrollTop = interactionHistory.scrollHeight;
         await consumeExpressionOutputs();
+        if (talkEnabled && !talkSpeaking) speakIntent({ text: result.response_text });
       } catch (error) {
         thinkingMessage.classList.add("error");
         thinkingMessage.textContent = "Interaction failed: " + error.message;
         setStatus("Text interaction failed: " + error.message);
       } finally {
         sendInteractionButton.disabled = false;
-        interactionMessage.focus();
+        talkBusy = false;
+        if (talkEnabled) resumeTalking();
+        else interactionMessage.focus();
       }
     }
 
@@ -890,6 +968,7 @@
     }
 
     interactionForm.addEventListener("submit", submitTextInteraction);
+    talkToggle.addEventListener("click", () => talkEnabled ? stopTalking() : startTalking());
     interactionMessage.addEventListener("input", resizeComposer);
     interactionMessage.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
@@ -918,9 +997,11 @@
 
     window.addEventListener("resize", resize);
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) checkForBodyPageUpdate();
+      if (document.hidden) recognition?.stop();
+      else { checkForBodyPageUpdate(); resumeTalking(); }
     });
     window.addEventListener("beforeunload", () => {
+      stopTalking();
       releaseSenses({ persist: false });
       window.speechSynthesis?.cancel();
     });
