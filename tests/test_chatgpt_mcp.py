@@ -103,6 +103,24 @@ class ChatGptMcpSurfaceTests(unittest.TestCase):
         self.assertIn("begin_interaction", HOST_INSTRUCTIONS)
         self.assertIn("complete_interaction", HOST_INSTRUCTIONS)
 
+    def test_deployed_surface_registers_github_tools(self):
+        provider = AxiomAuthorizationServerProvider(
+            "https://axiom.example",
+            username="mind",
+            password="secret",
+        )
+        server = build_chatgpt_mcp("https://axiom.example", provider)
+        names = {tool.name for tool in server._tool_manager.list_tools()}
+
+        self.assertTrue(
+            {
+                "github_status",
+                "github_list_path",
+                "github_read_file",
+                "github_write_file",
+            }.issubset(names)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
