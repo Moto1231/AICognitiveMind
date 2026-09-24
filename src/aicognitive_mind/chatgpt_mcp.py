@@ -12,6 +12,7 @@ from pydantic import AnyHttpUrl
 
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.config import get_settings
+from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.host_runtime import HostRuntime
 from aicognitive_mind.mcp_server import AppState, lifespan
 from aicognitive_mind.mcp_service import MemoryProposal
@@ -138,6 +139,43 @@ def build_chatgpt_mcp(
             rate=rate,
             pitch=pitch,
             volume=volume,
+        )
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
+    def github_status() -> dict[str, Any]:
+        """Read status for Axiom's configured GitHub repository."""
+        return GitHubCapability.from_env().status()
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
+    def github_list_path(path: str = "", ref: str | None = None) -> dict[str, Any]:
+        """List files/directories in Axiom's configured GitHub repository."""
+        return GitHubCapability.from_env().list_path(path=path, ref=ref)
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
+    def github_read_file(path: str, ref: str | None = None) -> dict[str, Any]:
+        """Read a UTF-8 text file from Axiom's configured GitHub repository."""
+        return GitHubCapability.from_env().read_file(path=path, ref=ref)
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=True,
+        )
+    )
+    def github_write_file(
+        path: str,
+        content: str,
+        message: str,
+        branch: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or replace a UTF-8 text file in Axiom's configured GitHub repository."""
+        return GitHubCapability.from_env().write_file(
+            path=path,
+            content=content,
+            message=message,
+            branch=branch,
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
