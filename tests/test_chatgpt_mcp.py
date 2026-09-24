@@ -90,7 +90,7 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(values["state"], ["deny-state"])
 
 
-class ChatGptMcpSurfaceTests(unittest.TestCase):
+class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
     def test_server_identifies_host_boundary(self):
         provider = AxiomAuthorizationServerProvider(
             "https://axiom.example",
@@ -103,14 +103,14 @@ class ChatGptMcpSurfaceTests(unittest.TestCase):
         self.assertIn("begin_interaction", HOST_INSTRUCTIONS)
         self.assertIn("complete_interaction", HOST_INSTRUCTIONS)
 
-    def test_deployed_surface_registers_github_tools(self):
+    async def test_deployed_surface_registers_github_tools(self):
         provider = AxiomAuthorizationServerProvider(
             "https://axiom.example",
             username="mind",
             password="secret",
         )
         server = build_chatgpt_mcp("https://axiom.example", provider)
-        names = {tool.name for tool in server._tool_manager.list_tools()}
+        names = {tool.name for tool in await server.list_tools()}
 
         self.assertTrue(
             {
