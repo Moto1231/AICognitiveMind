@@ -50,10 +50,10 @@ class GitHubCapabilityTests(unittest.TestCase):
             "permissions": {"pull": True, "push": True},
             "html_url": "https://github.com/Moto1231/AICognitiveMind",
         }
-        with patch.object(self.capability, "_request", return_value=response) as request:
+        with patch.object(GitHubCapability, "_request", autospec=True, return_value=response) as request:
             result = self.capability.status()
 
-        request.assert_called_once_with("GET", "/repos/Moto1231/AICognitiveMind")
+        request.assert_called_once_with(\n            self.capability, "GET", "/repos/Moto1231/AICognitiveMind"\n        )
         self.assertEqual(result["repository"], "Moto1231/AICognitiveMind")
         self.assertEqual(result["default_branch"], "main")
         self.assertTrue(result["permissions"]["push"])
@@ -63,7 +63,7 @@ class GitHubCapabilityTests(unittest.TestCase):
             {"name": "README.md", "path": "docs/README.md", "type": "file", "sha": "abc", "size": 12},
             {"name": "api", "path": "docs/api", "type": "dir", "sha": "def", "size": 0},
         ]
-        with patch.object(self.capability, "_request", return_value=response) as request:
+        with patch.object(GitHubCapability, "_request", autospec=True, return_value=response) as request:
             result = self.capability.list_path("docs", ref="main")
 
         request.assert_called_once_with(
@@ -82,7 +82,7 @@ class GitHubCapabilityTests(unittest.TestCase):
             "size": 12,
             "html_url": "https://github.com/Moto1231/AICognitiveMind/blob/main/README.md",
         }
-        with patch.object(self.capability, "_request", return_value=response):
+        with patch.object(GitHubCapability, "_request", autospec=True, return_value=response):
             result = self.capability.read_file("README.md", ref="main")
 
         self.assertEqual(result["content"], "hello Axiom\n")
@@ -94,8 +94,9 @@ class GitHubCapabilityTests(unittest.TestCase):
             "commit": {"sha": "new-commit", "html_url": "https://github.com/example/commit"},
         }
         with patch.object(
-            self.capability,
+            GitHubCapability,
             "_request",
+            autospec=True,
             side_effect=[None, response],
         ) as request:
             result = self.capability.write_file(
@@ -117,7 +118,7 @@ class GitHubCapabilityTests(unittest.TestCase):
             write.args[:2],
             ("PUT", "/repos/Moto1231/AICognitiveMind/contents/docs/new.txt"),
         )
-        payload = write.args[2]
+        payload = write.args[3]
         self.assertEqual(payload["message"], "Add new file")
         self.assertEqual(payload["branch"], "feature")
         self.assertNotIn("sha", payload)
@@ -130,8 +131,9 @@ class GitHubCapabilityTests(unittest.TestCase):
             "commit": {"sha": "updated-commit", "html_url": "https://github.com/example/commit"},
         }
         with patch.object(
-            self.capability,
+            GitHubCapability,
             "_request",
+            autospec=True,
             side_effect=[{"sha": "existing-blob"}, response],
         ) as request:
             result = self.capability.write_file(
@@ -140,7 +142,7 @@ class GitHubCapabilityTests(unittest.TestCase):
                 "Update README",
             )
 
-        payload = request.call_args_list[1].args[2]
+        payload = request.call_args_list[1].args[3]
         self.assertEqual(payload["sha"], "existing-blob")
         self.assertFalse(result["created"])
         self.assertEqual(result["commit_sha"], "updated-commit")
