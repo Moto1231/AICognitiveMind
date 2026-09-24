@@ -12,6 +12,7 @@ from mcp.types import CallToolResult, ImageContent, AudioContent, TextContent
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.host_runtime import HostRuntime
+from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.mcp_service import (
     BeliefReframeProposal,
     BeliefTransitionProposal,
@@ -227,6 +228,44 @@ def main() -> None:
     http_app = mcp.streamable_http_app(host=args.host, json_response=True, stateless_http=True)
     uvicorn.run(McpTokenAuth(http_app, token), host=args.host, port=args.port)
 
+
+
+# --- Axiom GitHub capability -------------------------------------------------
+
+@mcp.tool()
+def github_status() -> dict:
+    """Check the GitHub repository currently connected to Axiom."""
+    return GitHubCapability.from_env().status()
+
+
+@mcp.tool()
+def github_list_path(path: str = "", ref: str | None = None) -> dict:
+    """List files/directories in Axiom's configured GitHub repository."""
+    return GitHubCapability.from_env().list_path(path=path, ref=ref)
+
+
+@mcp.tool()
+def github_read_file(path: str, ref: str | None = None) -> dict:
+    """Read a UTF-8 text file from Axiom's configured GitHub repository."""
+    return GitHubCapability.from_env().read_file(path=path, ref=ref)
+
+
+@mcp.tool()
+def github_write_file(
+    path: str,
+    content: str,
+    message: str,
+    branch: str | None = None,
+) -> dict:
+    """Create or replace a UTF-8 text file and commit it to Axiom's GitHub repository."""
+    return GitHubCapability.from_env().write_file(
+        path=path,
+        content=content,
+        message=message,
+        branch=branch,
+    )
+
+# --- End Axiom GitHub capability --------------------------------------------
 
 
 if __name__ == "__main__":
