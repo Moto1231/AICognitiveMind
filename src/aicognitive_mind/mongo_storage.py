@@ -23,18 +23,97 @@ from aicognitive_mind.storage import MindAlreadyInitializedError
 
 
 class MongoRuntime:
-    def __init__(self, uri: str, database_name: str) -> None:
+    def __init__(
+        self,
+        uri: str,
+        database_name: str,
+        *,
+        legacy_mind_id: str = "axiom",
+    ) -> None:
         self.client: AsyncMongoClient[dict[str, Any]] = AsyncMongoClient(uri)
         self.database: AsyncDatabase[dict[str, Any]] = self.client[database_name]
+        self.legacy_mind_id = legacy_mind_id
+
+    async def _migrate_legacy_scope(self) -> None:
+        """Attach the existing single-mind deployment to its first mind_id."""
+        legacy = await self.database["mind"].find_one(
+            {"mind_id": {"$exists": False}}
+        )
+        if legacy is not None:
+            scoped = {key: value for key, value in legacy.items() if key != "_id"}
+            scoped["mind_id"] = self.legacy_mind_id
+            if await self.database["mind"].find_one(
+                {"mind_id": self.legacy_mind_id},
+                {"_id": 1},
+            ) is None:
+                await self.database["mind"].insert_one(
+                    {"_id": self.legacy_mind_id, **scoped}
+                )
+            await self.database["mind"].delete_one({"_id": legacy["_id"]})
+
+        for name in ("journal", "memory", "diagnostics", "evidence"):
+            await self.database[name].update_many(
+                {"mind_id": {"$exists": False}},
+                {"$set": {"mind_id": self.legacy_mind_id}},
+            )
+
+        for name in ("runtime_records", "commit_receipts"):
+            await self.database[name].update_many(
+                {"mind_id": {"$exists": False}},
+                [
+                    {
+                        "$set": {
+                            "mind_id": self.legacy_mind_id,
+                            "key": {"$toString": "$_id"},
+                        }
+                    }
+                ],
+            )
+
+        await self.database["commit_state"].update_many(
+            {"mind_id": {"$exists": False}},
+            {"$set": {"mind_id": self.legacy_mind_id}},
+        )
 
     async def initialize(self) -> None:
         await self.client.admin.command("ping")
-        await self.database["journal"].create_index([("occurred_at", ASCENDING)])
-        await self.database["memory"].create_index([("formed_at", ASCENDING)])
-        await self.database["memory"].create_index([("associations", ASCENDING)])
-        await self.database["diagnostics"].create_index([("observed_at", ASCENDING)])
+        await self._migrate_legacy_scope()
+
+        evidence_indexes = await self.database["evidence"].index_information()
+        for name, info in evidence_indexes.items():
+            if info.get("key") == [("sha256", 1), ("captured_at", 1)]:
+                await self.database["evidence"].drop_index(name)
+
+        await self.database["journal"].create_index(
+            [("mind_id", ASCENDING), ("occurred_at", ASCENDING)]
+        )
+        await self.database["memory"].create_index(
+            [("mind_id", ASCENDING), ("formed_at", ASCENDING)]
+        )
+        await self.database["memory"].create_index(
+            [("mind_id", ASCENDING), ("associations", ASCENDING)]
+        )
+        await self.database["diagnostics"].create_index(
+            [("mind_id", ASCENDING), ("observed_at", ASCENDING)]
+        )
         await self.database["evidence"].create_index(
-            [("sha256", ASCENDING), ("captured_at", ASCENDING)],
+            [
+                ("mind_id", ASCENDING),
+                ("sha256", ASCENDING),
+                ("captured_at", ASCENDING),
+            ],
+            unique=True,
+        )
+        await self.database["runtime_records"].create_index(
+            [("mind_id", ASCENDING), ("key", ASCENDING)],
+            unique=True,
+        )
+        await self.database["commit_state"].create_index(
+            [("mind_id", ASCENDING)],
+            unique=True,
+        )
+        await self.database["commit_receipts"].create_index(
+            [("mind_id", ASCENDING), ("key", ASCENDING)],
             unique=True,
         )
 
@@ -46,28 +125,42 @@ class MongoRuntime:
 
 
 class MongoMindStore:
-    """Stores exactly one root cognitive document for this deployment."""
+    """Stores one root cognitive document for one mind_id."""
 
     def __init__(
         self,
         database: AsyncDatabase[dict[str, Any]],
+        mind_id: str,
         policy: PermissionPolicy | None = None,
     ) -> None:
         self._collection = database["mind"]
+        self.mind_id = mind_id
         self._policy = policy or PermissionPolicy()
 
     async def initialize(self, mind: CognitiveMind) -> CognitiveMind:
-        if await self._collection.find_one({}, {"_id": 1}) is not None:
-            raise MindAlreadyInitializedError("This instance already contains its mind")
+        if await self._collection.find_one(
+            {"mind_id": self.mind_id},
+            {"_id": 1},
+        ) is not None:
+            raise MindAlreadyInitializedError("This mind is already initialized")
         from pymongo.errors import DuplicateKeyError
         try:
-            await self._collection.insert_one({"_id": "root", **mind.model_dump(mode="python")})
+            await self._collection.insert_one(
+                {
+                    "_id": self.mind_id,
+                    "mind_id": self.mind_id,
+                    **mind.model_dump(mode="python"),
+                }
+            )
         except DuplicateKeyError as exc:
-            raise MindAlreadyInitializedError("This instance already contains its mind") from exc
+            raise MindAlreadyInitializedError("This mind is already initialized") from exc
         return mind
 
     async def load(self) -> CognitiveMind | None:
-        document = await self._collection.find_one({}, {"_id": 0})
+        document = await self._collection.find_one(
+            {"mind_id": self.mind_id},
+            {"_id": 0, "mind_id": 0},
+        )
         return CognitiveMind.model_validate(document) if document else None
 
     async def replace_exact(
@@ -81,8 +174,12 @@ class MongoMindStore:
             CognitiveOperation.APPROVE_IDENTITY_REVISION,
         )
         result = await self._collection.replace_one(
-            original.model_dump(mode="python"),
-            replacement.model_dump(mode="python"),
+            {"mind_id": self.mind_id, **original.model_dump(mode="python")},
+            {
+                "_id": self.mind_id,
+                "mind_id": self.mind_id,
+                **replacement.model_dump(mode="python"),
+            },
         )
         return replacement if result.modified_count == 1 else None
 
@@ -93,9 +190,11 @@ class MongoJournalStore:
     def __init__(
         self,
         database: AsyncDatabase[dict[str, Any]],
+        mind_id: str,
         policy: PermissionPolicy | None = None,
     ) -> None:
         self._collection = database["journal"]
+        self.mind_id = mind_id
         self._policy = policy or PermissionPolicy()
 
     async def append(
@@ -104,11 +203,16 @@ class MongoJournalStore:
         recorded_by: CognitiveActor,
     ) -> JournalEntry:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.RECORD_JOURNAL)
-        await self._collection.insert_one(entry.model_dump(mode="python"))
+        await self._collection.insert_one(
+            {"mind_id": self.mind_id, **entry.model_dump(mode="python")}
+        )
         return entry
 
     async def read(self) -> list[JournalEntry]:
-        cursor = self._collection.find({}, {"_id": 0}).sort("occurred_at", ASCENDING)
+        cursor = self._collection.find(
+            {"mind_id": self.mind_id},
+            {"_id": 0, "mind_id": 0},
+        ).sort("occurred_at", ASCENDING)
         return [JournalEntry.model_validate(document) async for document in cursor]
 
     def _portal_filter(
@@ -119,7 +223,7 @@ class MongoJournalStore:
         occurred_from: datetime | None = None,
         occurred_to: datetime | None = None,
     ) -> dict[str, Any]:
-        query: dict[str, Any] = {}
+        query: dict[str, Any] = {"mind_id": self.mind_id}
         if kind:
             query["kind"] = kind
 
@@ -290,23 +394,37 @@ class MongoJournalStore:
         occurred_at: datetime,
     ) -> JournalEntry | None:
         document = await self._collection.find_one(
-            {"kind": kind, "occurred_at": occurred_at},
-            {"_id": 0},
+            {
+                "mind_id": self.mind_id,
+                "kind": kind,
+                "occurred_at": occurred_at,
+            },
+            {"_id": 0, "mind_id": 0},
         )
         return JournalEntry.model_validate(document) if document else None
 
 
 class MongoDiagnosticStore:
-    """Implementation observations deliberately isolated from cognitive documents."""
+    """Implementation observations deliberately isolated per mind."""
 
-    def __init__(self, database: AsyncDatabase[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        database: AsyncDatabase[dict[str, Any]],
+        mind_id: str,
+    ) -> None:
         self._collection = database["diagnostics"]
+        self.mind_id = mind_id
 
     async def record(self, observation: DiagnosticObservation) -> None:
-        await self._collection.insert_one(observation.model_dump(mode="python"))
+        await self._collection.insert_one(
+            {"mind_id": self.mind_id, **observation.model_dump(mode="python")}
+        )
 
     async def read(self) -> list[DiagnosticObservation]:
-        cursor = self._collection.find({}, {"_id": 0}).sort("observed_at", ASCENDING)
+        cursor = self._collection.find(
+            {"mind_id": self.mind_id},
+            {"_id": 0, "mind_id": 0},
+        ).sort("observed_at", ASCENDING)
         return [DiagnosticObservation.model_validate(document) async for document in cursor]
 
 
@@ -316,9 +434,11 @@ class MongoMemoryStore:
     def __init__(
         self,
         database: AsyncDatabase[dict[str, Any]],
+        mind_id: str,
         policy: PermissionPolicy | None = None,
     ) -> None:
         self._collection = database["memory"]
+        self.mind_id = mind_id
         self._policy = policy or PermissionPolicy()
 
     async def remember(
@@ -327,11 +447,16 @@ class MongoMemoryStore:
         recorded_by: CognitiveActor,
     ) -> DurableMemory:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
-        await self._collection.insert_one(memory.model_dump(mode="python"))
+        await self._collection.insert_one(
+            {"mind_id": self.mind_id, **memory.model_dump(mode="python")}
+        )
         return memory
 
     async def read(self) -> list[DurableMemory]:
-        cursor = self._collection.find({}, {"_id": 0}).sort("formed_at", ASCENDING)
+        cursor = self._collection.find(
+            {"mind_id": self.mind_id},
+            {"_id": 0, "mind_id": 0},
+        ).sort("formed_at", ASCENDING)
         return [DurableMemory.model_validate(document) async for document in cursor]
 
     def _portal_filter(
@@ -344,7 +469,7 @@ class MongoMemoryStore:
         formed_from: datetime | None = None,
         formed_to: datetime | None = None,
     ) -> dict[str, Any]:
-        query: dict[str, Any] = {}
+        query: dict[str, Any] = {"mind_id": self.mind_id}
         if memory_class:
             query["memory_class"] = memory_class
 
@@ -468,7 +593,10 @@ class MongoMemoryStore:
         recorded_by: CognitiveActor,
     ) -> DurableMemory | None:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.WRITE_DURABLE_MEMORY)
-        selector = original.model_dump(mode="python")
+        selector = {
+            "mind_id": self.mind_id,
+            **original.model_dump(mode="python"),
+        }
         if not original.artifacts:
             selector.pop("artifacts", None)
             selector["$or"] = [
@@ -477,33 +605,47 @@ class MongoMemoryStore:
             ]
         result = await self._collection.replace_one(
             selector,
-            replacement.model_dump(mode="python"),
+            {
+                "mind_id": self.mind_id,
+                **replacement.model_dump(mode="python"),
+            },
         )
         return replacement if result.matched_count == 1 else None
 
 
 
 class MongoEvidenceStore:
-    """Immutable content-addressed sensory evidence."""
+    """Immutable content-addressed sensory evidence, isolated per mind."""
 
-    def __init__(self, database: AsyncDatabase[dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        database: AsyncDatabase[dict[str, Any]],
+        mind_id: str,
+    ) -> None:
         self._collection = database["evidence"]
+        self.mind_id = mind_id
 
     async def preserve(self, artifact: SensoryEvidenceArtifact) -> SensoryEvidenceArtifact:
         selector = {
+            "mind_id": self.mind_id,
             "sha256": artifact.sha256,
             "captured_at": artifact.captured_at,
         }
-        existing = await self._collection.find_one(selector, {"_id": 0})
+        existing = await self._collection.find_one(
+            selector,
+            {"_id": 0, "mind_id": 0},
+        )
         if existing is not None:
             return SensoryEvidenceArtifact.model_validate(existing)
-        await self._collection.insert_one(artifact.model_dump(mode="python"))
+        await self._collection.insert_one(
+            {"mind_id": self.mind_id, **artifact.model_dump(mode="python")}
+        )
         return artifact
 
     async def read(self) -> list[SensoryEvidenceArtifact]:
         cursor = self._collection.find(
-            {},
-            {"_id": 0},
+            {"mind_id": self.mind_id},
+            {"_id": 0, "mind_id": 0},
         ).sort("captured_at", ASCENDING)
         return [
             SensoryEvidenceArtifact.model_validate(document)
@@ -517,7 +659,11 @@ class MongoEvidenceStore:
         captured_at: datetime,
     ) -> SensoryEvidenceArtifact | None:
         document = await self._collection.find_one(
-            {"sha256": sha256, "captured_at": captured_at},
-            {"_id": 0},
+            {
+                "mind_id": self.mind_id,
+                "sha256": sha256,
+                "captured_at": captured_at,
+            },
+            {"_id": 0, "mind_id": 0},
         )
         return SensoryEvidenceArtifact.model_validate(document) if document else None
