@@ -194,6 +194,91 @@ class GitHubCapability:
             "content": decoded,
         }
 
+
+    def create_branch(
+        self,
+        branch: str,
+        base_ref: str | None = None,
+    ) -> dict[str, Any]:
+        clean_branch = branch.strip().removeprefix("refs/heads/")
+        if not clean_branch:
+            raise GitHubCapabilityError("branch is required.")
+
+        base = (base_ref or self.status()["default_branch"]).strip()
+        if not base:
+            raise GitHubCapabilityError("base_ref is required.")
+
+        base_data = self._request(
+            "GET",
+            f"{self._repo_prefix}/git/ref/heads/{quote(base, safe='')}",
+        )
+        base_object = base_data.get("object", {}) if isinstance(base_data, dict) else {}
+        base_sha = base_object.get("sha")
+        if not base_sha:
+            raise GitHubCapabilityError(
+                f"GitHub did not return a commit SHA for base ref {base!r}."
+            )
+
+        created = self._request(
+            "POST",
+            f"{self._repo_prefix}/git/refs",
+            {
+                "ref": f"refs/heads/{clean_branch}",
+                "sha": base_sha,
+            },
+        )
+        object_data = created.get("object", {}) if isinstance(created, dict) else {}
+
+        return {
+            "repository": f"{self.owner}/{self.repo}",
+            "branch": clean_branch,
+            "base_ref": base,
+            "sha": object_data.get("sha") or base_sha,
+            "ref": created.get("ref") if isinstance(created, dict) else None,
+        }
+
+    def create_pull_request(
+        self,
+        title: str,
+        head: str,
+        base: str | None = None,
+        body: str | None = None,
+        draft: bool = False,
+    ) -> dict[str, Any]:
+        clean_title = title.strip()
+        clean_head = head.strip()
+        if not clean_title:
+            raise GitHubCapabilityError("title is required.")
+        if not clean_head:
+            raise GitHubCapabilityError("head is required.")
+
+        target_base = (base or self.status()["default_branch"]).strip()
+        if not target_base:
+            raise GitHubCapabilityError("base is required.")
+
+        payload: dict[str, Any] = {
+            "title": clean_title,
+            "head": clean_head,
+            "base": target_base,
+            "draft": draft,
+        }
+        if body is not None:
+            payload["body"] = body
+
+        result = self._request("POST", f"{self._repo_prefix}/pulls", payload)
+
+        return {
+            "repository": f"{self.owner}/{self.repo}",
+            "number": result.get("number") if isinstance(result, dict) else None,
+            "title": result.get("title") if isinstance(result, dict) else clean_title,
+            "state": result.get("state") if isinstance(result, dict) else None,
+            "draft": result.get("draft") if isinstance(result, dict) else draft,
+            "html_url": result.get("html_url") if isinstance(result, dict) else None,
+            "head": clean_head,
+            "base": target_base,
+        }
+
+
     def write_file(
         self,
         path: str,
