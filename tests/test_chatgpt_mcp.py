@@ -118,6 +118,8 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "github_status",
                 "github_list_path",
                 "github_read_file",
+                "github_create_branch",
+                "github_create_pull_request",
                 "github_write_file",
             }.issubset(names)
         )
