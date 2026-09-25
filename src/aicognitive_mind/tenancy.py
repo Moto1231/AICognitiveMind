@@ -56,6 +56,7 @@ async def verify_live_tenancy(storage: Any) -> dict[str, Any]:
     primary_records = RuntimeRecords(storage.mind)
 
     try:
+        primary_before = await storage.mind.load()
         await probe_mind.initialize(
             CognitiveMind(identity=MindIdentity(self_name="Tenancy Probe"))
         )
@@ -95,12 +96,9 @@ async def verify_live_tenancy(storage: Any) -> dict[str, Any]:
         await probe_evidence.preserve(evidence)
         await probe_records.create("tenancy_probe", {"marker": marker})
 
-        primary_mind = await storage.mind.load()
+        primary_after = await storage.mind.load()
         primary_checks = {
-            "mind": (
-                primary_mind is not None
-                and primary_mind.identity.self_name != "Tenancy Probe"
-            ),
+            "mind": primary_after == primary_before,
             "memory": all(
                 item.content != marker
                 for item in await storage.memory.read()
@@ -161,6 +159,7 @@ async def verify_live_tenancy(storage: Any) -> dict[str, Any]:
             "status": "passed",
             "provider": "surreal",
             "primary_mind_id": primary_mind_id,
+            "primary_initialized": primary_before is not None,
             "probe_mind_id": probe_id,
             "verified_collections": [
                 "mind",
