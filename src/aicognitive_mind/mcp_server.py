@@ -45,7 +45,6 @@ async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
 
 mcp = MCPServer("Axiom", lifespan=lifespan)
 
-
 @mcp.tool()
 async def initialize_mind(
     self_name: str,
@@ -62,7 +61,6 @@ async def initialize_mind(
         foundational_values=tuple(foundational_values),
     )
 
-
 @mcp.tool()
 async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
     """Read the persistent Mind identity and continuity counters.
@@ -71,7 +69,6 @@ async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
     present when the connected reasoning model or MCP host changes.
     """
     return await ctx.request_context.lifespan_context.mind_service.status()
-
 
 @mcp.tool()
 async def begin_interaction(
@@ -85,7 +82,6 @@ async def begin_interaction(
     consulting this tool.
     """
     return await ctx.request_context.lifespan_context.mind_service.begin_interaction(user_message)
-
 
 @mcp.tool()
 async def complete_interaction(
@@ -125,24 +121,20 @@ async def complete_interaction(
         idempotency_key=idempotency_key,
     )
 
-
 @mcp.tool()
 async def attach_reasoning_host(name: str, model: str, ctx: Context[AppState]) -> dict[str, Any]:
     """Acquire the exclusive 120-second Body reasoning lease; keep the returned token private."""
     return await ctx.request_context.lifespan_context.hosts.attach(name, model)
-
 
 @mcp.tool()
 async def renew_reasoning_host(lease_token: str, ctx: Context[AppState], detach: bool = False) -> dict[str, Any]:
     """Renew the lease while reasoning, or detach before handing off to another host."""
     return await ctx.request_context.lifespan_context.hosts.renew(lease_token, detach)
 
-
 @mcp.tool()
 async def next_body_interaction(lease_token: str, ctx: Context[AppState]) -> dict[str, Any] | None:
     """Claim a Body request and receive its identity/memory context; poll while attached."""
     return await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
-
 
 @mcp.tool()
 async def complete_body_interaction(lease_token: str, request_id: str, response_text: str,
@@ -151,7 +143,6 @@ async def complete_body_interaction(lease_token: str, request_id: str, response_
     return await ctx.request_context.lifespan_context.hosts.complete(
         lease_token, request_id, response_text, tuple(proposed_memories))
 
-
 @mcp.tool()
 async def propose_self_name(user_message: str, candidate_name: str, rationale: str,
     ctx: Context[AppState]) -> dict[str, Any]:
@@ -159,7 +150,6 @@ async def propose_self_name(user_message: str, candidate_name: str, rationale: s
     storage = ctx.request_context.lifespan_context.storage
     tool = GovernanceStewardTool(mind=storage.mind, journal=storage.journal, input_text=user_message)
     return await tool.invoke({"action": "propose_self_name", "candidate_name": candidate_name, "rationale": rationale})
-
 
 @mcp.tool()
 async def read_sensory_evidence(sha256: str, captured_at: str, ctx: Context[AppState]) -> CallToolResult:
@@ -237,19 +227,15 @@ def github_status() -> dict:
     """Check the GitHub repository currently connected to Axiom."""
     return GitHubCapability.from_env().status()
 
-
 @mcp.tool()
 def github_list_path(path: str = "", ref: str | None = None) -> dict:
     """List files/directories in Axiom's configured GitHub repository."""
     return GitHubCapability.from_env().list_path(path=path, ref=ref)
 
-
 @mcp.tool()
 def github_read_file(path: str, ref: str | None = None) -> dict:
     """Read a UTF-8 text file from Axiom's configured GitHub repository."""
     return GitHubCapability.from_env().read_file(path=path, ref=ref)
-
-
 
 @mcp.tool()
 def github_create_branch(
@@ -261,7 +247,6 @@ def github_create_branch(
         branch=branch,
         base_ref=base_ref,
     )
-
 
 @mcp.tool()
 def github_create_pull_request(
@@ -296,7 +281,6 @@ def github_write_file(
     )
 
 # --- End Axiom GitHub capability --------------------------------------------
-
 
 if __name__ == "__main__":
     main()
