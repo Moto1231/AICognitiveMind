@@ -14,6 +14,8 @@ from aicognitive_mind.api import app as portal_app
 from aicognitive_mind.chatgpt_mcp import build_chatgpt_mcp
 from aicognitive_mind.chatgpt_oauth import (
     AxiomAuthorizationServerProvider,
+    account_signup_get,
+    account_signup_post,
     hostname_from_base_url,
     oauth_login_get,
     oauth_login_post,
@@ -55,6 +57,14 @@ oauth_provider = AxiomAuthorizationServerProvider(
     resource_path=MCP_PATH,
 )
 axiom_mcp = build_chatgpt_mcp(BASE_URL, oauth_provider)
+
+
+async def _account_signup_get(request: Request):
+    return await account_signup_get(request, oauth_provider)
+
+
+async def _account_signup_post(request: Request):
+    return await account_signup_post(request, oauth_provider)
 
 
 async def _oauth_login_get(request: Request):
@@ -109,6 +119,8 @@ app = axiom_mcp.streamable_http_app(
 # Mount("/") must remain last because it matches every remaining path.
 app.router.routes.extend(
     [
+        Route("/signup", endpoint=_account_signup_get, methods=["GET"]),
+        Route("/signup", endpoint=_account_signup_post, methods=["POST"]),
         Route("/oauth/login", endpoint=_oauth_login_get, methods=["GET"]),
         Route("/oauth/login", endpoint=_oauth_login_post, methods=["POST"]),
         Route("/oauth/signup", endpoint=_oauth_signup_get, methods=["GET"]),
