@@ -198,5 +198,84 @@ class GitHubCapabilityTests(unittest.TestCase):
         self.assertEqual(result["commit_sha"], "updated-commit")
 
 
+    def test_create_branch_creates_git_ref_from_base(self) -> None:
+        base_response = {"object": {"sha": "base-sha"}}
+        created_response = {
+            "ref": "refs/heads/feature/test",
+            "object": {"sha": "base-sha"},
+        }
+        with patch.object(
+            GitHubCapability,
+            "_request",
+            autospec=True,
+            side_effect=[base_response, created_response],
+        ) as request:
+            result = self.capability.create_branch(
+                "feature/test",
+                base_ref="main",
+            )
+
+        self.assertEqual(
+            request.call_args_list[0].args[1:],
+            (
+                "GET",
+                "/repos/Moto1231/AICognitiveMind/git/ref/heads/main",
+            ),
+        )
+        self.assertEqual(
+            request.call_args_list[1].args[1:3],
+            (
+                "POST",
+                "/repos/Moto1231/AICognitiveMind/git/refs",
+            ),
+        )
+        self.assertEqual(
+            request.call_args_list[1].args[3],
+            {
+                "ref": "refs/heads/feature/test",
+                "sha": "base-sha",
+            },
+        )
+        self.assertEqual(result["branch"], "feature/test")
+        self.assertEqual(result["sha"], "base-sha")
+
+    def test_create_pull_request_posts_requested_branches(self) -> None:
+        response = {
+            "number": 123,
+            "title": "Add capability",
+            "state": "open",
+            "draft": False,
+            "html_url": "https://github.com/Moto1231/AICognitiveMind/pull/123",
+        }
+        with patch.object(
+            GitHubCapability,
+            "_request",
+            autospec=True,
+            return_value=response,
+        ) as request:
+            result = self.capability.create_pull_request(
+                title="Add capability",
+                head="feature/test",
+                base="main",
+                body="Test body",
+            )
+
+        request.assert_called_once_with(
+            self.capability,
+            "POST",
+            "/repos/Moto1231/AICognitiveMind/pulls",
+            {
+                "title": "Add capability",
+                "head": "feature/test",
+                "base": "main",
+                "draft": False,
+                "body": "Test body",
+            },
+        )
+        self.assertEqual(result["number"], 123)
+        self.assertEqual(result["head"], "feature/test")
+        self.assertEqual(result["base"], "main")
+
+
 if __name__ == "__main__":
     unittest.main()
