@@ -197,7 +197,6 @@ class GitHubCapabilityTests(unittest.TestCase):
         self.assertFalse(result["created"])
         self.assertEqual(result["commit_sha"], "updated-commit")
 
-
     def test_create_branch_creates_git_ref_from_base(self) -> None:
         base_response = {"object": {"sha": "base-sha"}}
         created_response = {
@@ -275,7 +274,6 @@ class GitHubCapabilityTests(unittest.TestCase):
         self.assertEqual(result["number"], 123)
         self.assertEqual(result["head"], "feature/test")
         self.assertEqual(result["base"], "main")
-
 
 if __name__ == "__main__":
     unittest.main()
