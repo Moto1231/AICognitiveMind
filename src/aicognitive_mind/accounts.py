@@ -50,7 +50,7 @@ class AccountService:
         })
         storage = await create_storage(self.settings, mind_id=mind_id)
         try:
-            await storage.mind.initialize(CognitiveMind(identity=MindIdentity(self_name="")))
+            await storage.mind.initialize(CognitiveMind(identity=MindIdentity(self_name=None)))
         finally:
             await storage.runtime.close()
         return Account(username=username, mind_id=mind_id)
