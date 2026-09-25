@@ -21,6 +21,7 @@ from aicognitive_mind.mcp_service import (
 )
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.persistence import StorageRuntime, create_storage
+from aicognitive_mind.tenancy import verify_live_tenancy
 
 
 @dataclass
@@ -29,15 +30,26 @@ class AppState:
     mind_service: CognitiveMcpService
     storage: Any = None
     hosts: Any = None
+    tenancy_probe: dict[str, Any] | None = None
 
 
 @asynccontextmanager
 async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
     storage = await create_storage(get_settings())
     try:
-        service = CognitiveMcpService(mind=storage.mind, journal=storage.journal, memory=storage.memory)
-        yield AppState(runtime=storage.runtime, mind_service=service, storage=storage,
-                       hosts=HostRuntime(storage.mind, service))
+        service = CognitiveMcpService(
+            mind=storage.mind,
+            journal=storage.journal,
+            memory=storage.memory,
+        )
+        tenancy_probe = await verify_live_tenancy(storage)
+        yield AppState(
+            runtime=storage.runtime,
+            mind_service=service,
+            storage=storage,
+            hosts=HostRuntime(storage.mind, service),
+            tenancy_probe=tenancy_probe,
+        )
 
     finally:
         await storage.runtime.close()
@@ -68,7 +80,10 @@ async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
     Use this for administration, diagnostics, and demonstrations that identity/memory remain
     present when the connected reasoning model or MCP host changes.
     """
-    return await ctx.request_context.lifespan_context.mind_service.status()
+    state = ctx.request_context.lifespan_context
+    result = await state.mind_service.status()
+    result["storage_tenancy"] = state.tenancy_probe
+    return result
 
 @mcp.tool()
 async def begin_interaction(
