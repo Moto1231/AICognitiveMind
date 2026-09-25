@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from aicognitive_mind.accounts import AccountService
 from aicognitive_mind.backup import (
     backup_filename,
     build_backup_archive,
@@ -459,6 +460,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory=storage.memory,
     )
     records = RuntimeRecords(storage.mind)
+    app.state.accounts = AccountService(settings, records)
     from aicognitive_mind.voice_settings import VoiceSettings
 
     app.state.voice_settings = VoiceSettings(storage.mind)
@@ -531,12 +533,25 @@ async def select_body_session(request: Request, call_next: Any) -> Response:
 
 @app.middleware("http")
 async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
-    # Render must be able to probe health without credentials. All user-facing
-    # pages and APIs are protected when APP_ACCESS_PASSWORD is configured.
-    if request.url.path == "/health" or app_access_authorized(
-        request.headers.get("authorization")
-    ):
+    authorization = request.headers.get("authorization")
+    if request.url.path == "/health" or app_access_authorized(authorization):
         return await call_next(request)
+
+    if authorization and authorization.startswith("Basic ") and hasattr(request.app.state, "accounts"):
+        try:
+            decoded = base64.b64decode(authorization.removeprefix("Basic ").strip(), validate=True).decode("utf-8")
+            username, password = decoded.split(":", 1)
+            account = await request.app.state.accounts.authenticate(username, password)
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            account = None
+        portal_path = request.url.path == "/" or request.url.path.startswith("/static/") or request.url.path.startswith("/v1/portal/")
+        if account is not None and portal_path:
+            tenant = await create_storage(get_settings(), mind_id=account.mind_id)
+            request.state.tenant_storage = tenant
+            try:
+                return await call_next(request)
+            finally:
+                await tenant.runtime.close()
 
     return Response(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -871,7 +886,12 @@ async def health(request: Request) -> dict[str, str]:
 
 @app.get("/v1/portal/status")
 async def portal_status(request: Request) -> dict[str, Any]:
-    service = cast(CognitiveMcpService, request.app.state.mcp_service)
+    tenant = getattr(request.state, "tenant_storage", None)
+    service = (
+        CognitiveMcpService(mind=tenant.mind, journal=tenant.journal, memory=tenant.memory)
+        if tenant is not None
+        else cast(CognitiveMcpService, request.app.state.mcp_service)
+    )
     try:
         result = await service.status()
         runtime_settings = get_settings()
@@ -942,7 +962,8 @@ async def portal_memory(
     from_date: date | None = Query(None, alias="from"),
     to_date: date | None = Query(None, alias="to"),
 ) -> dict[str, Any]:
-    memory_store = cast(MemoryStore, request.app.state.memory_store)
+    tenant = getattr(request.state, "tenant_storage", None)
+    memory_store = cast(MemoryStore, tenant.memory if tenant is not None else request.app.state.memory_store)
     formed_from = (
         datetime.combine(from_date, time.min, tzinfo=UTC)
         if from_date
@@ -986,7 +1007,8 @@ async def portal_journal(
     from_date: date | None = Query(None, alias="from"),
     to_date: date | None = Query(None, alias="to"),
 ) -> dict[str, Any]:
-    journal_store = cast(JournalStore, request.app.state.journal_store)
+    tenant = getattr(request.state, "tenant_storage", None)
+    journal_store = cast(JournalStore, tenant.journal if tenant is not None else request.app.state.journal_store)
     occurred_from = (
         datetime.combine(from_date, time.min, tzinfo=UTC)
         if from_date
@@ -1022,7 +1044,8 @@ async def portal_journal_detail(
     body: JournalDetailRequest,
     request: Request,
 ) -> JournalEntry:
-    journal_store = cast(JournalStore, request.app.state.journal_store)
+    tenant = getattr(request.state, "tenant_storage", None)
+    journal_store = cast(JournalStore, tenant.journal if tenant is not None else request.app.state.journal_store)
     entry = await journal_store.find_exact(
         kind=body.kind.value,
         occurred_at=body.occurred_at,
