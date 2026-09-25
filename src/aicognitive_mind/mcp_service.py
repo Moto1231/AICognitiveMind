@@ -66,7 +66,7 @@ class CognitiveMcpService:
     @atomic
     async def initialize(
         self,
-        self_name: str,
+        self_name: str | None = None,
         foundational_values: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         mind = await self._mind.initialize(
@@ -102,6 +102,16 @@ class CognitiveMcpService:
             "mind": mind.model_dump(mode="json"),
             "durable_memory_count": memory_count,
             "journal_experience_count": journal_count,
+            "naming": {
+                "status": (
+                    "prohibited" if journal_count < 1000
+                    else "eligible" if journal_count < 2000
+                    else "required"
+                ),
+                "eligible_at_event": 1000,
+                "required_at_event": 2000,
+                "is_named": mind.identity.self_name is not None,
+            },
             "integration": {
                 "protocol": "MCP",
                 "reasoning_owner": "connected MCP host",
