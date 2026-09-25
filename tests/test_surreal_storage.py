@@ -56,6 +56,23 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
             async def version(self) -> str:
                 return "test"
 
+            async def query(
+                self,
+                _sql: str,
+                _variables: dict | None = None,
+            ) -> list:
+                return []
+
+            async def select(self, _record: object) -> None:
+                return None
+
+            async def create(
+                self,
+                _record: object,
+                _value: dict,
+            ) -> None:
+                return None
+
             async def close(self) -> None:
                 return None
 
