@@ -489,6 +489,51 @@ async def oauth_login_post(
     return RedirectResponse(await provider.approve(request_id, subject=subject), status_code=302)
 
 
+
+def _account_signup_page(*, error: str = "", created: bool = False) -> HTMLResponse:
+    error_html = '<p style="color:#b42318">' + escape(error) + "</p>" if error else ""
+    if created:
+        body = """
+<h1>Account created</h1>
+<p>Your new unnamed Genesis mind is ready. Return to ChatGPT and connect Axiom using the username and password you just created.</p>
+"""
+    else:
+        body = f"""
+<h1>Create Axiom Account</h1>
+<p>Create one account and one new unnamed Genesis mind.</p>{error_html}
+<form method="post" action="/signup">
+<label>Username<input style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0" name="username" required minlength="3"></label>
+<label>Password<input style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0" type="password" name="password" required minlength="8"></label>
+<button style="width:100%;padding:12px;margin-top:18px" type="submit">Create account</button>
+</form>
+"""
+    return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Create Axiom Account</title></head>
+<body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh">
+<main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">{body}</main></body></html>""")
+
+
+async def account_signup_get(
+    request: Request,
+    provider: AxiomAuthorizationServerProvider,
+) -> Response:
+    return _account_signup_page()
+
+
+async def account_signup_post(
+    request: Request,
+    provider: AxiomAuthorizationServerProvider,
+) -> Response:
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    form = {key: values[-1] for key, values in parse_qs(raw).items() if values}
+    if provider.accounts is None:
+        return _account_signup_page(error="Account service is not available.")
+    try:
+        await provider.accounts.create(form.get("username", ""), form.get("password", ""))
+    except ValueError as exc:
+        return _account_signup_page(error=str(exc))
+    return _account_signup_page(created=True)
+
+
 def hostname_from_base_url(base_url: str) -> str:
     parsed = urlparse(base_url)
     if not parsed.hostname:
