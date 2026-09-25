@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from aicognitive_mind.accounts import AccountService
 from aicognitive_mind.backup import (
     backup_filename,
     build_backup_archive,
@@ -459,6 +460,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory=storage.memory,
     )
     records = RuntimeRecords(storage.mind)
+    app.state.accounts = AccountService(settings, records)
     from aicognitive_mind.voice_settings import VoiceSettings
 
     app.state.voice_settings = VoiceSettings(storage.mind)
@@ -531,12 +533,20 @@ async def select_body_session(request: Request, call_next: Any) -> Response:
 
 @app.middleware("http")
 async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
-    # Render must be able to probe health without credentials. All user-facing
-    # pages and APIs are protected when APP_ACCESS_PASSWORD is configured.
-    if request.url.path == "/health" or app_access_authorized(
-        request.headers.get("authorization")
-    ):
+    authorization = request.headers.get("authorization")
+    if request.url.path == "/health" or app_access_authorized(authorization):
         return await call_next(request)
+
+    if authorization and authorization.startswith("Basic ") and hasattr(request.app.state, "accounts"):
+        try:
+            decoded = base64.b64decode(authorization.removeprefix("Basic ").strip(), validate=True).decode("utf-8")
+            username, password = decoded.split(":", 1)
+            account = await request.app.state.accounts.authenticate(username, password)
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            account = None
+        if account is not None:
+            request.state.account_mind_id = account.mind_id
+            return await call_next(request)
 
     return Response(
         status_code=status.HTTP_401_UNAUTHORIZED,
