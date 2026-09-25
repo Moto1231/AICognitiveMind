@@ -34,6 +34,7 @@ def public_base_url() -> str:
 
 
 BASE_URL = public_base_url()
+MCP_PATH = "/axiom-mcp"
 settings = get_settings()
 
 if (
@@ -48,8 +49,9 @@ oauth_provider = AxiomAuthorizationServerProvider(
     base_url=BASE_URL,
     username=settings.app_access_username,
     password=settings.app_access_password or "",
+    resource_path=MCP_PATH,
 )
-axiom_mcp = build_chatgpt_mcp(BASE_URL, oauth_provider)
+axiom_mcp = build_chatgpt_mcp(BASE_URL, oauth_provider, resource_path=MCP_PATH)
 
 
 async def _oauth_login_get(request: Request):
@@ -79,6 +81,7 @@ transport_security = TransportSecuritySettings(
 )
 
 app = axiom_mcp.streamable_http_app(
+    streamable_http_path=MCP_PATH,
     json_response=True,
     stateless_http=True,
     transport_security=transport_security,
