@@ -28,7 +28,7 @@ async def surreal_page(
         if value is None:
             continue
         variables[key] = json_time(value)
-        if key in {"kind", "memory_class"}:
+        if key in {"kind", "memory_class", "mind_id"}:
             clauses.append(f"{key} = ${key}")
         elif key.endswith("_from"):
             clauses.append(f"{date} >= ${key}")
@@ -61,10 +61,24 @@ async def surreal_page(
 
 async def count(store: Any) -> int:
     if hasattr(store, "_collection"):
-        return await store._collection.count_documents({})
+        query = (
+            {"mind_id": store.mind_id}
+            if getattr(store, "mind_id", None) is not None
+            else {}
+        )
+        return await store._collection.count_documents(query)
     if hasattr(store, "_database"):
         table = "journal" if "Journal" in type(store).__name__ else "memory"
-        result = await store._database.query(f"SELECT count() AS total FROM {table} GROUP ALL;")
+        if getattr(store, "mind_id", None) is not None:
+            result = await store._database.query(
+                f"SELECT count() AS total FROM {table} "
+                "WHERE mind_id = $mind_id GROUP ALL;",
+                {"mind_id": store.mind_id},
+            )
+        else:
+            result = await store._database.query(
+                f"SELECT count() AS total FROM {table} GROUP ALL;"
+            )
         return result[0]["total"] if result else 0
     return len(await store.read())
 
@@ -80,30 +94,67 @@ async def candidates(store: Any, tokens: set[str], limit: int = 256) -> list:
     date = "occurred_at" if table == "journal" else "formed_at"
     words = sorted(tokens)[:64]
     if hasattr(base, "_collection"):
-        query = {"$or": [base._portal_filter(search=word) for word in words]} if words else {}
-        cursor = base._collection.find(query, {"_id": 0}).sort(date, -1).limit(limit)
+        scope = (
+            {"mind_id": base.mind_id}
+            if getattr(base, "mind_id", None) is not None
+            else {}
+        )
+        query = (
+            {"$or": [base._portal_filter(search=word) for word in words]}
+            if words
+            else scope
+        )
+        cursor = (
+            base._collection.find(query, {"_id": 0, "mind_id": 0})
+            .sort(date, -1)
+            .limit(limit)
+        )
         matches = [model.model_validate(row) async for row in cursor]
         if not matches:
-            matches, _ = await base.query_page(offset=0, limit=limit, newest_first=True)
+            matches, _ = await base.query_page(
+                offset=0,
+                limit=limit,
+                newest_first=True,
+            )
         return matches
     if hasattr(base, "_database"):
         from aicognitive_mind.surreal_storage import _document
 
         field = (
-            "experience" if table == "journal" else "[content, associations, grounding, artifacts]"
+            "experience"
+            if table == "journal"
+            else "[content, associations, grounding, artifacts]"
         )
-        clauses = [
+        search_clauses = [
             f"string::contains(string::lowercase(<string>{field}), $word{i})"
             for i in range(len(words))
         ]
-        where = " WHERE " + " OR ".join(clauses) if clauses else ""
         variables = {f"word{i}": word for i, word in enumerate(words)}
+        scope = ""
+        if getattr(base, "mind_id", None) is not None:
+            variables["mind_id"] = base.mind_id
+            scope = "mind_id = $mind_id"
+        search = " OR ".join(search_clauses)
+        clauses = [
+            value
+            for value in (
+                scope,
+                f"({search})" if search else "",
+            )
+            if value
+        ]
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
         rows = await base._database.query(
-            f"SELECT * FROM {table}{where} ORDER BY {date} DESC, id ASC LIMIT {limit};", variables
+            f"SELECT * FROM {table}{where} "
+            f"ORDER BY {date} DESC, id ASC LIMIT {limit};",
+            variables,
         )
         if not rows:
+            fallback_where = f" WHERE {scope}" if scope else ""
             rows = await base._database.query(
-                f"SELECT * FROM {table} ORDER BY {date} DESC, id ASC LIMIT {limit};"
+                f"SELECT * FROM {table}{fallback_where} "
+                f"ORDER BY {date} DESC, id ASC LIMIT {limit};",
+                {"mind_id": base.mind_id} if scope else {},
             )
         return [model.model_validate(_document(row)) for row in rows]
     return await store.read()
