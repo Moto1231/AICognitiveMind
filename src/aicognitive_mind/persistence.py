@@ -28,6 +28,7 @@ class StorageRuntime(Protocol):
 
 @dataclass
 class StorageBundle:
+    mind_id: str
     runtime: StorageRuntime
     mind: MindStore
     journal: JournalStore
@@ -36,8 +37,15 @@ class StorageBundle:
     evidence: EvidenceStore
 
 
-async def create_storage(settings: Settings) -> StorageBundle:
+async def create_storage(
+    settings: Settings,
+    *,
+    mind_id: str | None = None,
+) -> StorageBundle:
     provider = settings.storage_provider.lower()
+    resolved_mind_id = (mind_id or settings.axiom_mind_id).strip()
+    if not resolved_mind_id:
+        raise ValueError("mind_id must not be empty")
 
     if provider == "mongo":
         if (
@@ -48,15 +56,20 @@ async def create_storage(settings: Settings) -> StorageBundle:
                 "MONGODB_URI is not configured for Render. "
                 "Set the Atlas connection string in the Render service Environment."
             )
-        runtime = MongoRuntime(settings.mongodb_uri, settings.mongodb_database)
+        runtime = MongoRuntime(
+            settings.mongodb_uri,
+            settings.mongodb_database,
+            legacy_mind_id=resolved_mind_id,
+        )
         await runtime.initialize()
         return StorageBundle(
+            mind_id=resolved_mind_id,
             runtime=runtime,
-            mind=MongoMindStore(runtime.database),
-            journal=MongoJournalStore(runtime.database),
-            memory=MongoMemoryStore(runtime.database),
-            diagnostics=MongoDiagnosticStore(runtime.database),
-            evidence=MongoEvidenceStore(runtime.database),
+            mind=MongoMindStore(runtime.database, resolved_mind_id),
+            journal=MongoJournalStore(runtime.database, resolved_mind_id),
+            memory=MongoMemoryStore(runtime.database, resolved_mind_id),
+            diagnostics=MongoDiagnosticStore(runtime.database, resolved_mind_id),
+            evidence=MongoEvidenceStore(runtime.database, resolved_mind_id),
         )
 
     if provider == "surreal":
@@ -87,7 +100,12 @@ async def create_storage(settings: Settings) -> StorageBundle:
             settings.surrealdb_auth_level,
         )
         await runtime.initialize()
+        if mind_id is not None and resolved_mind_id != settings.axiom_mind_id:
+            raise RuntimeError(
+                "Multi-mind tenancy is currently implemented for MongoDB only"
+            )
         return StorageBundle(
+            mind_id=resolved_mind_id,
             runtime=runtime,
             mind=SurrealMindStore(runtime.database),
             journal=SurrealJournalStore(runtime.database),
