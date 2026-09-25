@@ -22,7 +22,7 @@ async def main() -> None:
     provider = os.environ.get("STORAGE_PROVIDER", "surreal")
     env = {
         "STORAGE_PROVIDER": provider,
-        "APP_NAME": "AI Cognitive Mind CI",
+        "APP_NAME": "Axiom CI",
     }
     if provider == "surreal":
         env.update(

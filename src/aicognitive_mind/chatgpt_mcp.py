@@ -59,7 +59,7 @@ def build_chatgpt_mcp(
     )
 
     server: MCPServer[AppState] = MCPServer(
-        "axiom-mind",
+        "Axiom",
         title="Axiom",
         description="Persistent identity, memory, continuity, and governed experience for an external AI reasoning host.",
         instructions=HOST_INSTRUCTIONS,

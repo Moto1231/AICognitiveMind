@@ -76,7 +76,7 @@ class GitHubCapability:
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {self.token}",
             "X-GitHub-Api-Version": "2026-03-10",
-            "User-Agent": "Axiom-Mind",
+            "User-Agent": "Axiom",
         }
 
         if payload is not None:

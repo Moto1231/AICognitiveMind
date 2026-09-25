@@ -69,13 +69,13 @@ After the branch is merged and Render reports a healthy deployment:
    - `begin_interaction`
    - `complete_interaction`
    - `read_sensory_evidence`
-7. Install/select **Axiom Mind**.
+7. Install/select **Axiom**.
 8. Test a normal question, not only `mind_status`. Verify that the journal records the
    interaction and any accepted durable-memory proposal.
 
 ## Host behavior
 
-The MCP server instructions and `plugins/axiom-mind/skills/axiom-mind/SKILL.md` define the
+The MCP server instructions and `plugins/axiom-mind/skills/axiom/SKILL.md` define the
 same invariant:
 
 - begin before reasoning;

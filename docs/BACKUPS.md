@@ -13,7 +13,7 @@ Each checkpoint contains four independent recovery assets:
 2. **working-project.zip** — the current working project, including tracked and
    untracked project assets such as local Genesis Bodies, while excluding
    generated Unity caches and local secret files;
-3. **axiom-mind.zip** — a portable cognitive snapshot produced by the running
+3. **axiom.zip** — a portable cognitive snapshot produced by the running
    Mind, containing governed identity, append-only journal, durable memory,
    diagnostics, and the sensory-evidence index;
 4. **axiom-evidence.zip** — the exact preserved image/audio evidence bytes plus

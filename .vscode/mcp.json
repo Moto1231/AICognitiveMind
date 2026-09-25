@@ -1,6 +1,6 @@
 {
   "servers": {
-    "digital-genesis": {
+    "Axiom": {
       "type": "stdio",
       "command": "python",
       "args": [
@@ -15,7 +15,7 @@
         "SURREALDB_URI": "surrealkv://.surreal/cognitive_mind",
         "SURREALDB_NAMESPACE": "mir_ai",
         "SURREALDB_DATABASE": "ai_cognitive_mind",
-        "APP_NAME": "AI Cognitive Mind"
+        "APP_NAME": "Axiom"
       }
     }
   }

@@ -225,7 +225,7 @@ def _server_environment(args: argparse.Namespace) -> dict[str, str]:
     env["STORAGE_PROVIDER"] = "mongo"
     env["MONGODB_URI"] = args.mongodb_uri
     env["MONGODB_DATABASE"] = args.mongodb_database
-    env["APP_NAME"] = "AI Cognitive Mind"
+    env["APP_NAME"] = "Axiom"
     return env
 
 

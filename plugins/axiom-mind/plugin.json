@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "axiom-mind",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.20260925051739",
   "description": "Use Axiom as the persistent Mind behind a replaceable AI reasoning host.",
   "author": {
     "name": "William Enright"
@@ -13,5 +13,23 @@
     "identity",
     "continuity",
     "mcp"
-  ]
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Axiom",
+        "shortDescription": "Persistent identity, memory, and continuity.",
+        "developerName": "William Enright",
+        "category": "Productivity",
+        "longDescription": "Use Axiom for persistent identity, memory, and continuity across interchangeable reasoning models.",
+        "defaultPrompt": [
+          "Continue with Axiom using our remembered context."
+        ],
+        "capabilities": [
+          "Read",
+          "Write"
+        ]
+      }
+    }
+  }
 }

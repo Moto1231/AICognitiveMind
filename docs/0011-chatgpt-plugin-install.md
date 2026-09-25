@@ -4,7 +4,19 @@ Axiom is packaged in `plugins/axiom-mind/` as a portable Agent Plugin containing
 
 - the Axiom host-protocol Skill;
 - the deployed Streamable HTTP MCP server;
-- the OAuth connection to the persistent Axiom Mind.
+- the OAuth connection to the persistent Axiom.
+
+The visible plugin name is **Axiom**, supplied by
+`extensions.com.openai.interface.displayName` and the compatibility manifest.
+The `axiom-mind` package identifier stays stable so existing installations and
+OAuth connections can update in place. It is not the product's display name.
+The skill is named `axiom`.
+
+After updating the marketplace, reinstall the plugin to refresh its cached
+metadata, then start a new task and select **Axiom**. Previously sent messages
+may retain the mention text saved when they were written. Separately created
+ChatGPT connectors have their own saved display name; update those to **Axiom**
+in the connector's settings too.
 
 The repository also contains `.agents/plugins/marketplace.json`, allowing the
 ChatGPT desktop app / Codex plugin tooling to treat this repository as a local
@@ -28,7 +40,7 @@ For clients that support repository marketplaces:
 codex plugin marketplace add Moto1231/AICognitiveMind --ref main
 ```
 
-Then install **Axiom Mind** from the Axiom marketplace in the ChatGPT desktop
+Then install **Axiom** from the Axiom marketplace in the ChatGPT desktop
 plugin directory and complete the OAuth connection using the Axiom portal
 credentials.
 

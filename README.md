@@ -1,4 +1,4 @@
-# AICognitiveMind
+# Axiom
 
 A working prototype of the Digital Genesis Cognitive Core: one persistent cognitive mind whose memory, values, and developmental history remain independent of any one reasoning model.
 

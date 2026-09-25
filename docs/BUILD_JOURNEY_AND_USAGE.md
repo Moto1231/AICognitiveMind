@@ -1,10 +1,10 @@
-# AI Cognitive Mind — Build Journey, Operating Model, and Path to Use
+# Axiom — Build Journey, Operating Model, and Path to Use
 
 **Living document**  
 **Current checkpoint:** September 19, 2026  
 **Current main baseline when this document was started:** `730f483`
 
-This document records **how the AI Cognitive Mind was conceived, what was built, why the architecture changed, what has been proven, what is still experimental, and what has to happen before the Mind is used as an everyday reasoning substrate**.
+This document records **how the Axiom was conceived, what was built, why the architecture changed, what has been proven, what is still experimental, and what has to happen before the Mind is used as an everyday reasoning substrate**.
 
 It is intentionally different from the ADRs in `docs/architecture/`. The ADRs record individual technical decisions. This document records the **whole development journey and the evolving cognitive model**.
 
@@ -648,7 +648,7 @@ The remaining bridge is a ChatGPT-supported MCP connection.
 Current integration target:
 
 ```text
-AI Cognitive Mind
+Axiom
         ↓
 Streamable HTTP MCP
         ↓

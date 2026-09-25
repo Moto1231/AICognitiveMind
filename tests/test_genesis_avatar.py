@@ -51,7 +51,7 @@ class GenesisAvatarV01Tests(unittest.TestCase):
         vrm = model["extensions"]["VRMC_vrm"]
         self.assertEqual(vrm["specVersion"], "1.0")
         self.assertEqual(vrm["meta"]["name"], "Genesis")
-        self.assertEqual(vrm["meta"]["authors"], ["AICognitiveMind"])
+        self.assertEqual(vrm["meta"]["authors"], ["Axiom"])
         self.assertEqual(vrm["meta"]["modification"], "allowModificationRedistribution")
         self.assertTrue(vrm["meta"]["allowRedistribution"])
 

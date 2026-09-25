@@ -9,11 +9,18 @@ class AxiomPluginPackageTests(unittest.TestCase):
         root = Path("plugins/axiom-mind")
         manifest = json.loads((root / "plugin.json").read_text(encoding="utf-8"))
         mcp = json.loads((root / "mcp.json").read_text(encoding="utf-8"))
-        skill = root / "skills" / "axiom-mind" / "SKILL.md"
+        skill = root / "skills" / "axiom" / "SKILL.md"
 
         self.assertEqual(manifest["name"], "axiom-mind")
         self.assertTrue(manifest["version"])
         self.assertTrue(skill.exists())
+        self.assertEqual(
+            manifest["extensions"]["com.openai"]["interface"]["displayName"],
+            "Axiom",
+        )
+        overlay = json.loads((root / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(overlay["interface"]["displayName"], "Axiom")
+        self.assertEqual(overlay["version"], manifest["version"])
 
         server = mcp["mcpServers"]["axiom"]
         self.assertEqual(server["type"], "streamable-http")

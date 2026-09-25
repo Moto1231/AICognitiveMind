@@ -128,7 +128,7 @@ def build_backup_archive(
         archive.writestr(
             "RESTORE.txt",
             (
-                "AICognitiveMind portable backup cognitive snapshot.\n"
+                "Axiom portable backup cognitive snapshot.\n"
                 "This archive contains Mind identity, journal, durable memory, "
                 "diagnostics, and the sensory-evidence index.\n"
                 "Exact evidence media is stored in the companion "
@@ -143,7 +143,7 @@ def build_backup_archive(
 
 def backup_filename(created_at: datetime | None = None) -> str:
     timestamp = (created_at or datetime.now(UTC)).astimezone(UTC)
-    return "axiom-mind-" + timestamp.strftime("%Y%m%dT%H%M%SZ") + ".zip"
+    return "axiom-" + timestamp.strftime("%Y%m%dT%H%M%SZ") + ".zip"
 
 
 def _write_json(

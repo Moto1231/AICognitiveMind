@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "AI Cognitive Mind"
+    app_name: str = "Axiom"
     storage_provider: str = "surreal"
     mongodb_uri: str = "mongodb://mongodb:27017"
     mongodb_database: str = "ai_cognitive_mind"

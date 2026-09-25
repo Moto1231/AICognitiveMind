@@ -10,7 +10,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: APP_NAME
-        value: AI Cognitive Mind
+        value: Axiom
       - key: STORAGE_PROVIDER
         value: surreal
       - key: SURREALDB_URI
