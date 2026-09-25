@@ -15,7 +15,7 @@ plugin marketplace during development.
 The portable MCP server entry is:
 
 ```text
-https://ai-cognitive-mind-zgk9.onrender.com/mcp
+https://ai-cognitive-mind.onrender.com/axiom-mcp
 ```
 
 The deployment itself derives its canonical public URL from Render's
