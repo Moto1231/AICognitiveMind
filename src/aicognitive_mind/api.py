@@ -544,9 +544,14 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
             account = await request.app.state.accounts.authenticate(username, password)
         except (binascii.Error, UnicodeDecodeError, ValueError):
             account = None
-        if account is not None:
-            request.state.account_mind_id = account.mind_id
-            return await call_next(request)
+        portal_path = request.url.path == "/" or request.url.path.startswith("/static/") or request.url.path.startswith("/v1/portal/")
+        if account is not None and portal_path:
+            tenant = await create_storage(get_settings(), mind_id=account.mind_id)
+            request.state.tenant_storage = tenant
+            try:
+                return await call_next(request)
+            finally:
+                await tenant.runtime.close()
 
     return Response(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -881,7 +886,12 @@ async def health(request: Request) -> dict[str, str]:
 
 @app.get("/v1/portal/status")
 async def portal_status(request: Request) -> dict[str, Any]:
-    service = cast(CognitiveMcpService, request.app.state.mcp_service)
+    tenant = getattr(request.state, "tenant_storage", None)
+    service = (
+        CognitiveMcpService(mind=tenant.mind, journal=tenant.journal, memory=tenant.memory)
+        if tenant is not None
+        else cast(CognitiveMcpService, request.app.state.mcp_service)
+    )
     try:
         result = await service.status()
         runtime_settings = get_settings()
@@ -952,7 +962,8 @@ async def portal_memory(
     from_date: date | None = Query(None, alias="from"),
     to_date: date | None = Query(None, alias="to"),
 ) -> dict[str, Any]:
-    memory_store = cast(MemoryStore, request.app.state.memory_store)
+    tenant = getattr(request.state, "tenant_storage", None)
+    memory_store = cast(MemoryStore, tenant.memory if tenant is not None else request.app.state.memory_store)
     formed_from = (
         datetime.combine(from_date, time.min, tzinfo=UTC)
         if from_date
@@ -996,7 +1007,8 @@ async def portal_journal(
     from_date: date | None = Query(None, alias="from"),
     to_date: date | None = Query(None, alias="to"),
 ) -> dict[str, Any]:
-    journal_store = cast(JournalStore, request.app.state.journal_store)
+    tenant = getattr(request.state, "tenant_storage", None)
+    journal_store = cast(JournalStore, tenant.journal if tenant is not None else request.app.state.journal_store)
     occurred_from = (
         datetime.combine(from_date, time.min, tzinfo=UTC)
         if from_date
@@ -1032,7 +1044,8 @@ async def portal_journal_detail(
     body: JournalDetailRequest,
     request: Request,
 ) -> JournalEntry:
-    journal_store = cast(JournalStore, request.app.state.journal_store)
+    tenant = getattr(request.state, "tenant_storage", None)
+    journal_store = cast(JournalStore, tenant.journal if tenant is not None else request.app.state.journal_store)
     entry = await journal_store.find_exact(
         kind=body.kind.value,
         occurred_at=body.occurred_at,
