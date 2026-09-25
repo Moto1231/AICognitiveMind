@@ -23,14 +23,22 @@ MAX_SNAPSHOT_ROWS = 20000
 async def cognitive_snapshot(mind: Any, journal: Any, memory: Any, diagnostics: Any) -> dict:
     kind, db = backend({"mind": mind})
     if kind == "surreal":
-        variables = {"max_rows": MAX_SNAPSHOT_ROWS, "max_bytes": MAX_SNAPSHOT_BYTES}
+        mind_id = str(getattr(mind, "mind_id", "axiom"))
+        variables = {
+            "max_rows": MAX_SNAPSHOT_ROWS,
+            "max_bytes": MAX_SNAPSHOT_BYTES,
+            "mind_id": mind_id,
+        }
         statements = ["BEGIN TRANSACTION;"]
         for table in MODELS:
             statements += [
-                f"LET $size_{table} = SELECT count() AS rows, math::sum(string::len(<string>$this)) AS bytes FROM {table} GROUP ALL;",
+                f"LET $size_{table} = SELECT count() AS rows, math::sum(string::len(<string>$this)) AS bytes FROM {table} WHERE mind_id = $mind_id GROUP ALL;",
                 f"IF ($size_{table}[0].rows ?? 0) > $max_rows OR ($size_{table}[0].bytes ?? 0) > $max_bytes / 4 {{ THROW 'Portable snapshot limit exceeded; use native database backup'; }};",
             ]
-        statements += [f"SELECT * FROM {table};" for table in MODELS]
+        statements += [
+            f"SELECT * FROM {table} WHERE mind_id = $mind_id;"
+            for table in MODELS
+        ]
         statements.append("COMMIT TRANSACTION;")
         results = await surreal_query(db, "\n".join(statements), variables)
         rows = results[-4:]  # BEGIN/COMMIT do not produce result rows.

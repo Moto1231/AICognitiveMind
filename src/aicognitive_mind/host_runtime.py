@@ -26,9 +26,17 @@ class RuntimeRecords:
         elif self.kind == "surreal":
             from surrealdb import RecordID
 
-            value = await self.db.select(RecordID("runtime_records", key))
+            scoped_id = RecordID(
+                "runtime_records",
+                f"{self.mind_id}__{key}",
+            )
+            value = await self.db.select(scoped_id)
             if isinstance(value, list):
                 value = value[0] if value else None
+            if value is None and self.mind_id == "axiom":
+                value = await self.db.select(RecordID("runtime_records", key))
+                if isinstance(value, list):
+                    value = value[0] if value else None
         else:
             value = getattr(self.db, "_runtime_records", {}).get(key)
         return (
@@ -54,7 +62,14 @@ class RuntimeRecords:
         elif self.kind == "surreal":
             from surrealdb import RecordID
 
-            await self.db.create(RecordID("runtime_records", key), value)
+            await self.db.create(
+                RecordID("runtime_records", f"{self.mind_id}__{key}"),
+                {
+                    "mind_id": self.mind_id,
+                    "key": key,
+                    **value,
+                },
+            )
         else:
             if not hasattr(self.db, "_runtime_records"):
                 self.db._runtime_records = {}
@@ -80,10 +95,35 @@ class RuntimeRecords:
         if self.kind == "surreal":
             from surrealdb import RecordID
 
-            conditions = " AND ".join(f"{field} = $before.{field}" for field in before)
+            scoped_id = RecordID(
+                "runtime_records",
+                f"{self.mind_id}__{key}",
+            )
+            target_id = scoped_id
+            current = await self.db.select(scoped_id)
+            if isinstance(current, list):
+                current = current[0] if current else None
+            if current is None and self.mind_id == "axiom":
+                legacy_id = RecordID("runtime_records", key)
+                current = await self.db.select(legacy_id)
+                if isinstance(current, list):
+                    current = current[0] if current else None
+                if current is not None:
+                    target_id = legacy_id
+            conditions = " AND ".join(
+                f"{field} = $before.{field}" for field in before
+            )
             result = await self.db.query(
                 f"UPDATE $record CONTENT $after WHERE {conditions} RETURN AFTER;",
-                {"record": RecordID("runtime_records", key), "before": before, "after": after},
+                {
+                    "record": target_id,
+                    "before": before,
+                    "after": {
+                        "mind_id": self.mind_id,
+                        "key": key,
+                        **after,
+                    },
+                },
             )
             return bool(result)
         if await self.get(key) != before:
@@ -117,8 +157,11 @@ class RuntimeRecords:
             ]
         if self.kind == "surreal":
             return await self.db.query(
-                "SELECT * OMIT id FROM runtime_records WHERE kind = 'body_request' AND state = 'pending' AND deadline > $now ORDER BY created LIMIT 20;",
-                {"now": now},
+                "SELECT * OMIT id, mind_id, key FROM runtime_records "
+                "WHERE mind_id = $mind_id AND kind = 'body_request' "
+                "AND state = 'pending' AND deadline > $now "
+                "ORDER BY created LIMIT 20;",
+                {"now": now, "mind_id": self.mind_id},
             )
         return sorted(
             [

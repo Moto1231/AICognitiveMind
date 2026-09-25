@@ -98,20 +98,17 @@ async def create_storage(
             settings.surrealdb_username,
             settings.surrealdb_password,
             settings.surrealdb_auth_level,
+            legacy_mind_id=resolved_mind_id,
         )
         await runtime.initialize()
-        if mind_id is not None and resolved_mind_id != settings.axiom_mind_id:
-            raise RuntimeError(
-                "Multi-mind tenancy is currently implemented for MongoDB only"
-            )
         return StorageBundle(
             mind_id=resolved_mind_id,
             runtime=runtime,
-            mind=SurrealMindStore(runtime.database),
-            journal=SurrealJournalStore(runtime.database),
-            memory=SurrealMemoryStore(runtime.database),
-            diagnostics=SurrealDiagnosticStore(runtime.database),
-            evidence=SurrealEvidenceStore(runtime.database),
+            mind=SurrealMindStore(runtime.database, resolved_mind_id),
+            journal=SurrealJournalStore(runtime.database, resolved_mind_id),
+            memory=SurrealMemoryStore(runtime.database, resolved_mind_id),
+            diagnostics=SurrealDiagnosticStore(runtime.database, resolved_mind_id),
+            evidence=SurrealEvidenceStore(runtime.database, resolved_mind_id),
         )
 
     raise RuntimeError("STORAGE_PROVIDER must be one of: mongo, surreal")

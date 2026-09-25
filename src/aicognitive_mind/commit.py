@@ -120,8 +120,16 @@ async def receipt(stores: dict, key: str | None) -> Any:
     if kind == "surreal":
         from surrealdb import RecordID
 
-        value = await db.select(RecordID("commit_receipts", key))
-        return value[0] if isinstance(value, list) and value else value or None
+        mind_id = storage_mind_id(stores)
+        scoped = RecordID("commit_receipts", f"{mind_id}__{key}")
+        value = await db.select(scoped)
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if value is None and mind_id == "axiom":
+            value = await db.select(RecordID("commit_receipts", key))
+            if isinstance(value, list):
+                value = value[0] if value else None
+        return value or None
     return getattr(db, "_commit_receipts", {}).get(key)
 
 
@@ -145,9 +153,14 @@ async def revision(stores: dict) -> int:
     if kind == "surreal":
         from surrealdb import RecordID
 
-        row = await db.select(RecordID("commit_state", "root"))
+        mind_id = storage_mind_id(stores)
+        row = await db.select(RecordID("commit_state", mind_id))
         if isinstance(row, list):
             row = row[0] if row else None
+        if row is None and mind_id == "axiom":
+            row = await db.select(RecordID("commit_state", "root"))
+            if isinstance(row, list):
+                row = row[0] if row else None
         return row["version"] if row else 0
     return getattr(db, "_commit_revision", 0)
 
@@ -165,32 +178,55 @@ async def commit(
     if expected_version is None:
         expected_version = await revision(stores)
     if kind == "surreal":
-        variables: dict = {"expected_version": expected_version}
+        from surrealdb import RecordID
+
+        mind_id = storage_mind_id(stores)
+        state_id = RecordID("commit_state", mind_id)
+        variables: dict = {
+            "expected_version": expected_version,
+            "mind_id": mind_id,
+            "state_id": state_id,
+        }
         statements = [
             "BEGIN TRANSACTION;",
-            "LET $version = (SELECT VALUE version FROM ONLY commit_state:root) ?? 0;",
+            "LET $version = (SELECT VALUE version FROM ONLY $state_id) ?? 0;",
             "IF $version != $expected_version { THROW 'Concurrent cognitive commit; begin again'; };",
-            "UPSERT commit_state:root SET version = $expected_version + 1;",
+            "UPSERT $state_id CONTENT { mind_id: $mind_id, version: $expected_version + 1 };",
         ]
         for i, (table, operation, before, after) in enumerate(operations):
-            variables[f"after{i}"] = document(after)
+            variables[f"after{i}"] = {
+                "mind_id": mind_id,
+                **document(after),
+            }
             if operation == "initialize":
+                variables[f"record{i}"] = RecordID(table, mind_id)
                 statements += [
-                    f"IF array::len(SELECT * FROM {table}) > 0 {{ THROW 'Mind already initialized'; }};",
-                    f"CREATE ONLY {table}:root CONTENT $after{i};",
+                    f"IF array::len(SELECT * FROM {table} WHERE mind_id = $mind_id) > 0 {{ THROW 'Mind already initialized'; }};",
+                    f"CREATE ONLY $record{i} CONTENT $after{i};",
                 ]
             elif operation == "replace":
                 variables[f"before{i}"] = document(before)
                 statements += [
-                    f"LET $changed{i} = UPDATE {table} CONTENT $after{i} WHERE {' AND '.join(f'{field} = $before{i}.{field}' for field in type(before).model_fields)} RETURN AFTER;",
+                    f"LET $changed{i} = UPDATE {table} CONTENT $after{i} WHERE mind_id = $mind_id AND "
+                    + " AND ".join(
+                        f"{field} = $before{i}.{field}"
+                        for field in type(before).model_fields
+                    )
+                    + " RETURN AFTER;",
                     f"IF array::len($changed{i}) != 1 {{ THROW 'Concurrent cognitive revision'; }};",
                 ]
             else:
                 statements.append(f"CREATE {table} CONTENT $after{i};")
         if key:
-            from surrealdb import RecordID
-
-            variables.update(receipt_id=RecordID("commit_receipts", key), receipt=saved)
+            receipt_id = RecordID("commit_receipts", f"{mind_id}__{key}")
+            variables.update(
+                receipt_id=receipt_id,
+                receipt={
+                    "mind_id": mind_id,
+                    "key": key,
+                    **saved,
+                },
+            )
             statements.append("CREATE ONLY $receipt_id CONTENT $receipt;")
         statements.append("COMMIT TRANSACTION;")
         if operations or key:

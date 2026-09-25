@@ -15,6 +15,7 @@ from aicognitive_mind.domain import (
     MindIdentity,
     SensoryEvidenceArtifact,
 )
+from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.permissions import CognitivePermissionError
 from aicognitive_mind.storage import MindAlreadyInitializedError
@@ -54,6 +55,23 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
 
             async def version(self) -> str:
                 return "test"
+
+            async def query(
+                self,
+                _sql: str,
+                _variables: dict | None = None,
+            ) -> list:
+                return []
+
+            async def select(self, _record: object) -> None:
+                return None
+
+            async def create(
+                self,
+                _record: object,
+                _value: dict,
+            ) -> None:
+                return None
 
             async def close(self) -> None:
                 return None
@@ -751,6 +769,168 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await storage.mind.load(), mind)
         finally:
             await storage.runtime.close()
+
+
+    async def test_two_surreal_minds_are_storage_isolated(self) -> None:
+        alpha_mind = SurrealMindStore(self.runtime.database, "alpha")
+        beta_mind = SurrealMindStore(self.runtime.database, "beta")
+        alpha_memory = SurrealMemoryStore(self.runtime.database, "alpha")
+        beta_memory = SurrealMemoryStore(self.runtime.database, "beta")
+        alpha_journal = SurrealJournalStore(self.runtime.database, "alpha")
+        beta_journal = SurrealJournalStore(self.runtime.database, "beta")
+        alpha_evidence = SurrealEvidenceStore(self.runtime.database, "alpha")
+        beta_evidence = SurrealEvidenceStore(self.runtime.database, "beta")
+        alpha_diagnostics = SurrealDiagnosticStore(self.runtime.database, "alpha")
+        beta_diagnostics = SurrealDiagnosticStore(self.runtime.database, "beta")
+
+        await alpha_mind.initialize(
+            CognitiveMind(identity=MindIdentity(self_name="Alpha"))
+        )
+        await beta_mind.initialize(
+            CognitiveMind(identity=MindIdentity(self_name="Beta"))
+        )
+        await alpha_memory.remember(
+            DurableMemory(
+                memory_class=MemoryClass.SEMANTIC,
+                content="alpha-memory",
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        await beta_memory.remember(
+            DurableMemory(
+                memory_class=MemoryClass.SEMANTIC,
+                content="beta-memory",
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD,
+        )
+        await alpha_journal.append(
+            JournalEntry(
+                kind=JournalKind.INTERACTION,
+                experience={"input": {"content": "alpha-journal"}},
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        await beta_journal.append(
+            JournalEntry(
+                kind=JournalKind.INTERACTION,
+                experience={"input": {"content": "beta-journal"}},
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        await alpha_diagnostics.record(
+            DiagnosticObservation(
+                component="alpha",
+                operation="test",
+                implementation={},
+            )
+        )
+        await beta_diagnostics.record(
+            DiagnosticObservation(
+                component="beta",
+                operation="test",
+                implementation={},
+            )
+        )
+        alpha_artifact = SensoryEvidenceArtifact(
+            modality="vision",
+            source="alpha-camera",
+            media_type="image/png",
+            sha256="c" * 64,
+            byte_length=1,
+            payload_base64="YQ==",
+        )
+        beta_artifact = SensoryEvidenceArtifact(
+            modality="vision",
+            source="beta-camera",
+            media_type="image/png",
+            sha256="d" * 64,
+            byte_length=1,
+            payload_base64="Yg==",
+        )
+        await alpha_evidence.preserve(alpha_artifact)
+        await beta_evidence.preserve(beta_artifact)
+
+        self.assertEqual((await alpha_mind.load()).identity.self_name, "Alpha")
+        self.assertEqual((await beta_mind.load()).identity.self_name, "Beta")
+        self.assertEqual(
+            [memory.content for memory in await alpha_memory.read()],
+            ["alpha-memory"],
+        )
+        self.assertEqual(
+            [memory.content for memory in await beta_memory.read()],
+            ["beta-memory"],
+        )
+        self.assertEqual(
+            [
+                entry.experience["input"]["content"]
+                for entry in await alpha_journal.read()
+            ],
+            ["alpha-journal"],
+        )
+        self.assertEqual(
+            [
+                entry.experience["input"]["content"]
+                for entry in await beta_journal.read()
+            ],
+            ["beta-journal"],
+        )
+        self.assertEqual(
+            [item.component for item in await alpha_diagnostics.read()],
+            ["alpha"],
+        )
+        self.assertEqual(
+            [item.component for item in await beta_diagnostics.read()],
+            ["beta"],
+        )
+        self.assertEqual(
+            [item.source for item in await alpha_evidence.read()],
+            ["alpha-camera"],
+        )
+        self.assertEqual(
+            [item.source for item in await beta_evidence.read()],
+            ["beta-camera"],
+        )
+
+    async def test_runtime_records_allow_same_key_for_two_minds(self) -> None:
+        alpha = RuntimeRecords(SurrealMindStore(self.runtime.database, "alpha"))
+        beta = RuntimeRecords(SurrealMindStore(self.runtime.database, "beta"))
+
+        await alpha.create("shared-key", {"value": "alpha"})
+        await beta.create("shared-key", {"value": "beta"})
+
+        self.assertEqual(await alpha.get("shared-key"), {"value": "alpha"})
+        self.assertEqual(await beta.get("shared-key"), {"value": "beta"})
+
+    async def test_provider_factory_can_open_two_surreal_minds(self) -> None:
+        settings = Settings(
+            storage_provider="surreal",
+            surrealdb_uri="mem://",
+            surrealdb_namespace="multi_factory",
+            surrealdb_database="cognitive_mind",
+            axiom_mind_id="alpha",
+        )
+        alpha = await create_storage(settings, mind_id="alpha")
+        try:
+            await alpha.mind.initialize(
+                CognitiveMind(identity=MindIdentity(self_name="Alpha"))
+            )
+            beta = await create_storage(settings, mind_id="beta")
+            try:
+                await beta.mind.initialize(
+                    CognitiveMind(identity=MindIdentity(self_name="Beta"))
+                )
+                self.assertEqual(
+                    (await alpha.mind.load()).identity.self_name,
+                    "Alpha",
+                )
+                self.assertEqual(
+                    (await beta.mind.load()).identity.self_name,
+                    "Beta",
+                )
+            finally:
+                await beta.runtime.close()
+        finally:
+            await alpha.runtime.close()
 
 
 if __name__ == "__main__":
