@@ -5,7 +5,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from urllib.parse import urlparse
 
 from starlette.requests import Request
-from starlette.responses import RedirectResponse
+from starlette.responses import HTMLResponse, RedirectResponse
 from starlette.routing import Mount, Route
 
 from mcp.server.transport_security import TransportSecuritySettings
@@ -87,6 +87,22 @@ async def _legacy_mcp_redirect(_request: Request):
     return RedirectResponse(MCP_PATH, status_code=307)
 
 
+async def _public_entry(_request: Request):
+    return HTMLResponse("""<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Axiom</title></head>
+<body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0">
+<main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">
+<h1>Axiom</h1><p>Connect to an existing Axiom account or create a new Genesis mind.</p>
+<a href="/signup" style="display:block;text-align:center;padding:12px;margin-top:18px;border-radius:8px;background:#2563eb;color:white;text-decoration:none">Create new account</a>
+<a href="/portal" style="display:block;text-align:center;padding:12px;margin-top:12px;border-radius:8px;background:#374151;color:white;text-decoration:none">Existing Axiom</a>
+</main></body></html>""")
+
+
+async def _portal_redirect(_request: Request):
+    return RedirectResponse("/static/index.html", status_code=307)
+
+
 hostname = hostname_from_base_url(BASE_URL)
 transport_security = TransportSecuritySettings(
     enable_dns_rebinding_protection=True,
@@ -119,6 +135,8 @@ app = axiom_mcp.streamable_http_app(
 # Mount("/") must remain last because it matches every remaining path.
 app.router.routes.extend(
     [
+        Route("/", endpoint=_public_entry, methods=["GET"]),
+        Route("/portal", endpoint=_portal_redirect, methods=["GET"]),
         Route("/signup", endpoint=_account_signup_get, methods=["GET"]),
         Route("/signup", endpoint=_account_signup_post, methods=["POST"]),
         Route("/oauth/login", endpoint=_oauth_login_get, methods=["GET"]),
