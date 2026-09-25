@@ -99,6 +99,31 @@ async def _public_entry(_request: Request):
 </main></body></html>""")
 
 
+async def _portal_login_page(_request: Request):
+    return HTMLResponse("""<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Axiom Login</title></head>
+<body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0">
+<main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">
+<h1>Sign in to Axiom</h1><p id="error" style="color:#fca5a5"></p>
+<form id="login"><label>Username<input id="username" autocomplete="username" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
+<label>Password<input id="password" type="password" autocomplete="current-password" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
+<button style="width:100%;padding:12px;margin-top:18px" type="submit">Sign in</button></form>
+<p><a style="color:#93c5fd" href="/signup">Create a new Axiom account</a></p>
+<script>
+document.getElementById('login').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const response = await fetch('/v1/portal/login', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})
+  });
+  if (response.ok) { location.replace('/portal'); return; }
+  let detail='Sign in failed.';
+  try { detail=(await response.json()).detail || detail; } catch (_) {}
+  document.getElementById('error').textContent=detail;
+});
+</script></main></body></html>""")
+
+
 async def _portal_redirect(_request: Request):
     return RedirectResponse("/static/index.html", status_code=307)
 
@@ -136,7 +161,7 @@ app = axiom_mcp.streamable_http_app(
 app.router.routes.extend(
     [
         Route("/", endpoint=_public_entry, methods=["GET"]),
-        Route("/portal", endpoint=_portal_redirect, methods=["GET"]),
+        Route("/portal", endpoint=_portal_login_page, methods=["GET"]),
         Route("/signup", endpoint=_account_signup_get, methods=["GET"]),
         Route("/signup", endpoint=_account_signup_post, methods=["POST"]),
         Route("/oauth/login", endpoint=_oauth_login_get, methods=["GET"]),
