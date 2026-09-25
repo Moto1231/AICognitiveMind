@@ -7,6 +7,8 @@ import base64
 import binascii
 import hmac
 import os
+import secrets
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time
@@ -14,7 +16,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -79,6 +81,11 @@ STATIC_DIR = Path(__file__).with_name("static")
 class InitializeMindRequest(BaseModel):
     self_name: str = Field(min_length=1, max_length=120)
     foundational_values: tuple[str, ...] = ()
+
+
+class PortalLoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=1, max_length=512)
 
 
 class InteractionRequest(BaseModel):
@@ -461,6 +468,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     records = RuntimeRecords(storage.mind)
     app.state.accounts = AccountService(settings, records)
+    app.state.portal_sessions = {}
     from aicognitive_mind.voice_settings import VoiceSettings
 
     app.state.voice_settings = VoiceSettings(storage.mind)
@@ -534,29 +542,50 @@ async def select_body_session(request: Request, call_next: Any) -> Response:
 @app.middleware("http")
 async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
     authorization = request.headers.get("authorization")
-    if request.url.path == "/health" or app_access_authorized(authorization):
+    public_path = (
+        request.url.path == "/health"
+        or request.url.path == "/v1/portal/login"
+        or request.url.path.startswith("/static/")
+    )
+    if public_path or app_access_authorized(authorization):
         return await call_next(request)
 
-    if authorization and authorization.startswith("Basic ") and hasattr(request.app.state, "accounts"):
+    session_token = request.cookies.get("axiom_portal_session", "")
+    session = getattr(request.app.state, "portal_sessions", {}).get(session_token)
+    if session and session["expires_at"] > time.time():
+        tenant = await create_storage(get_settings(), mind_id=session["mind_id"])
+        request.state.tenant_storage = tenant
         try:
-            decoded = base64.b64decode(authorization.removeprefix("Basic ").strip(), validate=True).decode("utf-8")
-            username, password = decoded.split(":", 1)
-            account = await request.app.state.accounts.authenticate(username, password)
-        except (binascii.Error, UnicodeDecodeError, ValueError):
-            account = None
-        portal_path = request.url.path == "/" or request.url.path.startswith("/static/") or request.url.path.startswith("/v1/portal/")
-        if account is not None and portal_path:
-            tenant = await create_storage(get_settings(), mind_id=account.mind_id)
-            request.state.tenant_storage = tenant
-            try:
-                return await call_next(request)
-            finally:
-                await tenant.runtime.close()
+            return await call_next(request)
+        finally:
+            await tenant.runtime.close()
 
-    return Response(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        headers={"WWW-Authenticate": 'Basic realm="Axiom"'},
+    return Response(status_code=status.HTTP_401_UNAUTHORIZED)
+
+
+@app.post("/v1/portal/login")
+async def portal_login(body: PortalLoginRequest, request: Request) -> Response:
+    account = await request.app.state.accounts.authenticate(body.username, body.password)
+    if account is None:
+        return JSONResponse(
+            {"detail": "Username or password was not accepted."},
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+    token = secrets.token_urlsafe(32)
+    request.app.state.portal_sessions[token] = {
+        "mind_id": account.mind_id,
+        "expires_at": time.time() + 7 * 24 * 3600,
+    }
+    response = JSONResponse({"ok": True})
+    response.set_cookie(
+        "axiom_portal_session",
+        token,
+        max_age=7 * 24 * 3600,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
     )
+    return response
 
 
 @app.get("/", include_in_schema=False)
