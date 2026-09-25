@@ -17,6 +17,8 @@ from aicognitive_mind.chatgpt_oauth import (
     hostname_from_base_url,
     oauth_login_get,
     oauth_login_post,
+    oauth_signup_get,
+    oauth_signup_post,
 )
 from aicognitive_mind.config import get_settings
 
@@ -63,6 +65,14 @@ async def _oauth_login_post(request: Request):
     return await oauth_login_post(request, oauth_provider)
 
 
+async def _oauth_signup_get(request: Request):
+    return await oauth_signup_get(request, oauth_provider)
+
+
+async def _oauth_signup_post(request: Request):
+    return await oauth_signup_post(request, oauth_provider)
+
+
 async def _legacy_mcp_redirect(_request: Request):
     return RedirectResponse(MCP_PATH, status_code=307)
 
@@ -101,6 +111,8 @@ app.router.routes.extend(
     [
         Route("/oauth/login", endpoint=_oauth_login_get, methods=["GET"]),
         Route("/oauth/login", endpoint=_oauth_login_post, methods=["POST"]),
+        Route("/oauth/signup", endpoint=_oauth_signup_get, methods=["GET"]),
+        Route("/oauth/signup", endpoint=_oauth_signup_post, methods=["POST"]),
         Route("/mcp", endpoint=_legacy_mcp_redirect, methods=["GET", "POST", "DELETE"]),
         Mount("/", app=portal_app),
     ]
