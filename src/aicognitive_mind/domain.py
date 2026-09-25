@@ -60,7 +60,7 @@ class MindIdentity(BaseModel):
 
 
 class CognitiveMind(BaseModel):
-    """The one persistent mind owned by this application instance."""
+    """One persistent cognitive mind, independent of its storage tenant."""
 
     identity: MindIdentity
     developmental_state: str = "genesis"

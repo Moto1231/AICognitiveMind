@@ -38,12 +38,14 @@ async def cognitive_snapshot(mind: Any, journal: Any, memory: Any, diagnostics: 
     elif kind == "mongo":
         from pymongo.read_concern import ReadConcern
 
+        mind_id = str(getattr(mind, "mind_id", "root"))
         raw = {}
         async with db.client.start_session() as session:
             async with await session.start_transaction(read_concern=ReadConcern("snapshot")):
                 for table in MODELS:
                     cursor = await db[table].aggregate(
                         [
+                            {"$match": {"mind_id": mind_id}},
                             {
                                 "$group": {
                                     "_id": None,
@@ -62,7 +64,10 @@ async def cognitive_snapshot(mind: Any, journal: Any, memory: Any, diagnostics: 
                         raise RuntimeError(
                             "Portable snapshot limit exceeded; use native database backup"
                         )
-                    raw[table] = await db[table].find({}, session=session).to_list()
+                    raw[table] = await db[table].find(
+                        {"mind_id": mind_id},
+                        session=session,
+                    ).to_list()
     else:
         # In-memory test stores have no internal awaits during reads.
         return {
@@ -73,7 +78,13 @@ async def cognitive_snapshot(mind: Any, journal: Any, memory: Any, diagnostics: 
         }
     result = {
         table: [
-            model.model_validate({k: v for k, v in row.items() if k not in {"id", "_id"}})
+            model.model_validate(
+                {
+                    k: v
+                    for k, v in row.items()
+                    if k not in {"id", "_id", "mind_id"}
+                }
+            )
             for row in raw[table]
         ]
         for table, model in MODELS.items()

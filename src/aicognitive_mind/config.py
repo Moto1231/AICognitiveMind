@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     storage_provider: str = "surreal"
     mongodb_uri: str = "mongodb://mongodb:27017"
     mongodb_database: str = "ai_cognitive_mind"
+    axiom_mind_id: str = "axiom"
     surrealdb_uri: str = "surrealkv://.surreal/cognitive_mind"
     surrealdb_namespace: str = "mir_ai"
     surrealdb_database: str = "ai_cognitive_mind"

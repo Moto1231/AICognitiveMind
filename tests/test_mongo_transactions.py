@@ -19,11 +19,16 @@ from aicognitive_mind.snapshot import cognitive_snapshot
 class MongoTransactions(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.name = "axiom_transaction_test_" + uuid4().hex
-        self.runtime = MongoRuntime(os.environ["MONGODB_TEST_URI"], self.name)
+        self.mind_id = "axiom-test"
+        self.runtime = MongoRuntime(
+            os.environ["MONGODB_TEST_URI"],
+            self.name,
+            legacy_mind_id=self.mind_id,
+        )
         await self.runtime.initialize()
-        self.mind = MongoMindStore(self.runtime.database)
-        self.journal = MongoJournalStore(self.runtime.database)
-        self.memory = MongoMemoryStore(self.runtime.database)
+        self.mind = MongoMindStore(self.runtime.database, self.mind_id)
+        self.journal = MongoJournalStore(self.runtime.database, self.mind_id)
+        self.memory = MongoMemoryStore(self.runtime.database, self.mind_id)
         self.service = CognitiveMcpService(self.mind, self.journal, self.memory)
         await self.service.initialize("Axiom")
 
@@ -53,7 +58,10 @@ class MongoTransactions(unittest.IsolatedAsyncioTestCase):
             await self.service.complete_interaction("Hello", "Hello", idempotency_key="retry"),
         )
         snapshot = await cognitive_snapshot(
-            self.mind, self.journal, self.memory, MongoDiagnosticStore(self.runtime.database)
+            self.mind,
+            self.journal,
+            self.memory,
+            MongoDiagnosticStore(self.runtime.database, self.mind_id),
         )
         self.assertEqual(snapshot["mind"], original)
         self.assertEqual(len(snapshot["journal"]), 2)

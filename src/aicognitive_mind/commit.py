@@ -97,12 +97,26 @@ def backend(stores: dict) -> tuple[str, Any]:
     return "memory", next(iter(stores.values()))
 
 
+def storage_mind_id(stores: dict) -> str:
+    ids = {
+        str(store.mind_id)
+        for store in stores.values()
+        if getattr(store, "mind_id", None) is not None
+    }
+    if len(ids) > 1:
+        raise CommitConflict("Cognitive commit spans more than one mind_id")
+    return next(iter(ids), "root")
+
+
 async def receipt(stores: dict, key: str | None) -> Any:
     if key is None:
         return None
     kind, db = backend(stores)
     if kind == "mongo":
-        return await db["commit_receipts"].find_one({"_id": key})
+        mind_id = storage_mind_id(stores)
+        return await db["commit_receipts"].find_one(
+            {"mind_id": mind_id, "key": key}
+        )
     if kind == "surreal":
         from surrealdb import RecordID
 
@@ -125,7 +139,8 @@ async def surreal_query(db: Any, sql: str, variables: dict | None = None) -> lis
 async def revision(stores: dict) -> int:
     kind, db = backend(stores)
     if kind == "mongo":
-        row = await db["commit_state"].find_one({"_id": "root"})
+        mind_id = storage_mind_id(stores)
+        row = await db["commit_state"].find_one({"mind_id": mind_id})
         return row["version"] if row else 0
     if kind == "surreal":
         from surrealdb import RecordID
@@ -182,35 +197,72 @@ async def commit(
             await surreal_query(db, "\n".join(statements), variables)
         return
     if kind == "mongo":
+        mind_id = storage_mind_id(stores)
         async with db.client.start_session() as session:
             async with await session.start_transaction():
-                state = await db["commit_state"].find_one({"_id": "root"}, session=session)
+                state = await db["commit_state"].find_one(
+                    {"mind_id": mind_id},
+                    session=session,
+                )
                 if (state["version"] if state else 0) != expected_version:
                     raise CommitConflict("Concurrent cognitive commit; begin again")
                 await db["commit_state"].replace_one(
-                    {"_id": "root"},
-                    {"_id": "root", "version": expected_version + 1},
+                    {"mind_id": mind_id},
+                    {
+                        "mind_id": mind_id,
+                        "version": expected_version + 1,
+                    },
                     upsert=True,
                     session=session,
                 )
                 for table, operation, before, after in operations:
                     value = after.model_dump(mode="python")
+                    scoped_value = {"mind_id": mind_id, **value}
                     if operation == "initialize":
-                        if await db[table].find_one({}, session=session):
+                        if await db[table].find_one(
+                            {"mind_id": mind_id},
+                            session=session,
+                        ):
                             raise MindAlreadyInitializedError(
-                                "This instance already contains its mind"
+                                "This mind is already initialized"
                             )
-                        await db[table].insert_one({"_id": "root", **value}, session=session)
+                        await db[table].insert_one(
+                            {
+                                "_id": mind_id,
+                                **scoped_value,
+                            },
+                            session=session,
+                        )
                     elif operation == "replace":
+                        selector = {
+                            "mind_id": mind_id,
+                            **before.model_dump(mode="python"),
+                        }
+                        replacement = scoped_value
+                        if table == "mind":
+                            replacement = {
+                                "_id": mind_id,
+                                **scoped_value,
+                            }
                         result = await db[table].replace_one(
-                            before.model_dump(mode="python"), value, session=session
+                            selector,
+                            replacement,
+                            session=session,
                         )
                         if result.matched_count != 1:
                             raise CommitConflict("Concurrent cognitive revision")
                     else:
-                        await db[table].insert_one(value, session=session)
+                        await db[table].insert_one(scoped_value, session=session)
                 if key:
-                    await db["commit_receipts"].insert_one({"_id": key, **saved}, session=session)
+                    await db["commit_receipts"].insert_one(
+                        {
+                            "_id": f"{mind_id}:{key}",
+                            "mind_id": mind_id,
+                            "key": key,
+                            **saved,
+                        },
+                        session=session,
+                    )
         return
     # In-memory stores are test doubles. Apply to copies and publish without awaits.
     attributes = {"mind": "_mind", "memory": "_memories", "journal": "_entries"}
