@@ -42,9 +42,11 @@ The Mind owns continuity; the reasoning host supplies inference.
 def build_chatgpt_mcp(
     base_url: str,
     provider: AxiomAuthorizationServerProvider,
+    resource_path: str = "/mcp",
 ) -> MCPServer[AppState]:
     base_url = base_url.rstrip("/")
-    resource_url = base_url + "/mcp"
+    normalized_resource_path = "/" + resource_path.strip("/")
+    resource_url = base_url + normalized_resource_path
     scope = provider.required_scope
     auth = AuthSettings(
         issuer_url=AnyHttpUrl(base_url),
