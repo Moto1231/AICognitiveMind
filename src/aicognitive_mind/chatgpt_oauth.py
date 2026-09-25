@@ -23,6 +23,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from aicognitive_mind.config import get_settings
+from aicognitive_mind.accounts import AccountService
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.persistence import StorageRuntime, create_storage
 
@@ -83,6 +84,7 @@ class AxiomAuthorizationServerProvider(
 
         self._storage: StorageRuntime | None = None
         self._records: RuntimeRecords | None = None
+        self.accounts: AccountService | None = None
 
     async def start(self) -> None:
         """Attach durable operational storage for deployed OAuth state."""
@@ -91,12 +93,14 @@ class AxiomAuthorizationServerProvider(
         storage = await create_storage(get_settings())
         self._storage = storage.runtime
         self._records = RuntimeRecords(storage.mind)
+        self.accounts = AccountService(get_settings(), self._records)
 
     async def close(self) -> None:
         if self._storage is not None:
             await self._storage.close()
         self._storage = None
         self._records = None
+        self.accounts = None
 
     def _key(self, kind: str, value: str) -> str:
         digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
@@ -210,13 +214,15 @@ class AxiomAuthorizationServerProvider(
         self.pending[request_id] = pending
         return pending
 
-    def authenticate(self, username: str, password: str) -> bool:
-        return hmac.compare_digest(username, self.username) and hmac.compare_digest(
-            password,
-            self.password,
-        )
+    async def authenticate(self, username: str, password: str) -> str | None:
+        if hmac.compare_digest(username, self.username) and hmac.compare_digest(password, self.password):
+            return self.username
+        if self.accounts is None:
+            return None
+        account = await self.accounts.authenticate(username, password)
+        return account.mind_id if account else None
 
-    async def approve(self, request_id: str) -> str:
+    async def approve(self, request_id: str, *, subject: str | None = None) -> str:
         pending = await self.pending_request(request_id)
         if pending is None:
             raise ValueError("Authorization request is missing or expired")
@@ -234,7 +240,7 @@ class AxiomAuthorizationServerProvider(
             redirect_uri=params.redirect_uri,
             redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
             resource=params.resource or self.resource_url,
-            subject=self.username,
+            subject=subject or self.username,
         )
         self.codes[code.code] = code
         await self._save_record(
@@ -440,15 +446,14 @@ def _login_page(request_id: str, *, error: str = "") -> HTMLResponse:
 <body>
 <main>
   <h1>Authorize Axiom</h1>
-  <p>Sign in with the same credentials used for the Axiom portal.</p>
+  <p>Sign in to your Axiom account.</p>
   {error_html}
   <form method="post" action="/oauth/login">
     <input type="hidden" name="request" value="{safe_request}">
     <label>Username<input name="username" autocomplete="username" required></label>
     <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
     <button type="submit" name="decision" value="approve">Connect ChatGPT to Axiom</button>
-    <button class="deny" type="submit" name="decision" value="deny">Cancel</button>
-  </form>
+    <button class="deny" type="submit" name="decision" value="deny">Cancel</button>\n    <p><a style="color:#93c5fd" href="/oauth/signup?request={safe_request}">Create a new Axiom account</a></p>\n  </form>
 </main>
 </body>
 </html>"""
@@ -478,9 +483,10 @@ async def oauth_login_post(
         return RedirectResponse(await provider.deny(request_id), status_code=302)
     username = form.get("username", "")
     password = form.get("password", "")
-    if not provider.authenticate(username, password):
+    subject = await provider.authenticate(username, password)
+    if subject is None:
         return _login_page(request_id, error="Username or password was not accepted.")
-    return RedirectResponse(await provider.approve(request_id), status_code=302)
+    return RedirectResponse(await provider.approve(request_id, subject=subject), status_code=302)
 
 
 def hostname_from_base_url(base_url: str) -> str:
@@ -488,3 +494,38 @@ def hostname_from_base_url(base_url: str) -> str:
     if not parsed.hostname:
         raise ValueError("Public Axiom URL has no hostname")
     return parsed.hostname
+
+
+def _signup_page(request_id: str, *, error: str = "") -> HTMLResponse:
+    safe_request = escape(request_id, quote=True)
+    error_html = '<p style="color:#b42318">' + escape(error) + "</p>" if error else ""
+    return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Create Axiom Account</title></head>
+<body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh">
+<main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">
+<h1>Create Axiom Account</h1><p>This creates one new account and one new unnamed Genesis mind.</p>{error_html}
+<form method="post" action="/oauth/signup"><input type="hidden" name="request" value="{safe_request}">
+<label>Username<input style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0" name="username" required minlength="3"></label>
+<label>Password<input style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0" type="password" name="password" required minlength="8"></label>
+<button style="width:100%;padding:12px;margin-top:18px" type="submit">Create account and connect</button></form></main></body></html>""")
+
+
+async def oauth_signup_get(request: Request, provider: AxiomAuthorizationServerProvider) -> Response:
+    request_id = request.query_params.get("request", "")
+    if not request_id or await provider.pending_request(request_id) is None:
+        return HTMLResponse("Authorization request is missing or expired.", status_code=400)
+    return _signup_page(request_id)
+
+
+async def oauth_signup_post(request: Request, provider: AxiomAuthorizationServerProvider) -> Response:
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    form = {key: values[-1] for key, values in parse_qs(raw).items() if values}
+    request_id = form.get("request", "")
+    if not request_id or await provider.pending_request(request_id) is None:
+        return HTMLResponse("Authorization request is missing or expired.", status_code=400)
+    if provider.accounts is None:
+        return _signup_page(request_id, error="Account service is not available.")
+    try:
+        account = await provider.accounts.create(form.get("username", ""), form.get("password", ""))
+    except ValueError as exc:
+        return _signup_page(request_id, error=str(exc))
+    return RedirectResponse(await provider.approve(request_id, subject=account.mind_id), status_code=302)
