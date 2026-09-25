@@ -98,9 +98,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
             username="mind",
             password="secret",
         )
-        server = build_chatgpt_mcp(
-            "https://axiom.example", provider, resource_path="/axiom-mcp"
-        )
+        server = build_chatgpt_mcp("https://axiom.example", provider)
         self.assertEqual(server.name, "axiom-mind")
         self.assertIn("replaceable reasoning host", HOST_INSTRUCTIONS)
         self.assertIn("begin_interaction", HOST_INSTRUCTIONS)
@@ -112,9 +110,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
             username="mind",
             password="secret",
         )
-        server = build_chatgpt_mcp(
-            "https://axiom.example", provider, resource_path="/axiom-mcp"
-        )
+        server = build_chatgpt_mcp("https://axiom.example", provider)
         names = {tool.name for tool in await server.list_tools()}
 
         self.assertTrue(
