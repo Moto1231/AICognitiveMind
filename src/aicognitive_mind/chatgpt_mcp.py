@@ -76,7 +76,10 @@ def build_chatgpt_mcp(
         This is diagnostic/read-only. It demonstrates that the Mind persists independently
         of whichever reasoning host or model is currently connected.
         """
-        return await ctx.request_context.lifespan_context.mind_service.status()
+        state = ctx.request_context.lifespan_context
+        result = await state.mind_service.status()
+        result["storage_tenancy"] = state.tenancy_probe
+        return result
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def get_body_voice_settings(ctx: Context[AppState]) -> dict[str, Any]:
