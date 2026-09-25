@@ -250,6 +250,36 @@ def github_read_file(path: str, ref: str | None = None) -> dict:
     return GitHubCapability.from_env().read_file(path=path, ref=ref)
 
 
+
+@mcp.tool()
+def github_create_branch(
+    branch: str,
+    base_ref: str | None = None,
+) -> dict:
+    """Create a branch in Axiom's configured GitHub repository."""
+    return GitHubCapability.from_env().create_branch(
+        branch=branch,
+        base_ref=base_ref,
+    )
+
+
+@mcp.tool()
+def github_create_pull_request(
+    title: str,
+    head: str,
+    base: str | None = None,
+    body: str | None = None,
+    draft: bool = False,
+) -> dict:
+    """Open a pull request in Axiom's configured GitHub repository."""
+    return GitHubCapability.from_env().create_pull_request(
+        title=title,
+        head=head,
+        base=base,
+        body=body,
+        draft=draft,
+    )
+
 @mcp.tool()
 def github_write_file(
     path: str,
