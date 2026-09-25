@@ -96,51 +96,65 @@ async def verify_live_tenancy(storage: Any) -> dict[str, Any]:
         await probe_records.create("tenancy_probe", {"marker": marker})
 
         primary_mind = await storage.mind.load()
-        isolated = all(
-            (
+        primary_checks = {
+            "mind": (
                 primary_mind is not None
-                and primary_mind.identity.self_name != "Tenancy Probe",
-                all(item.content != marker for item in await storage.memory.read()),
-                all(
-                    item.experience.get("tenancy_probe") != marker
-                    for item in await storage.journal.read()
-                ),
-                all(
-                    item.implementation.get("marker") != marker
-                    for item in await storage.diagnostics.read()
-                ),
-                all(
-                    item.metadata.get("marker") != marker
-                    for item in await storage.evidence.read()
-                ),
-                await primary_records.get("tenancy_probe") is None,
-            )
-        )
-
-        probe_visible = all(
-            (
-                (await probe_mind.load()) is not None,
-                any(item.content == marker for item in await probe_memory.read()),
-                any(
-                    item.experience.get("tenancy_probe") == marker
-                    for item in await probe_journal.read()
-                ),
-                any(
-                    item.implementation.get("marker") == marker
-                    for item in await probe_diagnostics.read()
-                ),
-                any(
-                    item.metadata.get("marker") == marker
-                    for item in await probe_evidence.read()
-                ),
+                and primary_mind.identity.self_name != "Tenancy Probe"
+            ),
+            "memory": all(
+                item.content != marker
+                for item in await storage.memory.read()
+            ),
+            "journal": all(
+                item.experience.get("tenancy_probe") != marker
+                for item in await storage.journal.read()
+            ),
+            "diagnostics": all(
+                item.implementation.get("marker") != marker
+                for item in await storage.diagnostics.read()
+            ),
+            "evidence": all(
+                item.metadata.get("marker") != marker
+                for item in await storage.evidence.read()
+            ),
+            "runtime_records": (
+                await primary_records.get("tenancy_probe") is None
+            ),
+        }
+        probe_checks = {
+            "mind": (await probe_mind.load()) is not None,
+            "memory": any(
+                item.content == marker
+                for item in await probe_memory.read()
+            ),
+            "journal": any(
+                item.experience.get("tenancy_probe") == marker
+                for item in await probe_journal.read()
+            ),
+            "diagnostics": any(
+                item.implementation.get("marker") == marker
+                for item in await probe_diagnostics.read()
+            ),
+            "evidence": any(
+                item.metadata.get("marker") == marker
+                for item in await probe_evidence.read()
+            ),
+            "runtime_records": (
                 (await probe_records.get("tenancy_probe") or {}).get("marker")
-                == marker,
-            )
-        )
+                == marker
+            ),
+        }
 
-        if not isolated or not probe_visible:
+        failed_primary = [
+            name for name, passed in primary_checks.items() if not passed
+        ]
+        failed_probe = [
+            name for name, passed in probe_checks.items() if not passed
+        ]
+        if failed_primary or failed_probe:
             raise RuntimeError(
-                "Live SurrealDB tenancy isolation verification failed"
+                "Live SurrealDB tenancy isolation verification failed: "
+                f"primary={failed_primary}, probe={failed_probe}"
             )
 
         return {
