@@ -1,6 +1,6 @@
 # Axiom Unity Body
 
-This directory is the desktop Body for the existing AI Cognitive Mind.
+This directory is the desktop Body for the existing Axiom.
 
 ## Architectural boundary
 

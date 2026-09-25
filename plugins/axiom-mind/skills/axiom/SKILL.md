@@ -1,5 +1,5 @@
 ---
-name: axiom-mind
+name: axiom
 description: Use when Axiom is selected or when the user wants the current reasoning model to operate through Axiom's persistent identity, memory, continuity, journal, embodied experience, or phone Body voice settings.
 ---
 

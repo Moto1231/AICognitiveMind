@@ -540,7 +540,7 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
 
     return Response(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        headers={"WWW-Authenticate": 'Basic realm="AICognitiveMind"'},
+        headers={"WWW-Authenticate": 'Basic realm="Axiom"'},
     )
 
 

@@ -11,7 +11,7 @@ services:
       SURREALDB_DATABASE: ai_cognitive_mind
       MONGODB_URI: mongodb://mongodb:27017
       MONGODB_DATABASE: ai_cognitive_mind
-      APP_NAME: AI Cognitive Mind
+      APP_NAME: Axiom
     depends_on:
       mongodb:
         condition: service_healthy

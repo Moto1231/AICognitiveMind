@@ -421,7 +421,7 @@ def _login_page(request_id: str, *, error: str = "") -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Authorize Axiom Mind</title>
+  <title>Authorize Axiom</title>
   <style>
     body {{ font-family: system-ui, sans-serif; background:#111827; color:#f9fafb;
            display:grid; place-items:center; min-height:100vh; margin:0; }}
@@ -437,7 +437,7 @@ def _login_page(request_id: str, *, error: str = "") -> HTMLResponse:
 </head>
 <body>
 <main>
-  <h1>Authorize Axiom Mind</h1>
+  <h1>Authorize Axiom</h1>
   <p>Sign in with the same credentials used for the Axiom portal.</p>
   {error_html}
   <form method="post" action="/oauth/login">

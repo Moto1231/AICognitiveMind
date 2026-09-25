@@ -43,7 +43,7 @@ async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
         await storage.runtime.close()
 
 
-mcp = MCPServer("Digital Genesis Cognitive Mind", lifespan=lifespan)
+mcp = MCPServer("Axiom", lifespan=lifespan)
 
 
 @mcp.tool()
@@ -205,7 +205,7 @@ class McpTokenAuth:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Digital Genesis Cognitive Mind MCP server")
+    parser = argparse.ArgumentParser(description="Axiom MCP server")
     parser.add_argument(
         "--transport",
         choices=("stdio", "streamable-http"),

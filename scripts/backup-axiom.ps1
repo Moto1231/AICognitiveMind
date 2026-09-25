@@ -118,7 +118,7 @@ if (-not (Test-Path (Join-Path $RepoRoot ".git"))) {
 }
 
 if ([string]::IsNullOrWhiteSpace($MindUrl)) {
-    $MindUrl = Read-Host "Axiom Mind base URL"
+    $MindUrl = Read-Host "Axiom base URL"
 }
 $MindUrl = $MindUrl.TrimEnd("/")
 
@@ -147,7 +147,7 @@ New-Item -ItemType Directory -Path $evidenceStage | Out-Null
 try {
     $gitBundle = Join-Path $tempRoot "repository.bundle"
     $projectZip = Join-Path $tempRoot "working-project.zip"
-    $mindZip = Join-Path $tempRoot "axiom-mind.zip"
+    $mindZip = Join-Path $tempRoot "axiom.zip"
     $evidenceZip = Join-Path $tempRoot "axiom-evidence.zip"
 
     Write-Host "Creating complete Git history bundle..."
@@ -302,7 +302,7 @@ try {
         contents = @(
             "repository.bundle",
             "working-project.zip",
-            "axiom-mind.zip",
+            "axiom.zip",
             "axiom-evidence.zip",
             "working-tree-status.txt",
             "SHA256SUMS.txt"

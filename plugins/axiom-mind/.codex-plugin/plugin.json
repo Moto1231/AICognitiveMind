@@ -1,0 +1,24 @@
+{
+  "name": "axiom-mind",
+  "version": "0.1.0+codex.20260925051739",
+  "description": "Use Axiom as the persistent Mind behind a replaceable AI reasoning host.",
+  "author": {
+    "name": "William Enright"
+  },
+  "repository": "https://github.com/Moto1231/AICognitiveMind",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Axiom",
+    "shortDescription": "Persistent identity, memory, and continuity.",
+    "developerName": "William Enright",
+    "category": "Productivity",
+    "longDescription": "Use Axiom for persistent identity, memory, and continuity across interchangeable reasoning models.",
+    "defaultPrompt": [
+      "Continue with Axiom using our remembered context."
+    ],
+    "capabilities": [
+      "Read",
+      "Write"
+    ]
+  }
+}

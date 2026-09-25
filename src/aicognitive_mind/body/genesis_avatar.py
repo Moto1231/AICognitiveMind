@@ -487,7 +487,7 @@ def build_genesis_vrm() -> bytes:
     gltf = {
         "asset": {
             "version": "2.0",
-            "generator": "AICognitiveMind Genesis Avatar Builder V0.3",
+            "generator": "Axiom Genesis Avatar Builder V0.3",
         },
         "extensionsUsed": ["VRMC_vrm"],
         "extensions": {
@@ -496,7 +496,7 @@ def build_genesis_vrm() -> bytes:
                 "meta": {
                     "name": "Genesis",
                     "version": "0.3",
-                    "authors": ["AICognitiveMind"],
+                    "authors": ["Axiom"],
                     "licenseUrl": "https://vrm.dev/licenses/1.0/",
                     "avatarPermission": "everyone",
                     "commercialUsage": "corporation",
