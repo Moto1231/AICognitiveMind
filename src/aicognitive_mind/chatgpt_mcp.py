@@ -164,6 +164,48 @@ def build_chatgpt_mcp(
             open_world_hint=True,
         )
     )
+    def github_create_branch(
+        branch: str,
+        base_ref: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a branch in Axiom's configured GitHub repository."""
+        return GitHubCapability.from_env().create_branch(
+            branch=branch,
+            base_ref=base_ref,
+        )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=True,
+        )
+    )
+    def github_create_pull_request(
+        title: str,
+        head: str,
+        base: str | None = None,
+        body: str | None = None,
+        draft: bool = False,
+    ) -> dict[str, Any]:
+        """Open a pull request in Axiom's configured GitHub repository."""
+        return GitHubCapability.from_env().create_pull_request(
+            title=title,
+            head=head,
+            base=base,
+            body=body,
+            draft=draft,
+        )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=True,
+        )
+    )
     def github_write_file(
         path: str,
         content: str,
