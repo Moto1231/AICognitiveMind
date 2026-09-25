@@ -16,10 +16,13 @@ from aicognitive_mind.commit import CommitConflict, backend
 class RuntimeRecords:
     def __init__(self, mind: Any) -> None:
         self.kind, self.db = backend({"mind": mind})
+        self.mind_id = str(getattr(mind, "mind_id", "root"))
 
     async def get(self, key: str) -> dict | None:
         if self.kind == "mongo":
-            value = await self.db["runtime_records"].find_one({"_id": key})
+            value = await self.db["runtime_records"].find_one(
+                {"mind_id": self.mind_id, "key": key}
+            )
         elif self.kind == "surreal":
             from surrealdb import RecordID
 
@@ -29,12 +32,25 @@ class RuntimeRecords:
         else:
             value = getattr(self.db, "_runtime_records", {}).get(key)
         return (
-            {k: deepcopy(v) for k, v in value.items() if k not in {"id", "_id"}} if value else None
+            {
+                k: deepcopy(v)
+                for k, v in value.items()
+                if k not in {"id", "_id", "mind_id", "key"}
+            }
+            if value
+            else None
         )
 
     async def create(self, key: str, value: dict) -> None:
         if self.kind == "mongo":
-            await self.db["runtime_records"].insert_one({"_id": key, **value})
+            await self.db["runtime_records"].insert_one(
+                {
+                    "_id": f"{self.mind_id}:{key}",
+                    "mind_id": self.mind_id,
+                    "key": key,
+                    **value,
+                }
+            )
         elif self.kind == "surreal":
             from surrealdb import RecordID
 
@@ -48,7 +64,18 @@ class RuntimeRecords:
 
     async def replace(self, key: str, before: dict, after: dict) -> bool:
         if self.kind == "mongo":
-            result = await self.db["runtime_records"].replace_one({"_id": key, **before}, after)
+            result = await self.db["runtime_records"].replace_one(
+                {
+                    "mind_id": self.mind_id,
+                    "key": key,
+                    **before,
+                },
+                {
+                    "mind_id": self.mind_id,
+                    "key": key,
+                    **after,
+                },
+            )
             return result.matched_count == 1
         if self.kind == "surreal":
             from surrealdb import RecordID
@@ -69,11 +96,25 @@ class RuntimeRecords:
         if self.kind == "mongo":
             cursor = (
                 self.db["runtime_records"]
-                .find({"kind": "body_request", "state": "pending", "deadline": {"$gt": now}})
+                .find(
+                    {
+                        "mind_id": self.mind_id,
+                        "kind": "body_request",
+                        "state": "pending",
+                        "deadline": {"$gt": now},
+                    }
+                )
                 .sort("created", 1)
                 .limit(20)
             )
-            return [{k: v for k, v in row.items() if k != "_id"} async for row in cursor]
+            return [
+                {
+                    k: v
+                    for k, v in row.items()
+                    if k not in {"_id", "mind_id", "key"}
+                }
+                async for row in cursor
+            ]
         if self.kind == "surreal":
             return await self.db.query(
                 "SELECT * OMIT id FROM runtime_records WHERE kind = 'body_request' AND state = 'pending' AND deadline > $now ORDER BY created LIMIT 20;",
