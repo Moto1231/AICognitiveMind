@@ -44,7 +44,7 @@ def build_chatgpt_mcp(
     provider: AxiomAuthorizationServerProvider,
 ) -> MCPServer[AppState]:
     base_url = base_url.rstrip("/")
-    resource_url = base_url + "/mcp"
+    resource_url = provider.resource_url
     scope = provider.required_scope
     auth = AuthSettings(
         issuer_url=AnyHttpUrl(base_url),

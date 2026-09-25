@@ -5,6 +5,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from urllib.parse import urlparse
 
 from starlette.requests import Request
+from starlette.responses import RedirectResponse
 from starlette.routing import Mount, Route
 
 from mcp.server.transport_security import TransportSecuritySettings
@@ -34,6 +35,7 @@ def public_base_url() -> str:
 
 
 BASE_URL = public_base_url()
+MCP_PATH = "/axiom-mcp"
 settings = get_settings()
 
 if (
@@ -48,6 +50,7 @@ oauth_provider = AxiomAuthorizationServerProvider(
     base_url=BASE_URL,
     username=settings.app_access_username,
     password=settings.app_access_password or "",
+    resource_path=MCP_PATH,
 )
 axiom_mcp = build_chatgpt_mcp(BASE_URL, oauth_provider)
 
@@ -58,6 +61,10 @@ async def _oauth_login_get(request: Request):
 
 async def _oauth_login_post(request: Request):
     return await oauth_login_post(request, oauth_provider)
+
+
+async def _legacy_mcp_redirect(_request: Request):
+    return RedirectResponse(MCP_PATH, status_code=307)
 
 
 hostname = hostname_from_base_url(BASE_URL)
@@ -79,6 +86,7 @@ transport_security = TransportSecuritySettings(
 )
 
 app = axiom_mcp.streamable_http_app(
+    streamable_http_path=MCP_PATH,
     json_response=True,
     stateless_http=True,
     transport_security=transport_security,
@@ -93,6 +101,7 @@ app.router.routes.extend(
     [
         Route("/oauth/login", endpoint=_oauth_login_get, methods=["GET"]),
         Route("/oauth/login", endpoint=_oauth_login_post, methods=["POST"]),
+        Route("/mcp", endpoint=_legacy_mcp_redirect, methods=["GET", "POST", "DELETE"]),
         Mount("/", app=portal_app),
     ]
 )

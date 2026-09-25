@@ -65,9 +65,11 @@ class AxiomAuthorizationServerProvider(
         username: str,
         password: str,
         required_scope: str = "axiom:mind",
+        resource_path: str = "/mcp",
     ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.resource_url = self.base_url + "/mcp"
+        normalized_resource_path = "/" + resource_path.strip("/")
+        self.resource_url = self.base_url + normalized_resource_path
         self.username = username
         self.password = password
         self.required_scope = required_scope

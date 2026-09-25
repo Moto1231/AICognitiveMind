@@ -17,6 +17,7 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
             self.base,
             username="mind",
             password="secret",
+            resource_path="/axiom-mcp",
         )
         self.client = OAuthClientInformationFull.model_validate(
             {
@@ -33,7 +34,7 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
             code_challenge="challenge",
             redirect_uri=AnyUrl("https://chatgpt.example/callback"),
             redirect_uri_provided_explicitly=True,
-            resource=self.base + "/mcp",
+            resource=self.base + "/axiom-mcp",
         )
         login_url = await self.provider.authorize(self.client, params)
         request_id = parse_qs(urlparse(login_url).query)["request"][0]
@@ -54,7 +55,7 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
 
         access = await self.provider.load_access_token(token.access_token)
         self.assertIsNotNone(access)
-        self.assertEqual(access.resource, self.base + "/mcp")
+        self.assertEqual(access.resource, self.base + "/axiom-mcp")
         self.assertEqual(access.subject, "mind")
 
         refresh = await self.provider.load_refresh_token(
@@ -80,7 +81,7 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
             code_challenge="challenge",
             redirect_uri=AnyUrl("https://chatgpt.example/callback"),
             redirect_uri_provided_explicitly=True,
-            resource=self.base + "/mcp",
+            resource=self.base + "/axiom-mcp",
         )
         login_url = await self.provider.authorize(self.client, params)
         request_id = parse_qs(urlparse(login_url).query)["request"][0]

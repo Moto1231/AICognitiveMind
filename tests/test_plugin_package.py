@@ -26,7 +26,7 @@ class AxiomPluginPackageTests(unittest.TestCase):
         self.assertEqual(server["type"], "streamable-http")
         parsed = urlparse(server["url"])
         self.assertEqual(parsed.scheme, "https")
-        self.assertEqual(parsed.path, "/mcp")
+        self.assertEqual(parsed.path, "/axiom-mcp")
         self.assertTrue(parsed.hostname)
 
     def test_repository_marketplace_exposes_axiom_plugin(self):
