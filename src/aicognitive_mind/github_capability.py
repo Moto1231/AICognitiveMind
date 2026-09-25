@@ -194,7 +194,6 @@ class GitHubCapability:
             "content": decoded,
         }
 
-
     def create_branch(
         self,
         branch: str,
@@ -277,7 +276,6 @@ class GitHubCapability:
             "head": clean_head,
             "base": target_base,
         }
-
 
     def write_file(
         self,
