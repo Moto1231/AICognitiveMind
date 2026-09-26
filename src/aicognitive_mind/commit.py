@@ -189,7 +189,8 @@ async def commit(
         }
         statements = [
             "BEGIN TRANSACTION;",
-            "LET $state = SELECT * FROM $state_id;",\n            "LET $version = IF array::len($state) = 0 { 0 } ELSE { $state[0].version };",
+            "LET $state = SELECT * FROM $state_id;",
+            "LET $version = IF array::len($state) = 0 { 0 } ELSE { $state[0].version };",
             "IF $version != $expected_version { THROW 'Concurrent cognitive commit; begin again'; };",
             "UPSERT $state_id CONTENT { mind_id: $mind_id, version: $expected_version + 1 };",
         ]
