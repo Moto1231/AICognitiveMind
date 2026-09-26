@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 import logging
+import secrets
+import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from urllib.parse import urlparse
 
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.routing import Mount, Route
 
 from mcp.server.transport_security import TransportSecuritySettings
@@ -162,6 +164,46 @@ document.getElementById('login').addEventListener('submit', async (event) => {
 </script></main></body></html>""")
 
 
+async def _portal_login_post(request: Request):
+    """Authenticate portal accounts at the outer deployment boundary."""
+    logger.warning("AUTH_DIAG portal login request received path=%s", request.url.path)
+    try:
+        body = await request.json()
+        accounts = oauth_provider.accounts
+        if accounts is None:
+            logger.error("AUTH_DIAG portal login account service unavailable")
+            return JSONResponse({"detail": "Account service is not available."}, status_code=503)
+        account = await accounts.authenticate(
+            str(body.get("username", "")),
+            str(body.get("password", "")),
+        )
+        if account is None:
+            logger.warning("AUTH_DIAG portal login rejected")
+            return JSONResponse(
+                {"detail": "Username or password was not accepted."},
+                status_code=401,
+            )
+        token = secrets.token_urlsafe(32)
+        portal_app.state.portal_sessions[token] = {
+            "mind_id": account.mind_id,
+            "expires_at": time.time() + 7 * 24 * 3600,
+        }
+        response = JSONResponse({"ok": True})
+        response.set_cookie(
+            "axiom_portal_session",
+            token,
+            max_age=7 * 24 * 3600,
+            httponly=True,
+            secure=request.url.scheme == "https",
+            samesite="lax",
+        )
+        logger.warning("AUTH_DIAG portal login accepted")
+        return response
+    except Exception:
+        logger.exception("AUTH_DIAG portal login unhandled exception")
+        raise
+
+
 async def _portal_redirect(_request: Request):
     return RedirectResponse("/static/index.html", status_code=307)
 
@@ -200,6 +242,7 @@ app.router.routes.extend(
     [
         Route("/", endpoint=_public_entry, methods=["GET"]),
         Route("/portal", endpoint=_portal_login_page, methods=["GET"]),
+        Route("/v1/portal/login", endpoint=_portal_login_post, methods=["POST"]),
         Route("/signup", endpoint=_account_signup_get, methods=["GET"]),
         Route("/signup", endpoint=_account_signup_post, methods=["POST"]),
         Route("/oauth/login", endpoint=_oauth_login_get, methods=["GET"]),
