@@ -26,29 +26,36 @@ class RuntimeRecords:
         elif self.kind == "surreal":
             from surrealdb import RecordID
 
-            scoped_id = RecordID(
-                "runtime_records",
-                f"{self.mind_id}__{key}",
-            )
-            value = await self.db.select(scoped_id)
-            if isinstance(value, list):
-                value = value[0] if value else None
-            if value is None and (self.mind_id == "axiom" or key.startswith("account_")):
-                # Account registry records are global selectors for Minds, not
-                # state owned by one Mind. Older deployments wrote them either
-                # unscoped or under whichever root mind ID was configured at
-                # the time. Check the legacy unscoped ID first, then recover an
-                # account from any prior root scope by its globally unique key.
+            # Accounts are global selectors for tenant Minds, not state owned by
+            # whichever root Mind happens to initialize the deployed process.
+            # Keep one canonical unscoped account registry across root mind IDs.
+            if key.startswith("account_"):
                 value = await self.db.select(RecordID("runtime_records", key))
                 if isinstance(value, list):
                     value = value[0] if value else None
-                if value is None and key.startswith("account_"):
+                if value is None:
+                    # Compatibility with accounts created by the briefly shipped
+                    # tenant-scoped implementation. The root mind ID can change
+                    # across deployments, so recover by the globally unique
+                    # account key rather than only the current root scope.
                     matches = await self.db.query(
                         "SELECT * FROM runtime_records WHERE key = $key LIMIT 1;",
                         {"key": key},
                     )
                     if isinstance(matches, list):
                         value = matches[0] if matches else None
+            else:
+                scoped_id = RecordID(
+                    "runtime_records",
+                    f"{self.mind_id}__{key}",
+                )
+                value = await self.db.select(scoped_id)
+                if isinstance(value, list):
+                    value = value[0] if value else None
+                if value is None and self.mind_id == "axiom":
+                    value = await self.db.select(RecordID("runtime_records", key))
+                    if isinstance(value, list):
+                        value = value[0] if value else None
         else:
             value = getattr(self.db, "_runtime_records", {}).get(key)
         return (
@@ -74,8 +81,13 @@ class RuntimeRecords:
         elif self.kind == "surreal":
             from surrealdb import RecordID
 
+            record_id = (
+                RecordID("runtime_records", key)
+                if key.startswith("account_")
+                else RecordID("runtime_records", f"{self.mind_id}__{key}")
+            )
             await self.db.create(
-                RecordID("runtime_records", f"{self.mind_id}__{key}"),
+                record_id,
                 {
                     "mind_id": self.mind_id,
                     "key": key,
@@ -111,12 +123,19 @@ class RuntimeRecords:
                 "runtime_records",
                 f"{self.mind_id}__{key}",
             )
-            target_id = scoped_id
-            current = await self.db.select(scoped_id)
+            target_id = (
+                RecordID("runtime_records", key)
+                if key.startswith("account_")
+                else scoped_id
+            )
+            current = await self.db.select(target_id)
             if isinstance(current, list):
                 current = current[0] if current else None
-            if current is None and self.mind_id == "axiom":
-                legacy_id = RecordID("runtime_records", key)
+            if current is None and (self.mind_id == "axiom" or key.startswith("account_")):
+                legacy_id = (
+                    scoped_id if key.startswith("account_")
+                    else RecordID("runtime_records", key)
+                )
                 current = await self.db.select(legacy_id)
                 if isinstance(current, list):
                     current = current[0] if current else None
