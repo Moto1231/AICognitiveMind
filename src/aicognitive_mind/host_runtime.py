@@ -36,16 +36,14 @@ class RuntimeRecords:
                 if value is None:
                     # Compatibility with accounts created by the briefly shipped
                     # tenant-scoped implementation. The root mind ID can change
-                    # across deployments, so do not limit recovery to the current
-                    # root scope: the account key itself is globally unique.
-                    legacy = await self.db.query(
+                    # across deployments, so recover by the globally unique
+                    # account key rather than only the current root scope.
+                    matches = await self.db.query(
                         "SELECT * FROM runtime_records WHERE key = $key LIMIT 1;",
                         {"key": key},
                     )
-                    if isinstance(legacy, list):
-                        value = legacy[0] if legacy else None
-                    else:
-                        value = legacy
+                    if isinstance(matches, list):
+                        value = matches[0] if matches else None
             else:
                 scoped_id = RecordID(
                     "runtime_records",
