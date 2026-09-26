@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import secrets
 import time
 from copy import deepcopy
@@ -11,6 +12,9 @@ from typing import Any
 from uuid import uuid4
 
 from aicognitive_mind.commit import CommitConflict, backend
+
+
+logger = logging.getLogger('aicognitive_mind.auth_diagnostics')
 
 
 class RuntimeRecords:
@@ -34,6 +38,7 @@ class RuntimeRecords:
                 if isinstance(value, list):
                     value = value[0] if value else None
                 if value is None:
+                    logger.warning("AUTH_DIAG registry canonical_record_missing")
                     # Compatibility with accounts created by the briefly shipped
                     # tenant-scoped implementation. The root mind ID can change
                     # across deployments, so recover by the globally unique
@@ -44,6 +49,9 @@ class RuntimeRecords:
                     )
                     if isinstance(matches, list):
                         value = matches[0] if matches else None
+                    logger.warning("AUTH_DIAG registry fallback_lookup result=%s", "found" if value else "missing")
+                else:
+                    logger.warning("AUTH_DIAG registry canonical_record_found")
             else:
                 scoped_id = RecordID(
                     "runtime_records",
