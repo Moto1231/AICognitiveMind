@@ -11,7 +11,7 @@ from copy import deepcopy
 from typing import Any
 from uuid import uuid4
 
-from aicognitive_mind.commit import CommitConflict, backend
+from aicognitive_mind.commit import CommitConflict, backend, surreal_query
 
 
 logger = logging.getLogger('aicognitive_mind.auth_diagnostics')
@@ -43,12 +43,13 @@ class RuntimeRecords:
                     # tenant-scoped implementation. The root mind ID can change
                     # across deployments, so recover by the globally unique
                     # account key rather than only the current root scope.
-                    matches = await self.db.query(
+                    results = await surreal_query(
+                        self.db,
                         "SELECT * FROM runtime_records WHERE key = $key LIMIT 1;",
                         {"key": key},
                     )
-                    if isinstance(matches, list):
-                        value = matches[0] if matches else None
+                    matches = results[0] if results else []
+                    value = matches[0] if isinstance(matches, list) and matches else None
                     logger.warning("AUTH_DIAG registry fallback_lookup result=%s", "found" if value else "missing")
                 else:
                     logger.warning("AUTH_DIAG registry canonical_record_found")
