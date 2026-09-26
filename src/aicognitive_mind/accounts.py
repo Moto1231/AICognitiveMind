@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +11,9 @@ from uuid import uuid4
 from aicognitive_mind.domain import CognitiveMind, MindIdentity
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.config import Settings
+
+
+logger = logging.getLogger("aicognitive_mind.auth_diagnostics")
 
 
 @dataclass(frozen=True)
@@ -75,12 +79,18 @@ class AccountService:
         username = username.strip().lower()
         key = "account_" + hashlib.sha256(username.encode("utf-8")).hexdigest()
         record = await self.registry_store.get(key)
-        if not record or not record.get("active", False):
+        if record is None:
+            logger.warning("AUTH_DIAG account authentication record_not_found")
+            return None
+        if not record.get("active", False):
+            logger.warning("AUTH_DIAG account authentication inactive")
             return None
         salt = bytes.fromhex(record["password_salt"])
         _, digest = self._password_hash(password, salt)
         if not hmac.compare_digest(digest, record["password_hash"]):
+            logger.warning("AUTH_DIAG account authentication password_mismatch")
             return None
+        logger.warning("AUTH_DIAG account authentication accepted")
         # Credential verification must not depend on tenant/Mind initialization.
         # If tenant storage is temporarily unhealthy, valid credentials should
         # still establish the account session instead of turning login into a
