@@ -478,5 +478,32 @@ class PortalAdministrationTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+
+
+class AccountRuntimeRecordRegressionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_account_runtime_lookup_preserves_tenant_mind_id(self) -> None:
+        from aicognitive_mind.host_runtime import RuntimeRecords
+
+        class FakeMind:
+            mind_id = "root"
+            _runtime_records = {}
+
+        records = RuntimeRecords(FakeMind())
+        await records.create(
+            "account_example",
+            {
+                "kind": "account",
+                "username": "example",
+                "mind_id": "mind_tenant_123",
+                "active": True,
+            },
+        )
+
+        loaded = await records.get("account_example")
+
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded["mind_id"], "mind_tenant_123")
+
+
 if __name__ == "__main__":
     unittest.main()
