@@ -24,9 +24,13 @@ class RuntimeRecords:
 
     async def get(self, key: str) -> dict | None:
         if self.kind == "mongo":
-            value = await self.db["runtime_records"].find_one(
-                {"mind_id": self.mind_id, "key": key}
-            )
+            # Accounts are global selectors for tenant Minds. Do not scope them
+            # to the current root Mind, which may change across deployments.
+            query = {"key": key} if key.startswith("account_") else {
+                "mind_id": self.mind_id,
+                "key": key,
+            }
+            value = await self.db["runtime_records"].find_one(query)
         elif self.kind == "surreal":
             from surrealdb import RecordID
 
@@ -80,7 +84,7 @@ class RuntimeRecords:
         if self.kind == "mongo":
             await self.db["runtime_records"].insert_one(
                 {
-                    "_id": f"{self.mind_id}:{key}",
+                    "_id": key if key.startswith("account_") else f"{self.mind_id}:{key}",
                     "mind_id": self.mind_id,
                     "key": key,
                     **value,
@@ -111,12 +115,13 @@ class RuntimeRecords:
 
     async def replace(self, key: str, before: dict, after: dict) -> bool:
         if self.kind == "mongo":
+            selector = {"key": key, **before} if key.startswith("account_") else {
+                "mind_id": self.mind_id,
+                "key": key,
+                **before,
+            }
             result = await self.db["runtime_records"].replace_one(
-                {
-                    "mind_id": self.mind_id,
-                    "key": key,
-                    **before,
-                },
+                selector,
                 {
                     "mind_id": self.mind_id,
                     "key": key,
