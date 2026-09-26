@@ -117,7 +117,7 @@ class _AuthDiagnosticMiddleware:
     async def __call__(self, scope, receive, send):
         path = scope.get("path", "")
         method = scope.get("method", "")
-        watched = path in {"/signup", "/v1/portal/login"}
+        watched = path in {"/signup", "/v1/portal/login", "/v1/portal/signup"}
         if watched:
             logger.warning("AUTH_DIAG boundary request method=%s path=%s", method, path)
         status = None
@@ -148,8 +148,33 @@ async def _portal_login_page(_request: Request):
 <form id="login"><label>Username<input id="username" autocomplete="username" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
 <label>Password<input id="password" type="password" autocomplete="current-password" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
 <button style="width:100%;padding:12px;margin-top:18px" type="submit">Sign in</button></form>
-<p><a style="color:#93c5fd" href="/signup">Create a new Axiom account</a></p>
+<p><button id="show-signup" type="button" style="width:100%;padding:12px;margin-top:12px">Create a new Axiom account</button></p>
+<form id="signup" hidden><label>New username<input id="new-username" autocomplete="username" minlength="3" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
+<label>New password<input id="new-password" type="password" autocomplete="new-password" minlength="8" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
+<button style="width:100%;padding:12px;margin-top:18px" type="submit">Create account</button></form>
+<p id="signup-status" style="color:#93c5fd"></p>
 <script>
+document.getElementById('show-signup').addEventListener('click', () => {
+  document.getElementById('signup').hidden = false;
+  document.getElementById('show-signup').hidden = true;
+});
+document.getElementById('signup').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const response = await fetch('/v1/portal/signup', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:document.getElementById('new-username').value,password:document.getElementById('new-password').value})
+  });
+  let payload={};
+  try { payload=await response.json(); } catch (_) {}
+  if (response.ok) {
+    document.getElementById('username').value=document.getElementById('new-username').value;
+    document.getElementById('password').value='';
+    document.getElementById('signup').hidden=true;
+    document.getElementById('signup-status').textContent='Account created. Sign in above.';
+    return;
+  }
+  document.getElementById('signup-status').textContent=payload.detail || 'Account creation failed.';
+});
 document.getElementById('login').addEventListener('submit', async (event) => {
   event.preventDefault();
   const response = await fetch('/v1/portal/login', {
@@ -162,6 +187,30 @@ document.getElementById('login').addEventListener('submit', async (event) => {
   document.getElementById('error').textContent=detail;
 });
 </script></main></body></html>""")
+
+
+async def _portal_signup_post(request: Request):
+    """Create an Axiom account through the portal JSON boundary."""
+    logger.warning("AUTH_DIAG portal signup request received path=%s", request.url.path)
+    try:
+        body = await request.json()
+        accounts = oauth_provider.accounts
+        if accounts is None:
+            logger.error("AUTH_DIAG portal signup account service unavailable")
+            return JSONResponse({"detail": "Account service is not available."}, status_code=503)
+        try:
+            account = await accounts.create(
+                str(body.get("username", "")),
+                str(body.get("password", "")),
+            )
+        except ValueError as exc:
+            logger.warning("AUTH_DIAG portal signup rejected reason=%s", exc)
+            return JSONResponse({"detail": str(exc)}, status_code=400)
+        logger.warning("AUTH_DIAG portal signup created")
+        return JSONResponse({"ok": True, "username": account.username}, status_code=201)
+    except Exception:
+        logger.exception("AUTH_DIAG portal signup unhandled exception")
+        raise
 
 
 async def _portal_login_post(request: Request):
@@ -243,6 +292,7 @@ app.router.routes.extend(
         Route("/", endpoint=_public_entry, methods=["GET"]),
         Route("/portal", endpoint=_portal_login_page, methods=["GET"]),
         Route("/v1/portal/login", endpoint=_portal_login_post, methods=["POST"]),
+        Route("/v1/portal/signup", endpoint=_portal_signup_post, methods=["POST"]),
         Route("/signup", endpoint=_account_signup_get, methods=["GET"]),
         Route("/signup", endpoint=_account_signup_post, methods=["POST"]),
         Route("/oauth/login", endpoint=_oauth_login_get, methods=["GET"]),
