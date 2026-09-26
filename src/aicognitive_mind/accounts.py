@@ -73,6 +73,14 @@ class AccountService:
             "password_hash": digest,
             "active": True,
         })
+        # Verify the record through the same lookup used by login. A successful
+        # database create acknowledgement is not proof that authentication can
+        # retrieve the account (for example, after a scope/namespace mismatch).
+        persisted = await self.registry_store.get(key)
+        if not persisted or persisted.get("mind_id") != mind_id:
+            logger.error("AUTH_DIAG signup registry_readback_failed")
+            raise RuntimeError("Account storage verification failed; signup was not confirmed.")
+        logger.warning("AUTH_DIAG signup registry_readback_ok")
         return Account(username=username, mind_id=mind_id)
 
     async def authenticate(self, username: str, password: str) -> Account | None:
