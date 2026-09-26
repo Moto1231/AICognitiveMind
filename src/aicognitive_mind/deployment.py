@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from urllib.parse import urlparse
 
@@ -41,6 +42,7 @@ def public_base_url() -> str:
 BASE_URL = public_base_url()
 MCP_PATH = "/axiom-mcp"
 settings = get_settings()
+logger = logging.getLogger("aicognitive_mind.auth_diagnostics")
 
 if (
     BASE_URL.startswith("https://")
@@ -64,7 +66,14 @@ async def _account_signup_get(request: Request):
 
 
 async def _account_signup_post(request: Request):
-    return await account_signup_post(request, oauth_provider)
+    logger.warning("AUTH_DIAG signup request received path=%s", request.url.path)
+    try:
+        response = await account_signup_post(request, oauth_provider)
+        logger.warning("AUTH_DIAG signup response status=%s", response.status_code)
+        return response
+    except Exception:
+        logger.exception("AUTH_DIAG signup unhandled exception")
+        raise
 
 
 async def _oauth_login_get(request: Request):
@@ -97,6 +106,35 @@ async def _public_entry(_request: Request):
 <a href="/signup" style="display:block;text-align:center;padding:12px;margin-top:18px;border-radius:8px;background:#2563eb;color:white;text-decoration:none">Create new account</a>
 <a href="/portal" style="display:block;text-align:center;padding:12px;margin-top:12px;border-radius:8px;background:#374151;color:white;text-decoration:none">Existing Axiom</a>
 </main></body></html>""")
+
+
+class _AuthDiagnosticMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+        watched = path in {"/signup", "/v1/portal/login"}
+        if watched:
+            logger.warning("AUTH_DIAG boundary request method=%s path=%s", method, path)
+        status = None
+
+        async def diagnostic_send(message):
+            nonlocal status
+            if message.get("type") == "http.response.start":
+                status = message.get("status")
+            await send(message)
+
+        try:
+            await self.app(scope, receive, diagnostic_send)
+        except Exception:
+            if watched:
+                logger.exception("AUTH_DIAG boundary exception method=%s path=%s", method, path)
+            raise
+        finally:
+            if watched:
+                logger.warning("AUTH_DIAG boundary complete method=%s path=%s status=%s", method, path, status)
 
 
 async def _portal_login_page(_request: Request):
@@ -189,3 +227,4 @@ async def _combined_lifespan(host_app):
 
 
 app.router.lifespan_context = _combined_lifespan
+app = _AuthDiagnosticMiddleware(app)
