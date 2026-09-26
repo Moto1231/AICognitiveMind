@@ -81,6 +81,9 @@ class AccountService:
         _, digest = self._password_hash(password, salt)
         if not hmac.compare_digest(digest, record["password_hash"]):
             return None
+        # Credential verification must not depend on tenant/Mind initialization.
+        # If tenant storage is temporarily unhealthy, valid credentials should
+        # still establish the account session instead of turning login into a
+        # 500. Tenant access/repair belongs after authentication.
         mind_id = str(record["mind_id"])
-        await self._ensure_mind(mind_id)
         return Account(username=username, mind_id=mind_id)
