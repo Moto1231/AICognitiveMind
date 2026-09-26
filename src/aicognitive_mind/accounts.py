@@ -31,6 +31,22 @@ class AccountService:
         digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 310_000)
         return salt.hex(), digest.hex()
 
+    async def _ensure_mind(self, mind_id: str) -> None:
+        """Ensure an account's tenant has a Genesis mind.
+
+        Early signup builds wrote the account record before initializing its Mind,
+        so a failed initialization could leave a valid account pointing at an
+        empty tenant. Repair that state when the account next authenticates.
+        """
+        storage = await create_storage(self.settings, mind_id=mind_id)
+        try:
+            if await storage.mind.load() is None:
+                await storage.mind.initialize(
+                    CognitiveMind(identity=MindIdentity(self_name=None))
+                )
+        finally:
+            await storage.runtime.close()
+
     async def create(self, username: str, password: str) -> Account:
         username = username.strip().lower()
         if len(username) < 3 or len(password) < 8:
@@ -39,6 +55,11 @@ class AccountService:
         if await self.registry_store.get(key):
             raise ValueError("Account already exists")
         mind_id = "mind_" + uuid4().hex
+
+        # Initialize the tenant before publishing credentials. This prevents a
+        # failed Genesis initialization from leaving an orphan account record.
+        await self._ensure_mind(mind_id)
+
         salt, digest = self._password_hash(password)
         await self.registry_store.create(key, {
             "kind": "account",
@@ -48,11 +69,6 @@ class AccountService:
             "password_hash": digest,
             "active": True,
         })
-        storage = await create_storage(self.settings, mind_id=mind_id)
-        try:
-            await storage.mind.initialize(CognitiveMind(identity=MindIdentity(self_name=None)))
-        finally:
-            await storage.runtime.close()
         return Account(username=username, mind_id=mind_id)
 
     async def authenticate(self, username: str, password: str) -> Account | None:
@@ -65,4 +81,6 @@ class AccountService:
         _, digest = self._password_hash(password, salt)
         if not hmac.compare_digest(digest, record["password_hash"]):
             return None
-        return Account(username=username, mind_id=str(record["mind_id"]))
+        mind_id = str(record["mind_id"])
+        await self._ensure_mind(mind_id)
+        return Account(username=username, mind_id=mind_id)
