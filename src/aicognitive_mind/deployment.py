@@ -117,7 +117,7 @@ class _AuthDiagnosticMiddleware:
     async def __call__(self, scope, receive, send):
         path = scope.get("path", "")
         method = scope.get("method", "")
-        watched = path in {"/signup", "/v1/portal/login", "/v1/portal/signup"}
+        watched = path in {"/portal", "/signup", "/oauth/login", "/oauth/signup", "/v1/portal/login", "/v1/portal/signup"}
         if watched:
             logger.warning("AUTH_DIAG boundary request method=%s path=%s", method, path)
         status = None
@@ -186,7 +186,7 @@ document.getElementById('login').addEventListener('submit', async (event) => {
   try { detail=(await response.json()).detail || detail; } catch (_) {}
   document.getElementById('error').textContent=detail;
 });
-</script></main></body></html>""")
+</script></main></body></html>""", headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"})
 
 
 async def _portal_signup_post(request: Request):
