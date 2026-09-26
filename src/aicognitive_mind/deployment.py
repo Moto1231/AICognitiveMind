@@ -116,7 +116,7 @@ document.getElementById('login').addEventListener('submit', async (event) => {
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({username:document.getElementById('username').value,password:document.getElementById('password').value})
   });
-  if (response.ok) { location.replace('/portal'); return; }
+  if (response.ok) { location.replace('/static/index.html'); return; }
   let detail='Sign in failed.';
   try { detail=(await response.json()).detail || detail; } catch (_) {}
   document.getElementById('error').textContent=detail;
