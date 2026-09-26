@@ -76,15 +76,20 @@ class RuntimeRecords:
                         value = value[0] if value else None
         else:
             value = getattr(self.db, "_runtime_records", {}).get(key)
-        return (
-            {
-                k: deepcopy(v)
-                for k, v in value.items()
-                if k not in {"id", "_id", "mind_id", "key"}
-            }
-            if value
-            else None
-        )
+        if not value:
+            return None
+        # Account records are global selectors whose mind_id identifies the
+        # tenant Mind selected after credential verification. Unlike ordinary
+        # runtime records, that field is application data and must survive the
+        # storage-envelope cleanup performed here.
+        omitted = {"id", "_id", "key"}
+        if not key.startswith("account_"):
+            omitted.add("mind_id")
+        return {
+            k: deepcopy(v)
+            for k, v in value.items()
+            if k not in omitted
+        }
 
     async def create(self, key: str, value: dict) -> None:
         if self.kind == "mongo":
