@@ -33,7 +33,11 @@ class RuntimeRecords:
             value = await self.db.select(scoped_id)
             if isinstance(value, list):
                 value = value[0] if value else None
-            if value is None and self.mind_id == "axiom":
+            if value is None and (self.mind_id == "axiom" or key.startswith("account_")):
+                # Account registry records predate tenant-scoped runtime IDs and
+                # are global selectors for Minds, not state owned by one Mind.
+                # Keep reading those legacy unscoped records even when the
+                # configured root/legacy mind ID is no longer "axiom".
                 value = await self.db.select(RecordID("runtime_records", key))
                 if isinstance(value, list):
                     value = value[0] if value else None
