@@ -15,6 +15,7 @@ from aicognitive_mind.domain import (
     MindIdentity,
     SensoryEvidenceArtifact,
 )
+from surrealdb import RecordID
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.permissions import CognitivePermissionError
@@ -900,6 +901,28 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(await alpha.get("shared-key"), {"value": "alpha"})
         self.assertEqual(await beta.get("shared-key"), {"value": "beta"})
+
+    async def test_runtime_records_read_legacy_unscoped_account_for_any_root_mind(self) -> None:
+        records = RuntimeRecords(SurrealMindStore(self.runtime.database, "root-v2"))
+        key = "account_legacyhash"
+        await self.runtime.database.create(
+            RecordID("runtime_records", key),
+            {
+                "key": key,
+                "kind": "account",
+                "username": "legacy",
+                "active": True,
+            },
+        )
+
+        self.assertEqual(
+            await records.get(key),
+            {
+                "kind": "account",
+                "username": "legacy",
+                "active": True,
+            },
+        )
 
     async def test_provider_factory_can_open_two_surreal_minds(self) -> None:
         settings = Settings(
