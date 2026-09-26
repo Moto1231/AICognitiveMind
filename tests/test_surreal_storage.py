@@ -924,6 +924,29 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_runtime_records_recover_account_from_old_scoped_root(self) -> None:
+        key = "account_scopedhash"
+        await self.runtime.database.create(
+            RecordID("runtime_records", f"old-root__{key}"),
+            {
+                "mind_id": "old-root",
+                "key": key,
+                "kind": "account",
+                "username": "scoped",
+                "active": True,
+            },
+        )
+        records = RuntimeRecords(SurrealMindStore(self.runtime.database, "new-root"))
+
+        self.assertEqual(
+            await records.get(key),
+            {
+                "kind": "account",
+                "username": "scoped",
+                "active": True,
+            },
+        )
+
     async def test_provider_factory_can_open_two_surreal_minds(self) -> None:
         settings = Settings(
             storage_provider="surreal",
