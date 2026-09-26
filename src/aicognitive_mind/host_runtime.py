@@ -35,12 +35,15 @@ class RuntimeRecords:
                     value = value[0] if value else None
                 if value is None:
                     # Compatibility with accounts created by the briefly shipped
-                    # tenant-scoped implementation.
-                    value = await self.db.select(
-                        RecordID("runtime_records", f"{self.mind_id}__{key}")
+                    # tenant-scoped implementation. The root mind ID can change
+                    # across deployments, so recover by the globally unique
+                    # account key rather than only the current root scope.
+                    matches = await self.db.query(
+                        "SELECT * FROM runtime_records WHERE key = $key LIMIT 1;",
+                        {"key": key},
                     )
-                    if isinstance(value, list):
-                        value = value[0] if value else None
+                    if isinstance(matches, list):
+                        value = matches[0] if matches else None
             else:
                 scoped_id = RecordID(
                     "runtime_records",
