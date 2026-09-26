@@ -38,25 +38,30 @@ class RuntimeRecords:
             # whichever root Mind happens to initialize the deployed process.
             # Keep one canonical unscoped account registry across root mind IDs.
             if key.startswith("account_"):
-                value = await self.db.select(RecordID("runtime_records", key))
-                if isinstance(value, list):
-                    value = value[0] if value else None
-                if value is None:
-                    logger.warning("AUTH_DIAG registry canonical_record_missing")
-                    # Compatibility with accounts created by the briefly shipped
-                    # tenant-scoped implementation. The root mind ID can change
-                    # across deployments, so recover by the globally unique
-                    # account key rather than only the current root scope.
-                    results = await surreal_query(
-                        self.db,
-                        "SELECT * FROM runtime_records WHERE key = $key LIMIT 1;",
-                        {"key": key},
-                    )
-                    matches = results[0] if results else []
-                    value = matches[0] if isinstance(matches, list) and matches else None
-                    logger.warning("AUTH_DIAG registry fallback_lookup result=%s", "found" if value else "missing")
+                # Account identity is the globally unique deterministic key. Query
+                # by that key first so login can recover accounts written under
+                # either the canonical or the briefly shipped tenant-scoped ID.
+                # surreal_query normalizes driver response envelopes.
+                results = await surreal_query(
+                    self.db,
+                    "SELECT * FROM runtime_records WHERE key = $key LIMIT 1;",
+                    {"key": key},
+                )
+                matches = results[0] if results else []
+                value = matches[0] if isinstance(matches, list) and matches else None
+                if value is not None:
+                    logger.warning("AUTH_DIAG registry key_lookup_found")
                 else:
-                    logger.warning("AUTH_DIAG registry canonical_record_found")
+                    logger.warning("AUTH_DIAG registry key_lookup_missing")
+                    # Recover canonical records created before `key` was
+                    # persisted as a field on the record.
+                    value = await self.db.select(RecordID("runtime_records", key))
+                    if isinstance(value, list):
+                        value = value[0] if value else None
+                    logger.warning(
+                        "AUTH_DIAG registry canonical_id_lookup result=%s",
+                        "found" if value else "missing",
+                    )
             else:
                 scoped_id = RecordID(
                     "runtime_records",
