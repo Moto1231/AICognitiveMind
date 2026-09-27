@@ -1377,30 +1377,34 @@ class MemoryStewardTool:
         )
 
     async def _recall(self, requested_focus: str) -> MemoryBrief:
-        from aicognitive_mind.retrieval import candidates
-        focus = f"{self._input_text}\n{requested_focus}"
+        from aicognitive_mind.retrieval import candidates, recent
+        focus = f"{self._input_text}\\n{requested_focus}"
 
+        # Reconstruct the immediate episode before associative recall. The journal is
+        # sequential experience, not merely another semantic-search collection.
+        recent_experiences = await recent(self._journal, self._recall_limit)
         focus_tokens = _tokens(focus)
-        memories = await candidates(self._memory, focus_tokens)
-        experiences = await candidates(self._journal, focus_tokens)
+        episode_tokens = set(focus_tokens)
+        for experience in recent_experiences:
+            episode_tokens.update(_tokens(_as_text(experience)))
+
+        memories = await candidates(self._memory, episode_tokens)
         directly_related = [
             memory
             for memory in memories
-            if _score(focus_tokens, _as_text(memory)) > 0
+            if _score(episode_tokens, _as_text(memory)) > 0
         ]
-        expanded_tokens = set(focus_tokens)
+        expanded_tokens = set(episode_tokens)
         for memory in directly_related:
             expanded_tokens.update(_tokens(" ".join(memory.associations)))
 
-        if expanded_tokens != focus_tokens:
+        if expanded_tokens != episode_tokens:
             memories = await candidates(self._memory, expanded_tokens)
-            experiences = await candidates(self._journal, expanded_tokens)
         ranked_memories = _rank(memories, expanded_tokens, self._recall_limit)
-        ranked_experiences = _rank(experiences, expanded_tokens, self._recall_limit)
         self._brief = self._build_brief(
             focus=self._input_text,
             memories=tuple(ranked_memories),
-            experiences=tuple(ranked_experiences),
+            experiences=tuple(recent_experiences),
         )
         return self._brief
 

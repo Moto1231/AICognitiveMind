@@ -83,6 +83,24 @@ async def count(store: Any) -> int:
     return len(await store.read())
 
 
+async def recent(store: Any, limit: int = 8) -> list:
+    """Return the newest committed records independent of semantic similarity."""
+    base = getattr(store, "base", store)
+    bounded_limit = max(0, min(limit, 256))
+    if bounded_limit == 0:
+        return []
+    if hasattr(base, "query_page"):
+        rows, _ = await base.query_page(
+            offset=0,
+            limit=bounded_limit,
+            newest_first=True,
+        )
+        return rows
+    rows = await base.read()
+    date = "occurred_at" if "Journal" in type(base).__name__ else "formed_at"
+    return sorted(rows, key=lambda item: getattr(item, date), reverse=True)[:bounded_limit]
+
+
 async def candidates(store: Any, tokens: set[str], limit: int = 256) -> list:
     # Staging delegates reads to its base; include pending changes in working-memory
     # comparisons separately, while recall describes committed history.

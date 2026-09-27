@@ -48,6 +48,33 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("smallest coherent change", contract)
         self.assertIn('"make it so"', contract)
 
+    async def test_vague_followup_reconstructs_recent_episode_before_recall(self) -> None:
+        await self.service.complete_interaction(
+            user_message="We are implementing multi-person identity tracking now.",
+            response_text="Identity tracking is the current work.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="Multi-person identity tracking is under active development.",
+                    associations=("identity", "tracking", "people"),
+                    grounding=("Established during the current development episode.",),
+                ),
+            ),
+        )
+        await self.service.complete_interaction(
+            user_message="The camera exposure test passed.",
+            response_text="Camera exposure is verified.",
+        )
+
+        begun = await self.service.begin_interaction("Okay, keep going.")
+        recalled = begun["recalled_context"]
+        history = " ".join(item["excerpt"] for item in recalled["prior_experience"])
+        durable = " ".join(item["content"] for item in recalled["durable_memory"])
+
+        self.assertIn("multi-person identity tracking", history.lower())
+        self.assertIn("camera exposure test passed", history.lower())
+        self.assertIn("multi-person identity tracking", durable.lower())
+
     async def test_memory_survives_between_host_driven_interactions(self) -> None:
         first = await self.service.begin_interaction(
             "My birthday is February 7. Remember that."
