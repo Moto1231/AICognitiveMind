@@ -230,6 +230,12 @@ function renderHostBehaviors() {
     instruction.value = behavior.instruction;
     instruction.disabled = behavior.protected;
     instruction.addEventListener("input", () => { behavior.instruction = instruction.value; });
+    const priority = document.createElement("input");
+    priority.type = "number";
+    priority.min = "0";
+    priority.max = "10000";
+    priority.value = behavior.priority;
+    priority.addEventListener("change", () => { behavior.priority = Number(priority.value); });
     const enabled = document.createElement("input");
     enabled.type = "checkbox";
     enabled.checked = behavior.enabled;
@@ -246,7 +252,7 @@ function renderHostBehaviors() {
       state.hostBehaviors = state.hostBehaviors.filter(item => item.id !== behavior.id);
       renderHostBehaviors();
     });
-    row.append(title, instruction, label, remove);
+    row.append(title, instruction, priority, label, remove);
     el.hostBehaviorList.append(row);
   }
 }
