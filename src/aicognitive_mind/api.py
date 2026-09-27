@@ -8,7 +8,7 @@ import binascii
 import hmac
 import os
 import secrets
-import time
+import time as time_module
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time
@@ -552,7 +552,7 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
 
     session_token = request.cookies.get("axiom_portal_session", "")
     session = getattr(request.app.state, "portal_sessions", {}).get(session_token)
-    if session and session["expires_at"] > time.time():
+    if session and session["expires_at"] > time_module.time():
         tenant = await create_storage(get_settings(), mind_id=session["mind_id"])
         request.state.tenant_storage = tenant
         try:
@@ -574,7 +574,7 @@ async def portal_login(body: PortalLoginRequest, request: Request) -> Response:
     token = secrets.token_urlsafe(32)
     request.app.state.portal_sessions[token] = {
         "mind_id": account.mind_id,
-        "expires_at": time.time() + 7 * 24 * 3600,
+        "expires_at": time_module.time() + 7 * 24 * 3600,
     }
     response = JSONResponse({"ok": True})
     response.set_cookie(
