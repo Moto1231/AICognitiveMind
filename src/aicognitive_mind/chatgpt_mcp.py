@@ -144,6 +144,81 @@ def build_chatgpt_mcp(
             volume=volume,
         )
 
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    async def attach_reasoning_host(
+        name: str,
+        model: str,
+        ctx: Context[AppState],
+    ) -> dict[str, Any]:
+        """Attach this ChatGPT session as Axiom Body's live external reasoning host.
+
+        The returned lease token is private capability state. Keep it out of user-facing
+        responses and use it only with the Body handoff tools below.
+        """
+        return await ctx.request_context.lifespan_context.hosts.attach(name, model)
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    async def renew_reasoning_host(
+        lease_token: str,
+        ctx: Context[AppState],
+        detach: bool = False,
+    ) -> dict[str, Any]:
+        """Renew the live Body reasoning lease, or detach before handing off hosts."""
+        return await ctx.request_context.lifespan_context.hosts.renew(
+            lease_token, detach
+        )
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def next_body_interaction(
+        lease_token: str,
+        ctx: Context[AppState],
+    ) -> dict[str, Any] | None:
+        """Claim the next pending Body interaction for this attached ChatGPT host.
+
+        The returned context already includes Axiom identity and memory for that Body input.
+        """
+        return await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        )
+    )
+    async def complete_body_interaction(
+        lease_token: str,
+        request_id: str,
+        response_text: str,
+        ctx: Context[AppState],
+        proposed_memories: list[MemoryProposal] | None = None,
+    ) -> dict[str, Any]:
+        """Commit and deliver a claimed Body response exactly once.
+
+        Retry with the same response if delivery is interrupted.
+        """
+        return await ctx.request_context.lifespan_context.hosts.complete(
+            lease_token,
+            request_id,
+            response_text,
+            tuple(proposed_memories or ()),
+        )
+
     @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
     def github_status() -> dict[str, Any]:
         """Read status for Axiom's configured GitHub repository."""
