@@ -6,6 +6,7 @@
 import base64
 import binascii
 import hmac
+import logging
 import os
 import secrets
 import time as time_module
@@ -76,6 +77,7 @@ from aicognitive_mind.storage import (
 )
 
 STATIC_DIR = Path(__file__).with_name("static")
+logger = logging.getLogger("aicognitive_mind.reasoning")
 
 
 class InitializeMindRequest(BaseModel):
@@ -631,6 +633,12 @@ async def mind_see(
         )
         raise HTTPException(status_code=code, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception(
+            "REASONING_DIAG interaction failed exception=%s status=%s detail=%s",
+            exc.__class__.__name__,
+            getattr(exc, "status_code", None) or getattr(exc, "code", None),
+            str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=_reasoning_backend_error_detail(exc),
@@ -653,6 +661,12 @@ async def mind_hear(
         )
         raise HTTPException(status_code=code, detail=str(exc)) from exc
     except Exception as exc:
+        logger.exception(
+            "REASONING_DIAG interaction failed exception=%s status=%s detail=%s",
+            exc.__class__.__name__,
+            getattr(exc, "status_code", None) or getattr(exc, "code", None),
+            str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=_reasoning_backend_error_detail(exc),
@@ -1287,6 +1301,12 @@ async def interact(body: InteractionRequest, request: Request) -> InteractionRes
             detail="The mind has not been initialized",
         ) from exc
     except Exception as exc:
+        logger.exception(
+            "REASONING_DIAG interaction failed exception=%s status=%s detail=%s",
+            exc.__class__.__name__,
+            getattr(exc, "status_code", None) or getattr(exc, "code", None),
+            str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=_reasoning_backend_error_detail(exc),
@@ -1308,6 +1328,12 @@ async def embodied_text_interaction(
             detail="The mind has not been initialized",
         ) from exc
     except Exception as exc:
+        logger.exception(
+            "REASONING_DIAG interaction failed exception=%s status=%s detail=%s",
+            exc.__class__.__name__,
+            getattr(exc, "status_code", None) or getattr(exc, "code", None),
+            str(exc),
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=_reasoning_backend_error_detail(exc),
