@@ -313,10 +313,10 @@ namespace Axiom.Body
             await PostJsonAsync("/v1/body/ears/observe", JsonUtility.ToJson(payload));
         }
 
-        public async Task<EmbodiedPerceptionResponse> HearAsync()
+        public async Task<EmbodiedPerceptionResponse> HearAsync(bool express = false)
         {
             using UnityWebRequest request = new UnityWebRequest(
-                Url("/v1/mind/body/hear?express=false"),
+                Url("/v1/mind/body/hear?express=" + (express ? "true" : "false")),
                 UnityWebRequest.kHttpVerbPOST
             );
             request.downloadHandler = new DownloadHandlerBuffer();
