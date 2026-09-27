@@ -223,7 +223,7 @@ namespace Axiom.Body
                     _sensesRuntime = gameObject.AddComponent<AxiomSensesRuntime>();
                     _sensesRuntime.StatusChanged += HandleBodyStatus;
                 }
-                _sensesRuntime.Attach(_client);
+                _sensesRuntime.Attach(_client, _mouthRuntime);
                 _sensesRuntime.SetModelPolicy(_bodyModelPolicy);
 
                 if (_bodyMotionRuntime == null)
