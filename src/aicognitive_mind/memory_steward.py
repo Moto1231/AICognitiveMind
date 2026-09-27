@@ -156,6 +156,7 @@ class MemoryBrief(BaseModel):
     focus: str
     identity_context: dict[str, Any]
     durable_memory: tuple[DurableMemory, ...] = ()
+    recent_context: tuple[RecalledExperience, ...] = ()
     prior_experience: tuple[RecalledExperience, ...] = ()
     current_evidence: tuple[ResearchObservation, ...] = ()
     summary: str
@@ -1381,14 +1382,31 @@ class MemoryStewardTool:
         focus = f"{self._input_text}\n{requested_focus}"
 
         focus_tokens = _tokens(focus)
-        memories = await candidates(self._memory, focus_tokens)
-        experiences = await candidates(self._journal, focus_tokens)
+
+        # Reconstruct a small working context on every interaction. Lexical recall alone
+        # cannot resolve conversational references such as "do it", "continue", or
+        # "develop that", because the subject lives in the immediately preceding episode.
+        recent_candidates = await candidates(self._journal, set(), limit=self._recall_limit)
+        recent_entries = tuple(
+            sorted(
+                recent_candidates,
+                key=lambda entry: entry.occurred_at,
+                reverse=True,
+            )[: self._recall_limit]
+        )
+        retrieval_tokens = set(focus_tokens)
+        if _needs_recent_context(self._input_text):
+            for entry in recent_entries:
+                retrieval_tokens.update(_tokens(_as_text(entry)))
+
+        memories = await candidates(self._memory, retrieval_tokens)
+        experiences = await candidates(self._journal, retrieval_tokens)
         directly_related = [
             memory
             for memory in memories
-            if _score(focus_tokens, _as_text(memory)) > 0
+            if _score(retrieval_tokens, _as_text(memory)) > 0
         ]
-        expanded_tokens = set(focus_tokens)
+        expanded_tokens = set(retrieval_tokens)
         for memory in directly_related:
             expanded_tokens.update(_tokens(" ".join(memory.associations)))
 
@@ -1401,6 +1419,7 @@ class MemoryStewardTool:
             focus=self._input_text,
             memories=tuple(ranked_memories),
             experiences=tuple(ranked_experiences),
+            recent_entries=recent_entries,
         )
         return self._brief
 
@@ -2243,6 +2262,7 @@ class MemoryStewardTool:
         focus: str,
         memories: tuple[DurableMemory, ...],
         experiences: tuple[JournalEntry, ...],
+        recent_entries: tuple[JournalEntry, ...] = (),
     ) -> MemoryBrief:
         recalled_experiences = tuple(
             RecalledExperience(
@@ -2253,10 +2273,20 @@ class MemoryStewardTool:
             )
             for entry in experiences
         )
+        recent_context = tuple(
+            RecalledExperience(
+                kind=entry.kind.value,
+                occurred_at=entry.occurred_at.isoformat(),
+                excerpt=_experience_excerpt(entry),
+                evidence_references=_experience_evidence_references(entry),
+            )
+            for entry in recent_entries
+        )
         return MemoryBrief(
             focus=focus,
             identity_context=self._mind.identity.model_dump(mode="json"),
             durable_memory=memories,
+            recent_context=recent_context,
             prior_experience=recalled_experiences,
             current_evidence=tuple(self._evidence),
             summary=self._summary(memories, recalled_experiences),
@@ -2441,6 +2471,32 @@ def _tokens(text: str) -> set[str]:
         for token in re.findall(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", text.casefold())
         if len(token) > 2 and token not in _STOP_WORDS
     }
+
+
+_CONTEXT_REFERENCES = {
+    "it",
+    "that",
+    "this",
+    "them",
+    "those",
+    "these",
+    "same",
+    "continue",
+    "continued",
+    "develop",
+    "developed",
+    "finish",
+    "proceed",
+    "go",
+    "done",
+}
+
+
+def _needs_recent_context(text: str) -> bool:
+    """Whether the current utterance depends on conversational antecedents."""
+    words = set(re.findall(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", text.casefold()))
+    meaningful = _tokens(text)
+    return bool(words & _CONTEXT_REFERENCES) or len(meaningful) <= 1
 
 
 def _score(focus_tokens: set[str], value: object) -> int:
