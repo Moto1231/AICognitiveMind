@@ -253,6 +253,21 @@ async def _portal_login_post(request: Request):
         raise
 
 
+async def _portal_logout_post(request: Request):
+    """End the current portal session without altering the associated Mind."""
+    token = request.cookies.get("axiom_portal_session")
+    if token:
+        portal_app.state.portal_sessions.pop(token, None)
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(
+        "axiom_portal_session",
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+    )
+    return response
+
+
 async def _portal_redirect(_request: Request):
     return RedirectResponse("/static/index.html", status_code=307)
 
@@ -292,6 +307,7 @@ app.router.routes.extend(
         Route("/", endpoint=_public_entry, methods=["GET"]),
         Route("/portal", endpoint=_portal_login_page, methods=["GET"]),
         Route("/v1/portal/login", endpoint=_portal_login_post, methods=["POST"]),
+        Route("/v1/portal/logout", endpoint=_portal_logout_post, methods=["POST"]),
         Route("/v1/portal/signup", endpoint=_portal_signup_post, methods=["POST"]),
         Route("/signup", endpoint=_account_signup_get, methods=["GET"]),
         Route("/signup", endpoint=_account_signup_post, methods=["POST"]),
