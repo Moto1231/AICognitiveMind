@@ -39,8 +39,8 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
         login_url = await self.provider.authorize(self.client, params)
         request_id = parse_qs(urlparse(login_url).query)["request"][0]
 
-        self.assertTrue(self.provider.authenticate("mind", "secret"))
-        self.assertFalse(self.provider.authenticate("mind", "wrong"))
+        self.assertTrue(await self.provider.authenticate("mind", "secret"))
+        self.assertFalse(await self.provider.authenticate("mind", "wrong"))
 
         callback = await self.provider.approve(request_id)
         callback_params = parse_qs(urlparse(callback).query)

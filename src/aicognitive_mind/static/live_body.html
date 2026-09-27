@@ -331,6 +331,91 @@
     let sensoryRequestInFlight = false;
     const AUDIO_WINDOW_MS = 4_000;
     const SENSE_PAUSE_MS = 15_000;
+    const DEFAULT_LOOK_SECONDS = 5;
+    const MAX_LOOK_SECONDS = 30;
+    let boundedLookActive = false;
+
+    function requestedLookDuration(text) {
+      const command = String(text || "").trim();
+      if (!/\b(?:look|see|watch|camera)\b/i.test(command)) return null;
+      const match = command.match(/\b(\d{1,2})\s*(?:seconds?|secs?|s)\b/i);
+      return Math.min(MAX_LOOK_SECONDS, Math.max(1, match ? Number(match[1]) : DEFAULT_LOOK_SECONDS));
+    }
+
+    async function captureVisualFrame(stream) {
+      const track = stream.getVideoTracks()[0];
+      if (!track) throw new Error("Camera did not provide a video track.");
+      const captureVideo = document.createElement("video");
+      captureVideo.playsInline = true;
+      captureVideo.muted = true;
+      captureVideo.srcObject = stream;
+      await captureVideo.play();
+      if (!captureVideo.videoWidth || !captureVideo.videoHeight) await delay(250);
+
+      const maxWidth = 960;
+      const scale = Math.min(1, maxWidth / captureVideo.videoWidth);
+      canvas.width = Math.max(1, Math.round(captureVideo.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(captureVideo.videoHeight * scale));
+      canvas.getContext("2d").drawImage(captureVideo, 0, 0, canvas.width, canvas.height);
+
+      const ingress = await bodyFetch("/v1/body/eyes/observe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_data_url: canvas.toDataURL("image/jpeg", 0.82),
+          width: canvas.width,
+          height: canvas.height,
+          source: "browser-camera-bounded"
+        })
+      });
+      if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
+
+      const response = await bodyFetch("/v1/mind/body/see?express=false", { method: "POST" });
+      if (!response.ok) throw new Error(await responseErrorMessage(response));
+      return await response.json();
+    }
+
+    async function performBoundedLook(seconds, spokenCommand) {
+      if (boundedLookActive) return;
+      boundedLookActive = true;
+      let stream = null;
+      try {
+        setStatus("Axiom is looking for " + seconds + " seconds…");
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        const observations = [];
+        const sampleCount = Math.min(3, Math.max(1, seconds));
+        for (let i = 0; i < sampleCount; i++) {
+          if (i > 0) await delay((seconds * 1000) / sampleCount);
+          const result = await captureVisualFrame(stream);
+          if (result?.response_text) observations.push(result.response_text);
+        }
+        const remaining = seconds * 1000 - ((sampleCount - 1) * (seconds * 1000) / sampleCount);
+        if (remaining > 0) await delay(remaining);
+
+        if (realtimeEvents?.readyState === "open") {
+          realtimeEvents.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "user",
+              content: [{
+                type: "input_text",
+                text: "Visual observation requested by the human (" + spokenCommand + "). Camera sampled for " +
+                  seconds + " seconds. Describe what Axiom observed and answer the human naturally. Observations: " +
+                  observations.join("\n---\n")
+              }]
+            }
+          }));
+          realtimeEvents.send(JSON.stringify({ type: "response.create" }));
+        }
+        setStatus("Axiom finished looking. Hands-free voice remains active.");
+      } catch (error) {
+        setStatus("Bounded camera observation failed: " + error.message);
+      } finally {
+        stream?.getTracks().forEach((track) => track.stop());
+        boundedLookActive = false;
+      }
+    }
     let pageSourceSnapshot = null;
     let pageRefreshPending = false;
     let pageRefreshProbeBusy = false;
@@ -581,7 +666,13 @@
           let event;
           try { event = JSON.parse(data); } catch (_) { return; }
 
-          if (event.type === "response.mcp_call.in_progress") {
+          if (event.type === "conversation.item.input_audio_transcription.completed") {
+            const transcript = event.transcript || "";
+            const seconds = requestedLookDuration(transcript);
+            if (seconds !== null) {
+              performBoundedLook(seconds, transcript);
+            }
+          } else if (event.type === "response.mcp_call.in_progress") {
             realtimeMcpPending += 1;
             realtimeResponseUsedMcp = true;
           } else if (
