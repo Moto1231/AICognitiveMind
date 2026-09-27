@@ -48,6 +48,48 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("smallest coherent change", contract)
         self.assertIn('"make it so"', contract)
 
+    async def test_begin_interaction_reconstructs_context_for_antecedent_reference(self) -> None:
+        await self.service.complete_interaction(
+            user_message="We are designing Project Atlas around a SurrealDB event ledger.",
+            response_text="The Project Atlas design is centered on a SurrealDB event ledger.",
+            proposed_memories=(
+                MemoryProposal(
+                    memory_class=MemoryClass.SEMANTIC,
+                    content="Project Atlas uses a SurrealDB event ledger.",
+                    associations=("Project Atlas", "SurrealDB", "event ledger"),
+                    grounding=("direct project discussion",),
+                ),
+            ),
+        )
+
+        begun = await self.service.begin_interaction("Develop it.")
+
+        recalled = begun["recalled_context"]
+        self.assertTrue(recalled["recent_context"])
+        self.assertIn(
+            "Project Atlas",
+            recalled["recent_context"][0]["excerpt"],
+        )
+        self.assertEqual(
+            recalled["durable_memory"][0]["content"],
+            "Project Atlas uses a SurrealDB event ledger.",
+        )
+
+    async def test_begin_interaction_keeps_recent_context_bounded(self) -> None:
+        for turn in range(10):
+            await self.service.complete_interaction(
+                user_message=f"Working context turn {turn}",
+                response_text=f"Completed working context turn {turn}.",
+                proposed_memories=(),
+            )
+
+        begun = await self.service.begin_interaction("Continue.")
+
+        recent = begun["recalled_context"]["recent_context"]
+        self.assertLessEqual(len(recent), 6)
+        self.assertIn("turn 9", recent[0]["excerpt"])
+
+
     async def test_memory_survives_between_host_driven_interactions(self) -> None:
         first = await self.service.begin_interaction(
             "My birthday is February 7. Remember that."
