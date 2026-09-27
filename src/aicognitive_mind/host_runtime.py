@@ -368,8 +368,7 @@ class HostAwareCore:
             from aicognitive_mind.domain import InteractionResult
 
             if input_context:
-                message += "
-Body context: " + json.dumps(input_context, default=str)
+                message += "\nBody context: " + json.dumps(input_context, default=str)
             return InteractionResult.model_validate(await self.hosts.submit(message))
         from aicognitive_mind.config import get_settings
 
