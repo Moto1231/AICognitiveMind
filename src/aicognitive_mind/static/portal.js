@@ -17,6 +17,7 @@ const state = {
   adminAuthorized: false,
   activeMemory: null,
   activeJournal: null,
+  hostBehaviors: [],
 };
 
 const el = {
@@ -103,6 +104,9 @@ const el = {
   editAssociations: document.getElementById("editAssociations"),
   editGrounding: document.getElementById("editGrounding"),
   cancelMemoryEdit: document.getElementById("cancelMemoryEdit"),
+  hostBehaviorList: document.getElementById("hostBehaviorList"),
+  addHostBehavior: document.getElementById("addHostBehavior"),
+  saveHostBehaviors: document.getElementById("saveHostBehaviors"),
   toast: document.getElementById("toast"),
 };
 
@@ -212,6 +216,80 @@ async function validateAdmin() {
   }
 }
 
+function renderHostBehaviors() {
+  el.hostBehaviorList.replaceChildren();
+  for (const behavior of state.hostBehaviors) {
+    const row = document.createElement("div");
+    row.className = "memory-card";
+    const title = document.createElement("input");
+    title.value = behavior.name;
+    title.disabled = behavior.protected;
+    title.addEventListener("input", () => { behavior.name = title.value; });
+    const instruction = document.createElement("textarea");
+    instruction.rows = 3;
+    instruction.value = behavior.instruction;
+    instruction.disabled = behavior.protected;
+    instruction.addEventListener("input", () => { behavior.instruction = instruction.value; });
+    const priority = document.createElement("input");
+    priority.type = "number";
+    priority.min = "0";
+    priority.max = "10000";
+    priority.value = behavior.priority;
+    priority.addEventListener("change", () => { behavior.priority = Number(priority.value); });
+    const enabled = document.createElement("input");
+    enabled.type = "checkbox";
+    enabled.checked = behavior.enabled;
+    enabled.disabled = behavior.protected;
+    enabled.addEventListener("change", () => { behavior.enabled = enabled.checked; });
+    const label = document.createElement("label");
+    label.append(enabled, document.createTextNode(behavior.protected ? " Enabled · Protected" : " Enabled"));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary-button";
+    remove.textContent = "Remove";
+    remove.disabled = behavior.protected;
+    remove.addEventListener("click", () => {
+      state.hostBehaviors = state.hostBehaviors.filter(item => item.id !== behavior.id);
+      renderHostBehaviors();
+    });
+    row.append(title, instruction, priority, label, remove);
+    el.hostBehaviorList.append(row);
+  }
+}
+
+async function refreshHostBehaviors() {
+  const payload = await api("/v1/admin/host-behaviors", {}, true);
+  state.hostBehaviors = payload.items;
+  renderHostBehaviors();
+}
+
+function addHostBehavior() {
+  const id = "behavior-" + Date.now();
+  state.hostBehaviors.push({
+    id,
+    name: "New Behavior",
+    instruction: "Describe the host behavior.",
+    enabled: true,
+    priority: 100,
+    protected: false,
+  });
+  renderHostBehaviors();
+}
+
+async function saveHostBehaviors() {
+  try {
+    const payload = await api("/v1/admin/host-behaviors", {
+      method: "PUT",
+      body: JSON.stringify({ items: state.hostBehaviors }),
+    }, true);
+    state.hostBehaviors = payload.items;
+    renderHostBehaviors();
+    toast("Host behaviors saved");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
 async function enterAdminMode() {
   try {
     const allowed = await validateAdmin();
@@ -220,6 +298,7 @@ async function enterAdminMode() {
     await Promise.all([
       refreshMemory(filters.admin, true),
       refreshJournal(true),
+      refreshHostBehaviors(),
     ]);
   } catch (error) {
     toast(error.message, true);
@@ -1023,3 +1102,6 @@ document.addEventListener("keydown", event => {
 });
 
 refresh();
+
+if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBehavior);
+if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
