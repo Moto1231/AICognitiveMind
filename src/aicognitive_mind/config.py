@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     gemini_model: str = "auto"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.6-terra"
+    openai_realtime_model: str = "gpt-realtime-2.1"
+    openai_realtime_voice: str = "marin"
     openai_transcription_model: str = "gpt-4o-transcribe"
     admin_pin: str | None = None
     app_access_username: str = "mind"
