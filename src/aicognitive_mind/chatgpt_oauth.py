@@ -378,6 +378,20 @@ class AxiomAuthorizationServerProvider(
             token.token,
         )
 
+    async def mint_service_access_token(self, *, subject: str, client_id: str) -> str:
+        """Mint a short-lived server-to-server MCP token for an authenticated Mind.
+
+        This is used by trusted Axiom services such as OpenAI Realtime. The token
+        never crosses the browser boundary.
+        """
+        pair = await self._mint_token_pair(
+            client_id=client_id,
+            scopes=[self.required_scope],
+            resource=self.resource_url,
+            subject=subject,
+        )
+        return pair.access_token
+
     async def _mint_token_pair(
         self,
         *,
