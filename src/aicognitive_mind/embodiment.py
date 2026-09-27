@@ -21,6 +21,7 @@ from aicognitive_mind.domain import (
     SensoryEvidenceArtifact,
     SensoryEvidenceReference,
 )
+from aicognitive_mind.presence_resolver import PresenceResolver
 from aicognitive_mind.storage import EvidenceStore, JournalStore
 
 
@@ -322,12 +323,14 @@ class MindBodyBridge:
         interpreter: PerceptInterpreter,
         evidence: EvidenceStore,
         journal: JournalStore,
+        presence: PresenceResolver | None = None,
     ) -> None:
         self._core = core
         self._body = body
         self._interpreter = interpreter
         self._evidence = evidence
         self._journal = journal
+        self._presence = presence
 
     async def see(self, *, express: bool = True) -> EmbodiedInteractionResult:
         return await self.perceive(await self._body.see(), express=express)
@@ -344,7 +347,7 @@ class MindBodyBridge:
         interaction = await self._core.interact(
             message,
             source="human",
-            input_context={"interface": "body:live:text"},
+            input_context=self._with_presence_context({"interface": "body:live:text"}),
         )
         if express:
             await self._body.express(interaction.response_text)
@@ -382,7 +385,7 @@ class MindBodyBridge:
         interaction = await self._core.interact(
             interpretation,
             source=f"body:{percept.modality.value}",
-            input_context=context,
+            input_context=self._with_presence_context(context),
         )
         if express:
             await self._body.express(interaction.response_text)
@@ -395,6 +398,14 @@ class MindBodyBridge:
             response_text=interaction.response_text,
             occurred_at=interaction.occurred_at,
         )
+
+    def _with_presence_context(self, context: dict[str, Any]) -> dict[str, Any]:
+        if self._presence is None:
+            return context
+        presence_context = self._presence.context()
+        if not presence_context["present_people"]:
+            return context
+        return {**context, "presence": presence_context}
 
     async def _preserve_evidence(self, percept: Percept) -> SensoryEvidenceArtifact:
         if not percept.content_ref:
