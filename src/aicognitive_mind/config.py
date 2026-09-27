@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     standalone_calls_per_minute: int = Field(default=6, ge=1, le=120)
     standalone_quota_cooldown_seconds: int = Field(default=300, ge=1)
     reasoning_timeout_seconds: int = Field(default=120, ge=1)
+    # Body cognition is external-host-only by default. Standalone reasoning must
+    # be explicitly enabled; it must never silently take ownership when the
+    # ChatGPT/Axiom host is absent.
+    body_allow_standalone_fallback: bool = False
 
     gemini_api_key: str | None = None
     gemini_model: str = "auto"
