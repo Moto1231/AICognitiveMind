@@ -553,6 +553,12 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
     session_token = request.cookies.get("axiom_portal_session", "")
     session = getattr(request.app.state, "portal_sessions", {}).get(session_token)
     if session and session["expires_at"] > time_module.time():
+        # The original pre-multi-user account owns the unscoped Mind that was
+        # created before tenant ids existed. Keep using the app's canonical
+        # storage for that account instead of opening an empty derived tenant.
+        if session["mind_id"] == "__legacy__":
+            return await call_next(request)
+
         tenant = await create_storage(get_settings(), mind_id=session["mind_id"])
         request.state.tenant_storage = tenant
         try:
