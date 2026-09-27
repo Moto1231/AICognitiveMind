@@ -15,7 +15,7 @@ namespace Axiom.Body
     public sealed class AxiomSensesRuntime : MonoBehaviour
     {
         private const float VisionIntervalSeconds = 15f;
-        private const float AudioIntervalSeconds = 15f;
+        private const float AudioIntervalSeconds = 0.25f;
         private const int AudioWindowSeconds = 4;
         private const int AudioSampleRate = 16000;
         private const int VisionSignatureColumns = 12;
@@ -28,6 +28,7 @@ namespace Axiom.Body
             new SemaphoreSlim(1, 1);
 
         private MindApiClient _client;
+        private AxiomMouthRuntime _mouth;
         private WebCamTexture _camera;
         private bool _enabled;
         private bool _visionBusy;
@@ -64,9 +65,10 @@ namespace Axiom.Body
             }
         }
 
-        public void Attach(MindApiClient client)
+        public void Attach(MindApiClient client, AxiomMouthRuntime mouth)
         {
             _client = client;
+            _mouth = mouth;
         }
 
         public async Task SetEnabledAsync(bool enabled)
@@ -116,6 +118,7 @@ namespace Axiom.Body
         public void Detach()
         {
             _client = null;
+            _mouth = null;
             Disable();
         }
 
@@ -337,6 +340,14 @@ namespace Axiom.Body
                 return;
             }
 
+            // Half-duplex conversational audio: never record Axiom's own
+            // synthesized speech back into her Ears.
+            if (_mouth != null && _mouth.IsSpeaking)
+            {
+                SetAudioStatus("Ears paused while Axiom speaks...");
+                return;
+            }
+
             if (Microphone.devices.Length == 0)
             {
                 throw new InvalidOperationException(
@@ -438,7 +449,7 @@ namespace Axiom.Body
                         durationMs
                     );
                     EmbodiedPerceptionResponse result =
-                        await _client.HearAsync();
+                        await _client.HearAsync(express: true);
 
                     if (_enabled && generation == _generation)
                     {
