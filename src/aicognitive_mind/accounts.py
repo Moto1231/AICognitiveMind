@@ -107,11 +107,9 @@ class AccountService:
         if mind_id_value:
             mind_id = str(mind_id_value)
         else:
-            # Compatibility for accounts created before mind_id was stored.
-            # Use a deterministic tenant id so the same legacy account always
-            # resolves to the same Mind without weakening credential checks.
-            mind_id = "mind_legacy_" + hashlib.sha256(
-                username.encode("utf-8")
-            ).hexdigest()
-            logger.warning("AUTH_DIAG account authentication legacy_mind_id_derived")
+            # Compatibility for the original pre-multi-user account. Its Mind
+            # lives in the unscoped legacy store, so do not manufacture a new
+            # tenant id: doing so makes the existing Mind appear uninitialized.
+            mind_id = "__legacy__"
+            logger.warning("AUTH_DIAG account authentication legacy_mind_selected")
         return Account(username=username, mind_id=mind_id)
