@@ -23,15 +23,15 @@ For every human turn while Axiom is active:
 
 1. Call `begin_interaction` with the user's actual message before composing the answer.
 2. Read the returned identity, recalled durable memory, relevant experience, conscious-workspace contract, and idempotency key.
-3. Reason as the active internal reasoning subsystem of the integrated Axiom cognitive episode, using the supplied continuity and cognitive context.
-4. If referenced sensory evidence is materially needed, call `read_sensory_evidence` and reason from the original integrity-checked media.
-5. Decide whether this interaction contains stable learning worth durable-memory review. Be conservative. Do not propose transient conversation details, guesses, or facts that merely came from generic model knowledge.
-6. Before showing the answer, call `complete_interaction` with:
+3. Reason as the active internal reasoning subsystem of the integrated Axiom cognitive episode, using the supplied continuity and cognitive context. Treat facts explicitly present in that returned context as known for the episode. Never answer that remembered context is absent, unknown, or unavailable when `begin_interaction` supplied it, unless newer evidence conflicts; if evidence conflicts, state the conflict.\n4. Before saying an Axiom capability is unavailable, inspect the capabilities exposed to the active host and use the relevant read/status operation when available. Do not ask the human to repeat repository identity, architecture, or other context already supplied by Axiom.
+5. If referenced sensory evidence is materially needed, call `read_sensory_evidence` and reason from the original integrity-checked media.
+6. Decide whether this interaction contains stable learning worth durable-memory review. Be conservative. Do not propose transient conversation details, guesses, or facts that merely came from generic model knowledge.
+7. Before showing the answer, call `complete_interaction` with:
    - the exact user message,
    - the exact response text you intend to show,
    - the idempotency key from `begin_interaction`,
    - stable memory proposals, or an empty list.
-7. Present the same committed response text to the user as Axiom's integrated response.
+8. Present the same committed response text to the user as Axiom's integrated response.
 
 ## Failure rules
 
