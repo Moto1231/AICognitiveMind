@@ -476,27 +476,13 @@
         if (requestedVoice) utterance.voice = requestedVoice;
       }
 
-      if (talkEnabled) {
-        talkSpeaking = true;
-        recognition?.stop();
-        utterance.onend = utterance.onerror = () => {
-          talkSpeaking = false;
-          resumeTalking();
-        };
-      }
 
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     }
 
     function resumeTalking() {
-      if (!talkEnabled || talkBusy || talkSpeaking || talkListening || document.hidden) return;
-      clearTimeout(talkRestartTimer);
-      talkRestartTimer = window.setTimeout(() => {
-        if (!talkEnabled || talkBusy || talkSpeaking || talkListening || document.hidden) return;
-        try { recognition.start(); }
-        catch (error) { setStatus("Voice listening could not restart: " + error.message); }
-      }, 450);
+      // Realtime WebRTC owns continuous microphone turn-taking while Talk is enabled.
     }
 
     async function refreshSharedVoiceSettings() {
@@ -716,7 +702,6 @@
 
       sendInteractionButton.disabled = true;
       talkBusy = true;
-      recognition?.stop();
       const thinkingMessage = appendChatMessage("mind", "Thinking...");
       evidenceArtifactLink.hidden = true;
 
