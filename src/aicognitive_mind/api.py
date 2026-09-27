@@ -58,6 +58,7 @@ from aicognitive_mind.embodiment import (
     MindBodyBridge,
 )
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
+from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
 from aicognitive_mind.host_runtime import (
     HostAwareCore,
     HostAwareInterpreter,
@@ -92,6 +93,10 @@ class PortalLoginRequest(BaseModel):
 
 class InteractionRequest(BaseModel):
     message: str = Field(min_length=1)
+
+
+class HostBehaviorListRequest(BaseModel):
+    items: list[HostBehavior]
 
 
 class AdminMemoryRevisionRequest(BaseModel):
@@ -469,6 +474,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory=storage.memory,
     )
     records = RuntimeRecords(storage.mind)
+    app.state.host_behaviors = HostBehaviorRegistry(records)
     app.state.accounts = AccountService(settings, records)
     app.state.portal_sessions = {}
     from aicognitive_mind.voice_settings import VoiceSettings
@@ -1201,6 +1207,26 @@ async def admin_backup(request: Request) -> Response:
 async def admin_status(request: Request) -> dict[str, bool]:
     require_admin(request)
     return {"authorized": True, "memory_editing": True}
+
+
+@app.get("/v1/admin/host-behaviors")
+async def admin_host_behaviors(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    items = await request.app.state.host_behaviors.list()
+    return {"items": [item.model_dump(mode="json") for item in items]}
+
+
+@app.put("/v1/admin/host-behaviors")
+async def replace_admin_host_behaviors(
+    payload: HostBehaviorListRequest,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    try:
+        items = await request.app.state.host_behaviors.replace(payload.items)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"items": [item.model_dump(mode="json") for item in items]}
 
 
 @app.put("/v1/admin/memory", response_model=DurableMemory)
