@@ -63,7 +63,7 @@ def build_chatgpt_mcp(
         title="Axiom",
         description="Persistent identity, memory, continuity, and governed experience for an external AI reasoning host.",
         instructions=HOST_INSTRUCTIONS,
-        version="0.1.0",
+        version="0.1.1",
         lifespan=lifespan,
         auth=auth,
         auth_server_provider=provider,
