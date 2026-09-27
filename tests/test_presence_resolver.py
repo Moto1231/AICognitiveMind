@@ -4,6 +4,11 @@ from datetime import UTC, datetime, timedelta
 from aicognitive_mind.domain import SensoryEvidenceReference
 from aicognitive_mind.presence import PersonIdentity, PresenceResolution
 from aicognitive_mind.presence_resolver import PresenceResolver
+from aicognitive_mind.body import BodyRuntime
+from aicognitive_mind.core import CognitiveCore
+from aicognitive_mind.embodiment import MindBodyBridge
+from aicognitive_mind.engines import EchoReasoningEngine
+from aicognitive_mind.storage import InMemoryDiagnosticStore, InMemoryEvidenceStore, InMemoryJournalStore, InMemoryMemoryStore, InMemoryMindStore
 
 
 CAPTURED = datetime(2026, 9, 27, 7, 0, tzinfo=UTC)
@@ -18,6 +23,11 @@ def evidence(modality: str, *, when: datetime = CAPTURED, digest: str = "a") -> 
         media_type="image/jpeg" if modality == "vision" else "audio/wav",
         byte_length=128,
     )
+
+
+class FixedInterpreter:
+    async def interpret(self, percept, *, focus=None):
+        return "Visual perception: a person is present."
 
 
 class PresenceResolverTests(unittest.TestCase):
@@ -73,6 +83,40 @@ class PresenceResolverTests(unittest.TestCase):
 
         self.assertEqual(expired, ("person:1",))
         self.assertEqual(resolver.active(), {})
+
+
+class PresenceBridgeContextTests(unittest.IsolatedAsyncioTestCase):
+    async def test_resolved_presence_reaches_cognitive_interaction_context(self) -> None:
+        journal = InMemoryJournalStore()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=EchoReasoningEngine(),
+        )
+        await core.initialize("Axiom")
+        resolver = PresenceResolver()
+        resolver.observe("person:1", evidence=evidence("vision"), observation="Known person visible.")
+        resolver.resolve(
+            "person:1",
+            PersonIdentity(name="Will", relationship="creator", grounding=("introduced",)),
+        )
+        bridge = MindBodyBridge(
+            core=core,
+            body=BodyRuntime(),
+            interpreter=FixedInterpreter(),
+            evidence=InMemoryEvidenceStore(),
+            journal=journal,
+            presence=resolver,
+        )
+
+        await bridge.interact("Hello.")
+
+        entries = await journal.read()
+        context = entries[-1].experience["input"]["context"]
+        self.assertEqual(context["presence"]["present_people"][0]["person"]["name"], "Will")
+        self.assertEqual(context["presence"]["present_people"][0]["resolution"], "resolved")
 
 
 if __name__ == "__main__":
