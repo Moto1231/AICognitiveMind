@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import os
 import logging
+import hashlib
+import json
+
+import httpx
 import secrets
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from urllib.parse import urlparse
 
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 
 from mcp.server.transport_security import TransportSecuritySettings
@@ -272,6 +276,89 @@ async def _portal_redirect(_request: Request):
     return RedirectResponse("/static/index.html", status_code=307)
 
 
+async def _realtime_body_session(request: Request) -> Response:
+    """Create an authenticated OpenAI Realtime WebRTC session for this Axiom Mind."""
+    session_token = request.cookies.get("axiom_portal_session", "")
+    session = portal_app.state.portal_sessions.get(session_token)
+    if not session or float(session.get("expires_at", 0)) <= time.time():
+        return JSONResponse({"detail": "Sign in to Axiom before starting voice."}, status_code=401)
+
+    if not settings.openai_api_key:
+        return JSONResponse({"detail": "OPENAI_API_KEY is not configured."}, status_code=503)
+
+    sdp = (await request.body()).decode("utf-8", errors="replace").strip()
+    if not sdp or len(sdp) > 100_000:
+        return JSONResponse({"detail": "A valid SDP offer is required."}, status_code=400)
+
+    mind_id = str(session["mind_id"])
+    mcp_token = await oauth_provider.mint_service_access_token(
+        subject=mind_id,
+        client_id="axiom-realtime",
+    )
+    realtime_session = {
+        "type": "realtime",
+        "model": settings.openai_realtime_model,
+        "instructions": (
+            "You are the conscious reasoning process for Axiom, not the owner of Axiom's "
+            "identity or durable memory. For EVERY user turn, first call begin_interaction "
+            "with the user's actual words and use the returned identity, memory and workspace "
+            "contract before reasoning. Before speaking the final answer, call "
+            "complete_interaction with the same user message, the exact answer you intend to "
+            "speak, and the idempotency_key from begin_interaction. Never bypass the independent "
+            "Memory Steward. Keep spoken responses concise unless the user asks for detail."
+        ),
+        "audio": {"output": {"voice": settings.openai_realtime_voice}},
+        "tools": [
+            {
+                "type": "mcp",
+                "server_label": "axiom",
+                "server_url": BASE_URL + MCP_PATH,
+                "authorization": mcp_token,
+                "allowed_tools": [
+                    "begin_interaction",
+                    "complete_interaction",
+                    "read_sensory_evidence",
+                ],
+                "require_approval": "never",
+                "server_description": (
+                    "Axiom's persistent identity, independent Memory Steward, durable memory, "
+                    "journal and preserved sensory evidence."
+                ),
+            }
+        ],
+    }
+    files = {
+        "sdp": (None, sdp),
+        "session": (None, json.dumps(realtime_session)),
+    }
+    headers = {
+        "Authorization": "Bearer " + settings.openai_api_key,
+        "OpenAI-Safety-Identifier": hashlib.sha256(mind_id.encode()).hexdigest(),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            upstream = await client.post(
+                "https://api.openai.com/v1/realtime/calls",
+                headers=headers,
+                files=files,
+            )
+    except httpx.HTTPError:
+        logger.exception("Realtime session creation failed")
+        return JSONResponse({"detail": "Realtime service could not be reached."}, status_code=502)
+
+    if upstream.status_code >= 400:
+        logger.error("Realtime session rejected status=%s body=%s", upstream.status_code, upstream.text[:1000])
+        return JSONResponse(
+            {"detail": "Realtime session creation was rejected."},
+            status_code=upstream.status_code,
+        )
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "application/sdp"),
+    )
+
+
 hostname = hostname_from_base_url(BASE_URL)
 transport_security = TransportSecuritySettings(
     enable_dns_rebinding_protection=True,
@@ -308,6 +395,7 @@ app.router.routes.extend(
         Route("/portal", endpoint=_portal_login_page, methods=["GET"]),
         Route("/v1/portal/login", endpoint=_portal_login_post, methods=["POST"]),
         Route("/v1/portal/logout", endpoint=_portal_logout_post, methods=["POST"]),
+        Route("/v1/body/realtime/session", endpoint=_realtime_body_session, methods=["POST"]),
         Route("/v1/portal/signup", endpoint=_portal_signup_post, methods=["POST"]),
         Route("/signup", endpoint=_account_signup_get, methods=["GET"]),
         Route("/signup", endpoint=_account_signup_post, methods=["POST"]),

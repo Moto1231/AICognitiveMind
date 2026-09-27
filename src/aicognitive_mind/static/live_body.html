@@ -314,13 +314,18 @@
     let voices = [];
     let sharedVoicePack = loadSavedVoicePack();
     let sharedVoiceRevision = -1;
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let recognition = null;
     let talkEnabled = false;
     let talkListening = false;
     let talkBusy = false;
     let talkSpeaking = false;
     let talkRestartTimer = null;
+    let realtimePeer = null;
+    let realtimeEvents = null;
+    let realtimeMicrophone = null;
+    let realtimeAudio = null;
+    let realtimeMcpPending = 0;
+    let realtimeResponseDone = false;
+    let realtimeResponseUsedMcp = false;
     let sensesEnabled = false;
     let sensoryLoopGeneration = 0;
     let sensoryRequestInFlight = false;
@@ -471,27 +476,13 @@
         if (requestedVoice) utterance.voice = requestedVoice;
       }
 
-      if (talkEnabled) {
-        talkSpeaking = true;
-        recognition?.stop();
-        utterance.onend = utterance.onerror = () => {
-          talkSpeaking = false;
-          resumeTalking();
-        };
-      }
 
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     }
 
     function resumeTalking() {
-      if (!talkEnabled || talkBusy || talkSpeaking || talkListening || document.hidden) return;
-      clearTimeout(talkRestartTimer);
-      talkRestartTimer = window.setTimeout(() => {
-        if (!talkEnabled || talkBusy || talkSpeaking || talkListening || document.hidden) return;
-        try { recognition.start(); }
-        catch (error) { setStatus("Voice listening could not restart: " + error.message); }
-      }, 450);
+      // Realtime WebRTC owns continuous microphone turn-taking while Talk is enabled.
     }
 
     async function refreshSharedVoiceSettings() {
@@ -518,46 +509,117 @@
 
     function stopTalking(message = "Hands-free conversation stopped.") {
       talkEnabled = false;
+      talkListening = false;
+      talkBusy = false;
+      talkSpeaking = false;
       clearTimeout(talkRestartTimer);
-      recognition?.stop();
+      realtimeMicrophone?.getTracks().forEach((track) => track.stop());
+      realtimeEvents?.close();
+      realtimePeer?.close();
+      if (realtimeAudio) realtimeAudio.srcObject = null;
+      realtimeMicrophone = null;
+      realtimeEvents = null;
+      realtimePeer = null;
+      realtimeAudio = null;
+      realtimeMcpPending = 0;
+      realtimeResponseDone = false;
+      realtimeResponseUsedMcp = false;
       talkToggle.classList.remove("on");
       talkToggle.setAttribute("aria-pressed", "false");
       talkToggle.textContent = "Talk";
       setStatus(message);
     }
 
-    function startTalking() {
-      if (!Recognition || !window.speechSynthesis) {
-        setStatus("Hands-free voice is unavailable in this browser. Try Chrome on Android.");
+    function maybeContinueRealtimeAfterMcp() {
+      if (
+        !talkEnabled ||
+        !realtimeResponseDone ||
+        !realtimeResponseUsedMcp ||
+        realtimeMcpPending !== 0 ||
+        realtimeEvents?.readyState !== "open"
+      ) return;
+      realtimeResponseDone = false;
+      realtimeResponseUsedMcp = false;
+      realtimeEvents.send(JSON.stringify({ type: "response.create" }));
+    }
+
+    async function startTalking() {
+      if (!window.RTCPeerConnection || !navigator.mediaDevices?.getUserMedia) {
+        setStatus("Realtime voice is unavailable in this browser.");
         return;
       }
       if (sensesEnabled) releaseSenses();
-      if (!recognition) {
-        recognition = new Recognition();
-        recognition.lang = navigator.language || "en-US";
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.onstart = () => { talkListening = true; setStatus("Listening…"); };
-        recognition.onend = () => { talkListening = false; resumeTalking(); };
-        recognition.onerror = (event) => {
-          if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-            stopTalking("Microphone or speech recognition permission was denied.");
-          } else if (event.error !== "no-speech" && event.error !== "aborted") {
-            setStatus("Voice recognition: " + event.error);
-          }
-        };
-        recognition.onresult = (event) => {
-          const message = Array.from(event.results).map((result) => result[0]?.transcript || "").join(" ").trim();
-          if (!message || talkBusy) return;
-          interactionMessage.value = message;
-          interactionForm.requestSubmit();
-        };
-      }
       talkEnabled = true;
+      talkBusy = true;
       talkToggle.classList.add("on");
       talkToggle.setAttribute("aria-pressed", "true");
       talkToggle.textContent = "Stop talking";
-      resumeTalking();
+      setStatus("Connecting Axiom voice…");
+
+      try {
+        const peer = new RTCPeerConnection();
+        realtimePeer = peer;
+        realtimeAudio = new Audio();
+        realtimeAudio.autoplay = true;
+        peer.addEventListener("track", (event) => {
+          realtimeAudio.srcObject = event.streams[0] || new MediaStream([event.track]);
+          realtimeAudio.play().catch(() => setStatus("Tap Talk again if audio playback was blocked."));
+        });
+
+        realtimeMicrophone = await navigator.mediaDevices.getUserMedia({ audio: true });
+        for (const track of realtimeMicrophone.getAudioTracks()) {
+          peer.addTrack(track, realtimeMicrophone);
+        }
+
+        realtimeEvents = peer.createDataChannel("oai-events");
+        realtimeEvents.addEventListener("open", () => {
+          talkBusy = false;
+          talkListening = true;
+          setStatus("Axiom is listening.");
+        });
+        realtimeEvents.addEventListener("message", ({ data }) => {
+          let event;
+          try { event = JSON.parse(data); } catch (_) { return; }
+
+          if (event.type === "response.mcp_call.in_progress") {
+            realtimeMcpPending += 1;
+            realtimeResponseUsedMcp = true;
+          } else if (
+            event.type === "response.output_item.done" &&
+            event.item?.type === "mcp_call"
+          ) {
+            realtimeMcpPending = Math.max(0, realtimeMcpPending - 1);
+            maybeContinueRealtimeAfterMcp();
+          } else if (event.type === "response.done") {
+            realtimeResponseDone = true;
+            maybeContinueRealtimeAfterMcp();
+          } else if (event.type === "error") {
+            setStatus("Realtime voice error: " + (event.error?.message || "unknown error"));
+          }
+        });
+        realtimeEvents.addEventListener("close", () => {
+          if (talkEnabled) stopTalking("Realtime voice disconnected.");
+        });
+
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        const response = await bodyFetch("/v1/body/realtime/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/sdp" },
+          body: offer.sdp
+        });
+        if (!response.ok) {
+          let detail = "Realtime session creation failed.";
+          try { detail = (await response.json()).detail || detail; } catch (_) {}
+          throw new Error(detail);
+        }
+        await peer.setRemoteDescription({
+          type: "answer",
+          sdp: await response.text()
+        });
+      } catch (error) {
+        stopTalking("Realtime voice failed: " + error.message);
+      }
     }
 
     async function consumeExpressionOutputs() {
@@ -640,7 +702,6 @@
 
       sendInteractionButton.disabled = true;
       talkBusy = true;
-      recognition?.stop();
       const thinkingMessage = appendChatMessage("mind", "Thinking...");
       evidenceArtifactLink.hidden = true;
 
@@ -1021,8 +1082,7 @@
 
     window.addEventListener("resize", resize);
     document.addEventListener("visibilitychange", () => {
-      if (document.hidden) recognition?.stop();
-      else { checkForBodyPageUpdate(); refreshSharedVoiceSettings(); resumeTalking(); }
+      if (!document.hidden) { checkForBodyPageUpdate(); refreshSharedVoiceSettings(); }
     });
     window.addEventListener("beforeunload", () => {
       stopTalking();

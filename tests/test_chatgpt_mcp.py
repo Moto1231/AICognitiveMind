@@ -74,6 +74,18 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
             await self.provider.load_refresh_token(self.client, token.refresh_token)
         )
 
+    async def test_trusted_realtime_token_is_scoped_to_mind(self):
+        token = await self.provider.mint_service_access_token(
+            subject="mind-realtime-test",
+            client_id="axiom-realtime",
+        )
+        access = await self.provider.load_access_token(token)
+
+        self.assertIsNotNone(access)
+        self.assertEqual(access.subject, "mind-realtime-test")
+        self.assertEqual(access.resource, self.provider.resource_url)
+        self.assertIn(self.provider.required_scope, access.scopes)
+
     async def test_denial_returns_to_registered_callback(self):
         params = AuthorizationParams(
             state="deny-state",
