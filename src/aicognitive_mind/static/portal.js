@@ -23,6 +23,7 @@ const el = {
   connectionLabel: document.getElementById("connectionLabel"),
   mindTab: document.getElementById("mindTab"),
   adminTab: document.getElementById("adminTab"),
+  logoutButton: document.getElementById("logoutButton"),
   mindView: document.getElementById("mindView"),
   adminView: document.getElementById("adminView"),
   mindName: document.getElementById("mindName"),
@@ -895,6 +896,18 @@ function clearFilters(config) {
   refreshMemory(config, true);
 }
 
+async function logout() {
+  try {
+    await api("/v1/portal/logout", { method: "POST" });
+  } catch (_) {
+    // Redirect even if the server response is unavailable; protected requests
+    // will require a fresh session on the next portal load.
+  } finally {
+    sessionStorage.removeItem("acm_admin_pin");
+    location.replace("/portal");
+  }
+}
+
 async function refreshStatus() {
   const status = await api("/v1/portal/status");
   renderStatus(status);
@@ -958,6 +971,7 @@ function bindFilterEvents(config) {
 
 el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
+el.logoutButton.addEventListener("click", logout);
 el.refreshButton.addEventListener("click", () => Promise.all([
   refreshStatus(),
   refreshMemory(filters.mind, true),
