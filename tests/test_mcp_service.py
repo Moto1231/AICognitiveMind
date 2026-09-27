@@ -38,6 +38,16 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             ("Understanding before Recommending", "Preserve continuity of identity"),
         )
 
+    async def test_begin_interaction_supplies_host_operating_contract(self) -> None:
+        begun = await self.service.begin_interaction("Make it so.")
+
+        contract = begun["conscious_workspace_contract"]
+        self.assertIn("Host operating contract:", contract)
+        self.assertIn("consume the full context returned by `begin_interaction`", contract.lower())
+        self.assertIn("replaceable reasoning host", contract)
+        self.assertIn("smallest coherent change", contract)
+        self.assertIn('"make it so"', contract)
+
     async def test_memory_survives_between_host_driven_interactions(self) -> None:
         first = await self.service.begin_interaction(
             "My birthday is February 7. Remember that."
