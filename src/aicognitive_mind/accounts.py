@@ -103,5 +103,15 @@ class AccountService:
         # If tenant storage is temporarily unhealthy, valid credentials should
         # still establish the account session instead of turning login into a
         # 500. Tenant access/repair belongs after authentication.
-        mind_id = str(record["mind_id"])
+        mind_id_value = record.get("mind_id")
+        if mind_id_value:
+            mind_id = str(mind_id_value)
+        else:
+            # Compatibility for accounts created before mind_id was stored.
+            # Use a deterministic tenant id so the same legacy account always
+            # resolves to the same Mind without weakening credential checks.
+            mind_id = "mind_legacy_" + hashlib.sha256(
+                username.encode("utf-8")
+            ).hexdigest()
+            logger.warning("AUTH_DIAG account authentication legacy_mind_id_derived")
         return Account(username=username, mind_id=mind_id)
