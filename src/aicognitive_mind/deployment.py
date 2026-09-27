@@ -307,7 +307,10 @@ async def _realtime_body_session(request: Request) -> Response:
             "speak, and the idempotency_key from begin_interaction. Never bypass the independent "
             "Memory Steward. Keep spoken responses concise unless the user asks for detail."
         ),
-        "audio": {\n            "input": {"transcription": {"model": "gpt-4o-mini-transcribe"}},\n            "output": {"voice": settings.openai_realtime_voice},\n        },
+        "audio": {
+            "input": {"transcription": {"model": "gpt-4o-mini-transcribe"}},
+            "output": {"voice": settings.openai_realtime_voice},
+        },
         "tools": [
             {
                 "type": "mcp",
