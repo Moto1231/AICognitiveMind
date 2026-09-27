@@ -368,9 +368,16 @@ class HostAwareCore:
             from aicognitive_mind.domain import InteractionResult
 
             if input_context:
-                message += "\nBody context: " + json.dumps(input_context, default=str)
+                message += "
+Body context: " + json.dumps(input_context, default=str)
             return InteractionResult.model_validate(await self.hosts.submit(message))
-        from aicognitive_mind.config import get_settings\n\n        if not get_settings().body_allow_standalone_fallback:\n            raise RuntimeError(\n                "No external reasoning host is attached. Body standalone fallback is disabled."\n            )\n        return await self.core.interact(message, source=source, input_context=input_context)
+        from aicognitive_mind.config import get_settings
+
+        if not get_settings().body_allow_standalone_fallback:
+            raise RuntimeError(
+                "No external reasoning host is attached. Body standalone fallback is disabled."
+            )
+        return await self.core.interact(message, source=source, input_context=input_context)
 
 
 class HostAwareInterpreter:
@@ -380,4 +387,10 @@ class HostAwareInterpreter:
     async def interpret(self, percept: Any, *, focus: str | None = None) -> str:
         if await self.hosts.active():
             return f"Uninterpreted {percept.modality.value} observation. Use the sensory evidence reference in Body context to inspect the original media."
-        from aicognitive_mind.config import get_settings\n\n        if not get_settings().body_allow_standalone_fallback:\n            raise RuntimeError(\n                "No external reasoning host is attached. Body standalone fallback is disabled."\n            )\n        return await self.fallback.interpret(percept, focus=focus)
+        from aicognitive_mind.config import get_settings
+
+        if not get_settings().body_allow_standalone_fallback:
+            raise RuntimeError(
+                "No external reasoning host is attached. Body standalone fallback is disabled."
+            )
+        return await self.fallback.interpret(percept, focus=focus)
