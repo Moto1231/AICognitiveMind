@@ -41,6 +41,7 @@ from aicognitive_mind.body import (
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
 from aicognitive_mind.body_sessions import BodyQueue, body_session
 from aicognitive_mind.config import get_settings
+from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
     CognitiveActor,
@@ -931,6 +932,29 @@ async def acknowledge_body_output(modality: str, request: Request, delivery_id: 
     queue = getattr(request.app.state, "browser_" + modality)
     await queue.acknowledge(delivery_id)
     return {"acknowledged": True}
+
+
+@app.get("/v1/body/camera/request")
+async def next_camera_request(request: Request) -> dict[str, Any] | None:
+    """Let the active browser Body poll for a host-requested bounded camera capture."""
+    return await CameraRequestRuntime(request.app.state.mind_store).next()
+
+
+@app.post("/v1/body/camera/complete")
+async def complete_camera_request(request: Request) -> dict[str, Any]:
+    """Return a browser-owned camera capture to the waiting MCP host."""
+    payload = await request.json()
+    try:
+        return await CameraRequestRuntime(request.app.state.mind_store).complete(
+            request_id=str(payload["request_id"]),
+            image_data_url=str(payload["image_data_url"]),
+            width=int(payload["width"]),
+            height=int(payload["height"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/health")
