@@ -416,6 +416,76 @@
         boundedLookActive = false;
       }
     }
+    let hostCameraRequestBusy = false;
+
+    async function checkForHostCameraRequest() {
+      if (hostCameraRequestBusy || boundedLookActive || document.hidden) return;
+      try {
+        const response = await bodyFetch("/v1/body/camera/request", { cache: "no-store" });
+        if (!response.ok) return;
+        const command = await response.json();
+        if (!command?.request_id) return;
+
+        hostCameraRequestBusy = true;
+        let stream = null;
+        try {
+          const seconds = Math.min(MAX_LOOK_SECONDS, Math.max(1, Number(command.seconds) || 3));
+          setStatus("Axiom camera requested by reasoning host for " + seconds + " seconds…");
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          await delay(seconds * 1000);
+
+          const track = stream.getVideoTracks()[0];
+          if (!track) throw new Error("Camera did not provide a video track.");
+          const captureVideo = document.createElement("video");
+          captureVideo.playsInline = true;
+          captureVideo.muted = true;
+          captureVideo.srcObject = stream;
+          await captureVideo.play();
+          if (!captureVideo.videoWidth || !captureVideo.videoHeight) await delay(250);
+
+          const maxWidth = 960;
+          const scale = Math.min(1, maxWidth / captureVideo.videoWidth);
+          canvas.width = Math.max(1, Math.round(captureVideo.videoWidth * scale));
+          canvas.height = Math.max(1, Math.round(captureVideo.videoHeight * scale));
+          canvas.getContext("2d").drawImage(captureVideo, 0, 0, canvas.width, canvas.height);
+          const imageDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+
+          const ingress = await bodyFetch("/v1/body/eyes/observe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              image_data_url: imageDataUrl,
+              width: canvas.width,
+              height: canvas.height,
+              source: "browser-camera-mcp"
+            })
+          });
+          if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
+
+          const complete = await bodyFetch("/v1/body/camera/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              request_id: command.request_id,
+              image_data_url: imageDataUrl,
+              width: canvas.width,
+              height: canvas.height
+            })
+          });
+          if (!complete.ok) throw new Error(await responseErrorMessage(complete));
+          setStatus("Axiom camera observation delivered to reasoning host.");
+        } finally {
+          stream?.getTracks().forEach((track) => track.stop());
+          hostCameraRequestBusy = false;
+        }
+      } catch (error) {
+        setStatus("Host camera observation failed: " + error.message);
+        hostCameraRequestBusy = false;
+      }
+    }
+
+    setInterval(checkForHostCameraRequest, 750);
+
     let pageSourceSnapshot = null;
     let pageRefreshPending = false;
     let pageRefreshProbeBusy = false;
