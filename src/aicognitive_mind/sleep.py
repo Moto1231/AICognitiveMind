@@ -76,7 +76,16 @@ class SleepConsolidator:
         memories = await self._memory.read()
 
         association_evidence: dict[str, list[DurableMemory]] = {}
-        for item in memories:
+        # Consolidation products are outputs, not fresh evidence for the next
+        # sleep pass. Excluding them prevents recursive self-reinforcement.
+        source_memories = [
+            item
+            for item in memories
+            if "sleep consolidation" not in {
+                association.casefold() for association in item.associations
+            }
+        ]
+        for item in source_memories:
             for association in item.associations:
                 key = association.strip().casefold()
                 if key:
