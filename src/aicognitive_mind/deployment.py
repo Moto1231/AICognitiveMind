@@ -122,8 +122,22 @@ class _AuthDiagnosticMiddleware:
         path = scope.get("path", "")
         method = scope.get("method", "")
         watched = path in {"/portal", "/signup", "/oauth/login", "/oauth/signup", "/v1/portal/login", "/v1/portal/signup"}
+        mcp_boundary = (
+            path == MCP_PATH
+            or path.startswith("/.well-known/")
+            or path in {"/register", "/authorize", "/token", "/revoke"}
+        )
         if watched:
             logger.warning("AUTH_DIAG boundary request method=%s path=%s", method, path)
+        if mcp_boundary:
+            headers = dict(scope.get("headers", []))
+            user_agent = headers.get(b"user-agent", b"").decode("utf-8", errors="replace")[:200]
+            protocol = headers.get(b"mcp-protocol-version", b"").decode("utf-8", errors="replace")[:50]
+            has_authorization = bool(headers.get(b"authorization"))
+            logger.warning(
+                "MCP_DIAG request method=%s path=%s user_agent=%r protocol=%r authorization=%s",
+                method, path, user_agent, protocol, has_authorization,
+            )
         status = None
 
         async def diagnostic_send(message):
