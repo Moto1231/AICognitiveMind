@@ -134,9 +134,10 @@ class _AuthDiagnosticMiddleware:
             user_agent = headers.get(b"user-agent", b"").decode("utf-8", errors="replace")[:200]
             protocol = headers.get(b"mcp-protocol-version", b"").decode("utf-8", errors="replace")[:50]
             has_authorization = bool(headers.get(b"authorization"))
+            origin = headers.get(b"origin", b"").decode("utf-8", errors="replace")[:200]
             logger.warning(
-                "MCP_DIAG request method=%s path=%s user_agent=%r protocol=%r authorization=%s",
-                method, path, user_agent, protocol, has_authorization,
+                "MCP_DIAG request method=%s path=%s user_agent=%r protocol=%r authorization=%s origin=%r",
+                method, path, user_agent, protocol, has_authorization, origin,
             )
         status = None
 
@@ -393,6 +394,10 @@ transport_security = TransportSecuritySettings(
     ],
     allowed_origins=[
         BASE_URL,
+        "https://grok.com",
+        "https://*.grok.com",
+        "https://x.ai",
+        "https://*.x.ai",
         "http://127.0.0.1:*",
         "http://localhost:*",
     ],
