@@ -46,7 +46,7 @@ def public_base_url() -> str:
 
 
 BASE_URL = public_base_url()
-MCP_PATH = "/axiom-mcp"
+MCP_PATH = "/mcp/"
 settings = get_settings()
 logger = logging.getLogger("aicognitive_mind.auth_diagnostics")
 
