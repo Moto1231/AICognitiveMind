@@ -151,10 +151,14 @@ class _AuthDiagnosticMiddleware:
         except Exception:
             if watched:
                 logger.exception("AUTH_DIAG boundary exception method=%s path=%s", method, path)
+            if mcp_boundary:
+                logger.exception("MCP_DIAG exception method=%s path=%s", method, path)
             raise
         finally:
             if watched:
                 logger.warning("AUTH_DIAG boundary complete method=%s path=%s status=%s", method, path, status)
+            if mcp_boundary:
+                logger.warning("MCP_DIAG response method=%s path=%s status=%s", method, path, status)
 
 
 async def _portal_login_page(_request: Request):
