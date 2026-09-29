@@ -36,6 +36,16 @@ When the user is interacting through Axiom:
 
 Do not bypass begin_interaction/complete_interaction merely because the answer seems simple.
 The Mind owns continuity; the reasoning host supplies inference.
+
+BODY HOST LIFECYCLE:
+- When the user asks to instantiate/open/use Axiom's Body, or to enable/use its live senses,
+  call attach_reasoning_host immediately and retain the returned lease token as private session state.
+- While the Body is in use, renew the lease before it expires and poll next_body_interaction.
+  For every claimed Body request, reason from its supplied Axiom context, inspect sensory evidence
+  when needed, then call complete_body_interaction.
+- Keep this external-host lease active for the live Body session. Detach only when the user asks
+  to stop/handoff the Body or the host session is ending.
+- Never enable standalone fallback merely to compensate for a missing external-host attachment.
 """.strip()
 
 
