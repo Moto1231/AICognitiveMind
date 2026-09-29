@@ -17,6 +17,7 @@ from aicognitive_mind.host_runtime import HostRuntime
 from aicognitive_mind.mcp_server import AppState, lifespan
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
+from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.voice_settings import VoiceSettings
 
 HOST_INSTRUCTIONS = """
@@ -307,6 +308,27 @@ def build_chatgpt_mcp(
             message=message,
             branch=branch,
         )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    async def run_sleep_cycle(ctx: Context[AppState]) -> dict[str, Any]:
+        """Manually run Axiom's subconscious sleep-cycle consolidation now.
+
+        Reviews the current journal and durable memory, records recurring grounded
+        patterns, and appends the normal sleep-consolidation checkpoint.
+        """
+        storage = ctx.request_context.lifespan_context.storage
+        report = await SleepConsolidator(
+            journal=storage.journal,
+            memory=storage.memory,
+        ).sleep()
+        return report.model_dump(mode="json")
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def begin_interaction(
