@@ -375,6 +375,11 @@ class MindBodyBridge:
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
         interpretation = await self._interpreter.interpret(percept)
+        self._admit_presence_observation(
+            percept=percept,
+            evidence=reference,
+            interpretation=interpretation,
+        )
         context = {
             "modality": percept.modality.value,
             "source": percept.source,
@@ -397,6 +402,31 @@ class MindBodyBridge:
             interpretation=interpretation,
             response_text=interaction.response_text,
             occurred_at=interaction.occurred_at,
+        )
+
+    def _admit_presence_observation(
+        self,
+        *,
+        percept: Percept,
+        evidence: SensoryEvidenceReference,
+        interpretation: str,
+    ) -> None:
+        if self._presence is None:
+            return
+        text = interpretation.casefold()
+        if percept.modality == SensoryModality.VISION:
+            person_cues = (" person", " people", " man", " woman", " child", " human")
+        elif percept.modality == SensoryModality.AUDIO:
+            person_cues = (" speaker", " speaking", " speech", " voice", " says ", " said ")
+        else:
+            return
+        if not any(cue in f" {text}" for cue in person_cues):
+            return
+        presence_key = f"{percept.modality.value}:{percept.source}"
+        self._presence.observe(
+            presence_key,
+            evidence=evidence,
+            observation=interpretation,
         )
 
     def _with_presence_context(self, context: dict[str, Any]) -> dict[str, Any]:

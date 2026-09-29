@@ -67,6 +67,7 @@ from aicognitive_mind.host_runtime import (
 )
 from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.persistence import create_storage
+from aicognitive_mind.presence_resolver import PresenceResolver
 from aicognitive_mind.standalone import ProviderUnavailable, StandaloneRuntime
 from aicognitive_mind.storage import (
     DiagnosticStore,
@@ -516,12 +517,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     core = HostAwareCore(core, hosts)
     app.state.core = core
     app.state.evidence_review = evidence_review
+    app.state.presence = PresenceResolver()
     app.state.mind_body = MindBodyBridge(
         core=core,
         body=app.state.body,
         interpreter=interpreter,
         evidence=storage.evidence,
         journal=storage.journal,
+        presence=app.state.presence,
     )
     try:
         yield
