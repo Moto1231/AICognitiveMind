@@ -26,8 +26,11 @@ def evidence(modality: str, *, when: datetime = CAPTURED, digest: str = "a") -> 
 
 
 class FixedInterpreter:
+    def __init__(self, text="Visual perception: a person is present."):
+        self.text = text
+
     async def interpret(self, percept, *, focus=None):
-        return "Visual perception: a person is present."
+        return self.text
 
 
 class PresenceResolverTests(unittest.TestCase):
@@ -117,6 +120,57 @@ class PresenceBridgeContextTests(unittest.IsolatedAsyncioTestCase):
         context = entries[-1].experience["input"]["context"]
         self.assertEqual(context["presence"]["present_people"][0]["person"]["name"], "Will")
         self.assertEqual(context["presence"]["present_people"][0]["resolution"], "resolved")
+
+
+    async def test_live_visual_person_observation_populates_unknown_presence(self) -> None:
+        import base64
+        from aicognitive_mind.body import BrowserVisionIngress
+
+        journal = InMemoryJournalStore()
+        resolver = PresenceResolver()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(), journal=journal, memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(), engine=EchoReasoningEngine(),
+        )
+        await core.initialize("Axiom")
+        eyes = BrowserVisionIngress()
+        body = BodyRuntime(vision=eyes)
+        bridge = MindBodyBridge(
+            core=core, body=body, interpreter=FixedInterpreter(),
+            evidence=InMemoryEvidenceStore(), journal=journal, presence=resolver,
+        )
+        eyes.accept(
+            image_data_url="data:image/jpeg;base64," + base64.b64encode(b"frame").decode("ascii"),
+            width=10, height=10, source="unity-camera",
+        )
+        await bridge.see(express=False)
+        active = resolver.active()
+        self.assertIn("vision:unity-camera", active)
+        self.assertEqual(active["vision:unity-camera"].resolution, PresenceResolution.UNKNOWN)
+
+    async def test_scene_without_person_does_not_invent_presence(self) -> None:
+        import base64
+        from aicognitive_mind.body import BrowserVisionIngress
+
+        journal = InMemoryJournalStore()
+        resolver = PresenceResolver()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(), journal=journal, memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(), engine=EchoReasoningEngine(),
+        )
+        await core.initialize("Axiom")
+        eyes = BrowserVisionIngress()
+        bridge = MindBodyBridge(
+            core=core, body=BodyRuntime(vision=eyes),
+            interpreter=FixedInterpreter("Visual perception: an empty room with a table."),
+            evidence=InMemoryEvidenceStore(), journal=journal, presence=resolver,
+        )
+        eyes.accept(
+            image_data_url="data:image/jpeg;base64," + base64.b64encode(b"frame").decode("ascii"),
+            width=10, height=10, source="unity-camera",
+        )
+        await bridge.see(express=False)
+        self.assertEqual(resolver.active(), {})
 
 
 if __name__ == "__main__":
