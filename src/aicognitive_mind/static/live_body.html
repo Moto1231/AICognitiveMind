@@ -1080,13 +1080,20 @@
 
       sensesToggle.disabled = true;
       try {
-        const [videoStream, audioStream] = await Promise.all([
-          navigator.mediaDevices.getUserMedia({ video: true, audio: false }),
-          navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-        ]);
+        // Acquire each device separately. On mobile browsers, concurrent
+        // getUserMedia permission requests can race or cause one request to
+        // fail before any Body request ever reaches the server.
+        setStatus("SENSES ON\nRequesting camera access...");
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
 
-        cameraStream = videoStream;
-        microphoneStream = audioStream;
+        setStatus("SENSES ON\nCamera ready. Requesting microphone access...");
+        try {
+          microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch (error) {
+          cameraStream.getTracks().forEach((track) => track.stop());
+          cameraStream = null;
+          throw new Error("Microphone access failed after camera access succeeded: " + (error?.message || error));
+        }
         video.srcObject = cameraStream;
         await video.play();
 
