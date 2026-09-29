@@ -21,6 +21,7 @@ from aicognitive_mind.mcp_service import (
 )
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.persistence import StorageRuntime, create_storage
+from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.tenancy import verify_live_tenancy
 
 
@@ -84,6 +85,16 @@ async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
     result = await state.mind_service.status()
     result["storage_tenancy"] = state.tenancy_probe
     return result
+
+@mcp.tool()
+async def run_sleep_cycle(ctx: Context[AppState]) -> dict[str, Any]:
+    """Manually run Axiom's subconscious sleep-cycle consolidation now."""
+    storage = ctx.request_context.lifespan_context.storage
+    report = await SleepConsolidator(
+        journal=storage.journal,
+        memory=storage.memory,
+    ).sleep()
+    return report.model_dump(mode="json")
 
 @mcp.tool()
 async def begin_interaction(
