@@ -46,7 +46,7 @@ def public_base_url() -> str:
 
 
 BASE_URL = public_base_url()
-MCP_PATH = "/mcp/"
+MCP_PATH = "/axiom-mcp"
 settings = get_settings()
 logger = logging.getLogger("aicognitive_mind.auth_diagnostics")
 
@@ -96,10 +96,6 @@ async def _oauth_signup_get(request: Request):
 
 async def _oauth_signup_post(request: Request):
     return await oauth_signup_post(request, oauth_provider)
-
-
-async def _legacy_mcp_redirect(_request: Request):
-    return RedirectResponse(MCP_PATH, status_code=307)
 
 
 async def _public_entry(_request: Request):
@@ -429,7 +425,6 @@ app.router.routes.extend(
         Route("/oauth/login", endpoint=_oauth_login_post, methods=["POST"]),
         Route("/oauth/signup", endpoint=_oauth_signup_get, methods=["GET"]),
         Route("/oauth/signup", endpoint=_oauth_signup_post, methods=["POST"]),
-        Route("/mcp", endpoint=_legacy_mcp_redirect, methods=["GET", "POST", "DELETE"]),
         Mount("/", app=portal_app),
     ]
 )
