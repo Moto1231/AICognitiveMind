@@ -136,6 +136,16 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
             }.issubset(names)
         )
 
+    async def test_deployed_surface_registers_camera_tool(self):
+        provider = AxiomAuthorizationServerProvider(
+            "https://axiom.example",
+            username="mind",
+            password="secret",
+        )
+        server = build_chatgpt_mcp("https://axiom.example", provider)
+        names = {tool.name for tool in await server.list_tools()}
+        self.assertIn("request_camera_observation", names)
+
     async def test_deployed_surface_registers_body_host_handoff_tools(self):
         provider = AxiomAuthorizationServerProvider(
             "https://axiom.example",

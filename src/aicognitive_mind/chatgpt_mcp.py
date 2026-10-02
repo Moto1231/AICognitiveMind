@@ -11,6 +11,7 @@ from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, T
 from pydantic import AnyHttpUrl
 
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
+from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.host_runtime import HostRuntime
@@ -367,6 +368,49 @@ def build_chatgpt_mcp(
             proposed_memories=tuple(proposed_memories or ()),
             current_evidence=tuple(current_evidence or ()),
             idempotency_key=idempotency_key,
+        )
+
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    async def request_camera_observation(
+        ctx: Context[AppState],
+        seconds: int = 3,
+    ) -> CallToolResult:
+        """Ask the connected browser Body to take a bounded camera observation.
+
+        The Body owns camera permission and capture. This host-facing tool requests a
+        1–30 second observation and returns the resulting JPEG as native MCP image content.
+        """
+        state = ctx.request_context.lifespan_context
+        result = await CameraRequestRuntime(state.storage.mind).request(seconds)
+        header, payload = result["image_data_url"].split(",", 1)
+        media_type = header.removeprefix("data:").split(";", 1)[0]
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps({
+                        "source": result["source"],
+                        "width": result["width"],
+                        "height": result["height"],
+                        "seconds": seconds,
+                    }),
+                ),
+                ImageContent(type="image", data=payload, mime_type=media_type),
+            ],
+            structured_content={
+                "source": result["source"],
+                "width": result["width"],
+                "height": result["height"],
+                "seconds": seconds,
+            },
         )
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))

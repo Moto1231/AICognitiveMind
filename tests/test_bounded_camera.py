@@ -20,3 +20,11 @@ def test_live_body_supports_bounded_voice_requested_camera_observation():
 def test_realtime_session_enables_input_transcription():
     source = DEPLOYMENT.read_text(encoding="utf-8")
     assert '"input": {"transcription": {"model": "gpt-4o-mini-transcribe"}}' in source
+
+
+def test_live_body_polls_for_host_camera_requests():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    assert '"/v1/body/camera/request"' in source
+    assert '"/v1/body/camera/complete"' in source
+    assert "checkForHostCameraRequest" in source
+    assert 'source: "browser-camera-mcp"' in source
