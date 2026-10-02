@@ -30,7 +30,7 @@ The same hostname serves:
 
 - the existing Axiom portal and REST API;
 - OAuth discovery/authorization endpoints;
-- the protected Streamable HTTP endpoint at `/mcp`.
+- the protected Streamable HTTP endpoint at `/axiom-mcp`.
 
 No second hosting service is required.
 
@@ -57,7 +57,7 @@ After the branch is merged and Render reports a healthy deployment:
 1. Obtain the existing Render HTTPS hostname.
 2. The MCP URL is:
    ```text
-   https://<axiom-render-host>/mcp
+   https://<axiom-render-host>/axiom-mcp
    ```
 3. In a ChatGPT account/workspace that exposes custom MCP developer mode, create a new
    developer-mode plugin/app and use that URL.
@@ -100,7 +100,7 @@ Do not redesign Axiom as a read-only memory lookup to work around that host limi
 
 A ChatGPT-hosted turn is considered operational only when all of the following succeed:
 
-1. ChatGPT authenticates to `/mcp`.
+1. ChatGPT authenticates to `/axiom-mcp`.
 2. `begin_interaction` returns the canonical Mind and recalled context.
 3. ChatGPT reasons using that context.
 4. `complete_interaction` commits the same response through Axiom.
