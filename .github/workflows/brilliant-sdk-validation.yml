@@ -117,12 +117,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -d '' test_dirs < <(find packages -type d -name test -print0)
-          if ((${#test_dirs[@]} == 0)); then
-            echo "No Flutter test directories are present; analysis is the available static gate."
-            exit 0
-          fi
-          for test_dir in "${test_dirs[@]}"; do
-            echo "Running Flutter tests in ${test_dir}"
-            flutter test "${test_dir}"
+          found_tests=0
+          for package_dir in packages/*; do
+            test_dir="$package_dir/test"
+            if [ -d "$test_dir" ]; then
+              found_tests=1
+              echo "Running Flutter tests in $test_dir"
+              flutter test "$test_dir"
+            fi
           done
+          if [ "$found_tests" -eq 0 ]; then
+            echo "No top-level Flutter package test directories are present; analysis is the available static gate."
+          fi
