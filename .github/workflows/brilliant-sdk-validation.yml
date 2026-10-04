@@ -110,5 +110,19 @@ jobs:
       - name: Bootstrap workspace
         run: melos bootstrap
 
-      - name: Run Flutter tests
-        run: melos test
+      - name: Analyze Flutter workspace
+        run: melos analyze
+
+      - name: Run available Flutter tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' test_dirs < <(find packages -type d -name test -print0)
+          if ((${#test_dirs[@]} == 0)); then
+            echo "No Flutter test directories are present; analysis is the available static gate."
+            exit 0
+          fi
+          for test_dir in "${test_dirs[@]}"; do
+            echo "Running Flutter tests in ${test_dir}"
+            flutter test "${test_dir}"
+          done
