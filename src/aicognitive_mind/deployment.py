@@ -345,9 +345,12 @@ async def _realtime_body_session(request: Request) -> Response:
             }
         ],
     }
+    # OpenAI's multipart endpoint requires the SDP and session parts to carry
+    # their actual media types. Sending the session JSON as text/plain causes
+    # the Realtime call to be rejected before a session is created.
     files = {
-        "sdp": (None, sdp),
-        "session": (None, json.dumps(realtime_session)),
+        "sdp": (None, sdp, "application/sdp"),
+        "session": (None, json.dumps(realtime_session), "application/json"),
     }
     headers = {
         "Authorization": "Bearer " + settings.openai_api_key,
