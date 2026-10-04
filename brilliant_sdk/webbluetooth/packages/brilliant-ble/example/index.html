@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>frame-ble Examples</title>
+    <link rel="stylesheet" href="retro_styles.css" />
+    <script type="module">
+      const exampleModules = import.meta.glob('./*.js');
+      async function runExample(exampleName) {
+        const path = `./${exampleName}.js`; // Construct the path key
+
+        // Check if the module exists in our globbed modules
+        if (exampleModules[path]) {
+          try {
+            // 3. Call the function to get the Promise for the module
+            const module = await exampleModules[path]();
+            if (module && module.run) {
+              module.run();
+            } else {
+              console.error(`Module ${exampleName}.js (resolved to ${path}) does not have a 'run' function or failed to load.`);
+            }
+          } catch (error) {
+            console.error(`Failed to load or run example '${exampleName}':`, error);
+          }
+        } else {
+          console.error(`Example '${exampleName}' (path ${path}) not found. Available modules:`, Object.keys(exampleModules));
+        }
+      }
+
+      // Make runExample globally accessible
+      window.runExample = runExample;
+    </script>
+  </head>
+
+  <body>
+    <h1><code>frame-ble</code> Examples</h1>
+    <em>Press <code>Ctrl+Shift+I</code> (or <code>Cmd+Option+I</code> on Mac) to open DevTools and show the browser console log</em>
+    <ul>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('hello-world')">Hello, World!</button>
+      </li>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('clear-display')">Clear the display</button>
+      </li>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('echo')">Echo values from Frame</button>
+      </li>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('send-break')">Send Break Signal</button>
+      </li>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('send-reset')">Send Reset Signal</button>
+      </li>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('stay-awake-true')">Stay Awake True</button>
+      </li>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('stay-awake-false')">Stay Awake False</button>
+      </li>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('reset-palette')">Reset Palette</button>
+      </li>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('decompression')">Decompression</button>
+      </li>
+      <li style="margin-bottom:8px;">
+        <button onclick="runExample('custom-lua-functions')">Custom Lua Functions</button>
+      </li>
+    </ul>
+    <hr />
+    <div id="log" style="width: 100%; overflow-x: auto;"></div>
+    <script>
+      const logElement = document.getElementById("log");
+
+      function captureConsoleMethod(methodName, cssClass) {
+        const original = console[methodName];
+
+        console[methodName] = function (...args) {
+          // Call the original console method
+          original.apply(console, args);
+
+          // Format the arguments
+          const message = args.map(arg =>
+            typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+          ).join(' ');
+
+          // Create a new line element with styling
+          const line = document.createElement('div');
+          line.className = cssClass;
+          line.textContent = `[${methodName}] ${message}`;
+          line.style.whiteSpace = 'pre'; // Preserve whitespace and prevent wrapping
+          logElement.appendChild(line);
+
+          // Auto-scroll to bottom
+          logElement.scrollTop = logElement.scrollHeight;
+        };
+      }
+
+      // Hook into major console methods
+      captureConsoleMethod('log', 'log');
+      captureConsoleMethod('error', 'error');
+      captureConsoleMethod('warn', 'warn');
+      captureConsoleMethod('info', 'info');
+      captureConsoleMethod('debug', 'debug');
+    </script>
+
+  </body>
+</html>

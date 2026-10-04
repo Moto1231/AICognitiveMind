@@ -1,0 +1,30 @@
+name: brilliant_sdk_workspace
+
+packages:
+  - packages/**
+
+command:
+  version:
+    # When running `melos version`, Melos will update inter-package dependencies
+    # (brilliant_ble, brilliant_msg) inside brilliant_sdk to proper semver ranges.
+    updateDependents: true
+    linkToWorkspaceDependencies: false   # ensures semver instead of path deps
+    workspaceChangelog: true
+
+scripts:
+  bootstrap:
+    description: Get dependencies for all packages.
+    run: melos exec -- flutter pub get
+
+  analyze:
+    description: Run `flutter analyze` in all packages.
+    run: melos exec -- flutter analyze
+
+  format:
+    description: Format all Dart files.
+    run: melos exec -- dart format .
+
+  test:
+    description: Run tests for all packages.
+    run: melos exec -- flutter test
+
