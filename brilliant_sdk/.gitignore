@@ -1,0 +1,4 @@
+.DS_Store
+
+# Local Claude Code settings (per-developer; the committed skill lives in .claude/skills/)
+.claude/settings.local.json
