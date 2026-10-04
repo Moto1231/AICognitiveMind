@@ -1,0 +1,19 @@
+{
+  "body_id": "axiom.reference.unity",
+  "name": "Axiom Reference Body",
+  "body_type": "virtual_avatar",
+  "provider": "Axiom",
+  "version": "0.1.0",
+  "capabilities": {
+    "speech": true,
+    "hearing": true,
+    "vision": true,
+    "gaze": true,
+    "facial_expression": true,
+    "gesture": true,
+    "locomotion": false,
+    "tail_expression": true,
+    "ear_expression": true,
+    "touch": false
+  }
+}
