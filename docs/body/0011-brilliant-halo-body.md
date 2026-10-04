@@ -61,8 +61,29 @@ Do not put memory, identity, reasoning or provider-specific AI logic into the Ha
 bridge. Continuous sensor data remains transient. Deliberate observations enter the existing
 sensory-evidence path before interpretation.
 
-## Next proof
+## Emulator round-trip proof
 
-Run the Lua shell under `halo-emulator` and verify display plus button-to-BLE messages. After
-that proof, implement the Android/Flutter bridge. Do not fork Halo firmware unless the stock Lua
-runtime/SDK proves insufficient.
+The emulator smoke check exercises the device-side half of a host round trip:
+
+1. The app renders `Axiom / Ready`.
+2. A single button press emits `AXIOM:LOOK` through BLE.
+3. A host reply injected through BLE is rendered on the display.
+
+Install `halo-emulator` in the active Python environment, then run:
+
+```bash
+python scripts/halo_emulator_smoke.py
+```
+
+For interactive inspection, launch `halo-emulator ./halo_app/` and use Space, D, or L for
+the single, double, or long button press. The app accepts host replies as text bytes
+through its registered BLE receive callback. This proves the Lua/emulator protocol loop only;
+it does not prove an Android bridge, authenticated Axiom Body request, continuous sensing,
+or physical Halo behavior.
+
+## Next integration step
+
+Implement the Android/Flutter host that subscribes to the three `AXIOM:*` commands, invokes
+the authenticated Axiom Body APIs, and returns an expression to Halo over BLE. Exercise that
+host against a local/mock Body API before sending any deliberate sensory evidence to a live
+account. Do not fork Halo firmware unless the stock Lua runtime/SDK proves insufficient.
