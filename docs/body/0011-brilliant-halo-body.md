@@ -81,6 +81,29 @@ through its registered BLE receive callback. This proves the Lua/emulator protoc
 it does not prove an Android bridge, authenticated Axiom Body request, continuous sensing,
 or physical Halo behavior.
 
+## Development host bridge
+
+`scripts/halo_emulator_body_bridge.py` connects the emulator's `AXIOM:LOOK` event to the
+existing authenticated Body API. Since the emulator has no camera, the host sends a caller-
+selected JPEG fixture through `/v1/body/eyes/observe`, requests `/v1/mind/body/see`, and sends
+the returned `response_text` back to the emulator display. The fixture source is labeled
+`brilliant-halo-emulator-test-image`.
+
+Run it from an environment with this project, Pillow, and `halo-emulator` installed. Use a
+local or mock Axiom service URL while developing:
+
+```bash
+python scripts/halo_emulator_body_bridge.py \
+  --base-url http://127.0.0.1:8000 \
+  --image path/to/test-image.jpg
+```
+
+The script prompts for the Axiom account username and password; it keeps the login cookie in
+memory and generates a separate `X-Body-Session` for this emulator session. A single button
+press makes one deliberate vision interaction in the selected service. Double press and long
+press only return development status text. This does not capture real Halo camera data or prove
+the Android/Flutter host.
+
 ## Next integration step
 
 Implement the Android/Flutter host that subscribes to the three `AXIOM:*` commands, invokes
