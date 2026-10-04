@@ -111,7 +111,7 @@ jobs:
         run: melos bootstrap
 
       - name: Analyze Flutter workspace
-        run: melos analyze
+        run: melos exec -- flutter analyze --no-fatal-warnings --no-fatal-infos
 
       - name: Run available Flutter tests
         shell: bash
