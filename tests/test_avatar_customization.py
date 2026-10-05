@@ -142,13 +142,15 @@ class AvatarCustomizationV01Tests(unittest.TestCase):
         self.assertIn('href="/body/avatar"', portal_markup)
         self.assertIn("Avatar Editor", portal_markup)
 
-    def test_live_body_still_applies_saved_avatar_appearance(self) -> None:
+    def test_live_body_has_no_avatar_renderer(self) -> None:
         markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("loadSavedAvatarAppearance", markup)
-        self.assertIn("avatarCustomizer.apply(loadSavedAvatarAppearance())", markup)
+        self.assertNotIn("loadSavedAvatarAppearance", markup)
+        self.assertNotIn("AvatarCustomizer", markup)
+        self.assertNotIn("@pixiv/three-vrm", markup)
+        self.assertNotIn("avatarCustomizer", markup)
 
 
 if __name__ == "__main__":
