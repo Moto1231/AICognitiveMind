@@ -812,14 +812,17 @@
           : "Open preserved visual evidence";
       evidenceArtifactLink.hidden = false;
 
+      const responseLabel = result.response_text
+        ? "\n\nMind response:\n" + result.response_text
+        : "\n\nAwareness:\nAdmitted to Axiom without triggering conscious reasoning.";
       setStatus(
-        "MIND ↔ BODY LOOP COMPLETE\n\n" +
+        "SENSORY INPUT ADMITTED\n\n" +
         "Evidence:\n" +
         evidence.media_type + "\n" +
         "sha256: " + evidence.sha256 + "\n" +
         "captured: " + evidence.captured_at + "\n\n" +
-        "Perception:\n" + result.interpretation + "\n\n" +
-        "Mind response:\n" + result.response_text
+        "Perception:\n" + result.interpretation +
+        responseLabel
       );
       if (consumeOutputs) {
         await consumeExpressionOutputs();

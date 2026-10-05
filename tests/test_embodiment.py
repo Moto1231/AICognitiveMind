@@ -202,17 +202,18 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("content_ref", str(input_document))
         self.assertNotIn("data:image", str(input_document))
 
-    async def test_passive_visual_perception_does_not_force_body_expression(self) -> None:
+    async def test_passive_visual_perception_admits_without_conscious_interaction(self) -> None:
         core, journal = await self._core()
         eyes = BrowserVisionIngress()
         mouth = BrowserVoiceOutput()
         face = BrowserAvatarOutput()
+        evidence = InMemoryEvidenceStore()
         body = BodyRuntime(vision=eyes, voice=mouth, avatar=face)
         bridge = MindBodyBridge(
             core=core,
             body=body,
             interpreter=FixedInterpreter("Visual perception: A quiet room."),
-            evidence=InMemoryEvidenceStore(),
+            evidence=evidence,
             journal=journal,
         )
 
@@ -224,14 +225,17 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
 
         result = await bridge.see(express=False)
 
+        self.assertEqual(result.response_text, "")
         self.assertEqual(
-            result.response_text,
-            "I heard: Visual perception: A quiet room.",
+            result.interpretation,
+            "Visual perception: A quiet room.",
         )
         self.assertIsNone(mouth.consume())
         self.assertIsNone(face.consume())
         entries = await journal.read()
-        self.assertEqual(entries[-1].experience["input"]["source"], "body:vision")
+        self.assertEqual(entries[-1].kind.value, "sensory_evidence")
+        self.assertEqual(entries[-1].experience["status"], "admitted")
+        self.assertEqual(len(entries), 1)
 
     async def test_audio_percept_crosses_same_mind_body_bridge(self) -> None:
         core, journal = await self._core()
@@ -261,6 +265,38 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.response_text, "I heard: Auditory perception: Good morning.")
         entries = await journal.read()
         self.assertEqual(entries[-1].experience["input"]["source"], "body:audio")
+
+    async def test_passive_audio_perception_admits_without_conscious_interaction(self) -> None:
+        core, journal = await self._core()
+        ears = BrowserAudioIngress()
+        mouth = BrowserVoiceOutput()
+        face = BrowserAvatarOutput()
+        body = BodyRuntime(audio=ears, voice=mouth, avatar=face)
+        bridge = MindBodyBridge(
+            core=core,
+            body=body,
+            interpreter=FixedInterpreter("Auditory perception: Good morning."),
+            evidence=InMemoryEvidenceStore(),
+            journal=journal,
+        )
+
+        ears.accept(
+            audio_data_url=data_url("audio/webm", b"passive-audio"),
+            duration_ms=800,
+        )
+
+        result = await bridge.hear(express=False)
+
+        self.assertEqual(result.response_text, "")
+        self.assertEqual(
+            result.interpretation,
+            "Auditory perception: Good morning.",
+        )
+        self.assertIsNone(mouth.consume())
+        self.assertIsNone(face.consume())
+        entries = await journal.read()
+        self.assertEqual(entries[-1].kind.value, "sensory_evidence")
+        self.assertEqual(len(entries), 1)
 
     async def test_evidence_survives_even_when_interpretation_fails(self) -> None:
         core, journal = await self._core()
