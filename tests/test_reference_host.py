@@ -66,8 +66,16 @@ class FakeReasoner:
                     "identity_status": "confirmed",
                     "presence_status": "reported",
                     "grounding": ("The user identified themself as Will.",),
+                }, {
+                    "participant_id": "person-2",
+                    "name": None,
+                    "identity_status": "unresolved",
+                    "presence_status": "referenced",
+                    "grounding": (),
                 },),
                 active_speaker="user",
+                addressee="person-2",
+                unresolved_references=("he",),
             ),
             proposed_memories=(
                 MemoryProposal(
@@ -135,6 +143,14 @@ class ReferenceHostTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             second_begin["host_working_context"]["active_speaker"], "user"
+        )
+        self.assertEqual(second_begin["host_working_context"]["addressee"], "person-2")
+        self.assertEqual(
+            second_begin["host_working_context"]["unresolved_references"], ["he"]
+        )
+        self.assertEqual(
+            second_begin["host_working_context"]["participants"][1]["identity_status"],
+            "unresolved",
         )
 
     async def test_a_new_host_session_does_not_inherit_another_context(self) -> None:
