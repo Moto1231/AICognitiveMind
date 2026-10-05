@@ -40,6 +40,13 @@
       #stage { height: clamp(280px, 44vh, 420px); }
     }
     #stage canvas { display: block; width: 100%; height: 100%; }
+    #liveScene { position: absolute; inset: .75rem; width: min(42%, 360px); aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; border: 1px solid #373a44; background: #0b0c0f; transform: scaleX(-1); display: none; }
+    #stage { position: relative; }
+    .audio-meter { position: absolute; left: .75rem; bottom: .75rem; width: min(42%, 360px); padding: .55rem .7rem; border: 1px solid #373a44; border-radius: 10px; background: rgba(16,17,20,.88); display: none; }
+    .audio-meter-label { display: flex; justify-content: space-between; gap: .5rem; color: #c8ccd5; font-size: .8rem; margin-bottom: .35rem; }
+    .audio-meter-track { height: .55rem; border-radius: 999px; background: #2a2d36; overflow: hidden; }
+    #audioMeterFill { height: 100%; width: 0%; background: #65d39b; border-radius: inherit; transition: width .08s linear; }
+    @media (max-width: 700px) { #liveScene, .audio-meter { width: calc(50% - 1.125rem); } }
     button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .5; }
     #status { white-space: pre-wrap; background: #181a20; padding: 1rem; border-radius: 10px; margin-top: 1rem; min-height: 6rem; }
@@ -217,7 +224,13 @@
       </div>
     </nav>
 
-    <div id="stage"></div>
+    <div id="stage">
+      <video id="liveScene" autoplay playsinline muted aria-label="Live camera scene"></video>
+      <div id="audioMeter" class="audio-meter" aria-label="Microphone input level">
+        <div class="audio-meter-label"><span>Hearing</span><span id="audioMeterValue">0%</span></div>
+        <div class="audio-meter-track"><div id="audioMeterFill"></div></div>
+      </div>
+    </div>
 
     <section class="interaction-panel" aria-label="Conversation with Mind">
       <div id="interactionHistory" aria-live="polite">
@@ -272,6 +285,10 @@
 
     const stage = document.getElementById("stage");
     const video = document.getElementById("video");
+    const liveScene = document.getElementById("liveScene");
+    const audioMeter = document.getElementById("audioMeter");
+    const audioMeterFill = document.getElementById("audioMeterFill");
+    const audioMeterValue = document.getElementById("audioMeterValue");
     const canvas = document.getElementById("captureCanvas");
     const sensesToggle = document.getElementById("sensesToggle");
     const statusBox = document.getElementById("status");
@@ -324,6 +341,10 @@
     let realtimeMicrophone = null;
     let realtimeAudio = null;
     let realtimeMcpPending = 0;
+    let audioContext = null;
+    let audioAnalyser = null;
+    let audioMeterSource = null;
+    let audioMeterFrame = null;
     let realtimeResponseDone = false;
     let realtimeResponseUsedMcp = false;
     let sensesEnabled = false;
@@ -331,6 +352,7 @@
     let sensoryRequestInFlight = false;
     const AUDIO_WINDOW_MS = 4_000;
     const SENSE_PAUSE_MS = 15_000;
+    const VISION_INTERVAL_MS = 3_000;
     const DEFAULT_LOOK_SECONDS = 5;
     const MAX_LOOK_SECONDS = 30;
     let boundedLookActive = false;
@@ -1055,6 +1077,46 @@
       return context.getImageData(0, 0, 12, 8).data;
     }
 
+    function stopAudioMeter() {
+      if (audioMeterFrame) cancelAnimationFrame(audioMeterFrame);
+      audioMeterFrame = null;
+      if (audioMeterSource) { try { audioMeterSource.disconnect(); } catch (_) {} }
+      audioMeterSource = null;
+      if (audioAnalyser) { try { audioAnalyser.disconnect(); } catch (_) {} }
+      audioAnalyser = null;
+      if (audioContext) { try { audioContext.close(); } catch (_) {} }
+      audioContext = null;
+      audioMeterFill.style.width = "0%";
+      audioMeterValue.textContent = "0%";
+    }
+
+    async function startAudioMeter(stream) {
+      stopAudioMeter();
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioContext.state === "suspended") await audioContext.resume();
+      audioAnalyser = audioContext.createAnalyser();
+      audioAnalyser.fftSize = 512;
+      audioAnalyser.smoothingTimeConstant = 0.72;
+      audioMeterSource = audioContext.createMediaStreamSource(stream);
+      audioMeterSource.connect(audioAnalyser);
+      const data = new Uint8Array(audioAnalyser.fftSize);
+      const tick = () => {
+        if (!sensesEnabled || !audioAnalyser) return;
+        audioAnalyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (const value of data) {
+          const sample = (value - 128) / 128;
+          sum += sample * sample;
+        }
+        const rms = Math.sqrt(sum / Math.max(1, data.length));
+        const level = Math.min(100, Math.round(Math.max(0, (rms - 0.004) / 0.18) * 100));
+        audioMeterFill.style.width = level + "%";
+        audioMeterValue.textContent = level + "%";
+        audioMeterFrame = requestAnimationFrame(tick);
+      };
+      tick();
+    }
+
     async function perceiveAudio(generation) {
       if (window.speechSynthesis?.speaking) return;
 
@@ -1096,45 +1158,41 @@
       }
     }
 
-    async function runSensoryLoop(generation) {
+    async function runVisionLoop(generation) {
       while (sensesEnabled && generation === sensoryLoopGeneration) {
-        if (document.hidden || sendInteractionButton.disabled) {
+        if (!document.hidden && !sendInteractionButton.disabled) {
+          try {
+            await perceiveVision(generation);
+          } catch (error) {
+            if (sensesEnabled && generation === sensoryLoopGeneration) {
+              setStatus("Continuous vision failed: " + error.message);
+            }
+          }
+        }
+        await delay(VISION_INTERVAL_MS);
+      }
+    }
+
+    async function runHearingLoop(generation) {
+      while (sensesEnabled && generation === sensoryLoopGeneration) {
+        if (!document.hidden && !sendInteractionButton.disabled) {
+          try {
+            await perceiveAudio(generation);
+          } catch (error) {
+            if (sensesEnabled && generation === sensoryLoopGeneration) {
+              setStatus("Continuous hearing failed: " + error.message);
+            }
+          }
+        } else {
           await delay(1_000);
-          continue;
         }
-
-        try {
-          await perceiveVision(generation);
-        } catch (error) {
-          if (sensesEnabled && generation === sensoryLoopGeneration) {
-            setStatus("Continuous vision failed: " + error.message);
-          }
-        }
-
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) break;
-        await delay(SENSE_PAUSE_MS);
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) break;
-
-        if (document.hidden || sendInteractionButton.disabled) {
-          continue;
-        }
-
-        try {
-          await perceiveAudio(generation);
-        } catch (error) {
-          if (sensesEnabled && generation === sensoryLoopGeneration) {
-            setStatus("Continuous hearing failed: " + error.message);
-          }
-        }
-
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) break;
-        await delay(SENSE_PAUSE_MS);
       }
     }
 
     function startSensoryLoop() {
       const generation = ++sensoryLoopGeneration;
-      runSensoryLoop(generation);
+      runVisionLoop(generation);
+      runHearingLoop(generation);
     }
 
     function setSensesUi(enabled) {
@@ -1168,7 +1226,12 @@
           throw new Error("Microphone access failed after camera access succeeded: " + (error?.message || error));
         }
         video.srcObject = cameraStream;
+        liveScene.srcObject = cameraStream;
         await video.play();
+        await liveScene.play();
+        liveScene.style.display = "block";
+        audioMeter.style.display = "block";
+        await startAudioMeter(microphoneStream);
 
         setSensesUi(true);
         localStorage.setItem("aicognitive_mind.senses", "on");
@@ -1200,6 +1263,10 @@
       }
 
       video.srcObject = null;
+      liveScene.srcObject = null;
+      liveScene.style.display = "none";
+      audioMeter.style.display = "none";
+      stopAudioMeter();
       setSensesUi(false);
       if (persist) {
         localStorage.setItem("aicognitive_mind.senses", "off");
