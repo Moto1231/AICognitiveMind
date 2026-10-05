@@ -382,7 +382,6 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
     def test_live_body_routes_and_browser_surface_exist(self) -> None:
         paths = {route.path for route in app.routes}
         self.assertIn("/body/live", paths)
-        self.assertIn("/body/avatar", paths)
         self.assertIn("/v1/mind/body/see", paths)
         self.assertIn("/v1/mind/body/hear", paths)
         self.assertIn("/v1/mind/body/interact", paths)
@@ -397,6 +396,12 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("getUserMedia({ audio: true, video: false })", markup)
         self.assertIn("releaseSenses", markup)
         self.assertIn("runSensoryLoop", markup)
+        self.assertNotIn('href="/body/avatar"', markup)
+        self.assertNotIn('import * as THREE from "three"', markup)
+        self.assertNotIn("/v1/body/face/next", markup)
+        self.assertIn('id="liveScene"', markup)
+        self.assertIn('id="audioMeter"', markup)
+        self.assertIn('id="sensesToggle"', markup)
         self.assertIn("/v1/body/eyes/observe", markup)
         self.assertIn("/v1/mind/body/see?express=false", markup)
         self.assertIn("/v1/body/ears/observe", markup)
@@ -417,15 +422,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Send interaction", markup)
         self.assertIn("TEXT INTERACTION COMPLETE", markup)
         self.assertIn("responseErrorMessage", markup)
-        self.assertIn("function frameAvatar(", markup)
-        self.assertIn("new THREE.Box3().setFromObject(object)", markup)
-        self.assertIn("frameAvatar(vrm.scene)", markup)
-        self.assertIn("height: clamp(320px, 48vh, 520px)", markup)
-        self.assertIn("/v1/body/face/next", markup)
         self.assertIn("/v1/body/mouth/next", markup)
-        self.assertIn("MIND ↔ BODY LOOP COMPLETE", markup)
-        self.assertIn("Open evidence artifact", markup)
-        self.assertIn("/v1/evidence/", markup)
 
 
 if __name__ == "__main__":
