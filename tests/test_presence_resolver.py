@@ -87,6 +87,30 @@ class PresenceResolverTests(unittest.TestCase):
         self.assertEqual(expired, ("person:1",))
         self.assertEqual(resolver.active(), {})
 
+    def test_presence_is_isolated_by_mind_and_body_session(self) -> None:
+        resolver = PresenceResolver()
+        identity = PersonIdentity(
+            name="Will", relationship="creator", grounding=("introduced",)
+        )
+        first_scope = ("mind-a", "body-session-a")
+        other_session = ("mind-a", "body-session-b")
+        other_mind = ("mind-b", "body-session-a")
+
+        resolver.observe(
+            "vision:camera",
+            evidence=evidence("vision"),
+            observation="A person is visible.",
+            scope=first_scope,
+        )
+        resolver.resolve("vision:camera", identity, scope=first_scope)
+
+        self.assertEqual(
+            resolver.context(scope=first_scope)["present_people"][0]["resolution"],
+            "resolved",
+        )
+        self.assertEqual(resolver.context(scope=other_session)["present_people"], [])
+        self.assertEqual(resolver.context(scope=other_mind)["present_people"], [])
+
 
 class PresenceBridgeContextTests(unittest.IsolatedAsyncioTestCase):
     async def test_resolved_presence_reaches_cognitive_interaction_context(self) -> None:

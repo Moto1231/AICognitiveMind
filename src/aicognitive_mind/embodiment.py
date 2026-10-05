@@ -332,22 +332,39 @@ class MindBodyBridge:
         self._journal = journal
         self._presence = presence
 
-    async def see(self, *, express: bool = True) -> EmbodiedInteractionResult:
-        return await self.perceive(await self._body.see(), express=express)
+    async def see(
+        self,
+        *,
+        express: bool = True,
+        presence_scope: tuple[str, str] = ("legacy", "legacy"),
+    ) -> EmbodiedInteractionResult:
+        return await self.perceive(
+            await self._body.see(), express=express, presence_scope=presence_scope
+        )
 
-    async def hear(self, *, express: bool = True) -> EmbodiedInteractionResult:
-        return await self.perceive(await self._body.hear(), express=express)
+    async def hear(
+        self,
+        *,
+        express: bool = True,
+        presence_scope: tuple[str, str] = ("legacy", "legacy"),
+    ) -> EmbodiedInteractionResult:
+        return await self.perceive(
+            await self._body.hear(), express=express, presence_scope=presence_scope
+        )
 
     async def interact(
         self,
         message: str,
         *,
         express: bool = True,
+        presence_scope: tuple[str, str] = ("legacy", "legacy"),
     ) -> InteractionResult:
         interaction = await self._core.interact(
             message,
             source="human",
-            input_context=self._with_presence_context({"interface": "body:live:text"}),
+            input_context=self._with_presence_context(
+                {"interface": "body:live:text"}, scope=presence_scope
+            ),
         )
         if express:
             await self._body.express(interaction.response_text)
@@ -358,6 +375,7 @@ class MindBodyBridge:
         percept: Percept,
         *,
         express: bool = True,
+        presence_scope: tuple[str, str] = ("legacy", "legacy"),
     ) -> EmbodiedInteractionResult:
         artifact = await self._preserve_evidence(percept)
         reference = artifact.reference()
@@ -379,6 +397,7 @@ class MindBodyBridge:
             percept=percept,
             evidence=reference,
             interpretation=interpretation,
+            scope=presence_scope,
         )
         context = {
             "modality": percept.modality.value,
@@ -390,7 +409,7 @@ class MindBodyBridge:
         interaction = await self._core.interact(
             interpretation,
             source=f"body:{percept.modality.value}",
-            input_context=self._with_presence_context(context),
+            input_context=self._with_presence_context(context, scope=presence_scope),
         )
         if express:
             await self._body.express(interaction.response_text)
@@ -410,6 +429,7 @@ class MindBodyBridge:
         percept: Percept,
         evidence: SensoryEvidenceReference,
         interpretation: str,
+        scope: tuple[str, str],
     ) -> None:
         if self._presence is None:
             return
@@ -427,12 +447,18 @@ class MindBodyBridge:
             presence_key,
             evidence=evidence,
             observation=interpretation,
+            scope=scope,
         )
 
-    def _with_presence_context(self, context: dict[str, Any]) -> dict[str, Any]:
+    def _with_presence_context(
+        self,
+        context: dict[str, Any],
+        *,
+        scope: tuple[str, str] = ("legacy", "legacy"),
+    ) -> dict[str, Any]:
         if self._presence is None:
             return context
-        presence_context = self._presence.context()
+        presence_context = self._presence.context(scope=scope)
         if not presence_context["present_people"]:
             return context
         return {**context, "presence": presence_context}

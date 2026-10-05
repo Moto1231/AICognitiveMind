@@ -538,6 +538,14 @@ app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _body_presence_scope(request: Request) -> tuple[str, str]:
+    """Bind volatile person tracks to the authenticated Mind and Body session."""
+    tenant_storage = getattr(request.state, "tenant_storage", None)
+    mind_store = getattr(tenant_storage, "mind", None) or request.app.state.mind_store
+    mind_id = str(getattr(mind_store, "mind_id", "axiom"))
+    return mind_id, body_session.get()
+
+
 @app.middleware("http")
 async def select_body_session(request: Request, call_next: Any) -> Response:
     import re
@@ -634,7 +642,9 @@ async def mind_see(
 ) -> EmbodiedInteractionResult:
     bridge = cast(MindBodyBridge, request.app.state.mind_body)
     try:
-        return await bridge.see(express=express)
+        return await bridge.see(
+            express=express, presence_scope=_body_presence_scope(request)
+        )
     except (MindNotInitializedError, RuntimeError, ValueError) as exc:
         code = (
             status.HTTP_404_NOT_FOUND
@@ -662,7 +672,9 @@ async def mind_hear(
 ) -> EmbodiedInteractionResult:
     bridge = cast(MindBodyBridge, request.app.state.mind_body)
     try:
-        return await bridge.hear(express=express)
+        return await bridge.hear(
+            express=express, presence_scope=_body_presence_scope(request)
+        )
     except (MindNotInitializedError, RuntimeError, ValueError) as exc:
         code = (
             status.HTTP_404_NOT_FOUND
@@ -1374,7 +1386,11 @@ async def embodied_text_interaction(
 ) -> InteractionResult:
     try:
         bridge = cast(MindBodyBridge, request.app.state.mind_body)
-        return await bridge.interact(body.message, express=express)
+        return await bridge.interact(
+            body.message,
+            express=express,
+            presence_scope=_body_presence_scope(request),
+        )
     except MindNotInitializedError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
