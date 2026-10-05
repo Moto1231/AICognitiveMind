@@ -14,6 +14,7 @@ from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.github_capability import GitHubCapability
+from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime
 from aicognitive_mind.mcp_server import AppState, lifespan
 from aicognitive_mind.mcp_service import MemoryProposal
@@ -27,17 +28,25 @@ The active model is Axiom's current reasoning faculty, not a separate conversati
 
 When the user is interacting through Axiom:
 1. Call begin_interaction with the user's actual message before reasoning or answering.
+   Pass the host_working_context returned by your previous complete_interaction. For the
+   first turn in a conversation, pass the empty context object shown by the tool schema.
 2. Treat returned identity, recalled memory, continuity, and the conscious-workspace
    contract as context for your own integrated cognition. Do not describe Axiom as another
    participant or the active model as a separate identity.
 3. Reason normally using that context and any other tools needed for the user's task.
-   Maintain the active conversation's short-term context across turns: participants, current
-   speaker/addressee, topic, and unresolved references. Keep those observations distinct from
-   durable memory and preserve unknown/candidate identity when evidence is insufficient.
+   As Axiom's reasoning host, maintain a private, evolving working context across turns:
+   current topic/task; each participant and whether they are present, reported, or only
+   referenced; the current speaker and addressee; each identity's grounding/status; and
+   unresolved references. Update it on every turn from the active conversation and evidence.
+   Keep this context separate from durable memory. A historical mention is not evidence of
+   current presence; a name or visual resemblance alone does not confirm identity. Preserve
+   unresolved or candidate identity when evidence is insufficient, and ask when the distinction
+   changes what you should say or do. You remain Axiom as one integrated identity throughout.
 4. Before presenting the human-facing answer, call complete_interaction with the exact user
    message, the response you intend to give, the idempotency_key returned by begin_interaction,
-   and only stable learning worth review by Axiom's Memory Steward. Use an empty memory list
-   when nothing should persist.
+   your updated host_working_context, and only stable learning worth review by Axiom's Memory
+   Steward. Always include proposed_memories, using an empty list when nothing should persist.
+   The host context is volatile conversation state, not a durable-memory proposal.
 5. Present the same committed response to the user.
 
 Do not bypass begin_interaction/complete_interaction merely because the answer seems simple.
@@ -338,41 +347,51 @@ def build_chatgpt_mcp(
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def begin_interaction(
         user_message: str,
+        host_working_context: HostWorkingContext,
         ctx: Context[AppState],
     ) -> dict[str, Any]:
         """MANDATORY before answering a human while using Axiom.
 
-        Supply the user's actual message. Returns Axiom identity, recalled durable memory,
-        relevant prior experience, conscious-workspace guidance, and an idempotency key.
-        Reason only after consulting this result.
+        Supply the user's actual message and this conversation's current short-term context.
+        Returns Axiom identity, recalled durable memory, prior experience, guidance, the
+        idempotency key, and the validated context to use for this turn.
         """
-        return await ctx.request_context.lifespan_context.mind_service.begin_interaction(
+        result = await ctx.request_context.lifespan_context.mind_service.begin_interaction(
             user_message
         )
+        return {
+            **result,
+            "host_working_context": host_working_context.model_dump(mode="json"),
+        }
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     async def complete_interaction(
         user_message: str,
         response_text: str,
+        host_working_context: HostWorkingContext,
+        idempotency_key: str,
         ctx: Context[AppState],
-        idempotency_key: str | None = None,
-        proposed_memories: list[MemoryProposal] | None = None,
+        proposed_memories: list[MemoryProposal],
         current_evidence: list[ResearchObservation] | None = None,
     ) -> dict[str, Any]:
         """MANDATORY after reasoning and before presenting Axiom's answer.
 
         response_text must be the human-facing answer you intend to present. Propose only
-        stable learning worth durable-memory review; use an empty list when nothing should
-        persist. The independent Memory Steward decides what is actually retained and the
-        interaction is journaled. Reuse the begin_interaction idempotency key on retries.
+        updated volatile host_working_context and stable learning worth durable-memory review;
+        use an empty memory list when nothing should persist. The independent Memory Steward
+        decides what is retained. Reuse both context and idempotency key on retries.
         """
-        return await ctx.request_context.lifespan_context.mind_service.complete_interaction(
+        result = await ctx.request_context.lifespan_context.mind_service.complete_interaction(
             user_message=user_message,
             response_text=response_text,
             proposed_memories=tuple(proposed_memories or ()),
             current_evidence=tuple(current_evidence or ()),
             idempotency_key=idempotency_key,
         )
+        return {
+            **result,
+            "host_working_context": host_working_context.model_dump(mode="json"),
+        }
 
 
     @server.tool(

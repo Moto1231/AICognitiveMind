@@ -19,6 +19,13 @@ def structured(result, tool_name: str) -> dict:
 
 async def main() -> None:
     database = f"ai_cognitive_mind_stdio_ci_{uuid.uuid4().hex}"
+    host_context = {
+        "summary": "",
+        "participants": [],
+        "active_speaker": None,
+        "addressee": None,
+        "unresolved_references": [],
+    }
     provider = os.environ.get("STORAGE_PROVIDER", "surreal")
     env = {
         "STORAGE_PROVIDER": provider,
@@ -73,11 +80,23 @@ async def main() -> None:
         if structured(initialized, "initialize_mind")["status"] != "initialized":
             raise RuntimeError(f"Unexpected initialization result: {initialized}")
 
+        begun = structured(
+            await client.call_tool(
+                "begin_interaction",
+                {
+                    "user_message": "My birthday is February 7. Remember that.",
+                    "host_working_context": host_context,
+                },
+            ),
+            "begin_interaction",
+        )
         completed = await client.call_tool(
             "complete_interaction",
             {
                 "user_message": "My birthday is February 7. Remember that.",
                 "response_text": "I'll remember that your birthday is February 7.",
+                "host_working_context": begun["host_working_context"],
+                "idempotency_key": begun["idempotency_key"],
                 "proposed_memories": [
                     {
                         "memory_class": "semantic",
@@ -88,13 +107,17 @@ async def main() -> None:
                 ],
             },
         )
-        decisions = structured(completed, "complete_interaction")["memory_decisions"]
+        completion = structured(completed, "complete_interaction")
+        decisions = completion["memory_decisions"]
         if not decisions or not decisions[0]["accepted"]:
             raise RuntimeError(f"Memory was not accepted: {completed}")
 
         later = await client.call_tool(
             "begin_interaction",
-            {"user_message": "When is Will's birthday?"},
+            {
+                "user_message": "When is Will's birthday?",
+                "host_working_context": completion["host_working_context"],
+            },
         )
         recalled = structured(later, "begin_interaction")["recalled_context"]["durable_memory"]
         if not any(item["content"] == "Will's birthday is February 7." for item in recalled):

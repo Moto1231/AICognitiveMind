@@ -6,13 +6,12 @@ import json
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
-
-from pydantic import BaseModel, Field, model_validator
+from typing import Any, Protocol
 
 from mcp import Client, StdioServerParameters
 from openai import AsyncOpenAI
 
+from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.mcp_service import MemoryProposal
 
 
@@ -32,44 +31,6 @@ class HostReasoningResult:
     response_text: str
     proposed_memories: tuple[MemoryProposal, ...] = ()
     working_context: "HostWorkingContext" = field(default_factory=lambda: HostWorkingContext())
-
-
-class HostParticipantContext(BaseModel):
-    """Session-local participant tracking; identity claims retain their evidence state."""
-
-    participant_id: str = Field(min_length=1, max_length=80)
-    name: str | None = Field(default=None, max_length=120)
-    identity_status: Literal["unresolved", "candidate", "confirmed"] = "unresolved"
-    presence_status: Literal["observed", "reported", "referenced", "unknown"] = "unknown"
-    relationship: str | None = Field(default=None, max_length=200)
-    grounding: tuple[str, ...] = Field(default=(), max_length=8)
-
-    @model_validator(mode="after")
-    def confirmed_identity_requires_grounding(self) -> "HostParticipantContext":
-        if self.identity_status == "confirmed" and (not self.name or not self.grounding):
-            raise ValueError("Confirmed identity requires a name and explicit grounding")
-        return self
-
-
-class HostWorkingContext(BaseModel):
-    """Volatile active context owned by one reasoning-host conversation."""
-
-    summary: str = Field(default="", max_length=2000)
-    participants: tuple[HostParticipantContext, ...] = Field(default=(), max_length=32)
-    active_speaker: str | None = Field(default=None, max_length=80)
-    addressee: str | None = Field(default=None, max_length=80)
-    unresolved_references: tuple[str, ...] = Field(default=(), max_length=24)
-
-    @model_validator(mode="after")
-    def validate_participant_references(self) -> "HostWorkingContext":
-        participant_ids = [participant.participant_id for participant in self.participants]
-        if len(participant_ids) != len(set(participant_ids)):
-            raise ValueError("Participant IDs must be unique within a host session")
-        known_ids = set(participant_ids)
-        for reference in (self.active_speaker, self.addressee):
-            if reference is not None and reference not in known_ids:
-                raise ValueError("Speaker and addressee must reference a tracked participant")
-        return self
 
 
 @dataclass(frozen=True)
@@ -289,17 +250,22 @@ class CognitiveMindHost:
         begun = _structured(
             await self._client.call_tool(
                 "begin_interaction",
-                {"user_message": user_message},
+                {
+                    "user_message": user_message,
+                    "host_working_context": self._working_context.model_dump(mode="json"),
+                },
             ),
             "begin_interaction",
         )
         if begun.get("status") != "ready_to_reason":
             raise RuntimeError(f"Mind is not ready to reason: {begun}")
 
-        reasoning_context = {
-            **begun,
-            "host_working_context": self._working_context.model_dump(mode="json"),
-        }
+        returned_context = HostWorkingContext.model_validate(
+            begun.get("host_working_context", {})
+        )
+        if returned_context != self._working_context:
+            raise RuntimeError("Mind returned different host working context than submitted")
+        reasoning_context = dict(begun)
         reasoning = await self._reasoner.reason(user_message, reasoning_context)
 
         completed = _structured(
@@ -309,6 +275,7 @@ class CognitiveMindHost:
                     "user_message": user_message,
                     "response_text": reasoning.response_text,
                     "idempotency_key": begun.get("idempotency_key"),
+                    "host_working_context": reasoning.working_context.model_dump(mode="json"),
                     "proposed_memories": [
                         memory.model_dump(mode="json")
                         for memory in reasoning.proposed_memories
@@ -320,7 +287,9 @@ class CognitiveMindHost:
         if completed.get("status") != "interaction_committed":
             raise RuntimeError(f"Mind did not commit interaction: {completed}")
 
-        self._working_context = reasoning.working_context
+        self._working_context = HostWorkingContext.model_validate(
+            completed.get("host_working_context", {})
+        )
 
         return HostTurn(
             response_text=reasoning.response_text,

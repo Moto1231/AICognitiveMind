@@ -104,6 +104,26 @@ that capability, the server may be fully ready while the ChatGPT host surface re
 
 Do not redesign Axiom as a read-only memory lookup to work around that host limitation.
 
+## Reasoning-host working context
+
+The active reasoning host owns volatile context for its live conversation: topic/task,
+participants, whether each is present or only mentioned, speaker/addressee, identity grounding,
+and unresolved references. This context is updated every turn and remains separate from
+Memory Steward controlled durable memory. A host must preserve uncertainty: prior mentions,
+names, and visual resemblance do not independently establish who is currently present.
+
+Every host passes a validated `HostWorkingContext` to `begin_interaction` and returns its updated
+context with `complete_interaction`. The MCP tools use the same schema for ChatGPT and Realtime
+as the reference host. The reference host adopts its update only after Axiom commits the response;
+other hosts carry the returned context in their own conversation state. Axiom validates and
+echoes the structure but does not store this volatile context as durable memory.
+
+Body presence observations are volatile and scoped by Mind and `X-Body-Session`. This prevents
+one Mind or Body session from seeing another scope's transient observations. It does not by
+itself identify individual people: the current sensory interpreter may report a generic presence,
+which remains unresolved until a future evidence-grounded identity confirmation path links it to
+a durable person record.
+
 ## Acceptance criteria
 
 A ChatGPT-hosted turn is considered operational only when all of the following succeed:
