@@ -137,6 +137,20 @@ class ReferenceHostTests(unittest.IsolatedAsyncioTestCase):
             second_begin["host_working_context"]["active_speaker"], "user"
         )
 
+    async def test_a_new_host_session_does_not_inherit_another_context(self) -> None:
+        first_client = FakeMcpClient()
+        first_host = CognitiveMindHost(client=first_client, reasoner=FakeReasoner())
+        await first_host.interact("We are discussing Will.")
+
+        second_client = FakeMcpClient()
+        second_reasoner = FakeReasoner()
+        second_host = CognitiveMindHost(client=second_client, reasoner=second_reasoner)
+        await second_host.interact("Who is speaking?")
+
+        initial_context = second_client.calls[0][1]["host_working_context"]
+        self.assertEqual(initial_context["summary"], "")
+        self.assertEqual(initial_context["participants"], [])
+
     async def test_openai_reasoner_converts_finalize_tool_call_into_memory_proposal(self) -> None:
         response = SimpleNamespace(
             output=[
