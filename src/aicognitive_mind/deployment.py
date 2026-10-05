@@ -338,8 +338,8 @@ async def _realtime_body_session(request: Request) -> Response:
         ),
         "audio": {
             "input": {"transcription": {"model": "gpt-4o-mini-transcribe"}},
-            "output": {"voice": settings.openai_realtime_voice},
         },
+        "output_modalities": ["text"],
         "tools": [
             {
                 "type": "mcp",

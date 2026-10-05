@@ -59,6 +59,7 @@ from aicognitive_mind.embodiment import (
     MindBodyBridge,
 )
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
+from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
 from aicognitive_mind.host_runtime import (
     HostAwareCore,
@@ -140,6 +141,12 @@ class FaceExpressionRequest(BaseModel):
     expression: str = Field(default="neutral", min_length=1, max_length=80)
     weight: float = Field(default=1.0, ge=0.0, le=1.0)
     text: str | None = Field(default=None, max_length=500)
+
+
+class FishSpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    rate: float = Field(default=1.0, ge=0.1, le=10.0)
+    volume: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class MouthSpeechRequest(BaseModel):
@@ -916,6 +923,46 @@ async def speak_through_mouth(
             detail=str(exc),
         ) from exc
     return intent
+
+
+@app.post("/v1/body/speech/fish-audio")
+async def fish_audio_speech(
+    body: FishSpeechRequest,
+    request: Request,
+) -> Response:
+    """Render Axiom's spoken output through Fish Audio without exposing its API key."""
+    settings = get_settings()
+    if not settings.fish_audio_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="FISH_AUDIO_API_KEY is not configured.",
+        )
+
+    # Browser voice settings use a 0-1 volume scale; Fish uses dB.
+    fish_volume = (body.volume - 1.0) * 20.0
+    renderer = FishAudioRenderer(
+        api_key=settings.fish_audio_api_key,
+        model=settings.fish_audio_model,
+        reference_id=settings.fish_audio_reference_id,
+    )
+    try:
+        audio = await renderer.synthesize(
+            body.text,
+            speed=body.rate,
+            volume=fish_volume,
+        )
+    except FishAudioError as exc:
+        logger.warning("Fish Audio speech synthesis failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
+
+    return Response(
+        content=audio,
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/v1/body/mouth/status")

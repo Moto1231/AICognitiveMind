@@ -528,38 +528,62 @@
       voices = window.speechSynthesis?.getVoices?.() || [];
     }
 
-    function speakIntent(intent) {
-      if (!intent?.text || !window.speechSynthesis) return;
-      loadVoices();
-
+    async function speakIntent(intent) {
+      if (!intent?.text) return;
       const metadata = intent.metadata || {};
+      const requestedRate = Number(metadata.rate ?? sharedVoicePack?.rate ?? 1);
+      const requestedVolume = Number(metadata.volume ?? sharedVoicePack?.volume ?? 1);
+
+      try {
+        const response = await bodyFetch("/v1/body/speech/fish-audio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: intent.text,
+            rate: Number.isFinite(requestedRate) ? requestedRate : 1,
+            volume: Number.isFinite(requestedVolume) ? requestedVolume : 1
+          })
+        });
+        if (!response.ok) throw new Error(await responseErrorMessage(response));
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.volume = 1;
+        talkSpeaking = true;
+        audio.addEventListener("ended", () => {
+          talkSpeaking = false;
+          URL.revokeObjectURL(url);
+        }, { once: true });
+        audio.addEventListener("error", () => {
+          talkSpeaking = false;
+          URL.revokeObjectURL(url);
+        }, { once: true });
+        await audio.play();
+        return;
+      } catch (error) {
+        // Keep the Body usable when Fish is not configured during local development.
+        if (!window.speechSynthesis) {
+          setStatus("Fish Audio speech failed: " + error.message);
+          return;
+        }
+      }
+
+      loadVoices();
       const utterance = new SpeechSynthesisUtterance(intent.text);
       applyVoicePack(utterance, sharedVoicePack, voices);
-
-      const requestedRate = Number(metadata.rate ?? 1);
-      const requestedPitch = Number(metadata.pitch ?? 1);
-      const requestedVolume = Number(metadata.volume ?? 1);
       utterance.rate = Math.max(
         0.1,
         Math.min(10, utterance.rate * (Number.isFinite(requestedRate) ? requestedRate : 1))
-      );
-      utterance.pitch = Math.max(
-        0,
-        Math.min(2, utterance.pitch * (Number.isFinite(requestedPitch) ? requestedPitch : 1))
       );
       utterance.volume = Math.max(
         0,
         Math.min(1, utterance.volume * (Number.isFinite(requestedVolume) ? requestedVolume : 1))
       );
-
       if (metadata.voice_name) {
-        const requestedVoice = voices.find(
-          (item) => item.name === metadata.voice_name
-        );
+        const requestedVoice = voices.find((item) => item.name === metadata.voice_name);
         if (requestedVoice) utterance.voice = requestedVoice;
       }
-
-
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     }
@@ -642,13 +666,6 @@
       try {
         const peer = new RTCPeerConnection();
         realtimePeer = peer;
-        realtimeAudio = new Audio();
-        realtimeAudio.autoplay = true;
-        peer.addEventListener("track", (event) => {
-          realtimeAudio.srcObject = event.streams[0] || new MediaStream([event.track]);
-          realtimeAudio.play().catch(() => setStatus("Tap Talk again if audio playback was blocked."));
-        });
-
         realtimeMicrophone = await navigator.mediaDevices.getUserMedia({ audio: true });
         for (const track of realtimeMicrophone.getAudioTracks()) {
           peer.addTrack(track, realtimeMicrophone);
@@ -670,6 +687,9 @@
             if (seconds !== null) {
               performBoundedLook(seconds, transcript);
             }
+          } else if (event.type === "response.output_text.done") {
+            const text = event.text || "";
+            if (text.trim()) speakIntent({ text });
           } else if (event.type === "response.mcp_call.in_progress") {
             realtimeMcpPending += 1;
             realtimeResponseUsedMcp = true;
