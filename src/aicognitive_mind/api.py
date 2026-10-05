@@ -630,11 +630,6 @@ async def body_voice_settings(request: Request) -> dict[str, Any]:
     return await request.app.state.voice_settings.read()
 
 
-@app.get("/body/avatar", include_in_schema=False)
-async def avatar_editor_page() -> FileResponse:
-    return FileResponse(STATIC_DIR / "avatar_editor.html")
-
-
 @app.post("/v1/mind/body/see", response_model=EmbodiedInteractionResult)
 async def mind_see(
     request: Request,
