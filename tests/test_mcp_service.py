@@ -42,9 +42,9 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         begun = await self.service.begin_interaction("Make it so.")
 
         contract = begun["conscious_workspace_contract"]
-        self.assertIn("Host operating contract:", contract)
+        self.assertIn("Interaction operating contract:", contract)
         self.assertIn("consume the full context returned by `begin_interaction`", contract.lower())
-        self.assertIn("replaceable reasoning host", contract)
+        self.assertIn("Speak as Axiom in first person", contract)
         self.assertIn("smallest coherent change", contract)
         self.assertIn('"make it so"', contract)
 

@@ -144,6 +144,77 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 }
 .secondary-button:hover, .primary-button:hover { transform: translateY(-1px); }
 .admin-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+.admin-behavior-panel { grid-column: 1 / -1; min-width: 0; }
+.host-behavior-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(161,190,226,.14);
+  border-radius: 13px;
+  background: rgba(255,255,255,.025);
+}
+.host-behavior-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 12px;
+  min-width: 0;
+}
+.host-behavior-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #c0cde0;
+  font-size: 11px;
+  font-weight: 700;
+}
+.host-behavior-field input,
+.host-behavior-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,.035);
+  color: var(--text);
+  outline: none;
+  font-size: 13px;
+  font-weight: 450;
+}
+.host-behavior-field textarea {
+  min-height: 124px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.host-behavior-field input:focus,
+.host-behavior-field textarea:focus {
+  border-color: rgba(104,216,255,.5);
+  box-shadow: 0 0 0 3px rgba(104,216,255,.07);
+}
+.host-behavior-field input[readonly],
+.host-behavior-field textarea[readonly] {
+  color: #d7e2f0;
+  cursor: default;
+}
+.host-behavior-instruction { grid-column: 1 / -1; }
+.host-behavior-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.host-behavior-enabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  color: #d6e1ef;
+  font-size: 13px;
+}
+.host-behavior-enabled input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.host-behavior-controls button:disabled { cursor: not-allowed; opacity: .55; }
 .proof-panel { min-height: 210px; }
 .proof-panel p:last-child { margin-top: 14px; color: var(--muted); line-height: 1.6; font-size: 12px; }
 .admin-summary { grid-column: 1 / -1; }
@@ -178,6 +249,11 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   .hero-status { width: 100%; }
   .grid, .admin-grid { grid-template-columns: 1fr; }
   .identity-panel, .memory-panel, .admin-summary { grid-column: auto; grid-row: auto; }
+}
+@media (max-width: 560px) {
+  .host-behavior-fields { grid-template-columns: minmax(0, 1fr); }
+  .host-behavior-instruction { grid-column: auto; }
+  .host-behavior-card { padding: 13px; }
 }
 
 .memory-item {

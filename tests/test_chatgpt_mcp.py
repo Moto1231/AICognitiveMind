@@ -112,7 +112,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         )
         server = build_chatgpt_mcp("https://axiom.example", provider)
         self.assertEqual(server.name, "Axiom")
-        self.assertIn("replaceable reasoning host", HOST_INSTRUCTIONS)
+        self.assertIn("current reasoning faculty", HOST_INSTRUCTIONS)
         self.assertIn("begin_interaction", HOST_INSTRUCTIONS)
         self.assertIn("complete_interaction", HOST_INSTRUCTIONS)
 
