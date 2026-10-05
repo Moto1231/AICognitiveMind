@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     openai_realtime_model: str = "gpt-realtime-2.1"
     openai_realtime_voice: str = "marin"
     openai_transcription_model: str = "gpt-4o-transcribe"
+    fish_audio_api_key: str | None = None
+    fish_audio_model: str = "s2.1-pro-free"
+    fish_audio_reference_id: str | None = None
     admin_pin: str | None = None
     app_access_username: str = "mind"
     app_access_password: str | None = None
