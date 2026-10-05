@@ -54,25 +54,45 @@ async def main():
             "grounding": ["Direct test interaction"],
             "associations": ["Atlas"],
         }
+        empty_context = {
+            "summary": "",
+            "participants": [],
+            "active_speaker": None,
+            "addressee": None,
+            "unresolved_references": [],
+        }
         async with Client(parameters) as host_a:
-            await host_a.call_tool("begin_interaction", {"user_message": "Remember Atlas"})
+            begun_a = structured(
+                await host_a.call_tool(
+                    "begin_interaction",
+                    {
+                        "user_message": "Remember Atlas",
+                        "host_working_context": empty_context,
+                    },
+                )
+            )
             first = structured(
                 await host_a.call_tool(
                     "complete_interaction",
                     {
                         "user_message": "Remember Atlas",
                         "response_text": "Saved by host A",
+                        "host_working_context": begun_a["host_working_context"],
                         "proposed_memories": [proposal],
-                        "idempotency_key": "host-a-turn",
+                        "idempotency_key": begun_a["idempotency_key"],
                     },
                 )
             )
         # Closing the Client stops its stdio child. A new process must recover disk state.
         async with Client(parameters) as host_b:
             resumed = structured(
-                await host_b.call_tool("begin_interaction", {"user_message": "Atlas"})
+                await host_b.call_tool(
+                    "begin_interaction",
+                    {"user_message": "Atlas", "host_working_context": empty_context},
+                )
             )
             assert resumed["mind"] == original.model_dump(mode="json")
+            assert resumed["host_working_context"] == empty_context
             assert (
                 resumed["recalled_context"]["durable_memory"][0]["content"] == proposal["content"]
             )
@@ -82,20 +102,28 @@ async def main():
                     {
                         "user_message": "Remember Atlas",
                         "response_text": "Saved by host A",
+                        "host_working_context": begun_a["host_working_context"],
                         "proposed_memories": [proposal],
-                        "idempotency_key": "host-a-turn",
+                        "idempotency_key": begun_a["idempotency_key"],
                     },
                 )
             )
             assert retry == first
+            begun_b = structured(
+                await host_b.call_tool(
+                    "begin_interaction",
+                    {"user_message": "Continue", "host_working_context": empty_context},
+                )
+            )
             structured(
                 await host_b.call_tool(
                     "complete_interaction",
                     {
                         "user_message": "Continue",
                         "response_text": "Continued by host B",
+                        "host_working_context": begun_b["host_working_context"],
                         "proposed_memories": [],
-                        "idempotency_key": "host-b-turn",
+                        "idempotency_key": begun_b["idempotency_key"],
                     },
                 )
             )

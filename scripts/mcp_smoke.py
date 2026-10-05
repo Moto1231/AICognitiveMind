@@ -17,6 +17,13 @@ def structured(result, tool_name: str) -> dict:
 
 async def main() -> None:
     url = os.environ.get("MCP_URL", "http://127.0.0.1:8001/mcp")
+    host_context = {
+        "summary": "",
+        "participants": [],
+        "active_speaker": None,
+        "addressee": None,
+        "unresolved_references": [],
+    }
 
     async with Client(url) as client:
         tools = await client.list_tools()
@@ -44,11 +51,14 @@ async def main() -> None:
         if structured(initialized, "initialize_mind")["status"] != "initialized":
             raise RuntimeError(f"Unexpected initialization result: {initialized}")
 
-        first = await client.call_tool(
+        first = structured(await client.call_tool(
             "begin_interaction",
-            {"user_message": "My birthday is February 7. Remember that."},
-        )
-        if structured(first, "begin_interaction")["status"] != "ready_to_reason":
+            {
+                "user_message": "My birthday is February 7. Remember that.",
+                "host_working_context": host_context,
+            },
+        ), "begin_interaction")
+        if first["status"] != "ready_to_reason":
             raise RuntimeError(f"Unexpected begin result: {first}")
 
         completed = await client.call_tool(
@@ -56,6 +66,8 @@ async def main() -> None:
             {
                 "user_message": "My birthday is February 7. Remember that.",
                 "response_text": "I'll remember that your birthday is February 7.",
+                "host_working_context": first["host_working_context"],
+                "idempotency_key": first["idempotency_key"],
                 "proposed_memories": [
                     {
                         "memory_class": "semantic",
@@ -66,13 +78,17 @@ async def main() -> None:
                 ],
             },
         )
-        decisions = structured(completed, "complete_interaction")["memory_decisions"]
+        completion = structured(completed, "complete_interaction")
+        decisions = completion["memory_decisions"]
         if not decisions or not decisions[0]["accepted"]:
             raise RuntimeError(f"Memory was not accepted: {completed}")
 
         later = await client.call_tool(
             "begin_interaction",
-            {"user_message": "When is Will's birthday?"},
+            {
+                "user_message": "When is Will's birthday?",
+                "host_working_context": completion["host_working_context"],
+            },
         )
         recalled = structured(later, "begin_interaction")["recalled_context"]["durable_memory"]
         if not any(item["content"] == "Will's birthday is February 7." for item in recalled):
