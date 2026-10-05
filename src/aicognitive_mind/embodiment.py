@@ -406,13 +406,25 @@ class MindBodyBridge:
             "evidence": reference.model_dump(mode="json"),
             "metadata": self._journal_safe_metadata(percept.metadata),
         }
+        # Passive sensory admission (used by continuous sensing) stops here.
+        # The Body supplies perception; the Mind records and interprets it, but
+        # does not enter a full conscious interaction for every observation.
+        if not express:
+            return EmbodiedInteractionResult(
+                sensory_modality=percept.modality,
+                sensory_source=percept.source,
+                evidence=reference,
+                interpretation=interpretation,
+                response_text="",
+                occurred_at=percept.observed_at,
+            )
+
         interaction = await self._core.interact(
             interpretation,
             source=f"body:{percept.modality.value}",
             input_context=self._with_presence_context(context, scope=presence_scope),
         )
-        if express:
-            await self._body.express(interaction.response_text)
+        await self._body.express(interaction.response_text)
 
         return EmbodiedInteractionResult(
             sensory_modality=percept.modality,
