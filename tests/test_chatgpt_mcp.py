@@ -168,7 +168,10 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         for name in ("begin_interaction", "complete_interaction"):
             schema = tools[name].input_schema
             self.assertIn("host_working_context", schema["properties"])
-            self.assertIn("host_working_context", schema["required"])
+            if name == "complete_interaction":
+                self.assertIn("host_working_context", schema["required"])
+            else:
+                self.assertNotIn("host_working_context", schema["required"])
         completion_schema = tools["complete_interaction"].input_schema
         self.assertIn("idempotency_key", completion_schema["required"])
         self.assertIn("proposed_memories", completion_schema["required"])

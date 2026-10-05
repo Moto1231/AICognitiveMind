@@ -382,8 +382,8 @@ def build_chatgpt_mcp(
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def begin_interaction(
         user_message: str,
-        host_working_context: HostWorkingContext,
         ctx: Context[AppState],
+        host_working_context: HostWorkingContext | None = None,
     ) -> dict[str, Any]:
         """MANDATORY before answering a human while using Axiom.
 
@@ -391,6 +391,8 @@ def build_chatgpt_mcp(
         Returns Axiom identity, recalled durable memory, prior experience, guidance, the
         idempotency key, and the validated context to use for this turn.
         """
+        if host_working_context is None:
+            host_working_context = HostWorkingContext()
         state = ctx.request_context.lifespan_context
         result = await state.mind_service.begin_interaction(user_message)
         context_json = host_working_context.model_dump(mode="json")
