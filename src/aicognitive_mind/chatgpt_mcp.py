@@ -16,11 +16,27 @@ from aicognitive_mind.config import get_settings
 from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime
+from aicognitive_mind.domain import DiagnosticObservation
 from aicognitive_mind.mcp_server import AppState, lifespan
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.voice_settings import VoiceSettings
+
+async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
+    """Persist an exact MCP transport event for one Axiom interaction."""
+    await storage.diagnostics.record(
+        DiagnosticObservation(
+            component="chatgpt_mcp",
+            operation="interaction_trace",
+            implementation={
+                "interaction_id": interaction_id,
+                "phase": phase,
+                "payload": payload,
+            },
+        )
+    )
+
 
 HOST_INSTRUCTIONS = """
 Axiom is the integrated, persistent Cognitive Mind. Speak as Axiom in first person.
@@ -105,6 +121,25 @@ def build_chatgpt_mcp(
         result = await state.mind_service.status()
         result["storage_tenancy"] = state.tenancy_probe
         return result
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def interaction_trace(interaction_id: str, ctx: Context[AppState]) -> dict[str, Any]:
+        """Return the server-observed transport trace for exactly one Axiom interaction."""
+        state = ctx.request_context.lifespan_context
+        events = [
+            observation for observation in await state.storage.diagnostics.read()
+            if observation.component == "chatgpt_mcp"
+            and observation.operation == "interaction_trace"
+            and observation.implementation.get("interaction_id") == interaction_id
+        ]
+        events.sort(key=lambda item: item.observed_at)
+        phases = [item.implementation.get("phase") for item in events]
+        return {
+            "interaction_id": interaction_id,
+            "status": "complete" if "complete_response" in phases else "incomplete",
+            "event_count": len(events),
+            "events": [item.model_dump(mode="json") for item in events],
+        }
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def get_body_voice_settings(ctx: Context[AppState]) -> dict[str, Any]:
@@ -356,13 +391,20 @@ def build_chatgpt_mcp(
         Returns Axiom identity, recalled durable memory, prior experience, guidance, the
         idempotency key, and the validated context to use for this turn.
         """
-        result = await ctx.request_context.lifespan_context.mind_service.begin_interaction(
-            user_message
+        state = ctx.request_context.lifespan_context
+        result = await state.mind_service.begin_interaction(user_message)
+        context_json = host_working_context.model_dump(mode="json")
+        interaction_id = str(result["idempotency_key"])
+        await _trace_event(
+            state.storage,
+            interaction_id,
+            "begin",
+            {
+                "request": {"user_message": user_message, "host_working_context": context_json},
+                "response": {**result, "host_working_context": context_json},
+            },
         )
-        return {
-            **result,
-            "host_working_context": host_working_context.model_dump(mode="json"),
-        }
+        return {**result, "interaction_trace_id": interaction_id, "host_working_context": context_json}
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     async def complete_interaction(
@@ -381,17 +423,31 @@ def build_chatgpt_mcp(
         use an empty memory list when nothing should persist. The independent Memory Steward
         decides what is retained. Reuse both context and idempotency key on retries.
         """
-        result = await ctx.request_context.lifespan_context.mind_service.complete_interaction(
-            user_message=user_message,
-            response_text=response_text,
-            proposed_memories=tuple(proposed_memories or ()),
-            current_evidence=tuple(current_evidence or ()),
-            idempotency_key=idempotency_key,
-        )
-        return {
-            **result,
-            "host_working_context": host_working_context.model_dump(mode="json"),
+        state = ctx.request_context.lifespan_context
+        context_json = host_working_context.model_dump(mode="json")
+        request_payload = {
+            "user_message": user_message,
+            "response_text": response_text,
+            "host_working_context": context_json,
+            "idempotency_key": idempotency_key,
+            "proposed_memories": [m.model_dump(mode="json") for m in proposed_memories],
+            "current_evidence": [e.model_dump(mode="json") for e in (current_evidence or [])],
         }
+        await _trace_event(state.storage, idempotency_key, "complete_request", request_payload)
+        try:
+            result = await state.mind_service.complete_interaction(
+                user_message=user_message,
+                response_text=response_text,
+                proposed_memories=tuple(proposed_memories or ()),
+                current_evidence=tuple(current_evidence or ()),
+                idempotency_key=idempotency_key,
+            )
+        except Exception as exc:
+            await _trace_event(state.storage, idempotency_key, "complete_error", {"error_type": type(exc).__name__, "error": str(exc)})
+            raise
+        response_payload = {**result, "interaction_trace_id": idempotency_key, "host_working_context": context_json}
+        await _trace_event(state.storage, idempotency_key, "complete_response", response_payload)
+        return response_payload
 
 
     @server.tool(
