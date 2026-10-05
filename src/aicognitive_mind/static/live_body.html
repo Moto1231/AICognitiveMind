@@ -235,6 +235,16 @@
       </div>
     </nav>
 
+    <section class="sense-panel" aria-label="Senses">
+      <span class="sense-label">Senses</span>
+      <button
+        id="sensesToggle"
+        class="senses-toggle"
+        type="button"
+        aria-pressed="false"
+      >Off</button>
+    </section>
+
     <div id="stage">
       <video id="liveScene" autoplay playsinline muted aria-label="Live camera scene"></video>
       <div id="audioMeter" class="audio-meter" aria-label="Microphone input level">
@@ -262,16 +272,6 @@
           <button id="sendInteraction" type="submit" aria-label="Send interaction">Send</button>
         </div>
       </form>
-    </section>
-
-    <section class="sense-panel" aria-label="Senses">
-      <span class="sense-label">Senses</span>
-      <button
-        id="sensesToggle"
-        class="senses-toggle"
-        type="button"
-        aria-pressed="false"
-      >Off</button>
     </section>
 
     <video id="video" autoplay playsinline muted hidden></video>
