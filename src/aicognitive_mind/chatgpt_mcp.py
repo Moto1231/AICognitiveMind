@@ -23,20 +23,17 @@ from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.voice_settings import VoiceSettings
 
-def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
+async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
     """Persist an exact MCP transport event for one Axiom interaction."""
-    import asyncio
-    asyncio.create_task(
-        storage.diagnostics.record(
-            DiagnosticObservation(
-                component="chatgpt_mcp",
-                operation="interaction_trace",
-                implementation={
-                    "interaction_id": interaction_id,
-                    "phase": phase,
-                    "payload": payload,
-                },
-            )
+    await storage.diagnostics.record(
+        DiagnosticObservation(
+            component="chatgpt_mcp",
+            operation="interaction_trace",
+            implementation={
+                "interaction_id": interaction_id,
+                "phase": phase,
+                "payload": payload,
+            },
         )
     )
 
@@ -398,7 +395,7 @@ def build_chatgpt_mcp(
         result = await state.mind_service.begin_interaction(user_message)
         context_json = host_working_context.model_dump(mode="json")
         interaction_id = str(result["idempotency_key"])
-        _trace_event(
+        await _trace_event(
             state.storage,
             interaction_id,
             "begin",
@@ -436,7 +433,7 @@ def build_chatgpt_mcp(
             "proposed_memories": [m.model_dump(mode="json") for m in proposed_memories],
             "current_evidence": [e.model_dump(mode="json") for e in (current_evidence or [])],
         }
-        _trace_event(state.storage, idempotency_key, "complete_request", request_payload)
+        await _trace_event(state.storage, idempotency_key, "complete_request", request_payload)
         try:
             result = await state.mind_service.complete_interaction(
                 user_message=user_message,
@@ -446,10 +443,10 @@ def build_chatgpt_mcp(
                 idempotency_key=idempotency_key,
             )
         except Exception as exc:
-            _trace_event(state.storage, idempotency_key, "complete_error", {"error_type": type(exc).__name__, "error": str(exc)})
+            await _trace_event(state.storage, idempotency_key, "complete_error", {"error_type": type(exc).__name__, "error": str(exc)})
             raise
         response_payload = {**result, "interaction_trace_id": idempotency_key, "host_working_context": context_json}
-        _trace_event(state.storage, idempotency_key, "complete_response", response_payload)
+        await _trace_event(state.storage, idempotency_key, "complete_response", response_payload)
         return response_payload
 
 
