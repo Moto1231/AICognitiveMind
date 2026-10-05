@@ -31,22 +31,34 @@
     .page-links a:hover { border-color: #687388; }
     #stage {
       width: 100%;
-      height: clamp(320px, 48vh, 520px);
+      height: clamp(300px, 55vh, 620px);
       background: #181a20;
       border-radius: 14px;
       overflow: hidden;
+      position: relative;
     }
-    @media (max-width: 700px) {
-      #stage { height: clamp(280px, 44vh, 420px); }
+    #liveScene {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #0b0c0f;
+      transform: scaleX(-1);
+      display: none;
     }
-    #stage canvas { display: block; width: 100%; height: 100%; }
-    #liveScene { position: absolute; inset: .75rem; width: min(42%, 360px); aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; border: 1px solid #373a44; background: #0b0c0f; transform: scaleX(-1); display: none; }
-    #stage { position: relative; }
-    .audio-meter { position: absolute; left: .75rem; bottom: .75rem; width: min(42%, 360px); padding: .55rem .7rem; border: 1px solid #373a44; border-radius: 10px; background: rgba(16,17,20,.88); display: none; }
+    .audio-meter {
+      position: absolute;
+      left: 1rem;
+      right: 1rem;
+      bottom: 1rem;
+      padding: .65rem .8rem;
+      border: 1px solid #373a44;
+      border-radius: 10px;
+      background: rgba(16,17,20,.88);
+      display: none;
+    }
     .audio-meter-label { display: flex; justify-content: space-between; gap: .5rem; color: #c8ccd5; font-size: .8rem; margin-bottom: .35rem; }
     .audio-meter-track { height: .55rem; border-radius: 999px; background: #2a2d36; overflow: hidden; }
     #audioMeterFill { height: 100%; width: 0%; background: #65d39b; border-radius: inherit; transition: width .08s linear; }
-    @media (max-width: 700px) { #liveScene, .audio-meter { width: calc(50% - 1.125rem); } }
     button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .5; }
     #status { white-space: pre-wrap; background: #181a20; padding: 1rem; border-radius: 10px; margin-top: 1rem; min-height: 6rem; }
@@ -220,7 +232,6 @@
         <a href="/" aria-label="Back to portal">← Portal</a>
       </div>
       <div class="page-links">
-        <a href="/body/avatar">Avatar Editor</a>
       </div>
     </nav>
 
@@ -265,19 +276,11 @@
 
     <video id="video" autoplay playsinline muted hidden></video>
     <canvas id="captureCanvas" hidden></canvas>
-    <div id="status">Attaching Genesis...</div>
+    <div id="status">Axiom Body ready. Turn Senses on to activate vision and hearing.</div>
     <a id="evidenceArtifact" href="#" target="_blank" rel="noopener" hidden>Open evidence artifact</a>
   </main>
 
   <script type="module">
-    import * as THREE from "three";
-    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-    import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-    import {
-      AvatarCustomizer,
-      loadSavedAvatarAppearance
-    } from "/static/avatar_customizer.js";
     import {
       applyVoicePack,
       loadSavedVoicePack
@@ -301,30 +304,6 @@
     const interactionHistory = document.getElementById("interactionHistory");
     const chatEmpty = document.getElementById("chatEmpty");
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    stage.appendChild(renderer.domElement);
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
-    camera.position.set(0, 1.15, 4.0);
-
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 1.05, 0);
-    controls.enableDamping = true;
-
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x333333, 2.0));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
-    keyLight.position.set(1.5, 2.5, 2.0);
-    scene.add(keyLight);
-
-    const loader = new GLTFLoader();
-    loader.register((parser) => new VRMLoaderPlugin(parser));
-
-    const clock = new THREE.Clock();
-    let currentVrm = null;
-    let avatarCustomizer = null;
     let cameraStream = null;
     let microphoneStream = null;
     let recorder = null;
@@ -554,72 +533,8 @@
       }
     }
 
-    function resize() {
-      const width = stage.clientWidth;
-      const height = stage.clientHeight;
-      renderer.setSize(width, height, false);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-    }
-
     function loadVoices() {
       voices = window.speechSynthesis?.getVoices?.() || [];
-    }
-
-    function frameAvatar(object, padding = 1.22) {
-      const box = new THREE.Box3().setFromObject(object);
-      if (box.isEmpty()) return;
-
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const aspect = Math.max(0.25, camera.aspect || 1);
-      const verticalFov = THREE.MathUtils.degToRad(camera.fov);
-      const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * aspect);
-
-      const distanceForHeight =
-        (size.y * padding) / (2 * Math.tan(verticalFov / 2));
-      const distanceForWidth =
-        (size.x * padding) / (2 * Math.tan(horizontalFov / 2));
-      const distance = Math.max(distanceForHeight, distanceForWidth, 1.5);
-
-      camera.position.set(center.x, center.y, center.z + distance);
-      camera.near = Math.max(0.01, distance / 100);
-      camera.far = Math.max(50, distance * 20);
-      camera.updateProjectionMatrix();
-
-      controls.target.copy(center);
-      controls.update();
-    }
-
-    function attachAvatar(gltf) {
-      const vrm = gltf.userData.vrm;
-      if (!vrm) {
-        setStatus("Genesis did not load as a VRM avatar.");
-        return;
-      }
-      VRMUtils.removeUnnecessaryVertices(gltf.scene);
-      VRMUtils.combineSkeletons(gltf.scene);
-      VRMUtils.combineMorphs(vrm);
-      VRMUtils.rotateVRM0(vrm);
-      vrm.scene.traverse((object) => { object.frustumCulled = false; });
-      currentVrm = vrm;
-      scene.add(vrm.scene);
-      frameAvatar(vrm.scene);
-      avatarCustomizer = new AvatarCustomizer(vrm);
-      avatarCustomizer.apply(loadSavedAvatarAppearance());
-      setStatus("LIVE BODY READY\nGenesis attached. Eyes, Ears, Face, and Mouth are connected.");
-    }
-
-    function applyFaceIntent(intent) {
-      if (!currentVrm?.expressionManager || !intent) return;
-      const manager = currentVrm.expressionManager;
-      const expression = String(intent.metadata?.expression || "neutral");
-      const weight = Number(intent.metadata?.weight ?? 1.0);
-      manager.resetValues();
-      if (manager.getExpression(expression)) {
-        manager.setValue(expression, Math.max(0, Math.min(1, weight)));
-      }
-      manager.update();
     }
 
     function speakIntent(intent) {
@@ -806,15 +721,7 @@
     }
 
     async function consumeExpressionOutputs() {
-      const [faceResponse, mouthResponse] = await Promise.all([
-        bodyFetch("/v1/body/face/next", { cache: "no-store" }),
-        bodyFetch("/v1/body/mouth/next", { cache: "no-store" })
-      ]);
-
-      if (faceResponse.ok) {
-        const faceIntent = await faceResponse.json();
-        if (faceIntent) applyFaceIntent(faceIntent);
-      }
+      const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
       if (mouthResponse.ok) {
         const mouthIntent = await mouthResponse.json();
         if (mouthIntent) speakIntent(mouthIntent);
@@ -1282,14 +1189,6 @@
       await enableSenses();
     }
 
-    function animate() {
-      requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-      if (currentVrm) currentVrm.update(delta);
-      controls.update();
-      renderer.render(scene, camera);
-    }
-
     interactionForm.addEventListener("submit", submitTextInteraction);
     talkToggle.addEventListener("click", () => talkEnabled ? stopTalking() : startTalking());
     interactionMessage.addEventListener("input", resizeComposer);
@@ -1318,7 +1217,6 @@
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
 
-    window.addEventListener("resize", resize);
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) { checkForBodyPageUpdate(); refreshSharedVoiceSettings(); }
     });
@@ -1328,10 +1226,8 @@
       window.speechSynthesis?.cancel();
     });
 
-    resize();
     refreshSharedVoiceSettings();
     window.setInterval(refreshSharedVoiceSettings, 10_000);
-    animate();
     checkForBodyPageUpdate();
     window.setInterval(checkForBodyPageUpdate, 12_000);
     if (localStorage.getItem("aicognitive_mind.senses") === "on") {
@@ -1339,12 +1235,6 @@
     } else {
       setSensesUi(false);
     }
-    loader.load(
-      "/v1/body/face/avatar",
-      attachAvatar,
-      undefined,
-      (error) => setStatus("Could not attach Genesis: " + error.message)
-    );
   </script>
 </body>
 </html>
