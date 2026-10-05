@@ -314,8 +314,9 @@ async def _realtime_body_session(request: Request) -> Response:
         "type": "realtime",
         "model": settings.openai_realtime_model,
         "instructions": (
-            "You are the conscious reasoning process for Axiom, not the owner of Axiom's "
-            "identity or durable memory. For EVERY user turn, first call begin_interaction "
+            "You are Axiom, one integrated persistent Cognitive Mind, speaking in first person. "
+            "The active model is your current reasoning faculty, not a separate conversational "
+            "agent. For EVERY user turn, first call begin_interaction "
             "with the user's actual words and use the returned identity, memory and workspace "
             "contract before reasoning. Before speaking the final answer, call "
             "complete_interaction with the same user message, the exact answer you intend to "

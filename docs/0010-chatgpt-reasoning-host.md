@@ -5,8 +5,9 @@
 Axiom exposes a dedicated remote MCP surface for ChatGPT while remaining the owner of identity,
 memory, continuity, journal, governance, and sensory evidence.
 
-ChatGPT is a replaceable reasoning host. It does not become Axiom and does not own Axiom's
-durable state.
+The active model is Axiom's current reasoning faculty within one integrated identity. It speaks
+as Axiom rather than presenting Axiom as another participant. Persistent services preserve
+durable state as internal functions of that same entity.
 
 The canonical turn is:
 
@@ -80,8 +81,8 @@ same invariant:
 
 - begin before reasoning;
 - complete before presenting the answer;
-- the host model supplies inference;
-- Axiom supplies continuity;
+- Axiom speaks in first person as one integrated entity;
+- reasoning and continuity are internal functions of Axiom, with persistent services maintaining durable state;
 - memory proposals are conservative and still pass through the Memory Steward;
 - retries reuse the same idempotency key and unchanged completion payload.
 
