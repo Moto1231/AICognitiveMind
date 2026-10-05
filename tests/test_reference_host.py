@@ -108,7 +108,10 @@ class ReferenceHostTests(unittest.IsolatedAsyncioTestCase):
                     type="function_call",
                     name="finalize_turn",
                     arguments=(
-                        '{"response_text":"Recorded.","proposed_memories":['
+                        '{"response_text":"Recorded.","working_context":'
+                        '{"summary":"Parks are the current topic.","participants":[],'
+                        '"active_speaker":null,"addressee":null,"unresolved_references":[]},'
+                        '"proposed_memories":['
                         '{"memory_class":"semantic","content":"Will likes parks.",'
                         '"associations":["Will","parks"],'
                         '"grounding":["Will directly stated this preference."]}'
@@ -142,7 +145,7 @@ class ReferenceHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["tools"][0]["name"], "finalize_turn")
         self.assertIn("recalled_context", request["input"])
 
-    async def test_openai_reasoner_falls_back_to_plain_response_without_memory(self) -> None:
+    async def test_openai_reasoner_requires_a_structured_context_update(self) -> None:
         response = SimpleNamespace(
             output=[],
             output_text="No durable learning in this turn.",
@@ -152,17 +155,15 @@ class ReferenceHostTests(unittest.IsolatedAsyncioTestCase):
             client=FakeOpenAIClient(response),
         )
 
-        result = await reasoner.reason(
-            "Say hello.",
-            {
-                "mind": {"identity": {"self_name": "Genesis"}},
-                "recalled_context": {},
-                "conscious_workspace_contract": "Use memory responsibly.",
-            },
-        )
-
-        self.assertEqual(result.response_text, "No durable learning in this turn.")
-        self.assertEqual(result.proposed_memories, ())
+        with self.assertRaisesRegex(RuntimeError, "required finalize_turn context"):
+            await reasoner.reason(
+                "Say hello.",
+                {
+                    "mind": {"identity": {"self_name": "Genesis"}},
+                    "recalled_context": {},
+                    "conscious_workspace_contract": "Use memory responsibly.",
+                },
+            )
 
 
 if __name__ == "__main__":

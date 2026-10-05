@@ -5,8 +5,10 @@ import asyncio
 import json
 import os
 import sys
-from dataclasses import dataclass
-from typing import Any, Protocol
+from dataclasses import dataclass, field
+from typing import Any, Literal, Protocol
+
+from pydantic import BaseModel, Field, model_validator
 
 from mcp import Client, StdioServerParameters
 from openai import AsyncOpenAI
@@ -29,6 +31,45 @@ def _structured(result: Any, tool_name: str) -> dict[str, Any]:
 class HostReasoningResult:
     response_text: str
     proposed_memories: tuple[MemoryProposal, ...] = ()
+    working_context: "HostWorkingContext" = field(default_factory=lambda: HostWorkingContext())
+
+
+class HostParticipantContext(BaseModel):
+    """Session-local participant tracking; identity claims retain their evidence state."""
+
+    participant_id: str = Field(min_length=1, max_length=80)
+    name: str | None = Field(default=None, max_length=120)
+    identity_status: Literal["unresolved", "candidate", "confirmed"] = "unresolved"
+    presence_status: Literal["observed", "reported", "referenced", "unknown"] = "unknown"
+    relationship: str | None = Field(default=None, max_length=200)
+    grounding: tuple[str, ...] = Field(default=(), max_length=8)
+
+    @model_validator(mode="after")
+    def confirmed_identity_requires_grounding(self) -> "HostParticipantContext":
+        if self.identity_status == "confirmed" and (not self.name or not self.grounding):
+            raise ValueError("Confirmed identity requires a name and explicit grounding")
+        return self
+
+
+class HostWorkingContext(BaseModel):
+    """Volatile active context owned by one reasoning-host conversation."""
+
+    summary: str = Field(default="", max_length=2000)
+    participants: tuple[HostParticipantContext, ...] = Field(default=(), max_length=32)
+    active_speaker: str | None = Field(default=None, max_length=80)
+    addressee: str | None = Field(default=None, max_length=80)
+    unresolved_references: tuple[str, ...] = Field(default=(), max_length=24)
+
+    @model_validator(mode="after")
+    def validate_participant_references(self) -> "HostWorkingContext":
+        participant_ids = [participant.participant_id for participant in self.participants]
+        if len(participant_ids) != len(set(participant_ids)):
+            raise ValueError("Participant IDs must be unique within a host session")
+        known_ids = set(participant_ids)
+        for reference in (self.active_speaker, self.addressee):
+            if reference is not None and reference not in known_ids:
+                raise ValueError("Speaker and addressee must reference a tracked participant")
+        return self
 
 
 @dataclass(frozen=True)
@@ -46,7 +87,7 @@ class HostReasoner(Protocol):
 
 
 class OpenAIHostReasoner:
-    """Replaceable OpenAI reasoning host that does not own Mind state."""
+    """OpenAI reasoning process integrated into Axiom's host-maintained session."""
 
     def __init__(
         self,
@@ -65,15 +106,23 @@ class OpenAIHostReasoner:
         contract = str(begin_context.get("conscious_workspace_contract", "")).strip()
         recalled_context = begin_context.get("recalled_context", {})
         mind = begin_context.get("mind", {})
+        working_context = HostWorkingContext.model_validate(
+            begin_context.get("host_working_context", {})
+        )
 
         instructions = (
             f"{contract}\n\n"
             "HOST BOUNDARY:\n"
             "The MCP host already completed begin_interaction for this turn. "
             "Reason using the supplied Mind identity and recalled context. "
-            "Do not claim that the reasoning model owns identity or durable memory. "
-            "When the answer is ready, call finalize_turn with the human-facing response "
-            "and only stable learning that deserves durable-memory review. "
+            "You are Axiom's active reasoning faculty. Maintain the supplied working_context "
+            "as your volatile, session-local short-term context and update it on every turn. "
+            "Track participants, the current speaker and addressee, topic, and unresolved references. "
+            "Keep identity_status unresolved or candidate unless current evidence or explicit "
+            "confirmation grounds a known identity; do not turn a person mentioned in history into "
+            "the person currently present. Preserve evidence and uncertainty in grounding. "
+            "When the answer is ready, call finalize_turn with the human-facing response, the updated "
+            "working_context, and only stable learning that deserves durable-memory review. "
             "Do not propose identity changes. If nothing should persist, use an empty "
             "proposed_memories array."
         )
@@ -91,6 +140,54 @@ class OpenAIHostReasoner:
                     "response_text": {
                         "type": "string",
                         "minLength": 1,
+                    },
+                    "working_context": {
+                        "type": "object",
+                        "properties": {
+                            "summary": {"type": "string", "maxLength": 2000},
+                            "participants": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "participant_id": {"type": "string", "maxLength": 80},
+                                        "name": {"type": ["string", "null"], "maxLength": 120},
+                                        "identity_status": {
+                                            "type": "string",
+                                            "enum": ["unresolved", "candidate", "confirmed"],
+                                        },
+                                        "presence_status": {
+                                            "type": "string",
+                                            "enum": ["observed", "reported", "referenced", "unknown"],
+                                        },
+                                        "relationship": {"type": ["string", "null"], "maxLength": 200},
+                                        "grounding": {
+                                            "type": "array",
+                                            "maxItems": 8,
+                                            "items": {"type": "string"},
+                                        },
+                                    },
+                                    "required": [
+                                        "participant_id", "name", "identity_status",
+                                        "presence_status", "relationship", "grounding",
+                                    ],
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "active_speaker": {"type": ["string", "null"], "maxLength": 80},
+                            "addressee": {"type": ["string", "null"], "maxLength": 80},
+                            "unresolved_references": {
+                                "type": "array",
+                                "maxItems": 24,
+                                "items": {"type": "string"},
+                            },
+                        },
+                        "required": [
+                            "summary", "participants", "active_speaker", "addressee",
+                            "unresolved_references",
+                        ],
+                        "additionalProperties": False,
                     },
                     "proposed_memories": {
                         "type": "array",
@@ -130,7 +227,7 @@ class OpenAIHostReasoner:
                         },
                     },
                 },
-                "required": ["response_text", "proposed_memories"],
+                "required": ["response_text", "working_context", "proposed_memories"],
                 "additionalProperties": False,
             },
             "strict": True,
@@ -144,10 +241,12 @@ class OpenAIHostReasoner:
                     "human_message": user_message,
                     "mind": mind,
                     "recalled_context": recalled_context,
+                    "working_context": working_context.model_dump(mode="json"),
                 },
                 default=str,
             ),
             tools=[finalize_tool],
+            tool_choice={"type": "function", "name": "finalize_turn"},
         )
 
         for item in response.output:
@@ -163,9 +262,11 @@ class OpenAIHostReasoner:
                     MemoryProposal.model_validate(memory)
                     for memory in arguments.get("proposed_memories", [])
                 )
+                context = HostWorkingContext.model_validate(arguments["working_context"])
                 return HostReasoningResult(
                     response_text=response_text,
                     proposed_memories=memories,
+                    working_context=context,
                 )
 
         response_text = response.output_text.strip()
@@ -173,15 +274,16 @@ class OpenAIHostReasoner:
             raise RuntimeError(
                 "Reasoning host returned neither finalize_turn nor response text"
             )
-        return HostReasoningResult(response_text=response_text)
+        raise RuntimeError("Reasoning host did not return the required finalize_turn context")
 
 
 class CognitiveMindHost:
-    """Host orchestration: begin through MCP, reason externally, complete through MCP."""
+    """One conversation host; its volatile working context is private to this instance."""
 
     def __init__(self, client: Any, reasoner: HostReasoner) -> None:
         self._client = client
         self._reasoner = reasoner
+        self._working_context = HostWorkingContext()
 
     async def interact(self, user_message: str) -> HostTurn:
         begun = _structured(
@@ -194,7 +296,11 @@ class CognitiveMindHost:
         if begun.get("status") != "ready_to_reason":
             raise RuntimeError(f"Mind is not ready to reason: {begun}")
 
-        reasoning = await self._reasoner.reason(user_message, begun)
+        reasoning_context = {
+            **begun,
+            "host_working_context": self._working_context.model_dump(mode="json"),
+        }
+        reasoning = await self._reasoner.reason(user_message, reasoning_context)
 
         completed = _structured(
             await self._client.call_tool(
@@ -213,6 +319,8 @@ class CognitiveMindHost:
         )
         if completed.get("status") != "interaction_committed":
             raise RuntimeError(f"Mind did not commit interaction: {completed}")
+
+        self._working_context = reasoning.working_context
 
         return HostTurn(
             response_text=reasoning.response_text,
