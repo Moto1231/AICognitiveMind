@@ -110,45 +110,33 @@ class AvatarCustomizationV01Tests(unittest.TestCase):
         self.assertIn("clearSavedAvatarAppearance", source)
         self.assertIn("DEFAULT_AVATAR_APPEARANCE", source)
 
-    def test_avatar_editor_is_separate_from_live_body(self) -> None:
+    def test_avatar_editor_surface_is_removed(self) -> None:
         live_markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
         )
-        editor_markup = Path("src/aicognitive_mind/static/avatar_editor.html").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertNotIn('id="avatarEditorTitle"', live_markup)
-        self.assertNotIn('data-avatar-key="skinColor"', live_markup)
-        self.assertNotIn('id="saveAvatarAppearance"', live_markup)
-
-        self.assertIn("<h1>Avatar Editor</h1>", editor_markup)
-        self.assertIn('data-avatar-key="skinColor"', editor_markup)
-        self.assertIn('data-avatar-key="hairColor"', editor_markup)
-        self.assertIn('data-avatar-key="headSize"', editor_markup)
-        self.assertIn('data-avatar-key="eyeSpacing"', editor_markup)
-        self.assertIn('data-avatar-key="torsoWidth"', editor_markup)
-        self.assertIn('data-avatar-key="shoulderWidth"', editor_markup)
-        self.assertIn('data-avatar-key="armThickness"', editor_markup)
-        self.assertIn('data-avatar-key="legThickness"', editor_markup)
-        self.assertIn('id="saveAvatarAppearance"', editor_markup)
-        self.assertIn('id="resetAvatarAppearance"', editor_markup)
-        self.assertIn('from "/static/avatar_customizer.js"', editor_markup)
-        self.assertIn('href="/body/live"', editor_markup)
-
         portal_markup = Path("src/aicognitive_mind/static/index.html").read_text(
             encoding="utf-8"
         )
-        self.assertIn('href="/body/avatar"', portal_markup)
-        self.assertIn("Avatar Editor", portal_markup)
+        api_source = Path("src/aicognitive_mind/api.py").read_text(
+            encoding="utf-8"
+        )
 
-    def test_live_body_still_applies_saved_avatar_appearance(self) -> None:
+        self.assertNotIn('href="/body/avatar"', live_markup)
+        self.assertNotIn("Avatar Editor", live_markup)
+        self.assertNotIn('href="/body/avatar"', portal_markup)
+        self.assertNotIn("Avatar Editor", portal_markup)
+        self.assertNotIn('"/body/avatar"', api_source)
+        self.assertFalse(Path("src/aicognitive_mind/static/avatar_editor.html").exists())
+
+    def test_live_body_has_no_avatar_renderer(self) -> None:
         markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("loadSavedAvatarAppearance", markup)
-        self.assertIn("avatarCustomizer.apply(loadSavedAvatarAppearance())", markup)
+        self.assertNotIn("loadSavedAvatarAppearance", markup)
+        self.assertNotIn("AvatarCustomizer", markup)
+        self.assertNotIn("@pixiv/three-vrm", markup)
+        self.assertNotIn("avatarCustomizer", markup)
 
 
 if __name__ == "__main__":
