@@ -170,6 +170,14 @@ to the canonical existing Mind so changing host processes or reasoning models do
 identity. The first reference reasoner uses the OpenAI Responses API, but it remains outside the
 Mind and can be replaced without changing identity or durable memory.
 
+At the start of each turn, the host builds a small current-situation inventory from the message,
+timestamp, host runtime, and any observations explicitly supplied by host adapters. The reference
+console has no live camera, microphone, or location adapters, so it marks those senses unavailable
+and does not infer where the human is or who is nearby. The reasoning host orients on that current
+inventory first, then reconciles it with the session's `HostWorkingContext` and the Memory Steward's
+chronological recent turns. When the session context is empty, it can reconstruct the active episode
+from those sources while keeping unsupported identities and scene details unresolved.
+
 ## September 23 demo: VS Code as the MCP host
 
 The workspace includes `.vscode/mcp.json`. In a Codespace, VS Code starts the Cognitive Mind as a
