@@ -112,10 +112,11 @@ and unresolved references. This context is updated every turn and remains separa
 Memory Steward controlled durable memory. A host must preserve uncertainty: prior mentions,
 names, and visual resemblance do not independently establish who is currently present.
 
-The reference host represents this context as a validated `HostWorkingContext` and only adopts
-the model's update after Axiom commits the response. Direct MCP and Realtime hosts receive the
-same behavioral contract in their instructions; they currently maintain it in their conversation
-state rather than through that reference host's structured schema.
+Every host passes a validated `HostWorkingContext` to `begin_interaction` and returns its updated
+context with `complete_interaction`. The MCP tools use the same schema for ChatGPT and Realtime
+as the reference host. The reference host adopts its update only after Axiom commits the response;
+other hosts carry the returned context in their own conversation state. Axiom validates and
+echoes the structure but does not store this volatile context as durable memory.
 
 Body presence observations are volatile and scoped by Mind and `X-Body-Session`. This prevents
 one Mind or Body session from seeing another scope's transient observations. It does not by

@@ -11,6 +11,7 @@ from mcp.types import CallToolResult, ImageContent, AudioContent, TextContent
 
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.governance_steward import GovernanceStewardTool
+from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime
 from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.mcp_service import (
@@ -99,30 +100,41 @@ async def run_sleep_cycle(ctx: Context[AppState]) -> dict[str, Any]:
 @mcp.tool()
 async def begin_interaction(
     user_message: str,
+    host_working_context: HostWorkingContext,
     ctx: Context[AppState],
 ) -> dict[str, Any]:
     """Mandatory first step before answering a human as this Cognitive Mind.
 
-    Returns identity plus related durable memory and prior experience. The connected MCP host
-    supplies reasoning; the Mind supplies continuity. Do not answer the human as the Mind before
-    consulting this tool.
+    Supply the actual user message and the current conversation's host_working_context. Returns
+    identity plus recalled durable memory and prior experience, and echoes the validated short-term
+    context. The host owns that volatile context; the Mind does not retain it as durable memory.
+    Do not answer the human as the Mind before consulting this tool.
     """
-    return await ctx.request_context.lifespan_context.mind_service.begin_interaction(user_message)
+    result = await ctx.request_context.lifespan_context.mind_service.begin_interaction(
+        user_message
+    )
+    return {
+        **result,
+        "host_working_context": host_working_context.model_dump(mode="json"),
+    }
 
 @mcp.tool()
 async def complete_interaction(
     user_message: str,
     response_text: str,
+    host_working_context: HostWorkingContext,
+    idempotency_key: str,
     proposed_memories: list[MemoryProposal],
     ctx: Context[AppState],
     current_evidence: list[ResearchObservation] | None = None,
     belief_transitions: list[BeliefTransitionProposal] | None = None,
     belief_reframes: list[BeliefReframeProposal] | None = None,
-    idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """Mandatory final step after reasoning and before presenting the final answer.
 
-    The connected model proposes only stable learning worth preserving. The Memory Steward
+    Supply the updated host_working_context and the idempotency_key returned by begin_interaction.
+    The host context is returned to the host for its next turn and is not made durable. The
+    connected model proposes only stable learning worth preserving. The Memory Steward
     independently accepts/rejects those proposals, commits accepted durable memory, and journals
     the complete user/response experience. Pass an empty list when nothing deserves retention.
     When current external evidence materially informed reasoning, include it with its separate
@@ -137,7 +149,7 @@ async def complete_interaction(
     values, the host may submit that exact pair in belief_reframes. The Steward revalidates the
     finding and preserves both values as scoped beliefs rather than selecting a winner.
     """
-    return await ctx.request_context.lifespan_context.mind_service.complete_interaction(
+    result = await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,
         response_text=response_text,
         proposed_memories=tuple(proposed_memories),
@@ -146,6 +158,10 @@ async def complete_interaction(
         belief_reframes=tuple(belief_reframes or ()),
         idempotency_key=idempotency_key,
     )
+    return {
+        **result,
+        "host_working_context": host_working_context.model_dump(mode="json"),
+    }
 
 @mcp.tool()
 async def attach_reasoning_host(name: str, model: str, ctx: Context[AppState]) -> dict[str, Any]:

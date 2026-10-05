@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 from typing import Any
 
+from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.reference_host import (
     CognitiveMindHost,
@@ -27,9 +28,11 @@ class FakeMcpClient:
             return FakeMcpResult(
                 {
                     "status": "ready_to_reason",
+                    "idempotency_key": "turn-key",
                     "mind": {"identity": {"self_name": "Genesis"}},
                     "recalled_context": {"summary": "Birthday memory recalled."},
                     "conscious_workspace_contract": "Recall before concluding.",
+                    "host_working_context": arguments["host_working_context"],
                 }
             )
         if name == "complete_interaction":
@@ -37,6 +40,7 @@ class FakeMcpClient:
                 {
                     "status": "interaction_committed",
                     "memory_decisions": [{"accepted": True}],
+                    "host_working_context": arguments["host_working_context"],
                 }
             )
         raise AssertionError(name)
@@ -54,6 +58,17 @@ class FakeReasoner:
         self.begin_context = begin_context
         return HostReasoningResult(
             response_text="Your birthday is February 7.",
+            working_context=HostWorkingContext(
+                summary="Discussing Will's birthday.",
+                participants=({
+                    "participant_id": "user",
+                    "name": "Will",
+                    "identity_status": "confirmed",
+                    "presence_status": "reported",
+                    "grounding": ("The user identified themself as Will.",),
+                },),
+                active_speaker="user",
+            ),
             proposed_memories=(
                 MemoryProposal(
                     memory_class="semantic",
@@ -99,7 +114,28 @@ class ReferenceHostTests(unittest.IsolatedAsyncioTestCase):
             complete_arguments["proposed_memories"][0]["content"],
             "Will's birthday is February 7.",
         )
+        self.assertEqual(complete_arguments["idempotency_key"], "turn-key")
+        self.assertEqual(
+            complete_arguments["host_working_context"]["summary"],
+            "Discussing Will's birthday.",
+        )
         self.assertEqual(turn.memory_decisions, ({"accepted": True},))
+
+    async def test_host_passes_its_updated_context_into_the_next_turn(self) -> None:
+        client = FakeMcpClient()
+        host = CognitiveMindHost(client=client, reasoner=FakeReasoner())
+
+        await host.interact("We are discussing Will.")
+        await host.interact("When is his birthday?")
+
+        second_begin = client.calls[2][1]
+        self.assertEqual(
+            second_begin["host_working_context"]["summary"],
+            "Discussing Will's birthday.",
+        )
+        self.assertEqual(
+            second_begin["host_working_context"]["active_speaker"], "user"
+        )
 
     async def test_openai_reasoner_converts_finalize_tool_call_into_memory_proposal(self) -> None:
         response = SimpleNamespace(

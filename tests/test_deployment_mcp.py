@@ -121,8 +121,17 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(initialized.json()["result"]["serverInfo"]["name"], "Axiom")
         listed = await self.rpc(token)
         self.assertEqual(listed.status_code, 200, listed.text)
-        names = {item["name"] for item in listed.json()["result"]["tools"]}
+        tools = {item["name"]: item for item in listed.json()["result"]["tools"]}
+        names = set(tools)
         self.assertTrue({"begin_interaction", "complete_interaction"}.issubset(names))
+        for name in ("begin_interaction", "complete_interaction"):
+            self.assertIn(
+                "host_working_context",
+                tools[name]["inputSchema"]["required"],
+            )
+        required = tools["complete_interaction"]["inputSchema"]["required"]
+        self.assertIn("idempotency_key", required)
+        self.assertIn("proposed_memories", required)
 
     @deployment_running
     async def test_invalid_expired_and_wrong_resource_tokens_remain_rejected(self):
