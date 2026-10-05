@@ -16,6 +16,13 @@ The canonical turn is:
 3. `complete_interaction(user_message, response_text, idempotency_key, proposed_memories)`
 4. present the committed response
 
+The reasoning host also owns volatile working context for the lifetime of its conversation. It
+updates a bounded snapshot of the active topic, participants, speaker/addressee, and unresolved
+references on each turn, and only adopts that update after `complete_interaction` commits. This
+context is session-local and is not durable memory. Identity status remains unresolved or a
+candidate until current evidence or explicit confirmation grounds it; historical mention alone
+does not establish who is present now.
+
 The ChatGPT-facing MCP server deliberately exposes a smaller surface than the administrative
 MCP server.
 
