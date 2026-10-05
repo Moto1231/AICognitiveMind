@@ -337,7 +337,7 @@ async def _realtime_body_session(request: Request) -> Response:
             "Memory Steward. Keep spoken responses concise unless the user asks for detail."
         ),
         "audio": {
-            "input": {"transcription": {"model": "gpt-4o-mini-transcribe"},
+            "input": {"transcription": {"model": "gpt-4o-mini-transcribe"}},
         },
         "output_modalities": ["text"],
         "tools": [
