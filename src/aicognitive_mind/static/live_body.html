@@ -1239,6 +1239,8 @@
 
     refreshSharedVoiceSettings();
     window.setInterval(refreshSharedVoiceSettings, 10_000);
+    checkForHostCameraRequest();
+    window.setInterval(checkForHostCameraRequest, 750);
     checkForBodyPageUpdate();
     window.setInterval(checkForBodyPageUpdate, 12_000);
     if (localStorage.getItem("aicognitive_mind.senses") === "on") {
