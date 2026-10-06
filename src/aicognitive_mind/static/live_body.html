@@ -370,10 +370,14 @@
     async function performBoundedLook(seconds, spokenCommand) {
       if (boundedLookActive) return;
       boundedLookActive = true;
-      let stream = null;
+      let stream = cameraStream;
+      let temporaryStream = false;
       try {
         setStatus("Axiom is looking for " + seconds + " seconds…");
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        if (!stream) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          temporaryStream = true;
+        }
         const observations = [];
         const sampleCount = Math.min(3, Math.max(1, seconds));
         for (let i = 0; i < sampleCount; i++) {
@@ -404,14 +408,14 @@
       } catch (error) {
         setStatus("Bounded camera observation failed: " + error.message);
       } finally {
-        stream?.getTracks().forEach((track) => track.stop());
+        if (temporaryStream) stream?.getTracks().forEach((track) => track.stop());
         boundedLookActive = false;
       }
     }
     let hostCameraRequestBusy = false;
 
     async function checkForHostCameraRequest() {
-      if (hostCameraRequestBusy || boundedLookActive || document.hidden) return;
+      if (hostCameraRequestBusy || boundedLookActive) return;
       try {
         const response = await bodyFetch("/v1/body/camera/request", { cache: "no-store" });
         if (!response.ok) return;
@@ -419,11 +423,17 @@
         if (!command?.request_id) return;
 
         hostCameraRequestBusy = true;
-        let stream = null;
+        let stream = cameraStream;
+        let temporaryStream = false;
         try {
           const seconds = Math.min(MAX_LOOK_SECONDS, Math.max(1, Number(command.seconds) || 3));
           setStatus("Axiom camera requested by reasoning host for " + seconds + " seconds…");
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+
+          if (!stream) {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            temporaryStream = true;
+          }
+
           await delay(seconds * 1000);
 
           const track = stream.getVideoTracks()[0];
@@ -467,7 +477,7 @@
           if (!complete.ok) throw new Error(await responseErrorMessage(complete));
           setStatus("Axiom camera observation delivered to reasoning host.");
         } finally {
-          stream?.getTracks().forEach((track) => track.stop());
+          if (temporaryStream) stream?.getTracks().forEach((track) => track.stop());
           hostCameraRequestBusy = false;
         }
       } catch (error) {
@@ -475,8 +485,6 @@
         hostCameraRequestBusy = false;
       }
     }
-
-    setInterval(checkForHostCameraRequest, 750);
 
     let pageSourceSnapshot = null;
     let pageRefreshPending = false;
@@ -1240,7 +1248,6 @@
     refreshSharedVoiceSettings();
     window.setInterval(refreshSharedVoiceSettings, 10_000);
     checkForHostCameraRequest();
-    window.setInterval(checkForHostCameraRequest, 750);
     checkForBodyPageUpdate();
     window.setInterval(checkForBodyPageUpdate, 12_000);
     if (localStorage.getItem("aicognitive_mind.senses") === "on") {
