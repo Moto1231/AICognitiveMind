@@ -337,18 +337,18 @@
     async function captureVisualFrame(stream) {
       const track = stream.getVideoTracks()[0];
       if (!track) throw new Error("Camera did not provide a video track.");
-      const captureVideo = document.createElement("video");
-      captureVideo.playsInline = true;
-      captureVideo.muted = true;
-      captureVideo.srcObject = stream;
-      await captureVideo.play();
-      if (!captureVideo.videoWidth || !captureVideo.videoHeight) await delay(250);
+      if (liveScene.srcObject !== stream) liveScene.srcObject = stream;
+      if (liveScene.paused) await liveScene.play();
+      if (!liveScene.videoWidth || !liveScene.videoHeight) await delay(250);
+      if (!liveScene.videoWidth || !liveScene.videoHeight) {
+        throw new Error("Displayed camera preview did not provide a usable frame.");
+      }
 
       const maxWidth = 960;
-      const scale = Math.min(1, maxWidth / captureVideo.videoWidth);
-      canvas.width = Math.max(1, Math.round(captureVideo.videoWidth * scale));
-      canvas.height = Math.max(1, Math.round(captureVideo.videoHeight * scale));
-      canvas.getContext("2d").drawImage(captureVideo, 0, 0, canvas.width, canvas.height);
+      const scale = Math.min(1, maxWidth / liveScene.videoWidth);
+      canvas.width = Math.max(1, Math.round(liveScene.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(liveScene.videoHeight * scale));
+      canvas.getContext("2d").drawImage(liveScene, 0, 0, canvas.width, canvas.height);
 
       const ingress = await bodyFetch("/v1/body/eyes/observe", {
         method: "POST",
@@ -438,18 +438,18 @@
 
           const track = stream.getVideoTracks()[0];
           if (!track) throw new Error("Camera did not provide a video track.");
-          const captureVideo = document.createElement("video");
-          captureVideo.playsInline = true;
-          captureVideo.muted = true;
-          captureVideo.srcObject = stream;
-          await captureVideo.play();
-          if (!captureVideo.videoWidth || !captureVideo.videoHeight) await delay(250);
+          if (liveScene.srcObject !== stream) liveScene.srcObject = stream;
+          if (liveScene.paused) await liveScene.play();
+          if (!liveScene.videoWidth || !liveScene.videoHeight) await delay(250);
+          if (!liveScene.videoWidth || !liveScene.videoHeight) {
+            throw new Error("Displayed camera preview did not provide a usable frame.");
+          }
 
           const maxWidth = 960;
-          const scale = Math.min(1, maxWidth / captureVideo.videoWidth);
-          canvas.width = Math.max(1, Math.round(captureVideo.videoWidth * scale));
-          canvas.height = Math.max(1, Math.round(captureVideo.videoHeight * scale));
-          canvas.getContext("2d").drawImage(captureVideo, 0, 0, canvas.width, canvas.height);
+          const scale = Math.min(1, maxWidth / liveScene.videoWidth);
+          canvas.width = Math.max(1, Math.round(liveScene.videoWidth * scale));
+          canvas.height = Math.max(1, Math.round(liveScene.videoHeight * scale));
+          canvas.getContext("2d").drawImage(liveScene, 0, 0, canvas.width, canvas.height);
           const imageDataUrl = canvas.toDataURL("image/jpeg", 0.82);
 
           const ingress = await bodyFetch("/v1/body/eyes/observe", {
