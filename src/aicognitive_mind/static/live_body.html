@@ -314,6 +314,7 @@
     let audioContext = null;
     let audioAnalyser = null;
     let audioMeterSource = null;
+    let audioMeterOutput = null;
     let audioMeterFrame = null;
     let realtimeResponseDone = false;
     let realtimeResponseUsedMcp = false;
@@ -1010,6 +1011,8 @@
       audioMeterSource = null;
       if (audioAnalyser) { try { audioAnalyser.disconnect(); } catch (_) {} }
       audioAnalyser = null;
+      if (audioMeterOutput) { try { audioMeterOutput.disconnect(); } catch (_) {} }
+      audioMeterOutput = null;
       if (audioContext) { try { audioContext.close(); } catch (_) {} }
       audioContext = null;
       audioMeterFill.style.width = "0%";
@@ -1018,27 +1021,36 @@
 
     async function startAudioMeter(stream) {
       stopAudioMeter();
-      audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioContext.state === "suspended") await audioContext.resume();
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("This browser does not support audio level metering.");
+      audioContext = new AudioContextClass();
+      if (audioContext.state !== "running") await audioContext.resume();
+
       audioAnalyser = audioContext.createAnalyser();
-      audioAnalyser.fftSize = 512;
-      audioAnalyser.smoothingTimeConstant = 0.72;
+      audioAnalyser.fftSize = 1024;
+      audioAnalyser.smoothingTimeConstant = 0.35;
       audioMeterSource = audioContext.createMediaStreamSource(stream);
+      audioMeterOutput = audioContext.createGain();
+      // Keep the analyser in an actively rendered audio graph without
+      // monitoring the microphone through the speakers (feedback risk).
+      audioMeterOutput.gain.value = 0;
       audioMeterSource.connect(audioAnalyser);
-      const data = new Uint8Array(audioAnalyser.fftSize);
+      audioAnalyser.connect(audioMeterOutput);
+      audioMeterOutput.connect(audioContext.destination);
+
+      const data = new Float32Array(audioAnalyser.fftSize);
       const tick = () => {
-        // The meter is started before setSensesUi(true) completes during
-        // startup. Do not gate the first animation frame on sensesEnabled,
-        // or the loop exits before scheduling its next frame.
         if (!audioAnalyser || !audioContext || audioContext.state === "closed") return;
-        audioAnalyser.getByteTimeDomainData(data);
-        let sum = 0;
-        for (const value of data) {
-          const sample = (value - 128) / 128;
-          sum += sample * sample;
+        if (audioContext.state === "suspended") {
+          audioContext.resume().catch(() => {});
         }
+        audioAnalyser.getFloatTimeDomainData(data);
+        let sum = 0;
+        for (const sample of data) sum += sample * sample;
         const rms = Math.sqrt(sum / Math.max(1, data.length));
-        const level = Math.min(100, Math.round(Math.max(0, (rms - 0.004) / 0.18) * 100));
+        // A small noise gate keeps silence near zero while making quiet speech
+        // visible; normal speech should occupy a useful portion of the meter.
+        const level = Math.min(100, Math.round(Math.max(0, (rms - 0.003) / 0.10) * 100));
         audioMeterFill.style.width = level + "%";
         audioMeterValue.textContent = level + "%";
         audioMeterFrame = requestAnimationFrame(tick);
