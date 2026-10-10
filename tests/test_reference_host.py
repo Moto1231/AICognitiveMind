@@ -127,6 +127,13 @@ class ReferenceHostTests(unittest.IsolatedAsyncioTestCase):
             complete_arguments["host_working_context"]["summary"],
             "Discussing Will's birthday.",
         )
+        inventory = reasoner.begin_context["current_situation_inventory"]
+        self.assertEqual(
+            inventory["current_turn"],
+            {"content": "When is my birthday?", "source": "human_input"},
+        )
+        self.assertIn("camera", inventory["unavailable_sensors"])
+        self.assertIn("working_directory", inventory["host_runtime"])
         self.assertEqual(turn.memory_decisions, ({"accepted": True},))
 
     async def test_host_passes_its_updated_context_into_the_next_turn(self) -> None:
@@ -210,6 +217,7 @@ class ReferenceHostTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["model"], "test-model")
         self.assertEqual(request["tools"][0]["name"], "finalize_turn")
         self.assertIn("recalled_context", request["input"])
+        self.assertIn("First orient from current_situation_inventory", request["instructions"])
 
     async def test_openai_reasoner_requires_a_structured_context_update(self) -> None:
         response = SimpleNamespace(

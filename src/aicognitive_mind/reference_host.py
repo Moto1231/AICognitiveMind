@@ -6,6 +6,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from mcp import Client, StdioServerParameters
@@ -67,6 +68,7 @@ class OpenAIHostReasoner:
         contract = str(begin_context.get("conscious_workspace_contract", "")).strip()
         recalled_context = begin_context.get("recalled_context", {})
         mind = begin_context.get("mind", {})
+        current_situation_inventory = begin_context.get("current_situation_inventory", {})
         working_context = HostWorkingContext.model_validate(
             begin_context.get("host_working_context", {})
         )
@@ -75,6 +77,15 @@ class OpenAIHostReasoner:
             f"{contract}\n\n"
             "HOST BOUNDARY:\n"
             "The MCP host already completed begin_interaction for this turn. "
+            "First orient from current_situation_inventory: identify what is directly present in "
+            "the current input and what this host can actually observe. Do not infer physical "
+            "location or nearby people from the machine's working directory, identity, or past "
+            "mentions. Treat unavailable sensors as unknown, and distinguish a person being "
+            "mentioned from being present. Then reconcile the inventory with the supplied "
+            "host_working_context and chronological recalled_context.recent_context. When the "
+            "working context is empty, rebuild only the episode that current cues and recent turns "
+            "support; mark it new or uncertain when continuity is not established. Use durable "
+            "memory to interpret current evidence, never as a substitute for current observation. "
             "Reason using the supplied Mind identity and recalled context. "
             "You are Axiom's active reasoning faculty. Maintain the supplied working_context "
             "as your volatile, session-local short-term context and update it on every turn. "
@@ -202,6 +213,7 @@ class OpenAIHostReasoner:
                     "human_message": user_message,
                     "mind": mind,
                     "recalled_context": recalled_context,
+                    "current_situation_inventory": current_situation_inventory,
                     "working_context": working_context.model_dump(mode="json"),
                 },
                 default=str,
@@ -246,7 +258,26 @@ class CognitiveMindHost:
         self._reasoner = reasoner
         self._working_context = HostWorkingContext()
 
-    async def interact(self, user_message: str) -> HostTurn:
+    async def interact(
+        self,
+        user_message: str,
+        *,
+        current_observations: tuple[dict[str, Any], ...] = (),
+    ) -> HostTurn:
+        current_situation_inventory = {
+            "observed_at": datetime.now(UTC).isoformat(),
+            "current_turn": {"content": user_message, "source": "human_input"},
+            "host_runtime": {
+                "platform": sys.platform,
+                "working_directory": os.getcwd(),
+            },
+            "observations": list(current_observations),
+            "unavailable_sensors": ["camera", "microphone", "location"],
+            "limits": [
+                "The reference console has no live sensory adapters.",
+                "The host runtime does not establish physical location or nearby people.",
+            ],
+        }
         begun = _structured(
             await self._client.call_tool(
                 "begin_interaction",
@@ -266,6 +297,7 @@ class CognitiveMindHost:
         if returned_context != self._working_context:
             raise RuntimeError("Mind returned different host working context than submitted")
         reasoning_context = dict(begun)
+        reasoning_context["current_situation_inventory"] = current_situation_inventory
         reasoning = await self._reasoner.reason(user_message, reasoning_context)
 
         completed = _structured(
