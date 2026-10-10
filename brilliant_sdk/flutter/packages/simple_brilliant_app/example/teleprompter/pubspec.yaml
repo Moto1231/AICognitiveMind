@@ -1,0 +1,36 @@
+name: teleprompter
+description: "Simple teleprompter for Halo and Frame with Unicode support"
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.4.4 <4.0.0'
+
+dependencies:
+  file_picker: ^8.1.2
+  flutter:
+    sdk: flutter
+  logging: ^1.2.0
+  simple_brilliant_app:
+    # Note: We use a path dependency because the example apps & library packages are bundled together.
+    # In *your* app you should use a versioned dependency from pub.dev
+    path: ../../
+  brilliant_ble:
+    path: ../../../brilliant_ble
+  brilliant_msg:
+    path: ../../../brilliant_msg
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - packages/brilliant_msg/lua/battery.min.lua
+    - packages/brilliant_msg/lua/code.min.lua
+    - packages/brilliant_msg/lua/data.min.lua
+    - packages/brilliant_msg/lua/sprite.min.lua
+    - packages/brilliant_msg/lua/text_sprite_block.lua
+    - assets/frame_app.lua

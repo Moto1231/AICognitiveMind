@@ -1,0 +1,48 @@
+{
+  "name": "brilliant-ble",
+  "version": "1.1.0",
+  "main": "dist/brilliant-ble.umd.js",
+  "module": "dist/brilliant-ble.es.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/brilliant-ble.es.js",
+      "require": "./dist/brilliant-ble.umd.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:example": "vite build --config example/vite.config.ts",
+    "preview": "vite preview",
+    "dev:demo": "vite --config example/vite.config.ts",
+    "docs:api": "typedoc --out example/dist/api src",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "luke-brilliant",
+  "license": "BSD-3-Clause",
+  "description": "Package for managing a connection to and transferring data to and from the Brilliant Labs Frame device over Bluetooth LE using WebBluetooth",
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@types/web-bluetooth": "^0.0.21",
+    "typedoc": "^0.28.5",
+    "typescript": "5.9.3",
+    "vite": "^6.3.5",
+    "vite-plugin-dts": "^4.5.4"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.41.1"
+  },
+  "overrides": {
+    "vite": {
+      "rollup": "npm:@rollup/wasm-node"
+    }
+  }
+}
