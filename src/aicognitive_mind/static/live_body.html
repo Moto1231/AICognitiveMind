@@ -1027,7 +1027,10 @@
       audioMeterSource.connect(audioAnalyser);
       const data = new Uint8Array(audioAnalyser.fftSize);
       const tick = () => {
-        if (!sensesEnabled || !audioAnalyser) return;
+        // The meter is started before setSensesUi(true) completes during
+        // startup. Do not gate the first animation frame on sensesEnabled,
+        // or the loop exits before scheduling its next frame.
+        if (!audioAnalyser || !audioContext || audioContext.state === "closed") return;
         audioAnalyser.getByteTimeDomainData(data);
         let sum = 0;
         for (const value of data) {
