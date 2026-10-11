@@ -116,6 +116,8 @@ const el = {
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
   refreshTaskProfiles: document.getElementById("refreshTaskProfiles"),
   taskProfileList: document.getElementById("taskProfileList"),
+  taskProfileListHeading: document.querySelector("#tasksSection > .panel-heading"),
+  taskProfileListDescription: document.querySelector("#tasksSection > p"),
   taskProfileEditor: document.getElementById("taskProfileEditor"),
   taskProfileTitle: document.getElementById("taskProfileTitle"),
   taskProfileSummary: document.getElementById("taskProfileSummary"),
@@ -485,12 +487,16 @@ function openTaskProfile(task) {
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   el.taskProfileList.classList.add("hidden");
+  el.taskProfileListHeading?.classList.add("hidden");
+  el.taskProfileListDescription?.classList.add("hidden");
   el.taskProfileEditor.classList.remove("hidden");
 }
 
 function closeTaskProfile() {
   state.activeTaskProfile = null;
   el.taskProfileEditor.classList.add("hidden");
+  el.taskProfileListHeading?.classList.remove("hidden");
+  el.taskProfileListDescription?.classList.remove("hidden");
   el.taskProfileList.classList.remove("hidden");
   renderTaskProfiles();
 }
