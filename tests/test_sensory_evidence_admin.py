@@ -42,12 +42,18 @@ class SensoryEvidenceAdministrationTests(unittest.IsolatedAsyncioTestCase):
 
         markup = Path("src/aicognitive_mind/static/index.html").read_text(encoding="utf-8")
         script = Path("src/aicognitive_mind/static/portal.js").read_text(encoding="utf-8")
-        self.assertIn('data-admin-section="evidence"', markup)
-        self.assertIn('id="evidenceList"', markup)
+        self.assertNotIn('data-admin-section="evidence"', markup)
+        self.assertNotIn('id="evidenceList"', markup)
+        self.assertIn('id="journalEvidenceDetail"', markup)
+        self.assertIn('id="deviceInventoryList"', markup)
+        self.assertIn('data-admin-section="devices"', markup)
         self.assertIn("audio.controls = true", script)
-        self.assertIn("preview.src = evidenceMediaUrl(artifact)", script)
+        self.assertIn("preview.src = mediaUrl", script)
         self.assertIn("Erase Evidence", script)
-        self.assertIn("Permanently erase this stored media artifact?", script)
+        self.assertIn("Permanently erase the media bytes for this journal record?", script)
+        self.assertIn("navigator.mediaDevices.enumerateDevices()", script)
+        self.assertIn('el.taskProfileOverview.classList.add("hidden")', script)
+        self.assertIn('el.taskProfileOverview.classList.remove("hidden")', script)
 
 
 if __name__ == "__main__":
