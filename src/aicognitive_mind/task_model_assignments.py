@@ -74,7 +74,7 @@ class TaskModelAssignmentRegistry:
     ) -> list[TaskModelAssignment]:
         by_task = {item.task: item for item in assignments}
         expected = set(TASK_LABELS)
-        if set(by_task) != expected:
+        if len(assignments) != len(TASK_LABELS) or set(by_task) != expected:
             missing = sorted(expected - set(by_task))
             unknown = sorted(set(by_task) - expected)
             detail = []
