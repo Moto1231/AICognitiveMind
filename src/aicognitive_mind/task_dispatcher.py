@@ -9,6 +9,11 @@ import httpx
 
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_model_assignments import TaskKind, TaskModelAssignment, TaskModelAssignmentRegistry
+from aicognitive_mind.task_behaviors import (
+    TaskBehaviorRegistry,
+    TaskExecutionContext,
+    TaskPromptAssembler,
+)
 
 
 class TaskDispatchError(RuntimeError):
@@ -25,6 +30,8 @@ class TaskModelDispatcher:
     def __init__(self, records: Any, *, timeout: float = 90.0, client: Any | None = None) -> None:
         self.assignments = TaskModelAssignmentRegistry(records)
         self.endpoints = ProviderEndpointRegistry(records)
+        self.behaviors = TaskBehaviorRegistry(records)
+        self.prompt_assembler = TaskPromptAssembler(self.behaviors)
         self.timeout = timeout
         self.client = client
 
@@ -161,9 +168,28 @@ class TaskModelDispatcher:
         messages: list[dict[str, Any]],
         *,
         temperature: float | None = None,
+        context: TaskExecutionContext | None = None,
     ) -> str:
         assignment, endpoint = await self._resolve(task)
-        body: dict[str, Any] = {"model": assignment.model, "messages": messages}
+        profile = next(item for item in await self.behaviors.list() if item.task == task)
+        runtime_context = context or TaskExecutionContext(task=task)
+        # The selected assignment always comes from Axiom's registry, not a caller's context.
+        runtime_context = TaskExecutionContext(
+            task=task,
+            provider=assignment.provider,
+            model=assignment.model,
+            behavior_revision=profile.revision,
+            session_id=runtime_context.session_id,
+            state_ref=runtime_context.state_ref,
+            memory_refs=runtime_context.memory_refs,
+            working_context=runtime_context.working_context,
+        )
+        system_prompt = await self.prompt_assembler.system_prompt(runtime_context)
+        request_messages = [
+            {"role": "system", "content": system_prompt},
+            *[message for message in messages if message.get("role") != "system"],
+        ]
+        body: dict[str, Any] = {"model": assignment.model, "messages": request_messages}
         if temperature is not None:
             body["temperature"] = temperature
         payload = await self._request(endpoint, "chat/completions", json_body=body)
