@@ -743,9 +743,13 @@
       const responseLabel = result.response_text
         ? "\n\nMessage:\n" + result.response_text
         : "\n\nAwareness:\nAdmitted to Axiom without triggering conscious reasoning.";
+      const evidence = result.evidence;
+      if (!evidence?.sha256 || !evidence?.captured_at || !evidence?.media_type) {
+        throw new Error("Sensory input was processed without a complete evidence receipt.");
+      }
       setStatus(
         "SENSORY INPUT ADMITTED\n\n" +
-        "Evidence:\n" +
+        "Evidence saved:\n" +
         evidence.media_type + "\n" +
         "sha256: " + evidence.sha256 + "\n" +
         "captured: " + evidence.captured_at + "\n\n" +
