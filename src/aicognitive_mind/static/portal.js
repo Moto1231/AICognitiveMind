@@ -114,16 +114,6 @@ const el = {
   hostBehaviorList: document.getElementById("hostBehaviorList"),
   addHostBehavior: document.getElementById("addHostBehavior"),
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
-  taskModelAssignmentList: document.getElementById("taskModelAssignmentList"),
-  taskBehaviorList: document.getElementById("taskBehaviorList"),
-  refreshTaskBehaviors: document.getElementById("refreshTaskBehaviors"),
-  saveTaskBehaviors: document.getElementById("saveTaskBehaviors"),
-  providerEndpointList: document.getElementById("providerEndpointList"),
-  addProviderEndpoint: document.getElementById("addProviderEndpoint"),
-  refreshProviderEndpoints: document.getElementById("refreshProviderEndpoints"),
-  saveProviderEndpoints: document.getElementById("saveProviderEndpoints"),
-  refreshTaskModels: document.getElementById("refreshTaskModels"),
-  saveTaskModels: document.getElementById("saveTaskModels"),
   toast: document.getElementById("toast"),
 };
 
@@ -426,8 +416,8 @@ function loadEndpointIntoForm() {
 
 function openTaskProfile(task) {
   state.activeTaskProfile = task;
-  let assignment = state.taskModelAssignments.find(item => item.task === task);
-  if (!assignment) {
+  let assignment = task === "reasoning" ? null : state.taskModelAssignments.find(item => item.task === task);
+  if (!assignment && task !== "reasoning") {
     assignment = { task, provider: "", model: "", fallback_provider: "", fallback_model: "", notes: "" };
     state.taskModelAssignments.push(assignment);
   }
@@ -436,15 +426,17 @@ function openTaskProfile(task) {
     behavior = { task, instructions: "", enabled: true, revision: 1 };
     state.taskBehaviors.push(behavior);
   }
-  const endpoint = state.providerEndpoints.find(item =>
+  const endpoint = assignment && state.providerEndpoints.find(item =>
     item.name === assignment.provider || item.id === assignment.provider
   );
   state.activeEndpointId = endpoint?.id || state.providerEndpoints[0]?.id || null;
   state.activeEndpointOriginalName = state.providerEndpoints.find(item => item.id === state.activeEndpointId)?.name || "";
-  if (state.activeEndpointId && !assignment.provider) {
+  if (state.activeEndpointId && assignment && !assignment.provider) {
     assignment.provider = state.providerEndpoints.find(item => item.id === state.activeEndpointId)?.name || "";
   }
 
+  el.taskProfileEndpointSection.classList.toggle("hidden", task === "reasoning");
+  el.taskProfileAssignmentSection.classList.toggle("hidden", task === "reasoning");
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
   el.taskProfileSummary.textContent = "Configure this task's endpoint, model assignment, and behavior in one place.";
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
@@ -452,9 +444,9 @@ function openTaskProfile(task) {
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
   el.taskProfileRevision.textContent = "Profile revision: " + (behavior.revision || 1);
-  el.taskProfileModel.value = assignment.model || "";
-  el.taskProfileFallbackProvider.value = assignment.fallback_provider || "";
-  el.taskProfileFallbackModel.value = assignment.fallback_model || "";
+  el.taskProfileModel.value = assignment?.model || "";
+  el.taskProfileFallbackProvider.value = assignment?.fallback_provider || "";
+  el.taskProfileFallbackModel.value = assignment?.fallback_model || "";
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   el.taskProfileList.classList.add("hidden");
@@ -520,10 +512,12 @@ async function saveTaskProfile() {
     }
 
     const assignment = state.taskModelAssignments.find(item => item.task === task);
-    assignment.provider = endpoint?.name || "";
-    assignment.model = el.taskProfileModel.value.trim();
-    assignment.fallback_provider = el.taskProfileFallbackProvider.value.trim();
-    assignment.fallback_model = el.taskProfileFallbackModel.value.trim();
+    if (task !== "reasoning" && assignment) {
+      assignment.provider = endpoint?.name || "";
+      assignment.model = el.taskProfileModel.value.trim();
+      assignment.fallback_provider = el.taskProfileFallbackProvider.value.trim();
+      assignment.fallback_model = el.taskProfileFallbackModel.value.trim();
+    }
 
     const behavior = state.taskBehaviors.find(item => item.task === task);
     behavior.name = el.taskProfileBehaviorName.value.trim() || (taskModelLabels[task] || displayLabel(task));
@@ -537,11 +531,13 @@ async function saveTaskProfile() {
       }, true);
       state.providerEndpoints = endpointPayload.items || [];
     }
-    const assignmentPayload = await api("/v1/admin/task-model-assignments", {
-      method: "PUT",
-      body: JSON.stringify({ items: state.taskModelAssignments }),
-    }, true);
-    state.taskModelAssignments = assignmentPayload.items || [];
+    if (task !== "reasoning") {
+      const assignmentPayload = await api("/v1/admin/task-model-assignments", {
+        method: "PUT",
+        body: JSON.stringify({ items: state.taskModelAssignments }),
+      }, true);
+      state.taskModelAssignments = assignmentPayload.items || [];
+    }
     const behaviorPayload = await api("/v1/admin/task-behaviors", {
       method: "PUT",
       body: JSON.stringify({ items: state.taskBehaviors }),
