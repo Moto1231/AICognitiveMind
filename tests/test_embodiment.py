@@ -235,7 +235,11 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         entries = await journal.read()
         self.assertEqual(entries[-1].kind.value, "sensory_evidence")
         self.assertEqual(entries[-1].experience["status"], "admitted")
-        self.assertEqual(len(entries), 1)
+        # Initialization is journaled before the passive observation; passive
+        # sensing must not create a conscious interaction entry.
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0].kind.value, "initialization")
+        self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
 
     async def test_audio_percept_crosses_same_mind_body_bridge(self) -> None:
         core, journal = await self._core()
@@ -296,7 +300,11 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(face.consume())
         entries = await journal.read()
         self.assertEqual(entries[-1].kind.value, "sensory_evidence")
-        self.assertEqual(len(entries), 1)
+        # Initialization is journaled before the passive observation; passive
+        # sensing must not create a conscious interaction entry.
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0].kind.value, "initialization")
+        self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
 
     async def test_evidence_survives_even_when_interpretation_fails(self) -> None:
         core, journal = await self._core()
@@ -395,7 +403,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("getUserMedia({ video: true, audio: false })", markup)
         self.assertIn("getUserMedia({ audio: true, video: false })", markup)
         self.assertIn("releaseSenses", markup)
-        self.assertIn("runSensoryLoop", markup)
+        self.assertIn("startSensoryLoop", markup)
         self.assertNotIn('href="/body/avatar"', markup)
         self.assertNotIn('import * as THREE from "three"', markup)
         self.assertNotIn("/v1/body/face/next", markup)

@@ -667,3 +667,11 @@ class MongoEvidenceStore:
             {"_id": 0, "mind_id": 0},
         )
         return SensoryEvidenceArtifact.model_validate(document) if document else None
+
+    async def delete_exact(self, *, sha256: str, captured_at: datetime) -> bool:
+        result = await self._collection.delete_one({
+            "mind_id": self.mind_id,
+            "sha256": sha256,
+            "captured_at": captured_at,
+        })
+        return result.deleted_count == 1

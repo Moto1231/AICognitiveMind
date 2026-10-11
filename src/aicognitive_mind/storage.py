@@ -78,6 +78,7 @@ class EvidenceStore(Protocol):
         captured_at: datetime,
     ) -> SensoryEvidenceArtifact | None: ...
 
+    async def delete_exact(self, *, sha256: str, captured_at: datetime) -> bool: ...
 
 class DiagnosticStore(Protocol):
     async def record(self, observation: DiagnosticObservation) -> None: ...
@@ -410,3 +411,10 @@ class InMemoryEvidenceStore:
             if artifact.sha256 == sha256 and artifact.captured_at == captured_at:
                 return deepcopy(artifact)
         return None
+
+    async def delete_exact(self, *, sha256: str, captured_at: datetime) -> bool:
+        for index, artifact in enumerate(self._artifacts):
+            if artifact.sha256 == sha256 and artifact.captured_at == captured_at:
+                del self._artifacts[index]
+                return True
+        return False
