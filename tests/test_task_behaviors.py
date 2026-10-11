@@ -2,7 +2,6 @@ import unittest
 
 from aicognitive_mind.task_behaviors import (
     TASK_FOUNDATIONS,
-    TaskBehavior,
     TaskBehaviorRegistry,
     TaskExecutionContext,
     TaskPromptAssembler,
