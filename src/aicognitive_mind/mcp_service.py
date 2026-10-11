@@ -80,7 +80,8 @@ class CognitiveMcpService:
             provider="connected-host",
             model="host-selected",
         ))
-        return host_contract + "\\n\\n" + task_layers
+        return host_contract + "\n\n" + task_layers
+
     @atomic
     async def initialize(
         self,
