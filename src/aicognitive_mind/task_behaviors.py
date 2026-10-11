@@ -14,7 +14,10 @@ from pydantic import BaseModel, Field, field_validator
 
 from aicognitive_mind.task_model_assignments import TASK_LABELS, TaskKind
 
-TaskBehaviorKind = Literal[\n    "vision", "audio", "coding", "image_generation", "summarization",\n    "memory_recall", "web_research", "structured_extraction", "reasoning",\n]
+TaskBehaviorKind = Literal[
+    "vision", "audio", "coding", "image_generation", "summarization",
+    "memory_recall", "web_research", "structured_extraction", "reasoning",
+]
 
 
 # This mapping is code-owned. It is never loaded from records or accepted from an API.
