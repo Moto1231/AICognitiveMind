@@ -905,8 +905,10 @@
           "Message:\n" + result.response_text
         );
         interactionHistory.scrollTop = interactionHistory.scrollHeight;
-        await consumeExpressionOutputs();
-        if (talkEnabled && !talkSpeaking) speakIntent({ text: result.response_text });
+        const expressionSpoken = await consumeExpressionOutputs();
+        if (talkEnabled && !expressionSpoken && !talkSpeaking) {
+          speakIntent({ text: result.response_text });
+        }
       } catch (error) {
         thinkingMessage.classList.add("error");
         thinkingMessage.textContent = "Interaction failed: " + error.message;
