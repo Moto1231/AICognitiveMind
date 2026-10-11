@@ -191,7 +191,7 @@ class TaskModelDispatcher:
             if message.get("role") == "system" and message.get("content")
         ]
         if caller_system:
-            system_prompt += "\\n\\nADDITIONAL CALLER INSTRUCTIONS:\\n" + "\\n".join(caller_system)
+            system_prompt += "\n\nADDITIONAL CALLER INSTRUCTIONS:\n" + "\n".join(caller_system)
         request_messages = [
             {"role": "system", "content": system_prompt},
             *[message for message in messages if message.get("role") != "system"],
