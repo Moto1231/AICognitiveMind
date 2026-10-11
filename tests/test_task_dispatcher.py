@@ -89,6 +89,9 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(method, "POST")
         self.assertEqual(url, "http://localhost:8000/v1/chat/completions")
         self.assertEqual(kwargs["json"]["model"], "vision-arbitrary-model")
+        self.assertEqual(kwargs["json"]["messages"][0]["role"], "system")
+        self.assertIn("IMMUTABLE AXIOM TASK FOUNDATION", kwargs["json"]["messages"][0]["content"])
+        self.assertIn("vision-arbitrary-model", kwargs["json"]["messages"][0]["content"])
         self.assertIn("image_url", str(kwargs["json"]["messages"]))
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer admin-key")
 
@@ -112,6 +115,8 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "Hello there")
         self.assertEqual(client.calls[0][1], "http://localhost:8000/v1/audio/transcriptions")
         self.assertEqual(client.calls[0][2]["data"]["model"], "my-audio-model")
+        self.assertIn("IMMUTABLE AXIOM TASK FOUNDATION", client.calls[0][2]["data"]["prompt"])
+        self.assertIn("my-audio-model", client.calls[0][2]["data"]["prompt"])
 
     async def test_provider_failure_is_reported_without_fallback(self):
         records = await self.configured()
