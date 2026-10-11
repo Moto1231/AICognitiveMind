@@ -151,6 +151,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   font-weight: 700;
 }
 .host-behavior-field input,
+.host-behavior-field select,
 .host-behavior-field textarea {
   width: 100%;
   min-width: 0;
@@ -170,6 +171,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   line-height: 1.5;
 }
 .host-behavior-field input:focus,
+.host-behavior-field select:focus,
 .host-behavior-field textarea:focus {
   border-color: rgba(104,216,255,.5);
   box-shadow: 0 0 0 3px rgba(104,216,255,.07);
@@ -697,3 +699,25 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 
 .device-inventory-group { display: grid; gap: 10px; margin-top: 18px; }
 .device-inventory-group h4 { margin: 0; color: var(--text); font-size: 13px; }
+
+.device-selection-summary {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(104,216,255,.18);
+  border-radius: 10px;
+  background: rgba(104,216,255,.045);
+  color: #dce6f2;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.device-inventory-group .host-behavior-field { margin: 10px 0 14px; }
+.device-inventory-group .host-behavior-field select {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #101d30;
+  color: var(--text);
+  font-size: 12px;
+}
