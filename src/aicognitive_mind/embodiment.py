@@ -79,6 +79,7 @@ class OpenAIPerceptInterpreter:
         self._client = client or AsyncOpenAI(api_key=api_key)
         self._vision_model = vision_model
         self._transcription_model = transcription_model
+        self.task_dispatcher: Any | None = None
 
     async def interpret(
         self,
@@ -105,6 +106,22 @@ class OpenAIPerceptInterpreter:
     ) -> str:
         if not percept.content_ref:
             raise ValueError("Visual percept contains no image content")
+
+        dispatcher = self.task_dispatcher
+        if dispatcher is not None and await dispatcher.is_configured("vision"):
+            prompt = (
+                "Interpret this as direct visual sensory input for a persistent cognitive mind. "
+                "Describe only what is reasonably observable. Do not invent identity, intent, or hidden facts."
+                + (f" Re-examine the original evidence specifically for: {focus}" if focus else "")
+            )
+            text = await dispatcher.complete_chat(
+                "vision",
+                [{"role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": percept.content_ref}},
+                ]}],
+            )
+            return f"Visual perception: {text}"
 
         response = await self._client.responses.create(
             model=self._vision_model,
@@ -150,6 +167,16 @@ class OpenAIPerceptInterpreter:
 
         media_type, audio_bytes = self._decode_audio(percept.content_ref)
         filename = self._audio_filename(media_type)
+        dispatcher = self.task_dispatcher
+        if dispatcher is not None and await dispatcher.is_configured("audio"):
+            text = await dispatcher.transcribe(
+                "audio", filename=filename, audio_bytes=audio_bytes, media_type=media_type
+            )
+            return (
+                f"Auditory perception: {text}\nEvidence review focus: {focus}"
+                if focus else f"Auditory perception: {text}"
+            )
+
         transcription = await self._client.audio.transcriptions.create(
             model=self._transcription_model,
             file=(filename, audio_bytes, media_type),
@@ -207,6 +234,7 @@ class GeminiPerceptInterpreter:
     ) -> None:
         self._client = client or genai.Client(api_key=api_key)
         self._model = model
+        self.task_dispatcher: Any | None = None
 
     async def interpret(
         self,
@@ -244,6 +272,17 @@ class GeminiPerceptInterpreter:
         if focus:
             prompt += f" Re-examine the original evidence specifically for: {focus}"
 
+        dispatcher = self.task_dispatcher
+        if dispatcher is not None and await dispatcher.is_configured("vision"):
+            text = await dispatcher.complete_chat(
+                "vision",
+                [{"role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": percept.content_ref}},
+                ]}],
+            )
+            return f"Visual perception: {text}"
+
         response = await self._client.aio.models.generate_content(
             model=self._model,
             contents=[
@@ -274,6 +313,16 @@ class GeminiPerceptInterpreter:
         )
         if focus:
             prompt += f" Re-examine the original evidence specifically for: {focus}"
+
+        dispatcher = self.task_dispatcher
+        if dispatcher is not None and await dispatcher.is_configured("audio"):
+            text = await dispatcher.transcribe(
+                "audio", filename="percept.webm", audio_bytes=payload, media_type=media_type
+            )
+            return (
+                f"Auditory perception: {text}\nEvidence review focus: {focus}"
+                if focus else f"Auditory perception: {text}"
+            )
 
         response = await self._client.aio.models.generate_content(
             model=self._model,

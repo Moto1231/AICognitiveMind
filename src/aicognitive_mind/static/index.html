@@ -164,12 +164,27 @@
             </div>
           </article>
 
+          <article class="panel admin-task-model-panel provider-endpoints-panel">
+            <div class="panel-heading">
+              <div><p class="eyebrow">MODEL CONNECTIONS</p><h3>Provider Endpoints</h3></div>
+              <div class="provider-endpoint-actions">
+                <button id="addProviderEndpoint" class="secondary-button" type="button">Add Endpoint</button>
+                <button id="refreshProviderEndpoints" class="secondary-button" type="button">Refresh</button>
+              </div>
+            </div>
+            <p>Add any HTTP(S) provider endpoint. Query its model-listing API to populate suggestions. Model IDs remain editable, so endpoints with non-standard discovery or unlisted models are still usable as configuration.</p>
+            <div id="providerEndpointList" class="record-list provider-endpoint-list"></div>
+            <div class="edit-actions">
+              <button id="saveProviderEndpoints" class="primary-button" type="button">Save Endpoints</button>
+            </div>
+          </article>
+
           <article class="panel admin-task-model-panel">
             <div class="panel-heading">
               <div><p class="eyebrow">CAPABILITY ROUTING</p><h3>Task Model Assignments</h3></div>
               <button id="refreshTaskModels" class="secondary-button" type="button">Refresh</button>
             </div>
-            <p>Configure provider/model preferences for specialist tasks. Leave fields blank when unassigned. These preferences are stored for runtime routing to consult; they do not replace the connected reasoning host, so task dispatch must explicitly use them.</p>
+            <p>Assign any endpoint and model to any task. Discovered models are suggestions only; custom model IDs are always allowed. A selected model may not support a task, in which case the provider's response determines the outcome.</p>
             <div id="taskModelAssignmentList" class="record-list task-model-assignment-list"></div>
             <div class="edit-actions">
               <button id="saveTaskModels" class="primary-button" type="button">Save Task Assignments</button>
