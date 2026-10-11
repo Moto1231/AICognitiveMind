@@ -1291,6 +1291,9 @@
     refreshSharedVoiceSettings();
     window.setInterval(refreshSharedVoiceSettings, 10_000);
     checkForHostCameraRequest();
+    // Keep checking after page load so a reasoning host can request a camera
+    // observation whenever it attaches, not only during the page's first tick.
+    window.setInterval(checkForHostCameraRequest, 1_000);
     checkForBodyPageUpdate();
     window.setInterval(checkForBodyPageUpdate, 12_000);
     if (localStorage.getItem("aicognitive_mind.senses") === "on") {
