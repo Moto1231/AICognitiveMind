@@ -19,6 +19,7 @@ const state = {
   activeJournal: null,
   hostBehaviors: [],
   taskModelAssignments: [],
+  providerEndpoints: [],
 };
 
 const el = {
@@ -109,6 +110,10 @@ const el = {
   addHostBehavior: document.getElementById("addHostBehavior"),
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
   taskModelAssignmentList: document.getElementById("taskModelAssignmentList"),
+  providerEndpointList: document.getElementById("providerEndpointList"),
+  addProviderEndpoint: document.getElementById("addProviderEndpoint"),
+  refreshProviderEndpoints: document.getElementById("refreshProviderEndpoints"),
+  saveProviderEndpoints: document.getElementById("saveProviderEndpoints"),
   refreshTaskModels: document.getElementById("refreshTaskModels"),
   saveTaskModels: document.getElementById("saveTaskModels"),
   toast: document.getElementById("toast"),
@@ -331,8 +336,74 @@ const taskModelLabels = {
   structured_extraction: "Structured Extraction",
 };
 
+function renderProviderEndpoints() {
+  el.providerEndpointList.replaceChildren();
+  for (const endpoint of state.providerEndpoints) {
+    const card = document.createElement("section");
+    card.className = "memory-card provider-endpoint-card";
+    const fields = document.createElement("div");
+    fields.className = "task-model-fields";
+    const addField = (labelText, key, placeholder, maxLength = 1000) => {
+      const label = document.createElement("label");
+      label.className = "host-behavior-field";
+      label.append(document.createTextNode(labelText));
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = endpoint[key] || "";
+      input.placeholder = placeholder;
+      input.maxLength = maxLength;
+      input.addEventListener("input", () => { endpoint[key] = input.value; });
+      label.append(input);
+      fields.append(label);
+    };
+    addField("Endpoint name", "name", "e.g. Local OpenAI-compatible server", 120);
+    addField("Base URL", "base_url", "https://provider.example/v1", 1000);
+    addField("API key", "api_key", "Paste provider key (visible to administrator)", 4096);
+
+    const controls = document.createElement("div");
+    controls.className = "provider-endpoint-controls";
+    const discover = document.createElement("button");
+    discover.type = "button";
+    discover.className = "secondary-button";
+    discover.textContent = "Query Models";
+    discover.addEventListener("click", async () => {
+      try {
+        const payload = await api("/v1/admin/provider-endpoints/discover", {
+          method: "POST",
+          body: JSON.stringify(endpoint),
+        }, true);
+        endpoint.models = payload.models || [];
+        renderProviderEndpoints();
+        renderTaskModelAssignments();
+        toast(`Discovered ${endpoint.models.length} model(s)`);
+      } catch (error) {
+        toast(error.message, true);
+      }
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary-button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      state.providerEndpoints = state.providerEndpoints.filter(item => item.id !== endpoint.id);
+      renderProviderEndpoints();
+      renderTaskModelAssignments();
+    });
+    const models = document.createElement("p");
+    models.className = "provider-endpoint-models";
+    models.textContent = endpoint.models?.length
+      ? `Models: ${endpoint.models.join(", ")}`
+      : "No model list yet. Query Models to populate suggestions, or type any model ID manually.";
+    controls.append(discover, remove);
+    card.append(fields, controls, models);
+    el.providerEndpointList.append(card);
+  }
+}
+
 function renderTaskModelAssignments() {
   el.taskModelAssignmentList.replaceChildren();
+  const endpointNames = state.providerEndpoints.map(item => item.name).filter(Boolean);
+  const modelIds = [...new Set(state.providerEndpoints.flatMap(item => item.models || []))];
   for (const assignment of state.taskModelAssignments) {
     const card = document.createElement("section");
     card.className = "memory-card task-model-assignment-card";
@@ -342,7 +413,7 @@ function renderTaskModelAssignments() {
 
     const fields = document.createElement("div");
     fields.className = "task-model-fields";
-    const field = (labelText, key, placeholder, maxLength = 160) => {
+    const field = (labelText, key, placeholder, maxLength = 160, suggestions = null) => {
       const label = document.createElement("label");
       label.className = "host-behavior-field";
       label.append(document.createTextNode(labelText));
@@ -351,27 +422,61 @@ function renderTaskModelAssignments() {
       input.value = assignment[key] || "";
       input.placeholder = placeholder;
       input.maxLength = maxLength;
+      if (suggestions) {
+        const datalist = document.createElement("datalist");
+        datalist.id = `suggestions-${assignment.task}-${key}`;
+        for (const suggestion of suggestions) {
+          const option = document.createElement("option");
+          option.value = suggestion;
+          datalist.append(option);
+        }
+        input.setAttribute("list", datalist.id);
+        label.append(input, datalist);
+      } else {
+        label.append(input);
+      }
       input.addEventListener("input", () => { assignment[key] = input.value; });
-      label.append(input);
       fields.append(label);
     };
-    field("Provider", "provider", "e.g. OpenAI, Google, local");
-    field("Model", "model", "Exact model identifier");
-    field("Fallback provider", "fallback_provider", "Optional fallback provider");
-    field("Fallback model", "fallback_model", "Optional fallback model");
+    field("Provider / endpoint", "provider", "Type any provider or endpoint name", 80, endpointNames);
+    field("Model ID", "model", "Type any model ID or choose a discovered model", 160, modelIds);
+    field("Fallback provider", "fallback_provider", "Optional fallback provider", 80, endpointNames);
+    field("Fallback model", "fallback_model", "Optional fallback model", 160, modelIds);
     const notes = document.createElement("label");
     notes.className = "host-behavior-field task-model-notes";
     notes.append(document.createTextNode("Notes"));
     const noteInput = document.createElement("input");
     noteInput.type = "text";
     noteInput.value = assignment.notes || "";
-    noteInput.placeholder = "Optional capability or cost notes";
+    noteInput.placeholder = "Optional notes";
     noteInput.maxLength = 500;
     noteInput.addEventListener("input", () => { assignment.notes = noteInput.value; });
     notes.append(noteInput);
     fields.append(notes);
     card.append(fields);
     el.taskModelAssignmentList.append(card);
+  }
+}
+
+async function refreshProviderEndpoints() {
+  const payload = await api("/v1/admin/provider-endpoints", {}, true);
+  state.providerEndpoints = payload.items || [];
+  renderProviderEndpoints();
+  renderTaskModelAssignments();
+}
+
+async function saveProviderEndpoints() {
+  try {
+    const payload = await api("/v1/admin/provider-endpoints", {
+      method: "PUT",
+      body: JSON.stringify({ items: state.providerEndpoints }),
+    }, true);
+    state.providerEndpoints = payload.items || [];
+    renderProviderEndpoints();
+    renderTaskModelAssignments();
+    toast("Provider endpoints saved");
+  } catch (error) {
+    toast(error.message, true);
   }
 }
 
@@ -405,6 +510,7 @@ async function enterAdminMode() {
       refreshJournal(true),
       refreshHostBehaviors(),
       refreshTaskModelAssignments(),
+      refreshProviderEndpoints(),
     ]);
   } catch (error) {
     toast(error.message, true);
@@ -1211,5 +1317,17 @@ refresh();
 
 if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBehavior);
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
-if (el.refreshTaskModels) el.refreshTaskModels.addEventListener("click", () => refreshTaskModelAssignments().catch(error => toast(error.message, true)));
+if (el.refreshTaskModels) if (el.addProviderEndpoint) el.addProviderEndpoint.addEventListener("click", () => {
+  state.providerEndpoints.push({
+    id: crypto.randomUUID(),
+    name: "",
+    base_url: "",
+    api_key: "",
+    models: [],
+  });
+  renderProviderEndpoints();
+});
+if (el.refreshProviderEndpoints) el.refreshProviderEndpoints.addEventListener("click", () => refreshProviderEndpoints().catch(error => toast(error.message, true)));
+if (el.saveProviderEndpoints) el.saveProviderEndpoints.addEventListener("click", saveProviderEndpoints);
+el.refreshTaskModels.addEventListener("click", () => refreshTaskModelAssignments().catch(error => toast(error.message, true)));
 if (el.saveTaskModels) el.saveTaskModels.addEventListener("click", saveTaskModelAssignments);
