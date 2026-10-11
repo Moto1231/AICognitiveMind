@@ -438,7 +438,9 @@ function openTaskProfile(task) {
   el.taskProfileEndpointSection.classList.toggle("hidden", task === "reasoning");
   el.taskProfileAssignmentSection.classList.toggle("hidden", task === "reasoning");
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
-  el.taskProfileSummary.textContent = "Configure this task's endpoint, model assignment, and behavior in one place.";
+  el.taskProfileSummary.textContent = task === "reasoning"
+    ? "The connected reasoning host owns model selection. Configure the reasoning behavior here."
+    : "Configure this task's endpoint, model assignment, and behavior in one place.";
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
   el.taskProfileBehaviorName.value = behavior.name || (taskModelLabels[task] || displayLabel(task));
   el.taskProfileInstructions.value = behavior.instructions || "";
@@ -491,7 +493,7 @@ async function saveTaskProfile() {
   const task = state.activeTaskProfile;
   if (!task) return;
   try {
-    const endpoint = selectedEndpoint();
+    const endpoint = task === "reasoning" ? null : selectedEndpoint();
     if (endpoint) {
       const previousName = state.activeEndpointOriginalName || endpoint.name;
       const nextName = el.taskProfileEndpointName.value.trim();
@@ -524,7 +526,7 @@ async function saveTaskProfile() {
     behavior.instructions = el.taskProfileInstructions.value;
     behavior.enabled = el.taskProfileEnabled.checked;
 
-    if (state.providerEndpoints.length) {
+    if (task !== "reasoning" && state.providerEndpoints.length) {
       const endpointPayload = await api("/v1/admin/provider-endpoints", {
         method: "PUT",
         body: JSON.stringify({ items: state.providerEndpoints }),
