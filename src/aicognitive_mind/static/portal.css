@@ -614,3 +614,43 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   .task-profile-grid { grid-template-columns: minmax(0, 1fr); }
   .task-profile-inline-actions { align-items: flex-start; flex-direction: column; }
 }
+
+
+/* Administration is organized as distinct work areas, not one long dashboard. */
+.admin-section-nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 18px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.admin-section-button {
+  min-height: 40px;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.admin-section-button:hover,
+.admin-section-button:focus-visible {
+  border-color: var(--border);
+  color: var(--text);
+  outline: none;
+}
+.admin-section-button.active {
+  border-color: rgba(104,216,255,.28);
+  background: rgba(104,216,255,.10);
+  color: var(--accent);
+}
+#memoriesSection, #journalsSection { grid-column: 1 / -1; }
+#tasksSection .task-profile-grid { margin-top: 22px; }
+@media (max-width: 620px) {
+  .admin-section-nav { display: grid; grid-template-columns: 1fr 1fr; }
+  .admin-section-button { padding: 9px 8px; }
+}
