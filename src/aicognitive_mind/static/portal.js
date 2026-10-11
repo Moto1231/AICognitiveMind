@@ -22,6 +22,9 @@ const state = {
   taskBehaviors: [],
   taskFoundations: {},
   providerEndpoints: [],
+  activeTaskProfile: null,
+  activeEndpointId: null,
+  activeEndpointOriginalName: "",
 };
 
 const el = {
@@ -111,16 +114,6 @@ const el = {
   hostBehaviorList: document.getElementById("hostBehaviorList"),
   addHostBehavior: document.getElementById("addHostBehavior"),
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
-  taskModelAssignmentList: document.getElementById("taskModelAssignmentList"),
-  taskBehaviorList: document.getElementById("taskBehaviorList"),
-  refreshTaskBehaviors: document.getElementById("refreshTaskBehaviors"),
-  saveTaskBehaviors: document.getElementById("saveTaskBehaviors"),
-  providerEndpointList: document.getElementById("providerEndpointList"),
-  addProviderEndpoint: document.getElementById("addProviderEndpoint"),
-  refreshProviderEndpoints: document.getElementById("refreshProviderEndpoints"),
-  saveProviderEndpoints: document.getElementById("saveProviderEndpoints"),
-  refreshTaskModels: document.getElementById("refreshTaskModels"),
-  saveTaskModels: document.getElementById("saveTaskModels"),
   toast: document.getElementById("toast"),
 };
 
@@ -331,6 +324,7 @@ async function saveHostBehaviors() {
 }
 
 const taskModelLabels = {
+  reasoning: "Reasoning",
   vision: "Vision",
   audio: "Audio & Transcription",
   coding: "Coding",
@@ -341,240 +335,264 @@ const taskModelLabels = {
   structured_extraction: "Structured Extraction",
 };
 
-function renderProviderEndpoints() {
-  el.providerEndpointList.replaceChildren();
-  for (const endpoint of state.providerEndpoints) {
-    const card = document.createElement("section");
-    card.className = "memory-card provider-endpoint-card";
-    const fields = document.createElement("div");
-    fields.className = "task-model-fields";
-    const addField = (labelText, key, placeholder, maxLength = 1000) => {
-      const label = document.createElement("label");
-      label.className = "host-behavior-field";
-      label.append(document.createTextNode(labelText));
-      const input = document.createElement("input");
-      input.type = "text";
-      input.value = endpoint[key] || "";
-      input.placeholder = placeholder;
-      input.maxLength = maxLength;
-      input.addEventListener("input", () => { endpoint[key] = input.value; });
-      label.append(input);
-      fields.append(label);
-    };
-    addField("Endpoint name", "name", "e.g. Local OpenAI-compatible server", 120);
-    addField("Base URL", "base_url", "https://provider.example/v1", 1000);
-    addField("API key", "api_key", "Paste provider key (visible to administrator)", 4096);
+function allTaskNames() {
+  return [...new Set([
+    ...state.taskModelAssignments.map(item => item.task),
+    ...state.taskBehaviors.map(item => item.task),
+    ...Object.keys(state.taskFoundations),
+  ])].sort((a, b) => (taskModelLabels[a] || a).localeCompare(taskModelLabels[b] || b));
+}
 
-    const controls = document.createElement("div");
-    controls.className = "provider-endpoint-controls";
-    const discover = document.createElement("button");
-    discover.type = "button";
-    discover.className = "secondary-button";
-    discover.textContent = "Query Models";
-    discover.addEventListener("click", async () => {
-      try {
-        const payload = await api("/v1/admin/provider-endpoints/discover", {
-          method: "POST",
-          body: JSON.stringify(endpoint),
-        }, true);
-        endpoint.models = payload.models || [];
-        renderProviderEndpoints();
-        renderTaskModelAssignments();
-        toast(`Discovered ${endpoint.models.length} model(s)`);
-      } catch (error) {
-        toast(error.message, true);
-      }
-    });
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "secondary-button";
-    remove.textContent = "Remove";
-    remove.addEventListener("click", () => {
-      state.providerEndpoints = state.providerEndpoints.filter(item => item.id !== endpoint.id);
-      renderProviderEndpoints();
-      renderTaskModelAssignments();
-    });
-    const models = document.createElement("p");
-    models.className = "provider-endpoint-models";
-    models.textContent = endpoint.models?.length
-      ? `Models: ${endpoint.models.join(", ")}`
-      : "No model list yet. Query Models to populate suggestions, or type any model ID manually.";
-    controls.append(discover, remove);
-    card.append(fields, controls, models);
-    el.providerEndpointList.append(card);
+function renderTaskProfiles() {
+  if (!el.taskProfileList) return;
+  el.taskProfileList.replaceChildren();
+  for (const task of allTaskNames()) {
+    const assignment = state.taskModelAssignments.find(item => item.task === task) || {};
+    const behavior = state.taskBehaviors.find(item => item.task === task) || {};
+    const endpoint = state.providerEndpoints.find(item =>
+      item.name === assignment.provider || item.id === assignment.provider
+    );
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "task-profile-card";
+    const title = document.createElement("strong");
+    title.textContent = taskModelLabels[task] || displayLabel(task);
+    const detail = document.createElement("span");
+    detail.textContent = endpoint
+      ? [endpoint.name || "Unnamed endpoint", assignment.model || "No model selected"].join(" · ")
+      : (assignment.provider || assignment.model)
+        ? [assignment.provider || "No endpoint", assignment.model || "No model selected"].join(" · ")
+        : "Endpoint and model not configured";
+    const behaviorStatus = document.createElement("small");
+    behaviorStatus.textContent = behavior.enabled === false
+      ? "Behavior layer disabled"
+      : behavior.instructions
+        ? "Behavior configured"
+        : "Behavior instructions not configured";
+    card.append(title, detail, behaviorStatus);
+    card.addEventListener("click", () => openTaskProfile(task));
+    el.taskProfileList.append(card);
   }
 }
 
-function renderTaskModelAssignments() {
-  el.taskModelAssignmentList.replaceChildren();
-  const endpointNames = state.providerEndpoints.map(item => item.name).filter(Boolean);
-  const modelIds = [...new Set(state.providerEndpoints.flatMap(item => item.models || []))];
-  for (const assignment of state.taskModelAssignments) {
-    const card = document.createElement("section");
-    card.className = "memory-card task-model-assignment-card";
-    const heading = document.createElement("h4");
-    heading.textContent = taskModelLabels[assignment.task] || displayLabel(assignment.task);
-    card.append(heading);
+function activeProfileRecords() {
+  const task = state.activeTaskProfile;
+  return {
+    assignment: state.taskModelAssignments.find(item => item.task === task),
+    behavior: state.taskBehaviors.find(item => item.task === task),
+    endpoint: state.providerEndpoints.find(item => item.id === state.activeEndpointId),
+  };
+}
 
-    const fields = document.createElement("div");
-    fields.className = "task-model-fields";
-    const field = (labelText, key, placeholder, maxLength = 160, suggestions = null) => {
-      const label = document.createElement("label");
-      label.className = "host-behavior-field";
-      label.append(document.createTextNode(labelText));
-      const input = document.createElement("input");
-      input.type = "text";
-      input.value = assignment[key] || "";
-      input.placeholder = placeholder;
-      input.maxLength = maxLength;
-      if (suggestions) {
-        const datalist = document.createElement("datalist");
-        datalist.id = `suggestions-${assignment.task}-${key}`;
-        for (const suggestion of suggestions) {
-          const option = document.createElement("option");
-          option.value = suggestion;
-          datalist.append(option);
-        }
-        input.setAttribute("list", datalist.id);
-        label.append(input, datalist);
-      } else {
-        label.append(input);
-      }
-      input.addEventListener("input", () => { assignment[key] = input.value; });
-      fields.append(label);
-    };
-    field("Provider / endpoint", "provider", "Type any provider or endpoint name", 80, endpointNames);
-    field("Model ID", "model", "Type any model ID or choose a discovered model", 160, modelIds);
-    field("Fallback provider", "fallback_provider", "Optional fallback provider", 80, endpointNames);
-    field("Fallback model", "fallback_model", "Optional fallback model", 160, modelIds);
-    const notes = document.createElement("label");
-    notes.className = "host-behavior-field task-model-notes";
-    notes.append(document.createTextNode("Notes"));
-    const noteInput = document.createElement("input");
-    noteInput.type = "text";
-    noteInput.value = assignment.notes || "";
-    noteInput.placeholder = "Optional notes";
-    noteInput.maxLength = 500;
-    noteInput.addEventListener("input", () => { assignment.notes = noteInput.value; });
-    notes.append(noteInput);
-    fields.append(notes);
-    card.append(fields);
-    el.taskModelAssignmentList.append(card);
+function renderTaskProfileEndpointOptions() {
+  const select = el.taskProfileEndpointSelect;
+  select.replaceChildren();
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "Choose an endpoint";
+  select.append(blank);
+  for (const endpoint of state.providerEndpoints) {
+    const option = document.createElement("option");
+    option.value = endpoint.id;
+    option.textContent = endpoint.name || endpoint.base_url || "Unnamed endpoint";
+    select.append(option);
   }
+  select.value = state.activeEndpointId || "";
+}
+
+function loadEndpointIntoForm() {
+  const { endpoint } = activeProfileRecords();
+  el.taskProfileEndpointName.value = endpoint?.name || "";
+  el.taskProfileBaseUrl.value = endpoint?.base_url || "";
+  el.taskProfileApiKey.value = endpoint?.api_key || "";
+  const models = endpoint?.models || [];
+  el.taskProfileModels.replaceChildren();
+  for (const model of models) {
+    const option = document.createElement("option");
+    option.value = model;
+    el.taskProfileModels.append(option);
+  }
+}
+
+function openTaskProfile(task) {
+  state.activeTaskProfile = task;
+  let assignment = task === "reasoning" ? null : state.taskModelAssignments.find(item => item.task === task);
+  if (!assignment && task !== "reasoning") {
+    assignment = { task, provider: "", model: "", fallback_provider: "", fallback_model: "", notes: "" };
+    state.taskModelAssignments.push(assignment);
+  }
+  let behavior = state.taskBehaviors.find(item => item.task === task);
+  if (!behavior) {
+    behavior = { task, instructions: "", enabled: true, revision: 1 };
+    state.taskBehaviors.push(behavior);
+  }
+  const endpoint = assignment && state.providerEndpoints.find(item =>
+    item.name === assignment.provider || item.id === assignment.provider
+  );
+  state.activeEndpointId = endpoint?.id || state.providerEndpoints[0]?.id || null;
+  state.activeEndpointOriginalName = state.providerEndpoints.find(item => item.id === state.activeEndpointId)?.name || "";
+  if (state.activeEndpointId && assignment && !assignment.provider) {
+    assignment.provider = state.providerEndpoints.find(item => item.id === state.activeEndpointId)?.name || "";
+  }
+
+  el.taskProfileEndpointSection.classList.toggle("hidden", task === "reasoning");
+  el.taskProfileAssignmentSection.classList.toggle("hidden", task === "reasoning");
+  el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
+  el.taskProfileSummary.textContent = task === "reasoning"
+    ? "The connected reasoning host owns model selection. Configure the reasoning behavior here."
+    : "Configure this task's endpoint, model assignment, and behavior in one place.";
+  el.taskProfileFoundation.value = state.taskFoundations[task] || "";
+  el.taskProfileBehaviorName.value = behavior.name || (taskModelLabels[task] || displayLabel(task));
+  el.taskProfileInstructions.value = behavior.instructions || "";
+  el.taskProfileEnabled.checked = behavior.enabled !== false;
+  el.taskProfileRevision.textContent = "Profile revision: " + (behavior.revision || 1);
+  el.taskProfileModel.value = assignment?.model || "";
+  el.taskProfileFallbackProvider.value = assignment?.fallback_provider || "";
+  el.taskProfileFallbackModel.value = assignment?.fallback_model || "";
+  renderTaskProfileEndpointOptions();
+  loadEndpointIntoForm();
+  el.taskProfileList.classList.add("hidden");
+  el.taskProfileEditor.classList.remove("hidden");
+}
+
+function closeTaskProfile() {
+  state.activeTaskProfile = null;
+  el.taskProfileEditor.classList.add("hidden");
+  el.taskProfileList.classList.remove("hidden");
+  renderTaskProfiles();
+}
+
+function selectedEndpoint() {
+  return state.providerEndpoints.find(item => item.id === state.activeEndpointId) || null;
 }
 
 async function refreshProviderEndpoints() {
   const payload = await api("/v1/admin/provider-endpoints", {}, true);
   state.providerEndpoints = payload.items || [];
-  renderProviderEndpoints();
-  renderTaskModelAssignments();
-}
-
-async function saveProviderEndpoints() {
-  try {
-    const payload = await api("/v1/admin/provider-endpoints", {
-      method: "PUT",
-      body: JSON.stringify({ items: state.providerEndpoints }),
-    }, true);
-    state.providerEndpoints = payload.items || [];
-    renderProviderEndpoints();
-    renderTaskModelAssignments();
-    toast("Provider endpoints saved");
-  } catch (error) {
-    toast(error.message, true);
+  if (state.activeTaskProfile) {
+    renderTaskProfileEndpointOptions();
+    loadEndpointIntoForm();
   }
+  renderTaskProfiles();
 }
 
 async function refreshTaskModelAssignments() {
   const payload = await api("/v1/admin/task-model-assignments", {}, true);
-  state.taskModelAssignments = payload.items;
-  renderTaskModelAssignments();
-}
-
-async function saveTaskModelAssignments() {
-  try {
-    const payload = await api("/v1/admin/task-model-assignments", {
-      method: "PUT",
-      body: JSON.stringify({ items: state.taskModelAssignments }),
-    }, true);
-    state.taskModelAssignments = payload.items;
-    renderTaskModelAssignments();
-    toast("Task model assignments saved");
-  } catch (error) {
-    toast(error.message, true);
-  }
-}
-
-function renderTaskBehaviors() {
-  if (!el.taskBehaviorList) return;
-  el.taskBehaviorList.replaceChildren();
-  for (const behavior of state.taskBehaviors) {
-    const card = document.createElement("section");
-    card.className = "memory-card task-model-assignment-card";
-    const heading = document.createElement("h4");
-    heading.textContent = taskModelLabels[behavior.task] || displayLabel(behavior.task);
-    card.append(heading);
-
-    const foundationLabel = document.createElement("label");
-    foundationLabel.className = "host-behavior-field";
-    foundationLabel.append(document.createTextNode("Immutable foundation (code-owned)"));
-    const foundation = document.createElement("textarea");
-    foundation.value = state.taskFoundations[behavior.task] || "";
-    foundation.readOnly = true;
-    foundation.rows = 4;
-    foundation.setAttribute("aria-label", heading.textContent + " immutable foundation");
-    foundationLabel.append(foundation);
-    card.append(foundationLabel);
-
-    const instructionsLabel = document.createElement("label");
-    instructionsLabel.className = "host-behavior-field";
-    instructionsLabel.append(document.createTextNode("Editable behavior instructions"));
-    const instructions = document.createElement("textarea");
-    instructions.value = behavior.instructions || "";
-    instructions.maxLength = 4000;
-    instructions.rows = 4;
-    instructions.placeholder = "Task-specific style, priorities, workflow, and preferences";
-    instructions.addEventListener("input", () => { behavior.instructions = instructions.value; });
-    instructionsLabel.append(instructions);
-    card.append(instructionsLabel);
-
-    const enabledLabel = document.createElement("label");
-    enabledLabel.className = "host-behavior-field";
-    const enabled = document.createElement("input");
-    enabled.type = "checkbox";
-    enabled.checked = behavior.enabled !== false;
-    enabled.addEventListener("change", () => { behavior.enabled = enabled.checked; });
-    enabledLabel.append(enabled, document.createTextNode(" Enable editable behavior layer"));
-    card.append(enabledLabel);
-
-    const revision = document.createElement("p");
-    revision.className = "muted-copy";
-    revision.textContent = "Profile revision: " + (behavior.revision || 1);
-    card.append(revision);
-    el.taskBehaviorList.append(card);
-  }
+  state.taskModelAssignments = payload.items || [];
+  renderTaskProfiles();
 }
 
 async function refreshTaskBehaviors() {
   const payload = await api("/v1/admin/task-behaviors", {}, true);
   state.taskBehaviors = payload.items || [];
   state.taskFoundations = payload.foundations || {};
-  renderTaskBehaviors();
+  renderTaskProfiles();
 }
 
-async function saveTaskBehaviors() {
+async function saveTaskProfile() {
+  const task = state.activeTaskProfile;
+  if (!task) return;
   try {
-    const payload = await api("/v1/admin/task-behaviors", {
+    const endpoint = task === "reasoning" ? null : selectedEndpoint();
+    if (endpoint) {
+      const previousName = state.activeEndpointOriginalName || endpoint.name;
+      const nextName = el.taskProfileEndpointName.value.trim();
+      endpoint.name = nextName;
+      endpoint.base_url = el.taskProfileBaseUrl.value.trim();
+      endpoint.api_key = el.taskProfileApiKey.value;
+      if (!endpoint.name || !endpoint.base_url) {
+        toast("Endpoint name and base URL are required", true);
+        return;
+      }
+      if (previousName && previousName !== nextName) {
+        for (const item of state.taskModelAssignments) {
+          if (item.provider === previousName) item.provider = nextName;
+          if (item.fallback_provider === previousName) item.fallback_provider = nextName;
+        }
+      }
+      state.activeEndpointOriginalName = nextName;
+    }
+
+    const assignment = state.taskModelAssignments.find(item => item.task === task);
+    if (task !== "reasoning" && assignment) {
+      assignment.provider = endpoint?.name || "";
+      assignment.model = el.taskProfileModel.value.trim();
+      assignment.fallback_provider = el.taskProfileFallbackProvider.value.trim();
+      assignment.fallback_model = el.taskProfileFallbackModel.value.trim();
+    }
+
+    const behavior = state.taskBehaviors.find(item => item.task === task);
+    behavior.name = el.taskProfileBehaviorName.value.trim() || (taskModelLabels[task] || displayLabel(task));
+    behavior.instructions = el.taskProfileInstructions.value;
+    behavior.enabled = el.taskProfileEnabled.checked;
+
+    if (task !== "reasoning" && state.providerEndpoints.length) {
+      const endpointPayload = await api("/v1/admin/provider-endpoints", {
+        method: "PUT",
+        body: JSON.stringify({ items: state.providerEndpoints }),
+      }, true);
+      state.providerEndpoints = endpointPayload.items || [];
+    }
+    if (task !== "reasoning") {
+      const assignmentPayload = await api("/v1/admin/task-model-assignments", {
+        method: "PUT",
+        body: JSON.stringify({ items: state.taskModelAssignments }),
+      }, true);
+      state.taskModelAssignments = assignmentPayload.items || [];
+    }
+    const behaviorPayload = await api("/v1/admin/task-behaviors", {
       method: "PUT",
       body: JSON.stringify({ items: state.taskBehaviors }),
     }, true);
-    state.taskBehaviors = payload.items || [];
-    renderTaskBehaviors();
-    toast("Task behaviors saved");
+    state.taskBehaviors = behaviorPayload.items || [];
+    state.taskFoundations = behaviorPayload.foundations || state.taskFoundations;
+    toast("Task profile saved");
+    renderTaskProfiles();
+    openTaskProfile(task);
   } catch (error) {
     toast(error.message, true);
   }
 }
+
+async function discoverTaskProfileModels() {
+  const endpoint = selectedEndpoint();
+  if (!endpoint) {
+    toast("Choose or add an endpoint first", true);
+    return;
+  }
+  endpoint.name = el.taskProfileEndpointName.value.trim();
+  endpoint.base_url = el.taskProfileBaseUrl.value.trim();
+  endpoint.api_key = el.taskProfileApiKey.value;
+  try {
+    const payload = await api("/v1/admin/provider-endpoints/discover", {
+      method: "POST",
+      body: JSON.stringify(endpoint),
+    }, true);
+    endpoint.models = payload.models || [];
+    renderTaskProfileEndpointOptions();
+    loadEndpointIntoForm();
+    toast(`Discovered ${endpoint.models.length} model(s)`);
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
+function addTaskProfileEndpoint() {
+  const endpoint = {
+    id: crypto.randomUUID(),
+    name: "",
+    base_url: "",
+    api_key: "",
+    models: [],
+  };
+  state.providerEndpoints.push(endpoint);
+  state.activeEndpointId = endpoint.id;
+  state.activeEndpointOriginalName = "";
+  renderTaskProfileEndpointOptions();
+  loadEndpointIntoForm();
+  el.taskProfileEndpointName.focus();
+}
+
 async function enterAdminMode() {
   try {
     const allowed = await validateAdmin();
@@ -1393,19 +1411,14 @@ refresh();
 
 if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBehavior);
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
-if (el.refreshTaskModels) if (el.addProviderEndpoint) el.addProviderEndpoint.addEventListener("click", () => {
-  state.providerEndpoints.push({
-    id: crypto.randomUUID(),
-    name: "",
-    base_url: "",
-    api_key: "",
-    models: [],
-  });
-  renderProviderEndpoints();
+if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
+if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", () => Promise.all([refreshTaskModelAssignments(), refreshTaskBehaviors(), refreshProviderEndpoints()]).catch(error => toast(error.message, true)));
+if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
+  state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
+  state.activeEndpointOriginalName = selectedEndpoint()?.name || "";
+  loadEndpointIntoForm();
 });
-if (el.refreshProviderEndpoints) el.refreshProviderEndpoints.addEventListener("click", () => refreshProviderEndpoints().catch(error => toast(error.message, true)));
-if (el.saveProviderEndpoints) el.saveProviderEndpoints.addEventListener("click", saveProviderEndpoints);
-el.refreshTaskModels.addEventListener("click", () => refreshTaskModelAssignments().catch(error => toast(error.message, true)));
-if (el.saveTaskModels) el.saveTaskModels.addEventListener("click", saveTaskModelAssignments);
-if (el.refreshTaskBehaviors) el.refreshTaskBehaviors.addEventListener("click", () => refreshTaskBehaviors().catch(error => toast(error.message, true)));
-if (el.saveTaskBehaviors) el.saveTaskBehaviors.addEventListener("click", saveTaskBehaviors);
+if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
+if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
+if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
+refresh();

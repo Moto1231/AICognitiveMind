@@ -164,43 +164,76 @@
             </div>
           </article>
 
-          <article class="panel admin-task-model-panel provider-endpoints-panel">
+          <article class="panel admin-task-model-panel task-profiles-panel">
             <div class="panel-heading">
-              <div><p class="eyebrow">MODEL CONNECTIONS</p><h3>Provider Endpoints</h3></div>
-              <div class="provider-endpoint-actions">
-                <button id="addProviderEndpoint" class="secondary-button" type="button">Add Endpoint</button>
-                <button id="refreshProviderEndpoints" class="secondary-button" type="button">Refresh</button>
+              <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
+              <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh Profiles</button>
+            </div>
+            <p>Each task has its own configuration page. Endpoint settings, model routing, and editable behavior live together in that task's profile. Endpoint records can be reused by multiple tasks.</p>
+            <div id="taskProfileList" class="task-profile-grid"></div>
+            <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
+              <div class="panel-heading task-profile-editor-heading">
+                <div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileSummary" class="muted-copy"></p></div>
+                <button id="taskProfileBack" class="secondary-button" type="button">All Tasks</button>
               </div>
-            </div>
-            <p>Add any HTTP(S) provider endpoint. Query its model-listing API to populate suggestions. Model IDs remain editable, so endpoints with non-standard discovery or unlisted models are still usable as configuration.</p>
-            <div id="providerEndpointList" class="record-list provider-endpoint-list"></div>
-            <div class="edit-actions">
-              <button id="saveProviderEndpoints" class="primary-button" type="button">Save Endpoints</button>
-            </div>
-          </article>
-
-          <article class="panel admin-task-model-panel">
-            <div class="panel-heading">
-              <div><p class="eyebrow">CAPABILITY ROUTING</p><h3>Task Model Assignments</h3></div>
-              <button id="refreshTaskModels" class="secondary-button" type="button">Refresh</button>
-            </div>
-            <p>Assign any endpoint and model to any task. Discovered models are suggestions only; custom model IDs are always allowed. A selected model may not support a task, in which case the provider's response determines the outcome.</p>
-            <div id="taskModelAssignmentList" class="record-list task-model-assignment-list"></div>
-            <div class="edit-actions">
-              <button id="saveTaskModels" class="primary-button" type="button">Save Task Assignments</button>
-            </div>
-          </article>
-
-          <article class="panel admin-task-model-panel">
-            <div class="panel-heading">
-              <div><p class="eyebrow">TASK CONTRACTS</p><h3>Task Behaviors</h3></div>
-              <button id="refreshTaskBehaviors" class="secondary-button" type="button">Refresh</button>
-            </div>
-            <p>Each task has a code-owned immutable foundation plus an editable behavior profile. The foundation is read-only here; changes below affect only the configurable layer.</p>
-            <div id="taskBehaviorList" class="record-list task-model-assignment-list"></div>
-            <div class="edit-actions">
-              <button id="saveTaskBehaviors" class="primary-button" type="button">Save Task Behaviors</button>
-            </div>
+              <section id="taskProfileEndpointSection" class="task-profile-section">
+                <h4>Endpoint configuration</h4>
+                <p class="muted-copy">Choose a shared endpoint or add one here. Editing endpoint details updates that shared endpoint for every task that uses it.</p>
+                <div class="task-profile-endpoint-picker">
+                  <label class="host-behavior-field">Endpoint
+                    <select id="taskProfileEndpointSelect"><option value="">Choose an endpoint</option></select>
+                  </label>
+                  <button id="taskProfileAddEndpoint" class="secondary-button" type="button">Add Endpoint</button>
+                </div>
+                <div class="task-model-fields">
+                  <label class="host-behavior-field">Endpoint name
+                    <input id="taskProfileEndpointName" type="text" maxlength="120" placeholder="Provider name">
+                  </label>
+                  <label class="host-behavior-field">Base URL
+                    <input id="taskProfileBaseUrl" type="url" maxlength="1000" placeholder="https://provider.example/v1">
+                  </label>
+                  <label class="host-behavior-field task-model-notes">API key
+                    <input id="taskProfileApiKey" type="password" autocomplete="off" maxlength="4096" placeholder="Provider API key">
+                  </label>
+                </div>
+                <div class="task-profile-inline-actions">
+                  <button id="taskProfileDiscover" class="secondary-button" type="button">Discover Models</button>
+                  <span class="muted-copy">Discovered IDs are suggestions, not a restriction.</span>
+                </div>
+              </section>
+              <section id="taskProfileAssignmentSection" class="task-profile-section">
+                <h4>Model assignment</h4>
+                <div class="task-model-fields">
+                  <label class="host-behavior-field">Model ID
+                    <input id="taskProfileModel" type="text" list="taskProfileModels" maxlength="160" placeholder="Any provider model ID">
+                    <datalist id="taskProfileModels"></datalist>
+                  </label>
+                  <label class="host-behavior-field">Fallback provider
+                    <input id="taskProfileFallbackProvider" type="text" maxlength="80" placeholder="Optional endpoint name">
+                  </label>
+                  <label class="host-behavior-field">Fallback model
+                    <input id="taskProfileFallbackModel" type="text" maxlength="160" placeholder="Optional model ID">
+                  </label>
+                </div>
+              </section>
+              <section class="task-profile-section">
+                <h4>Behavior</h4>
+                <label class="host-behavior-field">Immutable foundation (code-owned)
+                  <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
+                </label>
+                <label class="host-behavior-field">Behavior name
+                  <input id="taskProfileBehaviorName" type="text" maxlength="120" placeholder="Task behavior name">
+                </label>
+                <label class="host-behavior-field">Editable behavior instructions
+                  <textarea id="taskProfileInstructions" maxlength="4000" rows="6" placeholder="Task-specific style, priorities, workflow, and preferences"></textarea>
+                </label>
+                <label class="host-behavior-enabled"><input id="taskProfileEnabled" type="checkbox"> Enable editable behavior layer</label>
+                <p id="taskProfileRevision" class="muted-copy">Profile revision: 1</p>
+              </section>
+              <div class="edit-actions">
+                <button id="saveTaskProfile" class="primary-button" type="button">Save Task Profile</button>
+              </div>
+            </section>
           </article>
 
           <article class="panel">
