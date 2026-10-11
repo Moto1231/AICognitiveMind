@@ -60,6 +60,14 @@ class TaskModelAssignmentRegistryTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "missing tasks"):
             await registry.replace(assignments[:-1])
 
+    async def test_rejects_duplicate_task_entries(self):
+        registry = TaskModelAssignmentRegistry(FakeRecords())
+        assignments = await registry.list()
+        assignments[-1] = assignments[0]
+
+        with self.assertRaisesRegex(ValueError, "duplicate task entries"):
+            await registry.replace(assignments)
+
     async def test_values_are_trimmed(self):
         assignment = TaskModelAssignment(
             task="vision",
