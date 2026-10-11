@@ -1211,3 +1211,5 @@ refresh();
 
 if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBehavior);
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
+if (el.refreshTaskModels) el.refreshTaskModels.addEventListener("click", () => refreshTaskModelAssignments().catch(error => toast(error.message, true)));
+if (el.saveTaskModels) el.saveTaskModels.addEventListener("click", saveTaskModelAssignments);
