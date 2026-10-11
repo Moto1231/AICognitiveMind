@@ -12,7 +12,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
-from aicognitive_mind.task_model_assignments import TASK_LABELS, TaskKind
+from aicognitive_mind.task_model_assignments import TASK_LABELS
 
 TaskBehaviorKind = Literal[
     "vision", "audio", "coding", "image_generation", "summarization",
