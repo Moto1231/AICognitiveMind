@@ -35,6 +35,30 @@ class TaskModelDispatcher:
         self.timeout = timeout
         self.client = client
 
+    async def execute(self, context: TaskExecutionContext, payload: Any) -> Any:
+        """Runtime-neutral entry point implemented by the stateless API adapter."""
+        if not isinstance(payload, dict):
+            raise TaskDispatchError("Task runtime payload must be an object.")
+        operation = payload.get("operation")
+        if operation == "chat":
+            messages = payload.get("messages")
+            if not isinstance(messages, list) or not all(isinstance(item, dict) for item in messages):
+                raise TaskDispatchError("Chat runtime payload requires a messages list.")
+            return await self.complete_chat(
+                context.task, messages, temperature=payload.get("temperature"), context=context
+            )
+        if operation == "transcribe":
+            filename = payload.get("filename")
+            audio_bytes = payload.get("audio_bytes")
+            media_type = payload.get("media_type")
+            if not isinstance(filename, str) or not isinstance(audio_bytes, bytes) or not isinstance(media_type, str):
+                raise TaskDispatchError("Transcription runtime payload requires filename, audio_bytes, and media_type.")
+            return await self.transcribe(
+                context.task, filename=filename, audio_bytes=audio_bytes,
+                media_type=media_type, context=context,
+            )
+        raise TaskDispatchError("Unsupported task runtime operation.")
+
     async def assignment(self, task: TaskKind) -> TaskModelAssignment:
         return next(item for item in await self.assignments.list() if item.task == task)
 
