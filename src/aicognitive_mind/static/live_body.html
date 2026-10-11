@@ -46,10 +46,11 @@
       display: none;
     }
     .audio-meter {
-      position: absolute;
-      left: 1rem;
-      right: 1rem;
-      bottom: 1rem;
+      position: relative;
+      left: auto;
+      right: auto;
+      bottom: auto;
+      margin: .65rem 0 0;
       padding: .65rem .8rem;
       border: 1px solid #373a44;
       border-radius: 10px;
@@ -62,7 +63,6 @@
     button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .5; }
     #status { white-space: pre-wrap; background: #181a20; padding: 1rem; border-radius: 10px; margin-top: 1rem; min-height: 6rem; }
-    #evidenceArtifact { display: inline-block; margin-top: .75rem; }
     .interaction-panel {
       margin: 1rem 0;
       background: #181a20;
@@ -238,15 +238,16 @@
 
     <div id="stage">
       <video id="liveScene" autoplay playsinline muted aria-label="Live camera scene"></video>
-      <div id="audioMeter" class="audio-meter" aria-label="Microphone input level">
-        <div class="audio-meter-label"><span>Hearing</span><span id="audioMeterValue">0%</span></div>
-        <div class="audio-meter-track"><div id="audioMeterFill"></div></div>
-      </div>
+    </div>
+
+    <div id="audioMeter" class="audio-meter" aria-label="Microphone input level">
+      <div class="audio-meter-label"><span>Hearing</span><span id="audioMeterValue">0%</span></div>
+      <div class="audio-meter-track"><div id="audioMeterFill"></div></div>
     </div>
 
     <section class="interaction-panel" aria-label="Conversation with Mind">
       <div id="interactionHistory" aria-live="polite">
-        <div id="chatEmpty" class="chat-empty">Talk to the Mind.</div>
+        <div id="chatEmpty" class="chat-empty">Message</div>
       </div>
       <form id="interactionForm" class="interaction-form">
         <textarea
@@ -259,7 +260,6 @@
         ></textarea>
         <div class="interaction-actions">
           <button id="clearInteraction" type="button" title="Clear conversation">Clear</button>
-          <button id="talkToggle" type="button" aria-pressed="false" aria-label="Start hands-free conversation">Talk</button>
           <button id="sendInteraction" type="submit" aria-label="Send interaction">Send</button>
         </div>
       </form>
@@ -268,7 +268,6 @@
     <video id="video" autoplay playsinline muted hidden></video>
     <canvas id="captureCanvas" hidden></canvas>
     <div id="status">Axiom Body ready. Turn Senses on to activate vision and hearing.</div>
-    <a id="evidenceArtifact" href="#" target="_blank" rel="noopener" hidden>Open evidence artifact</a>
   </main>
 
   <script type="module">
@@ -286,11 +285,9 @@
     const canvas = document.getElementById("captureCanvas");
     const sensesToggle = document.getElementById("sensesToggle");
     const statusBox = document.getElementById("status");
-    const evidenceArtifactLink = document.getElementById("evidenceArtifact");
     const interactionForm = document.getElementById("interactionForm");
     const interactionMessage = document.getElementById("interactionMessage");
     const sendInteractionButton = document.getElementById("sendInteraction");
-    const talkToggle = document.getElementById("talkToggle");
     const clearInteractionButton = document.getElementById("clearInteraction");
     const interactionHistory = document.getElementById("interactionHistory");
     const chatEmpty = document.getElementById("chatEmpty");
@@ -817,7 +814,6 @@
       sendInteractionButton.disabled = true;
       talkBusy = true;
       const thinkingMessage = appendChatMessage("mind", "Thinking...");
-      evidenceArtifactLink.hidden = true;
 
       try {
         const response = await bodyFetch("/v1/mind/body/interact", {
@@ -832,7 +828,7 @@
         setStatus(
           "TEXT INTERACTION COMPLETE\n\n" +
           "You:\n" + message + "\n\n" +
-          "Mind response:\n" + result.response_text
+          "Message:\n" + result.response_text
         );
         interactionHistory.scrollTop = interactionHistory.scrollHeight;
         await consumeExpressionOutputs();
@@ -1252,7 +1248,6 @@
     }
 
     interactionForm.addEventListener("submit", submitTextInteraction);
-    talkToggle.addEventListener("click", () => talkEnabled ? stopTalking() : startTalking());
     interactionMessage.addEventListener("input", resizeComposer);
     interactionMessage.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
