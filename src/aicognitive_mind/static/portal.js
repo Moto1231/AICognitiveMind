@@ -96,6 +96,7 @@ const el = {
   taskProfileOverview: document.getElementById("taskProfileOverview"),
   refreshDevicesButton: document.getElementById("refreshDevicesButton"),
   devicePermissionStatus: document.getElementById("devicePermissionStatus"),
+  deviceSelectionSummary: document.getElementById("deviceSelectionSummary"),
   deviceInventoryList: document.getElementById("deviceInventoryList"),
   refreshEvidenceButton: document.getElementById("refreshEvidenceButton"),
   evidenceResultCount: document.getElementById("evidenceResultCount"),
@@ -1800,6 +1801,10 @@ async function refreshDeviceInventory() {
     el.devicePermissionStatus.textContent = `Device query failed: ${error.message}. Check browser permissions and reload the page.`;
     toast(`Could not query devices: ${error.message}`, true);
   }
+}
+
+if (navigator.mediaDevices?.addEventListener) {
+  navigator.mediaDevices.addEventListener("devicechange", () => refreshDeviceInventory());
 }
 
 // Render the built-in task list immediately so the workspace remains navigable
