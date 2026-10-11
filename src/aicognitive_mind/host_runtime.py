@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from aicognitive_mind.commit import CommitConflict, backend, surreal_query
+from aicognitive_mind.task_dispatcher import TaskModelDispatcher
 
 
 logger = logging.getLogger('aicognitive_mind.auth_diagnostics')
@@ -382,9 +383,21 @@ class HostAwareCore:
 class HostAwareInterpreter:
     def __init__(self, fallback: Any, hosts: HostRuntime) -> None:
         self.fallback, self.hosts = fallback, hosts
+        self.task_dispatcher = (
+            TaskModelDispatcher(fallback.records)
+            if getattr(fallback, "records", None) is not None else None
+        )
 
     async def interpret(self, percept: Any, *, focus: str | None = None) -> str:
         if await self.hosts.active():
+            if self.task_dispatcher is not None:
+                modality = getattr(getattr(percept, "modality", None), "value", "")
+                if modality in {"vision", "audio"}:
+                    specialist_result = await self.task_dispatcher.interpret_percept(
+                        percept, focus=focus
+                    )
+                    if specialist_result is not None:
+                        return specialist_result
             return f"Uninterpreted {percept.modality.value} observation. Use the sensory evidence reference in Body context to inspect the original media."
         from aicognitive_mind.config import get_settings
 
