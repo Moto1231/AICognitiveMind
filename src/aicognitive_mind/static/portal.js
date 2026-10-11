@@ -24,6 +24,7 @@ const state = {
   providerEndpoints: [],
   activeTaskProfile: null,
   activeEndpointId: null,
+  activeEndpointOriginalName: "",
 };
 
 const el = {
@@ -439,6 +440,7 @@ function openTaskProfile(task) {
     item.name === assignment.provider || item.id === assignment.provider
   );
   state.activeEndpointId = endpoint?.id || state.providerEndpoints[0]?.id || null;
+  state.activeEndpointOriginalName = state.providerEndpoints.find(item => item.id === state.activeEndpointId)?.name || "";
   if (state.activeEndpointId && !assignment.provider) {
     assignment.provider = state.providerEndpoints.find(item => item.id === state.activeEndpointId)?.name || "";
   }
@@ -446,6 +448,7 @@ function openTaskProfile(task) {
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
   el.taskProfileSummary.textContent = "Configure this task's endpoint, model assignment, and behavior in one place.";
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
+  el.taskProfileBehaviorName.value = behavior.name || (taskModelLabels[task] || displayLabel(task));
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
   el.taskProfileRevision.textContent = "Profile revision: " + (behavior.revision || 1);
@@ -498,13 +501,22 @@ async function saveTaskProfile() {
   try {
     const endpoint = selectedEndpoint();
     if (endpoint) {
-      endpoint.name = el.taskProfileEndpointName.value.trim();
+      const previousName = state.activeEndpointOriginalName || endpoint.name;
+      const nextName = el.taskProfileEndpointName.value.trim();
+      endpoint.name = nextName;
       endpoint.base_url = el.taskProfileBaseUrl.value.trim();
       endpoint.api_key = el.taskProfileApiKey.value;
       if (!endpoint.name || !endpoint.base_url) {
         toast("Endpoint name and base URL are required", true);
         return;
       }
+      if (previousName && previousName !== nextName) {
+        for (const item of state.taskModelAssignments) {
+          if (item.provider === previousName) item.provider = nextName;
+          if (item.fallback_provider === previousName) item.fallback_provider = nextName;
+        }
+      }
+      state.activeEndpointOriginalName = nextName;
     }
 
     const assignment = state.taskModelAssignments.find(item => item.task === task);
@@ -514,6 +526,7 @@ async function saveTaskProfile() {
     assignment.fallback_model = el.taskProfileFallbackModel.value.trim();
 
     const behavior = state.taskBehaviors.find(item => item.task === task);
+    behavior.name = el.taskProfileBehaviorName.value.trim() || (taskModelLabels[task] || displayLabel(task));
     behavior.instructions = el.taskProfileInstructions.value;
     behavior.enabled = el.taskProfileEnabled.checked;
 
@@ -576,6 +589,7 @@ function addTaskProfileEndpoint() {
   };
   state.providerEndpoints.push(endpoint);
   state.activeEndpointId = endpoint.id;
+  state.activeEndpointOriginalName = "";
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   el.taskProfileEndpointName.focus();
@@ -1400,8 +1414,10 @@ refresh();
 if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBehavior);
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
 if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
+if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", () => Promise.all([refreshTaskModelAssignments(), refreshTaskBehaviors(), refreshProviderEndpoints()]).catch(error => toast(error.message, true)));
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
+  state.activeEndpointOriginalName = selectedEndpoint()?.name || "";
   loadEndpointIntoForm();
 });
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
