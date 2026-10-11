@@ -117,6 +117,16 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 .secondary-button:hover, .primary-button:hover { transform: translateY(-1px); }
 .admin-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
 .admin-behavior-panel { grid-column: 1 / -1; min-width: 0; }
+.admin-task-model-panel { grid-column: 1 / -1; min-width: 0; }
+.task-model-assignment-card { display: grid; gap: 12px; }
+.task-model-assignment-card h4 { margin: 0; font-size: 14px; font-weight: 750; }
+.task-model-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.task-model-notes { grid-column: 1 / -1; }
 .host-behavior-card {
   display: grid;
   gap: 14px;
@@ -223,7 +233,8 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   .identity-panel, .memory-panel, .admin-summary { grid-column: auto; grid-row: auto; }
 }
 @media (max-width: 560px) {
-  .host-behavior-fields { grid-template-columns: minmax(0, 1fr); }
+  .host-behavior-fields, .task-model-fields { grid-template-columns: minmax(0, 1fr); }
+  .task-model-notes { grid-column: auto; }
   .host-behavior-instruction { grid-column: auto; }
   .host-behavior-card { padding: 13px; }
 }

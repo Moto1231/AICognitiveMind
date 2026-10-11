@@ -61,6 +61,10 @@ from aicognitive_mind.embodiment import (
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
+from aicognitive_mind.task_model_assignments import (
+    TaskModelAssignment,
+    TaskModelAssignmentRegistry,
+)
 from aicognitive_mind.host_runtime import (
     HostAwareCore,
     HostAwareInterpreter,
@@ -100,6 +104,10 @@ class InteractionRequest(BaseModel):
 
 class HostBehaviorListRequest(BaseModel):
     items: list[HostBehavior]
+
+
+class TaskModelAssignmentListRequest(BaseModel):
+    items: list[TaskModelAssignment]
 
 
 class AdminMemoryRevisionRequest(BaseModel):
@@ -484,6 +492,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     records = RuntimeRecords(storage.mind)
     app.state.host_behaviors = HostBehaviorRegistry(records)
+    app.state.task_model_assignments = TaskModelAssignmentRegistry(records)
     app.state.accounts = AccountService(settings, records)
     app.state.portal_sessions = {}
     from aicognitive_mind.voice_settings import VoiceSettings
@@ -1294,6 +1303,26 @@ async def admin_status(request: Request) -> dict[str, bool]:
 async def admin_host_behaviors(request: Request) -> dict[str, Any]:
     require_admin(request)
     items = await request.app.state.host_behaviors.list()
+    return {"items": [item.model_dump(mode="json") for item in items]}
+
+
+@app.get("/v1/admin/task-model-assignments")
+async def admin_task_model_assignments(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    items = await request.app.state.task_model_assignments.list()
+    return {"items": [item.model_dump(mode="json") for item in items]}
+
+
+@app.put("/v1/admin/task-model-assignments")
+async def replace_admin_task_model_assignments(
+    payload: TaskModelAssignmentListRequest,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    try:
+        items = await request.app.state.task_model_assignments.replace(payload.items)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"items": [item.model_dump(mode="json") for item in items]}
 
 

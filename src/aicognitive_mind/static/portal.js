@@ -18,6 +18,7 @@ const state = {
   activeMemory: null,
   activeJournal: null,
   hostBehaviors: [],
+  taskModelAssignments: [],
 };
 
 const el = {
@@ -107,6 +108,9 @@ const el = {
   hostBehaviorList: document.getElementById("hostBehaviorList"),
   addHostBehavior: document.getElementById("addHostBehavior"),
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
+  taskModelAssignmentList: document.getElementById("taskModelAssignmentList"),
+  refreshTaskModels: document.getElementById("refreshTaskModels"),
+  saveTaskModels: document.getElementById("saveTaskModels"),
   toast: document.getElementById("toast"),
 };
 
@@ -316,6 +320,81 @@ async function saveHostBehaviors() {
   }
 }
 
+const taskModelLabels = {
+  vision: "Vision",
+  audio: "Audio & Transcription",
+  coding: "Coding",
+  image_generation: "Drawing & Image Generation",
+  summarization: "Summarizing",
+  memory_recall: "Memory Recall",
+  web_research: "Web Research",
+  structured_extraction: "Structured Extraction",
+};
+
+function renderTaskModelAssignments() {
+  el.taskModelAssignmentList.replaceChildren();
+  for (const assignment of state.taskModelAssignments) {
+    const card = document.createElement("section");
+    card.className = "memory-card task-model-assignment-card";
+    const heading = document.createElement("h4");
+    heading.textContent = taskModelLabels[assignment.task] || displayLabel(assignment.task);
+    card.append(heading);
+
+    const fields = document.createElement("div");
+    fields.className = "task-model-fields";
+    const field = (labelText, key, placeholder, maxLength = 160) => {
+      const label = document.createElement("label");
+      label.className = "host-behavior-field";
+      label.append(document.createTextNode(labelText));
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = assignment[key] || "";
+      input.placeholder = placeholder;
+      input.maxLength = maxLength;
+      input.addEventListener("input", () => { assignment[key] = input.value; });
+      label.append(input);
+      fields.append(label);
+    };
+    field("Provider", "provider", "e.g. OpenAI, Google, local");
+    field("Model", "model", "Exact model identifier");
+    field("Fallback provider", "fallback_provider", "Optional fallback provider");
+    field("Fallback model", "fallback_model", "Optional fallback model");
+    const notes = document.createElement("label");
+    notes.className = "host-behavior-field task-model-notes";
+    notes.append(document.createTextNode("Notes"));
+    const noteInput = document.createElement("input");
+    noteInput.type = "text";
+    noteInput.value = assignment.notes || "";
+    noteInput.placeholder = "Optional capability or cost notes";
+    noteInput.maxLength = 500;
+    noteInput.addEventListener("input", () => { assignment.notes = noteInput.value; });
+    notes.append(noteInput);
+    fields.append(notes);
+    card.append(fields);
+    el.taskModelAssignmentList.append(card);
+  }
+}
+
+async function refreshTaskModelAssignments() {
+  const payload = await api("/v1/admin/task-model-assignments", {}, true);
+  state.taskModelAssignments = payload.items;
+  renderTaskModelAssignments();
+}
+
+async function saveTaskModelAssignments() {
+  try {
+    const payload = await api("/v1/admin/task-model-assignments", {
+      method: "PUT",
+      body: JSON.stringify({ items: state.taskModelAssignments }),
+    }, true);
+    state.taskModelAssignments = payload.items;
+    renderTaskModelAssignments();
+    toast("Task model assignments saved");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
+
 async function enterAdminMode() {
   try {
     const allowed = await validateAdmin();
@@ -325,6 +404,7 @@ async function enterAdminMode() {
       refreshMemory(filters.admin, true),
       refreshJournal(true),
       refreshHostBehaviors(),
+      refreshTaskModelAssignments(),
     ]);
   } catch (error) {
     toast(error.message, true);
@@ -1131,3 +1211,5 @@ refresh();
 
 if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBehavior);
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
+if (el.refreshTaskModels) el.refreshTaskModels.addEventListener("click", () => refreshTaskModelAssignments().catch(error => toast(error.message, true)));
+if (el.saveTaskModels) el.saveTaskModels.addEventListener("click", saveTaskModelAssignments);
