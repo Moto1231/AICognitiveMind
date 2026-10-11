@@ -585,3 +585,9 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 .memory-pagination .secondary-button {
   min-width: 160px;
 }
+
+.provider-endpoint-card { display: grid; gap: 12px; }
+.provider-endpoint-controls, .provider-endpoint-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.provider-endpoint-models { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.provider-endpoint-list { display: grid; gap: 12px; }
+.provider-endpoints-panel { grid-column: 1 / -1; }
