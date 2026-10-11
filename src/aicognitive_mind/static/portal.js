@@ -96,6 +96,7 @@ const el = {
   taskProfileOverview: document.getElementById("taskProfileOverview"),
   refreshDevicesButton: document.getElementById("refreshDevicesButton"),
   devicePermissionStatus: document.getElementById("devicePermissionStatus"),
+  deviceSelectionSummary: document.getElementById("deviceSelectionSummary"),
   deviceInventoryList: document.getElementById("deviceInventoryList"),
   refreshEvidenceButton: document.getElementById("refreshEvidenceButton"),
   evidenceResultCount: document.getElementById("evidenceResultCount"),
@@ -1700,6 +1701,39 @@ if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
 
+const BODY_DEVICE_STORAGE_KEYS = {
+  videoinput: "aicognitive_mind.device.videoInput",
+  audioinput: "aicognitive_mind.device.audioInput",
+  audiooutput: "aicognitive_mind.device.audioOutput",
+};
+
+function selectedDeviceId(kind) {
+  try { return localStorage.getItem(BODY_DEVICE_STORAGE_KEYS[kind]) || ""; }
+  catch (_) { return ""; }
+}
+
+function saveSelectedDevice(kind, deviceId) {
+  try {
+    if (deviceId) localStorage.setItem(BODY_DEVICE_STORAGE_KEYS[kind], deviceId);
+    else localStorage.removeItem(BODY_DEVICE_STORAGE_KEYS[kind]);
+    renderDeviceSelectionSummary();
+    toast(deviceId ? "Body device selection saved" : "Body will use the browser default device");
+  } catch (error) {
+    toast("Could not save device selection in this browser: " + error.message, true);
+  }
+}
+
+function renderDeviceSelectionSummary() {
+  if (!el.deviceSelectionSummary) return;
+  const labels = [];
+  for (const [kind, label] of [["videoinput", "Camera"], ["audioinput", "Microphone"], ["audiooutput", "Speaker"]]) {
+    const id = selectedDeviceId(kind);
+    const device = (state.deviceInventory || []).find(item => item.kind === kind && item.deviceId === id);
+    labels.push(label + ": " + (device?.label || (id ? "Saved device (" + id.slice(0, 8) + "…)" : "Browser default")));
+  }
+  el.deviceSelectionSummary.textContent = labels.join(" · ");
+}
+
 async function refreshDeviceInventory() {
   el.devicePermissionStatus.textContent = "Querying browser device inventory…";
   el.deviceInventoryList.replaceChildren();
@@ -1719,37 +1753,58 @@ async function refreshDeviceInventory() {
       `Microphone permission: ${microphonePermission?.state || "not reported by browser"}`,
     ];
     el.devicePermissionStatus.textContent = `${state.deviceInventory.length} device(s) discovered. ${permissions.join(" · ")}. Labels may be hidden until permission is granted.`;
-    for (const [kind, heading] of [["videoinput", "Cameras"], ["audioinput", "Microphones"], ["audiooutput", "Speakers / audio outputs"]]) {
+    for (const [kind, heading] of [["videoinput", "Body camera"], ["audioinput", "Body microphone"], ["audiooutput", "Body speaker / audio output"]]) {
       const matches = state.deviceInventory.filter(device => device.kind === kind);
       const section = document.createElement("section");
       section.className = "device-inventory-group";
       const title = document.createElement("h4");
       title.textContent = `${heading} (${matches.length})`;
       section.append(title);
+      const pickerLabel = document.createElement("label");
+      pickerLabel.className = "host-behavior-field";
+      pickerLabel.append(document.createTextNode("Use for Body operation"));
+      const picker = document.createElement("select");
+      picker.setAttribute("aria-label", `Select ${heading.toLowerCase()}`);
+      const defaultOption = document.createElement("option");
+      defaultOption.value = "";
+      defaultOption.textContent = "Browser default";
+      picker.append(defaultOption);
+      matches.forEach((device, index) => {
+        if (!device.deviceId) return;
+        const option = document.createElement("option");
+        option.value = device.deviceId;
+        const singular = kind === "videoinput" ? "Camera" : kind === "audioinput" ? "Microphone" : "Speaker";
+        option.textContent = device.label.trim() || `${singular} ${index + 1} (label hidden)`;
+        picker.append(option);
+      });
+      picker.value = selectedDeviceId(kind);
+      if (![...picker.options].some(option => option.value === picker.value)) picker.value = "";
+      picker.addEventListener("change", () => saveSelectedDevice(kind, picker.value));
+      pickerLabel.append(picker);
+      section.append(pickerLabel);
       if (!matches.length) {
         const empty = document.createElement("p");
         empty.className = "record-empty";
         empty.textContent = "No devices of this type were exposed to this browser.";
         section.append(empty);
-      } else {
-        const list = document.createElement("div");
-        list.className = "record-list";
-        matches.forEach((device, index) => {
-          const row = document.createElement("div");
-          row.className = "record-value";
-          const singular = kind === "videoinput" ? "Camera" : kind === "audioinput" ? "Microphone" : "Speaker";
-          const label = device.label.trim() || `${singular} ${index + 1} (label hidden by browser)`;
-          row.textContent = `${label}${device.deviceId ? ` · ID ${device.deviceId.slice(0, 8)}…` : ""}`;
-          list.append(row);
-        });
-        section.append(list);
+      }
+      if (kind === "audiooutput" && typeof HTMLMediaElement !== "undefined" && !("setSinkId" in HTMLMediaElement.prototype)) {
+        const note = document.createElement("p");
+        note.className = "record-empty";
+        note.textContent = "This browser cannot route media-element playback to a selected speaker; its default output will be used.";
+        section.append(note);
       }
       el.deviceInventoryList.append(section);
     }
+    renderDeviceSelectionSummary();
   } catch (error) {
     el.devicePermissionStatus.textContent = `Device query failed: ${error.message}. Check browser permissions and reload the page.`;
     toast(`Could not query devices: ${error.message}`, true);
   }
+}
+
+if (navigator.mediaDevices?.addEventListener) {
+  navigator.mediaDevices.addEventListener("devicechange", () => refreshDeviceInventory());
 }
 
 // Render the built-in task list immediately so the workspace remains navigable
