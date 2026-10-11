@@ -157,6 +157,7 @@
           <button class="admin-section-button" type="button" data-admin-section="behaviors">Interaction Behaviors</button>
           <button class="admin-section-button" type="button" data-admin-section="memories">Memories</button>
           <button class="admin-section-button" type="button" data-admin-section="journals">Journals</button>
+          <button class="admin-section-button" type="button" data-admin-section="evidence">Sensory Evidence</button>
         </nav>
 
         <div class="admin-grid">
@@ -360,6 +361,16 @@
             </div>
           </article>
 
+          <article id="evidenceSection" class="panel hidden">
+            <div class="panel-heading">
+              <div><p class="eyebrow">BODY SENSES</p><h3>Preserved Sensory Evidence</h3></div>
+              <button id="refreshEvidenceButton" class="secondary-button" type="button">Refresh Evidence</button>
+            </div>
+            <p class="muted-copy">Review preserved camera images and microphone clips. Erasing an artifact removes its stored media bytes; journal history remains as an audit record.</p>
+            <div id="evidenceResultCount" class="search-summary">Loading evidence…</div>
+            <div id="evidenceList" class="record-list"></div>
+          </article>
+
           <article id="overviewSection" class="panel admin-summary">
             <p class="eyebrow">CURRENT STATE</p>
             <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
@@ -487,6 +498,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261011-task-profiles"></script>
+  <script src="/static/portal.js?v=20261011-sensory-evidence"></script>
 </body>
 </html>
