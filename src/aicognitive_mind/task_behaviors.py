@@ -111,7 +111,7 @@ class TaskBehaviorRegistry:
     async def replace(self, behaviors: list[TaskBehavior]) -> list[TaskBehavior]:
         by_task = {item.task: item for item in behaviors}
         expected = set(TASK_BEHAVIOR_LABELS)
-        if len(behaviors) != len(TASK_LABELS) or set(by_task) != expected:
+        if len(behaviors) != len(TASK_BEHAVIOR_LABELS) or set(by_task) != expected:
             raise ValueError("Task behaviors must contain exactly one profile for every supported task")
         current = {item.task: item for item in await self.list()}
         ordered: list[TaskBehavior] = []
