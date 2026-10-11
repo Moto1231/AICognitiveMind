@@ -28,3 +28,15 @@ def test_live_body_polls_for_host_camera_requests():
     assert '"/v1/body/camera/complete"' in source
     assert "checkForHostCameraRequest" in source
     assert 'source: "browser-camera-mcp"' in source
+
+def test_live_body_shows_independent_vision_and_audio_statuses():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    assert 'id="visionSenseStatus"' in source
+    assert 'id="audioSenseStatus"' in source
+    assert 'setSenseStatus("vision"' in source
+    assert 'setSenseStatus("audio"' in source
+    assert 'reportSenseFailure("vision", error)' in source
+    assert 'reportSenseFailure("audio", error)' in source
+    assert 'Evidence saved; interpretation failed:' in source
+    assert 'placeholder="Message"' in source
+    assert 'placeholder="Message the Mind..."' not in source

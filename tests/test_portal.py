@@ -22,6 +22,45 @@ from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
 class PortalTests(unittest.TestCase):
+    def test_task_profile_controls_are_bound_and_renderable(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+        profile_ids = (
+            "refreshTaskProfiles",
+            "taskProfileList",
+            "taskProfileEditor",
+            "taskProfileTitle",
+            "taskProfileSummary",
+            "taskProfileBack",
+            "taskProfileEndpointSection",
+            "taskProfileEndpointSelect",
+            "taskProfileAddEndpoint",
+            "taskProfileEndpointName",
+            "taskProfileBaseUrl",
+            "taskProfileApiKey",
+            "taskProfileDiscover",
+            "taskProfileAssignmentSection",
+            "taskProfileModel",
+            "taskProfileModels",
+            "taskProfileFallbackProvider",
+            "taskProfileFallbackModel",
+            "taskProfileFoundation",
+            "taskProfileBehaviorName",
+            "taskProfileInstructions",
+            "taskProfileEnabled",
+            "taskProfileRevision",
+            "saveTaskProfile",
+        )
+        for element_id in profile_ids:
+            with self.subTest(element_id=element_id):
+                self.assertIn(f'id="{element_id}"', markup)
+                self.assertIn(
+                    f'{element_id}: document.getElementById("{element_id}")',
+                    script,
+                )
+        self.assertIn("function renderTaskProfiles()", script)
+        self.assertIn("renderTaskProfiles();", script)
+
     def test_portal_assets_are_packaged_and_routes_are_registered(self) -> None:
         index = STATIC_DIR / "index.html"
         stylesheet = STATIC_DIR / "portal.css"
