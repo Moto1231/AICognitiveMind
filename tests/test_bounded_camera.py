@@ -40,3 +40,9 @@ def test_live_body_shows_independent_vision_and_audio_statuses():
     assert 'Evidence saved; interpretation failed:' in source
     assert 'placeholder="Message"' in source
     assert 'placeholder="Message the Mind..."' not in source
+
+
+def test_senses_activation_starts_hands_free_voice():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    assert "await startTalking();" in source
+    assert "realtimeMicrophone = microphoneStream || await navigator.mediaDevices.getUserMedia({ audio: true });" in source
