@@ -634,13 +634,17 @@ function renderStatus(status) {
   el.memoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.journalCount.textContent = Number(status.journal_experience_count).toLocaleString();
 
-  el.protocolValue.textContent = integration.protocol;
+  // These legacy overview fields were removed from the portal markup.
+  // Keep status refresh resilient when optional presentation fields are absent.
+  if (el.protocolValue) el.protocolValue.textContent = integration.protocol;
   const host = status.reasoning?.active_host;
-  el.reasoningOwner.textContent = host
-    ? `External Host: ${host.name} (${host.model})`
-    : `External Host: not attached; standalone fallback ${status.reasoning?.fallback_enabled ? "enabled" : "disabled"}`;
-  el.identityOwner.textContent = integration.identity_owner;
-  el.memoryOwner.textContent = integration.memory_owner;
+  if (el.reasoningOwner) {
+    el.reasoningOwner.textContent = host
+      ? `External Host: ${host.name} (${host.model})`
+      : `External Host: not attached; standalone fallback ${status.reasoning?.fallback_enabled ? "enabled" : "disabled"}`;
+  }
+  if (el.identityOwner) el.identityOwner.textContent = integration.identity_owner;
+  if (el.memoryOwner) el.memoryOwner.textContent = integration.memory_owner;
   el.adminMindName.textContent = mind.identity.self_name;
   el.adminMemoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.adminJournalCount.textContent = Number(status.journal_experience_count).toLocaleString();
