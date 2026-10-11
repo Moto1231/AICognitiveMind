@@ -5,6 +5,7 @@
 
 import base64
 import binascii
+import hashlib
 import hmac
 import logging
 import os
@@ -501,12 +502,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         memory=storage.memory,
     )
     records = RuntimeRecords(storage.mind)
+    app.state.runtime_records = records
     app.state.host_behaviors = HostBehaviorRegistry(records)
     app.state.task_model_assignments = TaskModelAssignmentRegistry(records)
     app.state.task_behaviors = TaskBehaviorRegistry(records)
     app.state.provider_endpoints = ProviderEndpointRegistry(records)
     app.state.accounts = AccountService(settings, records)
-    app.state.portal_sessions = {}
     from aicognitive_mind.voice_settings import VoiceSettings
 
     app.state.voice_settings = VoiceSettings(storage.mind)
@@ -566,6 +567,52 @@ app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _portal_session_record_key(token: str) -> str:
+    return "portal_session_" + hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+async def store_portal_session(app: FastAPI, token: str, mind_id: str, expires_at: float) -> None:
+    """Persist portal login state so a Render process restart does not log users out."""
+    records = app.state.runtime_records
+    await records.create(
+        _portal_session_record_key(token),
+        {"account_mind_id": mind_id, "expires_at": float(expires_at)},
+    )
+
+
+async def read_portal_session(app: FastAPI, token: str) -> dict[str, Any] | None:
+    if not token:
+        return None
+    records = app.state.runtime_records
+    stored = await records.get(_portal_session_record_key(token))
+    if not stored:
+        return None
+    try:
+        expires_at = float(stored.get("expires_at", 0))
+        mind_id = str(stored.get("account_mind_id", ""))
+    except (TypeError, ValueError):
+        return None
+    if not mind_id or expires_at <= time_module.time():
+        return None
+    return {"mind_id": mind_id, "expires_at": expires_at}
+
+
+async def revoke_portal_session(app: FastAPI, token: str) -> None:
+    if not token:
+        return
+    records = app.state.runtime_records
+    key = _portal_session_record_key(token)
+    stored = await records.get(key)
+    if not stored:
+        return
+    before = {
+        "account_mind_id": stored.get("account_mind_id"),
+        "expires_at": stored.get("expires_at"),
+    }
+    after = {**before, "expires_at": 0.0}
+    await records.replace(key, before, after)
+
+
 def _body_presence_scope(request: Request) -> tuple[str, str]:
     """Bind volatile person tracks to the authenticated Mind and Body session."""
     tenant_storage = getattr(request.state, "tenant_storage", None)
@@ -599,7 +646,7 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
         return await call_next(request)
 
     session_token = request.cookies.get("axiom_portal_session", "")
-    session = getattr(request.app.state, "portal_sessions", {}).get(session_token)
+    session = await read_portal_session(request.app, session_token)
     if session and session["expires_at"] > time_module.time():
         # The original pre-multi-user account owns the unscoped Mind that was
         # created before tenant ids existed. Keep using the app's canonical
@@ -626,10 +673,12 @@ async def portal_login(body: PortalLoginRequest, request: Request) -> Response:
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
     token = secrets.token_urlsafe(32)
-    request.app.state.portal_sessions[token] = {
-        "mind_id": account.mind_id,
-        "expires_at": time_module.time() + 7 * 24 * 3600,
-    }
+    await store_portal_session(
+        request.app,
+        token,
+        account.mind_id,
+        time_module.time() + 7 * 24 * 3600,
+    )
     response = JSONResponse({"ok": True})
     response.set_cookie(
         "axiom_portal_session",
