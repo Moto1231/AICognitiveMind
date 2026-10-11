@@ -7,6 +7,7 @@ from aicognitive_mind.task_behaviors import (
     TaskPromptAssembler,
 )
 from aicognitive_mind.task_model_assignments import TASK_LABELS
+from aicognitive_mind.task_behaviors import TASK_BEHAVIOR_LABELS
 
 
 class FakeRecords:
@@ -30,8 +31,8 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
     async def test_every_task_has_code_owned_foundation_and_mutable_profile(self):
         registry = TaskBehaviorRegistry(FakeRecords())
         profiles = await registry.list()
-        self.assertEqual({item.task for item in profiles}, set(TASK_LABELS))
-        self.assertEqual(set(TASK_FOUNDATIONS), set(TASK_LABELS))
+        self.assertEqual({item.task for item in profiles}, set(TASK_BEHAVIOR_LABELS))
+        self.assertEqual(set(TASK_FOUNDATIONS), set(TASK_BEHAVIOR_LABELS))
         for profile in profiles:
             self.assertTrue(TASK_FOUNDATIONS[profile.task])
 
@@ -86,6 +87,15 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
         prompt = await assembler.system_prompt(TaskExecutionContext(task="audio"))
         self.assertIn(TASK_FOUNDATIONS["audio"], prompt)
         self.assertNotIn("CONFIGURABLE TASK BEHAVIOR", prompt)
+
+    async def test_reasoning_has_its_own_mutable_profile_without_model_assignment(self):
+        registry = TaskBehaviorRegistry(FakeRecords())
+        profiles = await registry.list()
+        reasoning = next(item for item in profiles if item.task == "reasoning")
+        self.assertEqual(reasoning.name, "Reasoning (connected host)")
+        prompt = await TaskPromptAssembler(registry).system_prompt(TaskExecutionContext(task="reasoning", provider="connected-host", model="host-selected"))
+        self.assertIn(TASK_FOUNDATIONS["reasoning"], prompt)
+        self.assertIn("Model: host-selected", prompt)
 
 
 if __name__ == "__main__":
