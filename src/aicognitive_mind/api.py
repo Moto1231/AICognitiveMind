@@ -61,6 +61,7 @@ from aicognitive_mind.embodiment import (
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
+from aicognitive_mind.task_behaviors import TaskBehavior, TaskBehaviorRegistry
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, discover_endpoint_models
 from aicognitive_mind.task_model_assignments import (
     TaskModelAssignment,
@@ -109,6 +110,10 @@ class HostBehaviorListRequest(BaseModel):
 
 class TaskModelAssignmentListRequest(BaseModel):
     items: list[TaskModelAssignment]
+
+
+class TaskBehaviorListRequest(BaseModel):
+    items: list[TaskBehavior]
 
 
 class ProviderEndpointListRequest(BaseModel):
@@ -498,6 +503,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     records = RuntimeRecords(storage.mind)
     app.state.host_behaviors = HostBehaviorRegistry(records)
     app.state.task_model_assignments = TaskModelAssignmentRegistry(records)
+    app.state.task_behaviors = TaskBehaviorRegistry(records)
     app.state.provider_endpoints = ProviderEndpointRegistry(records)
     app.state.accounts = AccountService(settings, records)
     app.state.portal_sessions = {}
@@ -1344,6 +1350,34 @@ async def discover_admin_provider_endpoint_models(
         logger.info("Provider model discovery failed for %s: %s", payload.name, exc)
         raise HTTPException(status_code=502, detail=f"Model discovery failed: {exc}") from exc
     return {"models": models}
+
+
+@app.get("/v1/admin/task-behaviors")
+async def admin_task_behaviors(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    items = await request.app.state.task_behaviors.list()
+    return {
+        "items": [item.model_dump(mode="json") for item in items],
+        "foundations": {
+            task: foundation
+            for task, foundation in __import__(
+                "aicognitive_mind.task_behaviors", fromlist=["TASK_FOUNDATIONS"]
+            ).TASK_FOUNDATIONS.items()
+        },
+    }
+
+
+@app.put("/v1/admin/task-behaviors")
+async def replace_admin_task_behaviors(
+    payload: TaskBehaviorListRequest,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    try:
+        items = await request.app.state.task_behaviors.replace(payload.items)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"items": [item.model_dump(mode="json") for item in items]}
 
 
 @app.get("/v1/admin/task-model-assignments")
