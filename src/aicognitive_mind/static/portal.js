@@ -25,6 +25,7 @@ const state = {
   activeTaskProfile: null,
   activeEndpointId: null,
   activeEndpointOriginalName: "",
+  deviceInventory: [],
 };
 
 const el = {
@@ -90,6 +91,12 @@ const el = {
   journalInspectorOccurredAt: document.getElementById("journalInspectorOccurredAt"),
   journalStructuredDetail: document.getElementById("journalStructuredDetail"),
   journalInspectorRaw: document.getElementById("journalInspectorRaw"),
+  journalEvidenceDetail: document.getElementById("journalEvidenceDetail"),
+  journalEvidenceList: document.getElementById("journalEvidenceList"),
+  taskProfileOverview: document.getElementById("taskProfileOverview"),
+  refreshDevicesButton: document.getElementById("refreshDevicesButton"),
+  devicePermissionStatus: document.getElementById("devicePermissionStatus"),
+  deviceInventoryList: document.getElementById("deviceInventoryList"),
   refreshEvidenceButton: document.getElementById("refreshEvidenceButton"),
   evidenceResultCount: document.getElementById("evidenceResultCount"),
   evidenceList: document.getElementById("evidenceList"),
@@ -487,6 +494,7 @@ function openTaskProfile(task) {
   el.taskProfileFallbackModel.value = assignment?.fallback_model || "";
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
+  el.taskProfileOverview.classList.add("hidden");
   el.taskProfileList.classList.add("hidden");
   el.taskProfileEditor.classList.remove("hidden");
 }
@@ -494,6 +502,7 @@ function openTaskProfile(task) {
 function closeTaskProfile() {
   state.activeTaskProfile = null;
   el.taskProfileEditor.classList.add("hidden");
+  el.taskProfileOverview.classList.remove("hidden");
   el.taskProfileList.classList.remove("hidden");
   renderTaskProfiles();
 }
@@ -1264,6 +1273,7 @@ async function openJournalInspector(summary) {
     el.journalInspectorKind.textContent = displayLabel(entry.kind);
     el.journalInspectorOccurredAt.textContent = new Date(entry.occurred_at).toLocaleString();
     renderJournalDetail(entry);
+    await renderJournalEvidence(entry);
     el.journalInspectorRaw.textContent = JSON.stringify(entry, null, 2);
     el.journalInspector.classList.remove("hidden");
     el.closeJournalInspector.focus();
@@ -1272,8 +1282,104 @@ async function openJournalInspector(summary) {
   }
 }
 
+function findEvidenceReferences(value, found = [], seen = new Set()) {
+  if (!value || typeof value !== "object" || seen.has(value)) return found;
+  seen.add(value);
+  if (typeof value.sha256 === "string" && /^[a-f0-9]{64}$/i.test(value.sha256)) {
+    const capturedAt = value.captured_at || value.capturedAt;
+    if (capturedAt) {
+      const key = `${value.sha256}:${capturedAt}`;
+      if (!found.some(item => `${item.sha256}:${item.captured_at}` === key)) {
+        found.push({
+          sha256: value.sha256,
+          captured_at: capturedAt,
+          modality: value.modality || value.media_type?.split("/")[0] || "sensory",
+          source: value.source || "journal evidence",
+          media_type: value.media_type || "",
+          byte_length: value.byte_length || 0,
+        });
+      }
+    }
+  }
+  for (const child of Object.values(value)) findEvidenceReferences(child, found, seen);
+  return found;
+}
+
+async function renderJournalEvidence(entry) {
+  el.journalEvidenceList.replaceChildren();
+  const references = findEvidenceReferences(entry.experience || {});
+  el.journalEvidenceDetail.classList.toggle("hidden", references.length === 0);
+  for (const artifact of references) {
+    const item = document.createElement("article");
+    item.className = "journal-entry";
+    const meta = document.createElement("div");
+    meta.className = "journal-entry-meta";
+    const kind = document.createElement("span");
+    kind.textContent = `${artifact.modality} · ${artifact.source}`;
+    const captured = document.createElement("span");
+    captured.textContent = new Date(artifact.captured_at).toLocaleString();
+    meta.append(kind, captured);
+    const title = document.createElement("div");
+    title.className = "journal-entry-title";
+    title.textContent = artifact.media_type
+      ? `${artifact.media_type} · ${Number(artifact.byte_length).toLocaleString()} bytes`
+      : "Preserved media artifact";
+    const hash = document.createElement("div");
+    hash.className = "journal-entry-preview";
+    hash.textContent = `SHA-256: ${artifact.sha256}`;
+    item.append(meta, title, hash);
+    const mediaUrl = evidenceMediaUrl(artifact);
+    if (artifact.media_type.startsWith("image/") || artifact.modality === "vision") {
+      const preview = document.createElement("img");
+      preview.loading = "lazy";
+      preview.alt = "Preserved sensory evidence from this journal record";
+      preview.className = "evidence-preview";
+      preview.src = mediaUrl;
+      item.append(preview);
+    } else if (artifact.media_type.startsWith("audio/") || artifact.modality === "audio") {
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.preload = "none";
+      audio.src = mediaUrl;
+      audio.className = "evidence-audio";
+      item.append(audio);
+    }
+    const actions = document.createElement("div");
+    actions.className = "edit-actions";
+    if (state.adminAuthorized) {
+      const erase = document.createElement("button");
+      erase.className = "danger-button";
+      erase.type = "button";
+      erase.textContent = "Erase Evidence";
+      erase.addEventListener("click", async () => {
+        if (!window.confirm("Permanently erase the media bytes for this journal record? The journal audit entry will remain.")) return;
+        erase.disabled = true;
+        try {
+          const query = new URLSearchParams({ captured_at: artifact.captured_at });
+          await api(`/v1/portal/evidence/${encodeURIComponent(artifact.sha256)}?${query}`, { method: "DELETE" }, true);
+          toast("Evidence erased; journal history retained");
+          await renderJournalEvidence(entry);
+        } catch (error) {
+          toast(`Could not erase evidence: ${error.message}`, true);
+          erase.disabled = false;
+        }
+      });
+      actions.append(erase);
+    } else {
+      const note = document.createElement("span");
+      note.className = "muted-copy";
+      note.textContent = "Administrator authorization is required to erase media.";
+      actions.append(note);
+    }
+    item.append(actions);
+    el.journalEvidenceList.append(item);
+  }
+}
+
 function closeJournalInspector() {
   state.activeJournal = null;
+  el.journalEvidenceDetail.classList.add("hidden");
+  el.journalEvidenceList.replaceChildren();
   el.journalInspector.classList.add("hidden");
 }
 
@@ -1459,7 +1565,7 @@ const adminSectionIds = {
   memories: "memoriesSection",
   journals: "journalsSection",
   overview: "overviewSection",
-  evidence: "evidenceSection",
+  devices: "devicesSection",
 };
 
 async function refreshTaskProfilesFromButton() {
@@ -1577,14 +1683,14 @@ function showAdminSection(sectionName) {
   });
   if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
   if (sectionName === "tasks") renderTaskProfiles();
-  if (sectionName === "evidence") refreshEvidence();
+  if (sectionName === "devices") refreshDeviceInventory();
 }
 
 document.querySelectorAll("[data-admin-section]").forEach(button => {
   button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
 });
 if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", refreshTaskProfilesFromButton);
-if (el.refreshEvidenceButton) el.refreshEvidenceButton.addEventListener("click", refreshEvidence);
+if (el.refreshDevicesButton) el.refreshDevicesButton.addEventListener("click", refreshDeviceInventory);
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
   state.activeEndpointOriginalName = selectedEndpoint()?.name || "";
@@ -1593,6 +1699,58 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
+
+async function refreshDeviceInventory() {
+  el.devicePermissionStatus.textContent = "Querying browser device inventory…";
+  el.deviceInventoryList.replaceChildren();
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    el.devicePermissionStatus.textContent = "Device discovery is unavailable in this browser or context. Use a secure HTTPS page and a browser that supports MediaDevices.";
+    return;
+  }
+  try {
+    const [devices, cameraPermission, microphonePermission] = await Promise.all([
+      navigator.mediaDevices.enumerateDevices(),
+      navigator.permissions?.query ? navigator.permissions.query({ name: "camera" }).catch(() => null) : Promise.resolve(null),
+      navigator.permissions?.query ? navigator.permissions.query({ name: "microphone" }).catch(() => null) : Promise.resolve(null),
+    ]);
+    state.deviceInventory = devices.filter(device => ["videoinput", "audioinput", "audiooutput"].includes(device.kind));
+    const permissions = [
+      `Camera permission: ${cameraPermission?.state || "not reported by browser"}`,
+      `Microphone permission: ${microphonePermission?.state || "not reported by browser"}`,
+    ];
+    el.devicePermissionStatus.textContent = `${state.deviceInventory.length} device(s) discovered. ${permissions.join(" · ")}. Labels may be hidden until permission is granted.`;
+    for (const [kind, heading] of [["videoinput", "Cameras"], ["audioinput", "Microphones"], ["audiooutput", "Speakers / audio outputs"]]) {
+      const matches = state.deviceInventory.filter(device => device.kind === kind);
+      const section = document.createElement("section");
+      section.className = "device-inventory-group";
+      const title = document.createElement("h4");
+      title.textContent = `${heading} (${matches.length})`;
+      section.append(title);
+      if (!matches.length) {
+        const empty = document.createElement("p");
+        empty.className = "record-empty";
+        empty.textContent = "No devices of this type were exposed to this browser.";
+        section.append(empty);
+      } else {
+        const list = document.createElement("div");
+        list.className = "record-list";
+        matches.forEach((device, index) => {
+          const row = document.createElement("div");
+          row.className = "record-value";
+          const singular = kind === "videoinput" ? "Camera" : kind === "audioinput" ? "Microphone" : "Speaker";
+          const label = device.label.trim() || `${singular} ${index + 1} (label hidden by browser)`;
+          row.textContent = `${label}${device.deviceId ? ` · ID ${device.deviceId.slice(0, 8)}…` : ""}`;
+          list.append(row);
+        });
+        section.append(list);
+      }
+      el.deviceInventoryList.append(section);
+    }
+  } catch (error) {
+    el.devicePermissionStatus.textContent = `Device query failed: ${error.message}. Check browser permissions and reload the page.`;
+    toast(`Could not query devices: ${error.message}`, true);
+  }
+}
 
 // Render the built-in task list immediately so the workspace remains navigable
 // even if an admin configuration request fails or is slow.
