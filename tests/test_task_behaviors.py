@@ -6,7 +6,6 @@ from aicognitive_mind.task_behaviors import (
     TaskExecutionContext,
     TaskPromptAssembler,
 )
-from aicognitive_mind.task_model_assignments import TASK_LABELS
 from aicognitive_mind.task_behaviors import TASK_BEHAVIOR_LABELS
 
 
