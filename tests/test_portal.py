@@ -517,5 +517,14 @@ class PortalAdministrationTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+class PortalAdminMemoryUiTests(unittest.TestCase):
+    def test_admin_memories_has_its_own_refresh_action(self) -> None:
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+        self.assertIn('id="adminMemoryRefreshButton"', html)
+        self.assertIn('adminMemoryRefreshButton: document.getElementById("adminMemoryRefreshButton")', script)
+        self.assertIn('el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));', script)
+
+
 if __name__ == "__main__":
     unittest.main()
