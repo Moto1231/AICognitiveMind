@@ -90,6 +90,9 @@ const el = {
   journalInspectorOccurredAt: document.getElementById("journalInspectorOccurredAt"),
   journalStructuredDetail: document.getElementById("journalStructuredDetail"),
   journalInspectorRaw: document.getElementById("journalInspectorRaw"),
+  refreshEvidenceButton: document.getElementById("refreshEvidenceButton"),
+  evidenceResultCount: document.getElementById("evidenceResultCount"),
+  evidenceList: document.getElementById("evidenceList"),
   initializeOverlay: document.getElementById("initializeOverlay"),
   initializeForm: document.getElementById("initializeForm"),
   initializeName: document.getElementById("initializeName"),
@@ -1456,6 +1459,7 @@ const adminSectionIds = {
   memories: "memoriesSection",
   journals: "journalsSection",
   overview: "overviewSection",
+  evidence: "evidenceSection",
 };
 
 async function refreshTaskProfilesFromButton() {
@@ -1480,6 +1484,87 @@ async function refreshTaskProfilesFromButton() {
   }
 }
 
+async function refreshEvidence() {
+  if (!el.evidenceList || !el.evidenceResultCount) return;
+  el.evidenceResultCount.textContent = "Loading evidence…";
+  try {
+    const page = await api("/v1/portal/evidence", {}, true);
+    el.evidenceList.innerHTML = "";
+    el.evidenceResultCount.textContent = `${page.total.toLocaleString()} preserved artifact${page.total === 1 ? "" : "s"}`;
+    if (!page.items.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "No sensory evidence artifacts are currently stored.";
+      el.evidenceList.appendChild(empty);
+      return;
+    }
+    for (const artifact of page.items) {
+      const item = document.createElement("article");
+      item.className = "journal-entry";
+      const meta = document.createElement("div");
+      meta.className = "journal-entry-meta";
+      const kind = document.createElement("span");
+      kind.textContent = `${artifact.modality || "sensory"} · ${artifact.source || "unknown source"}`;
+      const captured = document.createElement("span");
+      captured.textContent = new Date(artifact.captured_at).toLocaleString();
+      meta.append(kind, captured);
+      const title = document.createElement("div");
+      title.className = "journal-entry-title";
+      title.textContent = `${artifact.media_type || "unknown media"} · ${Number(artifact.byte_length || 0).toLocaleString()} bytes`;
+      const hash = document.createElement("div");
+      hash.className = "journal-entry-preview";
+      hash.textContent = `SHA-256: ${artifact.sha256}`;
+      item.append(meta, title, hash);
+      if (artifact.media_type?.startsWith("image/")) {
+        const preview = document.createElement("img");
+        preview.loading = "lazy";
+        preview.alt = `Preserved ${artifact.modality || "sensory"} evidence`;
+        preview.className = "evidence-preview";
+        preview.src = evidenceMediaUrl(artifact);
+        item.appendChild(preview);
+      } else if (artifact.media_type?.startsWith("audio/")) {
+        const audio = document.createElement("audio");
+        audio.controls = true;
+        audio.preload = "none";
+        audio.src = evidenceMediaUrl(artifact);
+        audio.className = "evidence-audio";
+        item.appendChild(audio);
+      }
+      const actions = document.createElement("div");
+      actions.className = "edit-actions";
+      const erase = document.createElement("button");
+      erase.className = "danger-button";
+      erase.type = "button";
+      erase.textContent = "Erase Evidence";
+      erase.addEventListener("click", async () => {
+        const description = `${artifact.modality || "sensory"} evidence captured ${captured.textContent}`;
+        if (!window.confirm(`Permanently erase this stored media artifact?\n\n${description}\n\nThe journal audit entry will remain.`)) return;
+        erase.disabled = true;
+        try {
+          const query = new URLSearchParams({ captured_at: artifact.captured_at });
+          await api(`/v1/portal/evidence/${encodeURIComponent(artifact.sha256)}?${query}`, { method: "DELETE" }, true);
+          toast("Evidence erased");
+          await refreshEvidence();
+        } catch (error) {
+          toast(`Could not erase evidence: ${error.message}`, true);
+          erase.disabled = false;
+        }
+      });
+      actions.appendChild(erase);
+      item.appendChild(actions);
+      el.evidenceList.appendChild(item);
+    }
+  } catch (error) {
+    el.evidenceResultCount.textContent = "Evidence could not be loaded";
+    toast(`Could not load evidence: ${error.message}`, true);
+  }
+}
+
+function evidenceMediaUrl(artifact) {
+  const query = new URLSearchParams({ captured_at: artifact.captured_at });
+  return `/v1/evidence/${encodeURIComponent(artifact.sha256)}?${query}`;
+}
+
 function showAdminSection(sectionName) {
   for (const [name, id] of Object.entries(adminSectionIds)) {
     const panel = document.getElementById(id);
@@ -1492,12 +1577,14 @@ function showAdminSection(sectionName) {
   });
   if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
   if (sectionName === "tasks") renderTaskProfiles();
+  if (sectionName === "evidence") refreshEvidence();
 }
 
 document.querySelectorAll("[data-admin-section]").forEach(button => {
   button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
 });
 if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", refreshTaskProfilesFromButton);
+if (el.refreshEvidenceButton) el.refreshEvidenceButton.addEventListener("click", refreshEvidence);
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
   state.activeEndpointOriginalName = selectedEndpoint()?.name || "";
