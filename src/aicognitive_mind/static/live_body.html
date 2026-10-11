@@ -813,10 +813,13 @@
 
     async function consumeExpressionOutputs() {
       const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
-      if (mouthResponse.ok) {
-        const mouthIntent = await mouthResponse.json();
-        if (mouthIntent) speakIntent(mouthIntent);
-      }
+      if (!mouthResponse.ok) return false;
+      const mouthIntent = await mouthResponse.json();
+      if (!mouthIntent) return false;
+      // Dispatch this expression before considering the direct response.
+      // This prevents both paths from starting speech for the same interaction.
+      await speakIntent(mouthIntent);
+      return true;
     }
 
     async function showMindResult(result, { modality, consumeOutputs = true } = {}) {
