@@ -63,6 +63,14 @@
     button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .5; }
     #status { white-space: pre-wrap; background: #181a20; padding: 1rem; border-radius: 10px; margin-top: 1rem; min-height: 6rem; }
+    .sense-status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin-top: .75rem; }
+    .sense-status { min-width: 0; padding: .75rem .85rem; border: 1px solid #373a44; border-radius: 10px; background: #181a20; }
+    .sense-status strong { display: block; margin-bottom: .3rem; font-size: .86rem; }
+    .sense-status span { display: block; color: #c8ccd5; font-size: .82rem; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .sense-status[data-state="success"] { border-color: #38795d; }
+    .sense-status[data-state="error"] { border-color: #a34a55; }
+    .sense-status[data-state="warning"] { border-color: #8a7040; }
+    @media (max-width: 600px) { .sense-status-grid { grid-template-columns: minmax(0, 1fr); } }
     .interaction-panel {
       margin: 1rem 0;
       background: #181a20;
@@ -244,15 +252,22 @@
       <div class="audio-meter-track"><div id="audioMeterFill"></div></div>
     </div>
 
-    <section class="interaction-panel" aria-label="Conversation with Mind">
-      <div id="interactionHistory" aria-live="polite">
-        <div id="chatEmpty" class="chat-empty">Message</div>
+    <section class="sense-status-grid" aria-label="Sensory status">
+      <div id="visionSenseStatus" class="sense-status" data-state="idle">
+        <strong>Vision</strong><span id="visionSenseStatusText">Waiting for senses to start.</span>
       </div>
+      <div id="audioSenseStatus" class="sense-status" data-state="idle">
+        <strong>Audio</strong><span id="audioSenseStatusText">Waiting for senses to start.</span>
+      </div>
+    </section>
+
+    <section class="interaction-panel" aria-label="Conversation">
+      <div id="interactionHistory" aria-live="polite">
       <form id="interactionForm" class="interaction-form">
         <textarea
           id="interactionMessage"
           maxlength="8000"
-          placeholder="Message the Mind..."
+          placeholder="Message"
           aria-label="Message"
           rows="1"
           required
@@ -490,6 +505,37 @@
 
     function setStatus(message) {
       statusBox.textContent = message;
+    }
+
+    function setSenseStatus(modality, message, state = "info") {
+      const panel = document.getElementById(modality + "SenseStatus");
+      const text = document.getElementById(modality + "SenseStatusText");
+      if (!panel || !text) return;
+      panel.dataset.state = state;
+      text.textContent = message;
+    }
+
+    function reportSenseFailure(modality, error) {
+      const detail = String(error?.message || error || "Unknown error");
+      const evidenceAccepted = Boolean(error && typeof error === "object" && error.evidenceAccepted);
+      const waitingForHost = /no external reasoning host|no connected external host|standalone fallback is disabled/i.test(detail);
+      let message;
+      let state;
+      if (evidenceAccepted && waitingForHost) {
+        message = "Evidence saved; waiting for connected reasoning host: " + detail;
+        state = "warning";
+      } else if (evidenceAccepted) {
+        message = "Evidence saved; interpretation failed: " + detail;
+        state = "warning";
+      } else if (waitingForHost) {
+        message = "Waiting for connected reasoning host: " + detail;
+        state = "warning";
+      } else {
+        message = "Failed: " + detail;
+        state = "error";
+      }
+      setSenseStatus(modality, message, state);
+      setStatus((modality === "vision" ? "Vision" : "Audio") + " status\n" + message);
     }
 
     function bodyIsBusy() {
@@ -739,7 +785,7 @@
       }
     }
 
-    async function showMindResult(result, { consumeOutputs = true } = {}) {
+    async function showMindResult(result, { modality, consumeOutputs = true } = {}) {
       const responseLabel = result.response_text
         ? "\n\nMessage:\n" + result.response_text
         : "\n\nAwareness:\nAdmitted to Axiom without triggering conscious reasoning.";
@@ -755,6 +801,12 @@
         "captured: " + evidence.captured_at + "\n\n" +
         "Perception:\n" + result.interpretation +
         responseLabel
+      );
+      setSenseStatus(
+        modality,
+        "Evidence saved (" + evidence.media_type + ") at " + evidence.captured_at +
+          "\nPerception: " + (result.interpretation || "Admitted."),
+        "success"
       );
       if (consumeOutputs) {
         await consumeExpressionOutputs();
@@ -880,8 +932,10 @@
         if (difference / signature.length / 255 < 0.045) return;
       }
       sensoryRequestInFlight = true;
+      let evidenceAccepted = false;
       try {
         setStatus("SENSES ON\nSeeing...");
+        setSenseStatus("vision", "Capturing frame and saving evidence…", "working");
         const ingress = await bodyFetch("/v1/body/eyes/observe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -893,8 +947,8 @@
           })
         });
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
-        // The frame is now accepted by the Body queue even if no reasoning
-        // host is currently attached to interpret it.
+        evidenceAccepted = true;
+        setSenseStatus("vision", "Frame saved; requesting interpretation…", "warning");
         lastSuccessfulFrame = signature;
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
@@ -906,7 +960,10 @@
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
         lastSuccessfulFrame = signature;
-        await showMindResult(await response.json(), { consumeOutputs: false });
+        await showMindResult(await response.json(), { modality: "vision", consumeOutputs: false });
+      } catch (error) {
+        if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
+        throw error;
       } finally {
         sensoryRequestInFlight = false;
       }
@@ -1063,21 +1120,28 @@
     }
 
     async function perceiveAudio(generation) {
-      if (window.speechSynthesis?.speaking) return;
-
-      setStatus("SENSES ON\nListening...");
-      const recording = await recordAudioWindow(generation);
-      if (
-        !recording ||
-        !sensesEnabled ||
-        generation !== sensoryLoopGeneration
-      ) {
+      if (window.speechSynthesis?.speaking) {
+        setSenseStatus("audio", "Listening paused while Axiom is speaking.", "info");
         return;
       }
 
-      if (!await audioHasSpeechEnergy(recording.blob)) return;
+      setStatus("SENSES ON\nListening...");
+      const recording = await recordAudioWindow(generation);
+      if (!recording || !sensesEnabled || generation !== sensoryLoopGeneration) {
+        if (sensesEnabled && generation === sensoryLoopGeneration) {
+          setSenseStatus("audio", "No audio chunk received in this window; retrying.", "warning");
+        }
+        return;
+      }
+
+      if (!await audioHasSpeechEnergy(recording.blob)) {
+        setSenseStatus("audio", "Listening; no speech detected in this 4-second window. Nothing sent for interpretation.", "info");
+        return;
+      }
       sensoryRequestInFlight = true;
+      let evidenceAccepted = false;
       try {
+        setSenseStatus("audio", "Speech detected; saving audio evidence…", "working");
         const ingress = await bodyFetch("/v1/body/ears/observe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1088,6 +1152,8 @@
           })
         });
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
+        evidenceAccepted = true;
+        setSenseStatus("audio", "Audio saved; requesting interpretation…", "warning");
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
         const response = await bodyFetch(
@@ -1097,7 +1163,10 @@
         if (!response.ok) throw new Error(await responseErrorMessage(response));
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
-        await showMindResult(await response.json(), { consumeOutputs: false });
+        await showMindResult(await response.json(), { modality: "audio", consumeOutputs: false });
+      } catch (error) {
+        if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
+        throw error;
       } finally {
         sensoryRequestInFlight = false;
       }
@@ -1110,12 +1179,7 @@
             await perceiveVision(generation);
           } catch (error) {
             if (sensesEnabled && generation === sensoryLoopGeneration) {
-              const detail = String(error.message || error);
-              if (/no external reasoning host|no connected external host|standalone fallback is disabled/i.test(detail)) {
-                setStatus("Vision frames are reaching the Body, but interpretation is waiting for an external reasoning host to reconnect. The captured frames are not being described yet.");
-              } else {
-                setStatus("Continuous vision failed: " + detail);
-              }
+              reportSenseFailure("vision", error);
             }
           }
         }
@@ -1130,7 +1194,7 @@
             await perceiveAudio(generation);
           } catch (error) {
             if (sensesEnabled && generation === sensoryLoopGeneration) {
-              setStatus("Continuous hearing failed: " + error.message);
+              reportSenseFailure("audio", error);
             }
           }
         } else {
@@ -1243,11 +1307,6 @@
     clearInteractionButton.addEventListener("click", () => {
       interactionMessage.value = "";
       interactionHistory.replaceChildren();
-      const empty = document.createElement("div");
-      empty.id = "chatEmpty";
-      empty.className = "chat-empty";
-      empty.textContent = "Message";
-      interactionHistory.appendChild(empty);
       resizeComposer();
       interactionMessage.focus();
     });
