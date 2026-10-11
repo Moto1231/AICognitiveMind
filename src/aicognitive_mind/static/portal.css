@@ -233,7 +233,8 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   .identity-panel, .memory-panel, .admin-summary { grid-column: auto; grid-row: auto; }
 }
 @media (max-width: 560px) {
-  .host-behavior-fields { grid-template-columns: minmax(0, 1fr); }
+  .host-behavior-fields, .task-model-fields { grid-template-columns: minmax(0, 1fr); }
+  .task-model-notes { grid-column: auto; }
   .host-behavior-instruction { grid-column: auto; }
   .host-behavior-card { padding: 13px; }
 }
