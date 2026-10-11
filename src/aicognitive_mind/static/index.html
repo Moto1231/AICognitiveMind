@@ -143,16 +143,24 @@
         <div class="hero">
           <div>
             <p class="eyebrow">ADMINISTRATION</p>
-            <h2>Continuity & Integration</h2>
+            <h2>Administration</h2>
             <p class="hero-copy">
-              Shape how Axiom reasons and responds across connected runtimes while preserving one continuous identity.
+              Manage task profiles, interaction behaviors, memories, and journal history in separate work areas.
             </p>
           </div>
           <button id="adminRefreshButton" class="secondary-button" type="button">Refresh Status</button>
         </div>
 
+        <nav class="admin-section-nav" aria-label="Administration sections">
+          <button class="admin-section-button active" type="button" data-admin-section="tasks">Task Profiles</button>
+          <button class="admin-section-button" type="button" data-admin-section="behaviors">Interaction Behaviors</button>
+          <button class="admin-section-button" type="button" data-admin-section="memories">Memories</button>
+          <button class="admin-section-button" type="button" data-admin-section="journals">Journals</button>
+          <button class="admin-section-button" type="button" data-admin-section="overview">System Overview</button>
+        </nav>
+
         <div class="admin-grid">
-          <article class="panel admin-behavior-panel">
+          <article id="behaviorsSection" class="panel admin-behavior-panel hidden">
             <div class="panel-heading">
               <div><p class="eyebrow">INTERACTION CONTRACT</p><h3>Interaction Behaviors</h3></div>
               <button id="addHostBehavior" class="secondary-button" type="button">Add Behavior</button>
@@ -164,7 +172,7 @@
             </div>
           </article>
 
-          <article class="panel admin-task-model-panel task-profiles-panel">
+          <article id="tasksSection" class="panel admin-task-model-panel task-profiles-panel">
             <div class="panel-heading">
               <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
               <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh Profiles</button>
@@ -236,28 +244,7 @@
             </section>
           </article>
 
-          <article class="panel">
-            <p class="eyebrow">INTEGRATION</p>
-            <h3>Reasoning Boundary</h3>
-            <dl class="details admin-details">
-              <div><dt>Protocol</dt><dd id="protocolValue">—</dd></div>
-              <div><dt>Reasoning Owner</dt><dd id="reasoningOwner">—</dd></div>
-              <div><dt>Identity Owner</dt><dd id="identityOwner">—</dd></div>
-              <div><dt>Memory Owner</dt><dd id="memoryOwner">—</dd></div>
-            </dl>
-          </article>
-
-          <article class="panel proof-panel">
-            <p class="eyebrow">CONTINUITY PRINCIPLE</p>
-            <h3>One identity across changing runtimes.</h3>
-            <p>
-              Axiom's reasoning may run through different connected models. Identity, memory, and cognitive history
-              remain functions of the same continuing entity.
-            </p>
-          </article>
-
-
-          <article class="panel admin-memory-panel">
+          <article id="memoriesSection" class="panel admin-memory-panel hidden">
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">MEMORY ADMINISTRATION</p>
@@ -318,7 +305,7 @@
           </article>
 
 
-          <article class="panel admin-journal-panel">
+          <article id="journalsSection" class="panel admin-journal-panel hidden">
             <div class="panel-heading">
               <div>
                 <p class="eyebrow">COGNITIVE HISTORY</p>
@@ -373,7 +360,7 @@
             </div>
           </article>
 
-          <article class="panel admin-summary">
+          <article id="overviewSection" class="panel admin-summary hidden">
             <p class="eyebrow">CURRENT STATE</p>
             <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
             <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
