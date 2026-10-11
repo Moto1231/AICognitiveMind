@@ -1,5 +1,7 @@
 import unittest
+from types import SimpleNamespace
 
+from aicognitive_mind.host_runtime import HostAwareInterpreter
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskModelAssignmentRegistry
@@ -120,6 +122,29 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
             await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
 
         self.assertEqual(len(client.calls), 1)
+
+    async def test_host_aware_interpreter_uses_assigned_sensory_dispatcher(self):
+        class ActiveHosts:
+            async def active(self):
+                return True
+
+        class Fallback:
+            records = FakeRecords()
+
+        class SelectedDispatcher:
+            async def interpret_percept(self, percept, *, focus=None):
+                return "Visual perception: selected endpoint result"
+
+        interpreter = HostAwareInterpreter(Fallback(), ActiveHosts())
+        interpreter.task_dispatcher = SelectedDispatcher()
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="vision"),
+            content_ref="data:image/jpeg;base64,AA==",
+        )
+
+        result = await interpreter.interpret(percept)
+
+        self.assertEqual(result, "Visual perception: selected endpoint result")
 
     async def test_unresolved_provider_is_reported(self):
         records = await self.configured(provider="not-configured")
