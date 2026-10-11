@@ -25,6 +25,7 @@ class StandaloneRuntime:
     async def _start(self) -> None:
         if self.engine is not None:
             return
+        from aicognitive_mind.task_dispatcher import TaskModelDispatcher
         from aicognitive_mind.embodiment import (
             GeminiPerceptInterpreter,
             OpenAIPerceptInterpreter,
@@ -62,6 +63,11 @@ class StandaloneRuntime:
             self.engine, self.interpreter = EchoReasoningEngine(), SummaryPerceptInterpreter()
         else:
             raise ProviderUnavailable("Unknown standalone reasoning provider")
+        if self.records is not None:
+            self.interpreter.task_dispatcher = TaskModelDispatcher(
+                self.records,
+                timeout=self.settings.reasoning_timeout_seconds,
+            )
         for target in (self.engine, self.interpreter):
             if hasattr(target, "_client"):
                 target._client = MeteredClient(target._client, self)
