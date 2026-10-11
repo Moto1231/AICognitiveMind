@@ -157,7 +157,7 @@
           <button class="admin-section-button" type="button" data-admin-section="behaviors">Interaction Behaviors</button>
           <button class="admin-section-button" type="button" data-admin-section="memories">Memories</button>
           <button class="admin-section-button" type="button" data-admin-section="journals">Journals</button>
-          <button class="admin-section-button" type="button" data-admin-section="evidence">Sensory Evidence</button>
+          <button class="admin-section-button" type="button" data-admin-section="devices">Devices</button>
         </nav>
 
         <div class="admin-grid">
@@ -174,11 +174,13 @@
           </article>
 
           <article id="tasksSection" class="panel admin-task-model-panel task-profiles-panel hidden">
-            <div class="panel-heading">
-              <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
-              <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh Profiles</button>
+            <div id="taskProfileOverview">
+              <div class="panel-heading">
+                <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
+                <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh Profiles</button>
+              </div>
+              <p>Each task has its own configuration page. Endpoint settings, model routing, and editable behavior live together in that task's profile. Endpoint records can be reused by multiple tasks.</p>
             </div>
-            <p>Each task has its own configuration page. Endpoint settings, model routing, and editable behavior live together in that task's profile. Endpoint records can be reused by multiple tasks.</p>
             <div id="taskProfileList" class="task-profile-grid"></div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
               <div class="panel-heading task-profile-editor-heading">
@@ -361,14 +363,14 @@
             </div>
           </article>
 
-          <article id="evidenceSection" class="panel hidden">
+          <article id="devicesSection" class="panel hidden">
             <div class="panel-heading">
-              <div><p class="eyebrow">BODY SENSES</p><h3>Preserved Sensory Evidence</h3></div>
-              <button id="refreshEvidenceButton" class="secondary-button" type="button">Refresh Evidence</button>
+              <div><p class="eyebrow">CURRENT ENVIRONMENT</p><h3>Device Inventory</h3></div>
+              <button id="refreshDevicesButton" class="secondary-button" type="button">Query Devices</button>
             </div>
-            <p class="muted-copy">Review preserved camera images and microphone clips. Erasing an artifact removes its stored media bytes; journal history remains as an audit record.</p>
-            <div id="evidenceResultCount" class="search-summary">Loading evidence…</div>
-            <div id="evidenceList" class="record-list"></div>
+            <p class="muted-copy">Lists cameras, microphones, and speakers exposed to this browser. Device labels may remain hidden until the browser grants media permission. This query does not turn on the camera or microphone.</p>
+            <div id="devicePermissionStatus" class="search-summary" aria-live="polite">Device inventory has not been queried.</div>
+            <div id="deviceInventoryList" class="record-list"></div>
           </article>
 
           <article id="overviewSection" class="panel admin-summary">
@@ -399,6 +401,10 @@
       </dl>
 
       <div id="journalStructuredDetail" class="inspector-section journal-structured-detail"></div>
+      <section id="journalEvidenceDetail" class="inspector-section hidden" aria-live="polite">
+        <span class="inspector-label">Sensory Evidence</span>
+        <div id="journalEvidenceList" class="record-list"></div>
+      </section>
 
       <div class="inspector-section raw-section">
         <span class="inspector-label">Raw Journal Record</span>
