@@ -95,6 +95,30 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("image_url", str(kwargs["json"]["messages"]))
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer admin-key")
 
+    async def test_runtime_contract_dispatches_compact_context_to_stateless_adapter(self):
+        records = await self.configured()
+        client = FakeClient(FakeResponse({
+            "choices": [{"message": {"content": "Observed."}}]
+        }))
+        dispatcher = TaskModelDispatcher(records, client=client)
+        from aicognitive_mind.task_behaviors import TaskExecutionContext
+
+        result = await dispatcher.execute(
+            TaskExecutionContext(
+                task="vision",
+                session_id="session-compact",
+                state_ref="state-compact",
+                memory_refs=("memory-7",),
+            ),
+            {"operation": "chat", "messages": [{"role": "user", "content": "Describe."}]},
+        )
+
+        self.assertEqual(result, "Observed.")
+        prompt = client.calls[0][2]["json"]["messages"][0]["content"]
+        self.assertIn("Session reference: session-compact", prompt)
+        self.assertIn("Working-state reference: state-compact", prompt)
+        self.assertIn("memory-7", prompt)
+
     async def test_transcription_uses_assigned_model(self):
         records = await self.configured(model="my-audio-model")
         assignments = await TaskModelAssignmentRegistry(records).list()
