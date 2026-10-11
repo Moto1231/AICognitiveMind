@@ -591,3 +591,26 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 .provider-endpoint-models { color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .provider-endpoint-list { display: grid; gap: 12px; }
 .provider-endpoints-panel { grid-column: 1 / -1; }
+
+/* Task profiles use an overview and one focused editor per task. */
+.task-profiles-panel { grid-column: 1 / -1; min-width: 0; }
+.task-profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 16px; }
+.task-profile-card { display: grid; gap: 8px; padding: 16px; text-align: left; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.task-profile-card:hover, .task-profile-card:focus-visible { border-color: var(--accent); outline: none; }
+.task-profile-card strong { font-size: 14px; }
+.task-profile-card span { color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.task-profile-card small { color: var(--muted); font-size: 11px; }
+.task-profile-editor { margin-top: 8px; }
+.task-profile-editor-heading { align-items: flex-start; }
+.task-profile-editor-heading h3 { margin: 0; }
+.task-profile-section { display: grid; gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.task-profile-section h4 { margin: 0; font-size: 14px; }
+.task-profile-section p { margin: 0; }
+.task-profile-endpoint-picker { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+.task-profile-endpoint-picker label { flex: 1 1 260px; }
+.task-profile-inline-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.task-profile-section textarea[readonly] { background: var(--surface-muted, var(--surface)); color: var(--muted); }
+@media (max-width: 680px) {
+  .task-profile-grid { grid-template-columns: minmax(0, 1fr); }
+  .task-profile-inline-actions { align-items: flex-start; flex-direction: column; }
+}
