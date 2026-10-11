@@ -1430,6 +1430,28 @@ const adminSectionIds = {
   overview: "overviewSection",
 };
 
+async function refreshTaskProfilesFromButton() {
+  const button = el.refreshTaskProfiles;
+  if (!button || button.disabled) return;
+  const originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Refreshing…";
+  try {
+    await Promise.all([
+      refreshTaskModelAssignments(),
+      refreshTaskBehaviors(),
+      refreshProviderEndpoints(),
+    ]);
+    renderTaskProfiles();
+    toast("Task profiles refreshed");
+  } catch (error) {
+    toast(`Could not refresh task profiles: ${error.message}`, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
+
 function showAdminSection(sectionName) {
   for (const [name, id] of Object.entries(adminSectionIds)) {
     const panel = document.getElementById(id);
@@ -1446,7 +1468,7 @@ function showAdminSection(sectionName) {
 document.querySelectorAll("[data-admin-section]").forEach(button => {
   button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
 });
-if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", () => Promise.all([refreshTaskModelAssignments(), refreshTaskBehaviors(), refreshProviderEndpoints()]).catch(error => toast(error.message, true)));
+if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", refreshTaskProfilesFromButton);
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
   state.activeEndpointOriginalName = selectedEndpoint()?.name || "";
