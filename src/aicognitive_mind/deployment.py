@@ -17,7 +17,12 @@ from starlette.routing import Mount, Route
 
 from mcp.server.transport_security import TransportSecuritySettings
 
-from aicognitive_mind.api import app as portal_app
+from aicognitive_mind.api import (
+    app as portal_app,
+    read_portal_session,
+    revoke_portal_session,
+    store_portal_session,
+)
 from aicognitive_mind.chatgpt_mcp import build_chatgpt_mcp
 from aicognitive_mind.chatgpt_oauth import (
     AxiomAuthorizationServerProvider,
@@ -252,10 +257,12 @@ async def _portal_login_post(request: Request):
                 status_code=401,
             )
         token = secrets.token_urlsafe(32)
-        portal_app.state.portal_sessions[token] = {
-            "mind_id": account.mind_id,
-            "expires_at": time.time() + 7 * 24 * 3600,
-        }
+        await store_portal_session(
+            portal_app,
+            token,
+            account.mind_id,
+            time.time() + 7 * 24 * 3600,
+        )
         response = JSONResponse({"ok": True})
         response.set_cookie(
             "axiom_portal_session",
@@ -276,7 +283,7 @@ async def _portal_logout_post(request: Request):
     """End the current portal session without altering the associated Mind."""
     token = request.cookies.get("axiom_portal_session")
     if token:
-        portal_app.state.portal_sessions.pop(token, None)
+        await revoke_portal_session(portal_app, token)
     response = JSONResponse({"ok": True})
     response.delete_cookie(
         "axiom_portal_session",
@@ -294,7 +301,7 @@ async def _portal_redirect(_request: Request):
 async def _realtime_body_session(request: Request) -> Response:
     """Create an authenticated OpenAI Realtime WebRTC session for this Axiom Mind."""
     session_token = request.cookies.get("axiom_portal_session", "")
-    session = portal_app.state.portal_sessions.get(session_token)
+    session = await read_portal_session(portal_app, session_token)
     if not session or float(session.get("expires_at", 0)) <= time.time():
         return JSONResponse({"detail": "Sign in to Axiom before starting voice."}, status_code=401)
 
