@@ -127,8 +127,13 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         for name in ("begin_interaction", "complete_interaction"):
             self.assertIn(
                 "host_working_context",
-                tools[name]["inputSchema"]["required"],
+                tools[name]["inputSchema"]["properties"],
             )
+        # The first turn may omit context; completion must always return it.
+        self.assertNotIn(
+            "host_working_context",
+            tools["begin_interaction"]["inputSchema"].get("required", []),
+        )
         required = tools["complete_interaction"]["inputSchema"]["required"]
         self.assertIn("idempotency_key", required)
         self.assertIn("proposed_memories", required)
