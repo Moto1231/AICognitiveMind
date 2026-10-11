@@ -693,3 +693,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   font-weight: 700;
 }
 .danger-button:disabled { opacity: .55; cursor: wait; }
+
+
+.device-inventory-group { display: grid; gap: 10px; margin-top: 18px; }
+.device-inventory-group h4 { margin: 0; color: var(--text); font-size: 13px; }
