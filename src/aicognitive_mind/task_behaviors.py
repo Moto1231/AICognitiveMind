@@ -8,15 +8,23 @@ conversation history.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
 from aicognitive_mind.task_model_assignments import TASK_LABELS, TaskKind
 
+TaskBehaviorKind = Literal[\n    "vision", "audio", "coding", "image_generation", "summarization",\n    "memory_recall", "web_research", "structured_extraction", "reasoning",\n]
+
 
 # This mapping is code-owned. It is never loaded from records or accepted from an API.
-TASK_FOUNDATIONS: dict[TaskKind, str] = {
+TASK_FOUNDATIONS: dict[TaskBehaviorKind, str] = {
+    "reasoning": (
+        "You are Axiom's reasoning task, running under the connected host's reasoning engine. "
+        "Use the supplied Mind identity, recalled context, evidence, and interaction contract. "
+        "Keep identity and durable-memory ownership with Axiom; distinguish established context "
+        "from inference and follow the host's tool and completion protocol."
+    ),
     "vision": (
         "You are Axiom's visual perception task. Ground every claim in the supplied image "
         "evidence. Separate direct observations from uncertainty and inference. Do not invent "
@@ -57,7 +65,7 @@ TASK_FOUNDATIONS: dict[TaskKind, str] = {
 class TaskBehavior(BaseModel):
     """Externally editable behavior layer; immutable foundation is intentionally absent."""
 
-    task: TaskKind
+    task: TaskBehaviorKind
     name: str = Field(min_length=1, max_length=120)
     instructions: str = Field(default="", max_length=4000)
     enabled: bool = True
@@ -69,10 +77,16 @@ class TaskBehavior(BaseModel):
         return value.strip()
 
 
+TASK_BEHAVIOR_LABELS: dict[TaskBehaviorKind, str] = {
+    **TASK_LABELS,
+    "reasoning": "Reasoning (connected host)",
+}
+
+
 def default_task_behaviors() -> list[TaskBehavior]:
     return [
         TaskBehavior(task=task, name=label, instructions="")
-        for task, label in TASK_LABELS.items()
+        for task, label in TASK_BEHAVIOR_LABELS.items()
     ]
 
 
@@ -89,16 +103,16 @@ class TaskBehaviorRegistry:
             for value in record.get("items", []):
                 item = TaskBehavior.model_validate(value)
                 defaults[item.task] = item
-        return [defaults[task] for task in TASK_LABELS]
+        return [defaults[task] for task in TASK_BEHAVIOR_LABELS]
 
     async def replace(self, behaviors: list[TaskBehavior]) -> list[TaskBehavior]:
         by_task = {item.task: item for item in behaviors}
-        expected = set(TASK_LABELS)
+        expected = set(TASK_BEHAVIOR_LABELS)
         if len(behaviors) != len(TASK_LABELS) or set(by_task) != expected:
             raise ValueError("Task behaviors must contain exactly one profile for every supported task")
         current = {item.task: item for item in await self.list()}
         ordered: list[TaskBehavior] = []
-        for task in TASK_LABELS:
+        for task in TASK_BEHAVIOR_LABELS:
             candidate = by_task[task]
             previous = current[task]
             changed = (
@@ -122,7 +136,7 @@ class TaskBehaviorRegistry:
 class TaskExecutionContext:
     """Small handoff contract shared by stateless adapters and persistent workers."""
 
-    task: TaskKind
+    task: TaskBehaviorKind
     provider: str = ""
     model: str = ""
     behavior_revision: int = 1
