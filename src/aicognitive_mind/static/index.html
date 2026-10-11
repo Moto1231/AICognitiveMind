@@ -46,25 +46,7 @@
           </div>
         </div>
 
-        <div class="grid">
-          <article class="panel identity-panel">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">IDENTITY</p>
-                <h3>Who Am I</h3>
-              </div>
-            </div>
-            <dl class="details">
-              <div><dt>Self Name</dt><dd id="selfName">—</dd></div>
-              <div><dt>Developmental State</dt><dd id="developmentState">—</dd></div>
-              <div><dt>Created</dt><dd id="createdAt">—</dd></div>
-            </dl>
-            <div class="values-block">
-              <p class="field-label">Foundational Values</p>
-              <div id="foundationalValues" class="tag-list"></div>
-            </div>
-          </article>
-
+        <div class="grid mind-overview-grid">
           <article class="panel stat-panel">
             <p class="eyebrow">DURABLE MEMORY</p>
             <div id="memoryCount" class="big-stat">—</div>
@@ -77,65 +59,6 @@
             <p>Journal Experiences</p>
           </article>
 
-          <article class="panel memory-panel">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">MEMORY</p>
-                <h3>What Do I Remember</h3>
-              </div>
-              <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
-            </div>
-
-            <div class="memory-search">
-              <div class="search-field search-wide">
-                <label for="memorySearch">Search</label>
-                <input id="memorySearch" type="search" placeholder="Content, grounding, or associations">
-              </div>
-              <div class="search-field">
-                <label for="memoryClassFilter">Memory Class</label>
-                <select id="memoryClassFilter">
-                  <option value="">All Classes</option>
-                  <option value="working">Working</option>
-                  <option value="episodic">Episodic</option>
-                  <option value="semantic">Semantic</option>
-                  <option value="procedural">Procedural</option>
-                  <option value="identity">Identity</option>
-                  <option value="reflective">Reflective</option>
-                </select>
-              </div>
-              <div class="search-field">
-                <label for="associationFilter">Association</label>
-                <input id="associationFilter" type="search" placeholder="Association contains…">
-              </div>
-              <div class="search-field">
-                <label for="groundingFilter">Grounding</label>
-                <input id="groundingFilter" type="search" placeholder="Grounding contains…">
-              </div>
-              <div class="search-field">
-                <label for="formedFrom">Formed From</label>
-                <input id="formedFrom" type="date">
-              </div>
-              <div class="search-field">
-                <label for="formedTo">Formed Through</label>
-                <input id="formedTo" type="date">
-              </div>
-              <div class="search-field">
-                <label for="memorySort">Sort</label>
-                <select id="memorySort">
-                  <option value="newest">Newest First</option>
-                  <option value="oldest">Oldest First</option>
-                </select>
-              </div>
-              <button id="clearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
-            </div>
-            <div class="search-summary">
-              <span id="memoryResultCount">0 Memories</span>
-            </div>
-            <div id="memoryList" class="memory-list"></div>
-            <div class="memory-pagination">
-              <button id="loadMoreMemories" class="secondary-button hidden" type="button">Load 25 More</button>
-            </div>
-          </article>
         </div>
       </section>
 
@@ -145,18 +68,18 @@
             <p class="eyebrow">ADMINISTRATION</p>
             <h2>Administration</h2>
             <p class="hero-copy">
-              Manage task profiles, interaction behaviors, memories, and journal history in separate work areas.
+              Review system status, then open the task profiles, behaviors, memories, or journals you need.
             </p>
           </div>
           <button id="adminRefreshButton" class="secondary-button" type="button">Refresh Status</button>
         </div>
 
         <nav class="admin-section-nav" aria-label="Administration sections">
-          <button class="admin-section-button active" type="button" data-admin-section="tasks">Task Profiles</button>
+          <button class="admin-section-button active" type="button" data-admin-section="overview">System Overview</button>
+          <button class="admin-section-button" type="button" data-admin-section="tasks">Task Profiles</button>
           <button class="admin-section-button" type="button" data-admin-section="behaviors">Interaction Behaviors</button>
           <button class="admin-section-button" type="button" data-admin-section="memories">Memories</button>
           <button class="admin-section-button" type="button" data-admin-section="journals">Journals</button>
-          <button class="admin-section-button" type="button" data-admin-section="overview">System Overview</button>
         </nav>
 
         <div class="admin-grid">
@@ -172,7 +95,7 @@
             </div>
           </article>
 
-          <article id="tasksSection" class="panel admin-task-model-panel task-profiles-panel">
+          <article id="tasksSection" class="panel admin-task-model-panel task-profiles-panel hidden">
             <div class="panel-heading">
               <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
               <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh Profiles</button>
@@ -360,7 +283,7 @@
             </div>
           </article>
 
-          <article id="overviewSection" class="panel admin-summary hidden">
+          <article id="overviewSection" class="panel admin-summary">
             <p class="eyebrow">CURRENT STATE</p>
             <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
             <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
