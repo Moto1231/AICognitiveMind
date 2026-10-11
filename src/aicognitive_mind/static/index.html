@@ -368,8 +368,9 @@
               <div><p class="eyebrow">CURRENT ENVIRONMENT</p><h3>Device Inventory</h3></div>
               <button id="refreshDevicesButton" class="secondary-button" type="button">Query Devices</button>
             </div>
-            <p class="muted-copy">Lists cameras, microphones, and speakers exposed to this browser. Device labels may remain hidden until the browser grants media permission. This query does not turn on the camera or microphone.</p>
+            <p class="muted-copy">Query the devices available to this browser, then choose which camera, microphone, and speaker the Body should use. Selection is saved in this browser. Device labels may remain hidden until permission is granted; querying devices does not turn on the camera or microphone.</p>
             <div id="devicePermissionStatus" class="search-summary" aria-live="polite">Device inventory has not been queried.</div>
+            <div class="device-selection-summary" id="deviceSelectionSummary">Body device preferences have not been loaded.</div>
             <div id="deviceInventoryList" class="record-list"></div>
           </article>
 
