@@ -47,6 +47,24 @@
         </div>
 
         <div class="grid mind-overview-grid">
+          <article class="panel identity-panel hidden">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">IDENTITY</p>
+                <h3>Who Am I</h3>
+              </div>
+            </div>
+            <dl class="details">
+              <div><dt>Self Name</dt><dd id="selfName">—</dd></div>
+              <div><dt>Developmental State</dt><dd id="developmentState">—</dd></div>
+              <div><dt>Created</dt><dd id="createdAt">—</dd></div>
+            </dl>
+            <div class="values-block">
+              <p class="field-label">Foundational Values</p>
+              <div id="foundationalValues" class="tag-list"></div>
+            </div>
+          </article>
+
           <article class="panel stat-panel">
             <p class="eyebrow">DURABLE MEMORY</p>
             <div id="memoryCount" class="big-stat">—</div>
@@ -59,6 +77,65 @@
             <p>Journal Experiences</p>
           </article>
 
+          <article class="panel memory-panel hidden">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">MEMORY</p>
+                <h3>What Do I Remember</h3>
+              </div>
+              <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
+            </div>
+
+            <div class="memory-search">
+              <div class="search-field search-wide">
+                <label for="memorySearch">Search</label>
+                <input id="memorySearch" type="search" placeholder="Content, grounding, or associations">
+              </div>
+              <div class="search-field">
+                <label for="memoryClassFilter">Memory Class</label>
+                <select id="memoryClassFilter">
+                  <option value="">All Classes</option>
+                  <option value="working">Working</option>
+                  <option value="episodic">Episodic</option>
+                  <option value="semantic">Semantic</option>
+                  <option value="procedural">Procedural</option>
+                  <option value="identity">Identity</option>
+                  <option value="reflective">Reflective</option>
+                </select>
+              </div>
+              <div class="search-field">
+                <label for="associationFilter">Association</label>
+                <input id="associationFilter" type="search" placeholder="Association contains…">
+              </div>
+              <div class="search-field">
+                <label for="groundingFilter">Grounding</label>
+                <input id="groundingFilter" type="search" placeholder="Grounding contains…">
+              </div>
+              <div class="search-field">
+                <label for="formedFrom">Formed From</label>
+                <input id="formedFrom" type="date">
+              </div>
+              <div class="search-field">
+                <label for="formedTo">Formed Through</label>
+                <input id="formedTo" type="date">
+              </div>
+              <div class="search-field">
+                <label for="memorySort">Sort</label>
+                <select id="memorySort">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                </select>
+              </div>
+              <button id="clearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
+            </div>
+            <div class="search-summary">
+              <span id="memoryResultCount">0 Memories</span>
+            </div>
+            <div id="memoryList" class="memory-list"></div>
+            <div class="memory-pagination">
+              <button id="loadMoreMemories" class="secondary-button hidden" type="button">Load 25 More</button>
+            </div>
+          </article>
         </div>
       </section>
 
