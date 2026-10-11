@@ -153,7 +153,6 @@
       background: #315f8d;
       color: #fff;
     }
-    #talkToggle.on { border-color: #65d39b; color: #d9f6e8; }
     .sense-panel {
       margin-top: 1rem;
       padding: .8rem 1rem;
@@ -638,9 +637,6 @@
       realtimeMcpPending = 0;
       realtimeResponseDone = false;
       realtimeResponseUsedMcp = false;
-      talkToggle.classList.remove("on");
-      talkToggle.setAttribute("aria-pressed", "false");
-      talkToggle.textContent = "Talk";
       setStatus(message);
     }
 
@@ -665,9 +661,6 @@
       if (sensesEnabled) releaseSenses();
       talkEnabled = true;
       talkBusy = true;
-      talkToggle.classList.add("on");
-      talkToggle.setAttribute("aria-pressed", "true");
-      talkToggle.textContent = "Stop talking";
       setStatus("Connecting Axiom voice…");
 
       try {
@@ -747,20 +740,8 @@
     }
 
     async function showMindResult(result, { consumeOutputs = true } = {}) {
-      const evidence = result.evidence;
-      const evidenceUrl =
-        "/v1/evidence/" + encodeURIComponent(evidence.sha256) +
-        "?captured_at=" + encodeURIComponent(evidence.captured_at);
-
-      evidenceArtifactLink.href = evidenceUrl;
-      evidenceArtifactLink.textContent =
-        evidence.modality === "audio"
-          ? "Open preserved audio evidence"
-          : "Open preserved visual evidence";
-      evidenceArtifactLink.hidden = false;
-
       const responseLabel = result.response_text
-        ? "\n\nMind response:\n" + result.response_text
+        ? "\n\nMessage:\n" + result.response_text
         : "\n\nAwareness:\nAdmitted to Axiom without triggering conscious reasoning.";
       setStatus(
         "SENSORY INPUT ADMITTED\n\n" +
