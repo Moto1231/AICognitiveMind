@@ -321,6 +321,7 @@
     let realtimePeer = null;
     let realtimeEvents = null;
     let realtimeMicrophone = null;
+    let realtimeMicrophoneOwned = false;
     let realtimeAudio = null;
     let realtimeMcpPending = 0;
     let audioContext = null;
@@ -672,7 +673,10 @@
       talkBusy = false;
       talkSpeaking = false;
       clearTimeout(talkRestartTimer);
-      realtimeMicrophone?.getTracks().forEach((track) => track.stop());
+      if (realtimeMicrophoneOwned) {
+        realtimeMicrophone?.getTracks().forEach((track) => track.stop());
+      }
+      realtimeMicrophoneOwned = false;
       realtimeEvents?.close();
       realtimePeer?.close();
       if (realtimeAudio) realtimeAudio.srcObject = null;
@@ -700,11 +704,11 @@
     }
 
     async function startTalking() {
+      if (talkEnabled) return;
       if (!window.RTCPeerConnection || !navigator.mediaDevices?.getUserMedia) {
         setStatus("Realtime voice is unavailable in this browser.");
         return;
       }
-      if (sensesEnabled) releaseSenses();
       talkEnabled = true;
       talkBusy = true;
       setStatus("Connecting Axiom voice…");
@@ -712,7 +716,8 @@
       try {
         const peer = new RTCPeerConnection();
         realtimePeer = peer;
-        realtimeMicrophone = await navigator.mediaDevices.getUserMedia({ audio: true });
+        realtimeMicrophone = microphoneStream || await navigator.mediaDevices.getUserMedia({ audio: true });
+        realtimeMicrophoneOwned = realtimeMicrophone !== microphoneStream;
         for (const track of realtimeMicrophone.getAudioTracks()) {
           peer.addTrack(track, realtimeMicrophone);
         }
@@ -721,7 +726,7 @@
         realtimeEvents.addEventListener("open", () => {
           talkBusy = false;
           talkListening = true;
-          setStatus("Axiom is listening.");
+          setStatus("Axiom is listening. Camera and evidence capture remain active.");
         });
         realtimeEvents.addEventListener("message", ({ data }) => {
           let event;
@@ -1251,6 +1256,7 @@
         localStorage.setItem("aicognitive_mind.senses", "on");
         setStatus("SENSES ON\nContinuous vision and hearing are active.");
         startSensoryLoop();
+        await startTalking();
       } catch (error) {
         releaseSenses();
         setStatus("Could not turn senses on: " + error.message);
@@ -1260,6 +1266,7 @@
     }
 
     function releaseSenses({ persist = true } = {}) {
+      if (talkEnabled) stopTalking("Hands-free voice stopped with Senses.");
       sensoryLoopGeneration += 1;
       sensoryRequestInFlight = false;
       if (recorder?.state === "recording") {
