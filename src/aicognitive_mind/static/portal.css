@@ -654,3 +654,20 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   .admin-section-nav { display: grid; grid-template-columns: 1fr 1fr; }
   .admin-section-button { padding: 9px 8px; }
 }
+
+
+/* The Mind landing page is a compact status view; memory has its own workspace. */
+.mind-overview-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.mind-overview-grid .stat-panel {
+  min-height: 190px;
+}
+.admin-section-button:disabled,
+.secondary-button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+@media (max-width: 620px) {
+  .mind-overview-grid { grid-template-columns: minmax(0, 1fr); }
+}
