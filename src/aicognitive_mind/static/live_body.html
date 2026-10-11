@@ -380,6 +380,39 @@
       return await response.json();
     }
 
+    const BODY_DEVICE_STORAGE_KEYS = {
+      videoInput: "aicognitive_mind.device.videoInput",
+      audioInput: "aicognitive_mind.device.audioInput",
+      audioOutput: "aicognitive_mind.device.audioOutput"
+    };
+
+    function selectedBodyDeviceId(kind) {
+      try { return localStorage.getItem(BODY_DEVICE_STORAGE_KEYS[kind]) || ""; }
+      catch (_) { return ""; }
+    }
+
+    function bodyMediaConstraints(kind) {
+      const deviceId = selectedBodyDeviceId(kind);
+      if (kind === "videoInput") {
+        return { video: deviceId ? { deviceId: { exact: deviceId } } : true, audio: false };
+      }
+      return { audio: deviceId ? { deviceId: { exact: deviceId } } : true, video: false };
+    }
+
+    async function applyBodyAudioOutput(audioElement) {
+      const deviceId = selectedBodyDeviceId("audioOutput");
+      if (!deviceId) return;
+      if (typeof audioElement.setSinkId !== "function") {
+        setStatus("Selected speaker cannot be applied by this browser; using the browser default output.");
+        return;
+      }
+      try {
+        await audioElement.setSinkId(deviceId);
+      } catch (error) {
+        setStatus("Could not use the selected speaker: " + (error?.message || error));
+      }
+    }
+
     async function performBoundedLook(seconds, spokenCommand) {
       if (boundedLookActive) return;
       boundedLookActive = true;
@@ -388,7 +421,7 @@
       try {
         setStatus("Axiom is looking for " + seconds + " seconds…");
         if (!stream) {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          stream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("videoInput"));
           temporaryStream = true;
         }
         const observations = [];
@@ -443,7 +476,7 @@
           setStatus("Axiom camera requested by reasoning host for " + seconds + " seconds…");
 
           if (!stream) {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            stream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("videoInput"));
             temporaryStream = true;
           }
 
@@ -601,6 +634,7 @@
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
+        await applyBodyAudioOutput(audio);
         audio.volume = 1;
         talkSpeaking = true;
         audio.addEventListener("ended", () => {
@@ -712,7 +746,7 @@
       try {
         const peer = new RTCPeerConnection();
         realtimePeer = peer;
-        realtimeMicrophone = await navigator.mediaDevices.getUserMedia({ audio: true });
+        realtimeMicrophone = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
         for (const track of realtimeMicrophone.getAudioTracks()) {
           peer.addTrack(track, realtimeMicrophone);
         }
@@ -1229,11 +1263,11 @@
         // getUserMedia permission requests can race or cause one request to
         // fail before any Body request ever reaches the server.
         setStatus("SENSES ON\nRequesting camera access...");
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        cameraStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("videoInput"));
 
         setStatus("SENSES ON\nCamera ready. Requesting microphone access...");
         try {
-          microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          microphoneStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
         } catch (error) {
           cameraStream.getTracks().forEach((track) => track.stop());
           cameraStream = null;
