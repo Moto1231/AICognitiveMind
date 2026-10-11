@@ -185,6 +185,13 @@ class TaskModelDispatcher:
             working_context=runtime_context.working_context,
         )
         system_prompt = await self.prompt_assembler.system_prompt(runtime_context)
+        caller_system = [
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "system" and message.get("content")
+        ]
+        if caller_system:
+            system_prompt += "\\n\\nADDITIONAL CALLER INSTRUCTIONS:\\n" + "\\n".join(caller_system)
         request_messages = [
             {"role": "system", "content": system_prompt},
             *[message for message in messages if message.get("role") != "system"],
@@ -217,12 +224,29 @@ class TaskModelDispatcher:
         filename: str,
         audio_bytes: bytes,
         media_type: str,
+        context: TaskExecutionContext | None = None,
     ) -> str:
         assignment, endpoint = await self._resolve(task)
+        profile = next(item for item in await self.behaviors.list() if item.task == task)
+        runtime_context = context or TaskExecutionContext(task=task)
+        runtime_context = TaskExecutionContext(
+            task=task,
+            provider=assignment.provider,
+            model=assignment.model,
+            behavior_revision=profile.revision,
+            session_id=runtime_context.session_id,
+            state_ref=runtime_context.state_ref,
+            memory_refs=runtime_context.memory_refs,
+            working_context=runtime_context.working_context,
+        )
+        # OpenAI-compatible transcription APIs accept an optional prompt. It is
+        # the audio task's layered behavior, not an assumption that transcription
+        # endpoints support chat-style system messages.
+        transcription_prompt = await self.prompt_assembler.system_prompt(runtime_context)
         payload = await self._request(
             endpoint,
             "audio/transcriptions",
-            data={"model": assignment.model},
+            data={"model": assignment.model, "prompt": transcription_prompt},
             files={"file": (filename, audio_bytes, media_type)},
         )
         text = payload.get("text")
