@@ -82,6 +82,8 @@ class TaskModelAssignmentRegistry:
                 detail.append("missing tasks: " + ", ".join(missing))
             if unknown:
                 detail.append("unsupported tasks: " + ", ".join(unknown))
+            if len(assignments) != len(by_task):
+                detail.append("duplicate task entries")
             raise ValueError("Invalid task assignments (" + "; ".join(detail) + ")")
         ordered = [by_task[task] for task in TASK_LABELS]
         after = {"items": [item.model_dump(mode="json") for item in ordered]}
