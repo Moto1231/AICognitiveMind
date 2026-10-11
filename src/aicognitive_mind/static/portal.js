@@ -1477,4 +1477,8 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
+
+// Render the built-in task list immediately so the workspace remains navigable
+// even if an admin configuration request fails or is slow.
+renderTaskProfiles();
 refresh();
