@@ -55,6 +55,7 @@ const el = {
   loadMoreMemories: document.getElementById("loadMoreMemories"),
   refreshButton: document.getElementById("refreshButton"),
   adminRefreshButton: document.getElementById("adminRefreshButton"),
+  adminMemoryRefreshButton: document.getElementById("adminMemoryRefreshButton"),
   protocolValue: document.getElementById("protocolValue"),
   reasoningOwner: document.getElementById("reasoningOwner"),
   identityOwner: document.getElementById("identityOwner"),
@@ -1403,6 +1404,7 @@ el.adminRefreshButton.addEventListener("click", () => Promise.all([
   refreshMemory(filters.admin, true),
   refreshJournal(true),
 ]));
+el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));
 el.journalRefreshButton.addEventListener("click", () => refreshJournal(true));
 el.loadMoreJournals.addEventListener("click", () => refreshJournal(false));
 el.initializeForm.addEventListener("submit", initializeMind);
