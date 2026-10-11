@@ -767,6 +767,41 @@ async def mind_hear(
         ) from exc
 
 
+@app.get("/v1/portal/evidence")
+async def portal_sensory_evidence(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    tenant = getattr(request.state, "tenant_storage", None)
+    evidence_store = cast(
+        EvidenceStore,
+        tenant.evidence if tenant is not None else request.app.state.evidence_store,
+    )
+    artifacts = await evidence_store.read()
+    items = [artifact.reference().model_dump(mode="json") for artifact in artifacts]
+    items.sort(key=lambda item: item["captured_at"], reverse=True)
+    return {"items": items, "total": len(items)}
+
+
+@app.delete("/v1/portal/evidence/{sha256}")
+async def delete_portal_sensory_evidence(
+    sha256: str,
+    captured_at: datetime,
+    request: Request,
+) -> dict[str, bool]:
+    require_admin(request)
+    tenant = getattr(request.state, "tenant_storage", None)
+    evidence_store = cast(
+        EvidenceStore,
+        tenant.evidence if tenant is not None else request.app.state.evidence_store,
+    )
+    deleted = await evidence_store.delete_exact(sha256=sha256, captured_at=captured_at)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sensory evidence artifact was not found",
+        )
+    return {"deleted": True}
+
+
 @app.get(
     "/v1/evidence/{sha256}/metadata",
     response_model=SensoryEvidenceReference,
