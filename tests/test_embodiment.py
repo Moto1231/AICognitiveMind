@@ -400,7 +400,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
             encoding="utf-8"
         )
         self.assertIn('id="sensesToggle"', markup)
-        self.assertIn("getUserMedia({ video: true, audio: false })", markup)
+        self.assertIn('getUserMedia(bodyMediaConstraints("videoInput"))', markup)
         self.assertIn("getUserMedia({ audio: true, video: false })", markup)
         self.assertIn("releaseSenses", markup)
         self.assertIn("startSensoryLoop", markup)
