@@ -61,7 +61,7 @@ from aicognitive_mind.embodiment import (
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
-from aicognitive_mind.task_behaviors import TaskBehavior, TaskBehaviorRegistry
+from aicognitive_mind.task_behaviors import TASK_FOUNDATIONS, TaskBehavior, TaskBehaviorRegistry
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, discover_endpoint_models
 from aicognitive_mind.task_model_assignments import (
     TaskModelAssignment,
@@ -1358,12 +1358,7 @@ async def admin_task_behaviors(request: Request) -> dict[str, Any]:
     items = await request.app.state.task_behaviors.list()
     return {
         "items": [item.model_dump(mode="json") for item in items],
-        "foundations": {
-            task: foundation
-            for task, foundation in __import__(
-                "aicognitive_mind.task_behaviors", fromlist=["TASK_FOUNDATIONS"]
-            ).TASK_FOUNDATIONS.items()
-        },
+        "foundations": TASK_FOUNDATIONS,
     }
 
 
