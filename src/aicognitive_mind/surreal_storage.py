@@ -445,3 +445,16 @@ class SurrealEvidenceStore:
             },
         )
         return SensoryEvidenceArtifact.model_validate(_document(records[0])) if records else None
+
+    async def delete_exact(self, *, sha256: str, captured_at: Any) -> bool:
+        from aicognitive_mind.retrieval import json_time
+        records = await self._database.query(
+            "DELETE evidence WHERE mind_id = $mind_id "
+            "AND sha256 = $sha AND captured_at = $captured RETURN BEFORE;",
+            {
+                "mind_id": self.mind_id,
+                "sha": sha256,
+                "captured": json_time(captured_at),
+            },
+        )
+        return bool(_records(records))
