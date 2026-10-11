@@ -1467,6 +1467,7 @@ function showAdminSection(sectionName) {
     button.setAttribute("aria-current", active ? "page" : "false");
   });
   if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
+  if (sectionName === "tasks") renderTaskProfiles();
 }
 
 document.querySelectorAll("[data-admin-section]").forEach(button => {
