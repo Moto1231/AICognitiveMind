@@ -671,3 +671,25 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 @media (max-width: 620px) {
   .mind-overview-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+.evidence-preview {
+  display: block;
+  max-width: min(100%, 560px);
+  max-height: 360px;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  object-fit: contain;
+  background: rgba(0,0,0,.22);
+}
+.evidence-audio { display: block; width: min(100%, 560px); margin-top: 14px; }
+.danger-button {
+  border: 1px solid rgba(255,154,154,.4);
+  border-radius: 10px;
+  padding: 9px 13px;
+  background: rgba(255,80,80,.09);
+  color: var(--danger);
+  font-weight: 700;
+}
+.danger-button:disabled { opacity: .55; cursor: wait; }
