@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import Any
 from urllib.parse import urlparse
 
@@ -105,6 +107,53 @@ class TaskModelDispatcher:
         if not isinstance(payload, dict):
             raise TaskDispatchError(f"Provider endpoint '{endpoint.name}' returned an unexpected response.")
         return payload
+
+    async def interpret_percept(self, percept: Any, *, focus: str | None = None) -> str | None:
+        """Interpret a sensory percept through its configured specialist assignment."""
+        modality = getattr(getattr(percept, "modality", None), "value", "")
+        if modality == "vision" and await self.is_configured("vision"):
+            if not percept.content_ref:
+                raise TaskDispatchError("Visual percept contains no image content.")
+            prompt = (
+                "Interpret this as direct visual sensory input for a persistent cognitive mind. "
+                "Describe only what is reasonably observable. Do not invent identity, intent, or hidden facts."
+                + (f" Re-examine the original evidence specifically for: {focus}" if focus else "")
+            )
+            result = await self.complete_chat(
+                "vision",
+                [{"role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": percept.content_ref}},
+                ]}],
+            )
+            return f"Visual perception: {result}"
+        if modality == "audio" and await self.is_configured("audio"):
+            data_url = percept.content_ref or ""
+            if not data_url.startswith("data:") or "," not in data_url:
+                raise TaskDispatchError("Audio percept does not contain a valid data URL.")
+            header, encoded = data_url.split(",", 1)
+            if not header.endswith(";base64"):
+                raise TaskDispatchError("Audio percept does not contain base64 data.")
+            media_type = header.removeprefix("data:").removesuffix(";base64").split(";", 1)[0].lower()
+            try:
+                audio_bytes = base64.b64decode(encoded, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise TaskDispatchError("Audio percept contains invalid base64 data.") from exc
+            if not audio_bytes:
+                raise TaskDispatchError("Audio percept is empty.")
+            extension = {
+                "audio/webm": "webm", "audio/ogg": "ogg", "audio/wav": "wav",
+                "audio/x-wav": "wav", "audio/mp4": "mp4", "audio/mpeg": "mp3",
+            }.get(media_type, "webm")
+            result = await self.transcribe(
+                "audio", filename=f"percept.{extension}",
+                audio_bytes=audio_bytes, media_type=media_type,
+            )
+            return (
+                f"Auditory perception: {result}\nEvidence review focus: {focus}"
+                if focus else f"Auditory perception: {result}"
+            )
+        return None
 
     async def complete_chat(
         self,
