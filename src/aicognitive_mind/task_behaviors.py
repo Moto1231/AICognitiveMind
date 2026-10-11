@@ -7,8 +7,8 @@ conversation history.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
