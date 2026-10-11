@@ -389,15 +389,15 @@ class HostAwareInterpreter:
         )
 
     async def interpret(self, percept: Any, *, focus: str | None = None) -> str:
+        if self.task_dispatcher is not None:
+            modality = getattr(getattr(percept, "modality", None), "value", "")
+            if modality in {"vision", "audio"}:
+                specialist_result = await self.task_dispatcher.interpret_percept(
+                    percept, focus=focus
+                )
+                if specialist_result is not None:
+                    return specialist_result
         if await self.hosts.active():
-            if self.task_dispatcher is not None:
-                modality = getattr(getattr(percept, "modality", None), "value", "")
-                if modality in {"vision", "audio"}:
-                    specialist_result = await self.task_dispatcher.interpret_percept(
-                        percept, focus=focus
-                    )
-                    if specialist_result is not None:
-                        return specialist_result
             return f"Uninterpreted {percept.modality.value} observation. Use the sensory evidence reference in Body context to inspect the original media."
         from aicognitive_mind.config import get_settings
 
