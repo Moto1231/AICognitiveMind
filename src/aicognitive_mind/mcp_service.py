@@ -28,6 +28,11 @@ from aicognitive_mind.prompts import (
 from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.task_behaviors import (
+    TaskBehaviorRegistry,
+    TaskExecutionContext,
+    TaskPromptAssembler,
+)
 
 
 class MemoryProposal(BaseModel):
@@ -64,7 +69,18 @@ class CognitiveMcpService:
         self._mind = mind
         self._journal = journal
         self._memory = memory
-        self._host_behaviors = HostBehaviorRegistry(RuntimeRecords(mind))
+        records = RuntimeRecords(mind)
+        self._host_behaviors = HostBehaviorRegistry(records)
+        self._task_prompt_assembler = TaskPromptAssembler(TaskBehaviorRegistry(records))
+
+    async def _compose_reasoning_contract(self) -> str:
+        host_contract = await self._host_behaviors.compose(CONSCIOUS_WORKSPACE_SYSTEM_PROMPT)
+        task_layers = await self._task_prompt_assembler.system_prompt(TaskExecutionContext(
+            task="reasoning",
+            provider="connected-host",
+            model="host-selected",
+        ))
+        return host_contract + "\n\n" + task_layers
 
     @atomic
     async def initialize(
@@ -143,7 +159,7 @@ class CognitiveMcpService:
             "idempotency_key": uuid4().hex,
             "mind": mind.model_dump(mode="json"),
             "recalled_context": recalled["context"],
-            "conscious_workspace_contract": await self._host_behaviors.compose(CONSCIOUS_WORKSPACE_SYSTEM_PROMPT),
+            "conscious_workspace_contract": await self._compose_reasoning_contract(),
             "next_step": (
                 "Reason as this Mind using the recalled context. If unresolved evidence includes "
                 "investigation guidance, pursue the material questions that can change or clarify "

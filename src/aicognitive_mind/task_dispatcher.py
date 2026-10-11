@@ -9,6 +9,11 @@ import httpx
 
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_model_assignments import TaskKind, TaskModelAssignment, TaskModelAssignmentRegistry
+from aicognitive_mind.task_behaviors import (
+    TaskBehaviorRegistry,
+    TaskExecutionContext,
+    TaskPromptAssembler,
+)
 
 
 class TaskDispatchError(RuntimeError):
@@ -25,8 +30,34 @@ class TaskModelDispatcher:
     def __init__(self, records: Any, *, timeout: float = 90.0, client: Any | None = None) -> None:
         self.assignments = TaskModelAssignmentRegistry(records)
         self.endpoints = ProviderEndpointRegistry(records)
+        self.behaviors = TaskBehaviorRegistry(records)
+        self.prompt_assembler = TaskPromptAssembler(self.behaviors)
         self.timeout = timeout
         self.client = client
+
+    async def execute(self, context: TaskExecutionContext, payload: Any) -> Any:
+        """Runtime-neutral entry point implemented by the stateless API adapter."""
+        if not isinstance(payload, dict):
+            raise TaskDispatchError("Task runtime payload must be an object.")
+        operation = payload.get("operation")
+        if operation == "chat":
+            messages = payload.get("messages")
+            if not isinstance(messages, list) or not all(isinstance(item, dict) for item in messages):
+                raise TaskDispatchError("Chat runtime payload requires a messages list.")
+            return await self.complete_chat(
+                context.task, messages, temperature=payload.get("temperature"), context=context
+            )
+        if operation == "transcribe":
+            filename = payload.get("filename")
+            audio_bytes = payload.get("audio_bytes")
+            media_type = payload.get("media_type")
+            if not isinstance(filename, str) or not isinstance(audio_bytes, bytes) or not isinstance(media_type, str):
+                raise TaskDispatchError("Transcription runtime payload requires filename, audio_bytes, and media_type.")
+            return await self.transcribe(
+                context.task, filename=filename, audio_bytes=audio_bytes,
+                media_type=media_type, context=context,
+            )
+        raise TaskDispatchError("Unsupported task runtime operation.")
 
     async def assignment(self, task: TaskKind) -> TaskModelAssignment:
         return next(item for item in await self.assignments.list() if item.task == task)
@@ -161,9 +192,35 @@ class TaskModelDispatcher:
         messages: list[dict[str, Any]],
         *,
         temperature: float | None = None,
+        context: TaskExecutionContext | None = None,
     ) -> str:
         assignment, endpoint = await self._resolve(task)
-        body: dict[str, Any] = {"model": assignment.model, "messages": messages}
+        profile = next(item for item in await self.behaviors.list() if item.task == task)
+        runtime_context = context or TaskExecutionContext(task=task)
+        # The selected assignment always comes from Axiom's registry, not a caller's context.
+        runtime_context = TaskExecutionContext(
+            task=task,
+            provider=assignment.provider,
+            model=assignment.model,
+            behavior_revision=profile.revision,
+            session_id=runtime_context.session_id,
+            state_ref=runtime_context.state_ref,
+            memory_refs=runtime_context.memory_refs,
+            working_context=runtime_context.working_context,
+        )
+        system_prompt = await self.prompt_assembler.system_prompt(runtime_context)
+        caller_system = [
+            str(message.get("content", ""))
+            for message in messages
+            if message.get("role") == "system" and message.get("content")
+        ]
+        if caller_system:
+            system_prompt += "\n\nADDITIONAL CALLER INSTRUCTIONS:\n" + "\n".join(caller_system)
+        request_messages = [
+            {"role": "system", "content": system_prompt},
+            *[message for message in messages if message.get("role") != "system"],
+        ]
+        body: dict[str, Any] = {"model": assignment.model, "messages": request_messages}
         if temperature is not None:
             body["temperature"] = temperature
         payload = await self._request(endpoint, "chat/completions", json_body=body)
@@ -191,12 +248,29 @@ class TaskModelDispatcher:
         filename: str,
         audio_bytes: bytes,
         media_type: str,
+        context: TaskExecutionContext | None = None,
     ) -> str:
         assignment, endpoint = await self._resolve(task)
+        profile = next(item for item in await self.behaviors.list() if item.task == task)
+        runtime_context = context or TaskExecutionContext(task=task)
+        runtime_context = TaskExecutionContext(
+            task=task,
+            provider=assignment.provider,
+            model=assignment.model,
+            behavior_revision=profile.revision,
+            session_id=runtime_context.session_id,
+            state_ref=runtime_context.state_ref,
+            memory_refs=runtime_context.memory_refs,
+            working_context=runtime_context.working_context,
+        )
+        # OpenAI-compatible transcription APIs accept an optional prompt. It is
+        # the audio task's layered behavior, not an assumption that transcription
+        # endpoints support chat-style system messages.
+        transcription_prompt = await self.prompt_assembler.system_prompt(runtime_context)
         payload = await self._request(
             endpoint,
             "audio/transcriptions",
-            data={"model": assignment.model},
+            data={"model": assignment.model, "prompt": transcription_prompt},
             files={"file": (filename, audio_bytes, media_type)},
         )
         text = payload.get("text")

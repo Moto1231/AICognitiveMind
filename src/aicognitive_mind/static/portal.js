@@ -19,6 +19,8 @@ const state = {
   activeJournal: null,
   hostBehaviors: [],
   taskModelAssignments: [],
+  taskBehaviors: [],
+  taskFoundations: {},
   providerEndpoints: [],
 };
 
@@ -110,6 +112,9 @@ const el = {
   addHostBehavior: document.getElementById("addHostBehavior"),
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
   taskModelAssignmentList: document.getElementById("taskModelAssignmentList"),
+  taskBehaviorList: document.getElementById("taskBehaviorList"),
+  refreshTaskBehaviors: document.getElementById("refreshTaskBehaviors"),
+  saveTaskBehaviors: document.getElementById("saveTaskBehaviors"),
   providerEndpointList: document.getElementById("providerEndpointList"),
   addProviderEndpoint: document.getElementById("addProviderEndpoint"),
   refreshProviderEndpoints: document.getElementById("refreshProviderEndpoints"),
@@ -500,6 +505,76 @@ async function saveTaskModelAssignments() {
   }
 }
 
+function renderTaskBehaviors() {
+  if (!el.taskBehaviorList) return;
+  el.taskBehaviorList.replaceChildren();
+  for (const behavior of state.taskBehaviors) {
+    const card = document.createElement("section");
+    card.className = "memory-card task-model-assignment-card";
+    const heading = document.createElement("h4");
+    heading.textContent = taskModelLabels[behavior.task] || displayLabel(behavior.task);
+    card.append(heading);
+
+    const foundationLabel = document.createElement("label");
+    foundationLabel.className = "host-behavior-field";
+    foundationLabel.append(document.createTextNode("Immutable foundation (code-owned)"));
+    const foundation = document.createElement("textarea");
+    foundation.value = state.taskFoundations[behavior.task] || "";
+    foundation.readOnly = true;
+    foundation.rows = 4;
+    foundation.setAttribute("aria-label", heading.textContent + " immutable foundation");
+    foundationLabel.append(foundation);
+    card.append(foundationLabel);
+
+    const instructionsLabel = document.createElement("label");
+    instructionsLabel.className = "host-behavior-field";
+    instructionsLabel.append(document.createTextNode("Editable behavior instructions"));
+    const instructions = document.createElement("textarea");
+    instructions.value = behavior.instructions || "";
+    instructions.maxLength = 4000;
+    instructions.rows = 4;
+    instructions.placeholder = "Task-specific style, priorities, workflow, and preferences";
+    instructions.addEventListener("input", () => { behavior.instructions = instructions.value; });
+    instructionsLabel.append(instructions);
+    card.append(instructionsLabel);
+
+    const enabledLabel = document.createElement("label");
+    enabledLabel.className = "host-behavior-field";
+    const enabled = document.createElement("input");
+    enabled.type = "checkbox";
+    enabled.checked = behavior.enabled !== false;
+    enabled.addEventListener("change", () => { behavior.enabled = enabled.checked; });
+    enabledLabel.append(enabled, document.createTextNode(" Enable editable behavior layer"));
+    card.append(enabledLabel);
+
+    const revision = document.createElement("p");
+    revision.className = "muted-copy";
+    revision.textContent = "Profile revision: " + (behavior.revision || 1);
+    card.append(revision);
+    el.taskBehaviorList.append(card);
+  }
+}
+
+async function refreshTaskBehaviors() {
+  const payload = await api("/v1/admin/task-behaviors", {}, true);
+  state.taskBehaviors = payload.items || [];
+  state.taskFoundations = payload.foundations || {};
+  renderTaskBehaviors();
+}
+
+async function saveTaskBehaviors() {
+  try {
+    const payload = await api("/v1/admin/task-behaviors", {
+      method: "PUT",
+      body: JSON.stringify({ items: state.taskBehaviors }),
+    }, true);
+    state.taskBehaviors = payload.items || [];
+    renderTaskBehaviors();
+    toast("Task behaviors saved");
+  } catch (error) {
+    toast(error.message, true);
+  }
+}
 async function enterAdminMode() {
   try {
     const allowed = await validateAdmin();
@@ -510,6 +585,7 @@ async function enterAdminMode() {
       refreshJournal(true),
       refreshHostBehaviors(),
       refreshTaskModelAssignments(),
+      refreshTaskBehaviors(),
       refreshProviderEndpoints(),
     ]);
   } catch (error) {
@@ -1331,3 +1407,5 @@ if (el.refreshProviderEndpoints) el.refreshProviderEndpoints.addEventListener("c
 if (el.saveProviderEndpoints) el.saveProviderEndpoints.addEventListener("click", saveProviderEndpoints);
 el.refreshTaskModels.addEventListener("click", () => refreshTaskModelAssignments().catch(error => toast(error.message, true)));
 if (el.saveTaskModels) el.saveTaskModels.addEventListener("click", saveTaskModelAssignments);
+if (el.refreshTaskBehaviors) el.refreshTaskBehaviors.addEventListener("click", () => refreshTaskBehaviors().catch(error => toast(error.message, true)));
+if (el.saveTaskBehaviors) el.saveTaskBehaviors.addEventListener("click", saveTaskBehaviors);

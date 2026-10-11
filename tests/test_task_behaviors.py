@@ -1,0 +1,101 @@
+import unittest
+
+from aicognitive_mind.task_behaviors import (
+    TASK_FOUNDATIONS,
+    TaskBehaviorRegistry,
+    TaskExecutionContext,
+    TaskPromptAssembler,
+)
+from aicognitive_mind.task_behaviors import TASK_BEHAVIOR_LABELS
+
+
+class FakeRecords:
+    def __init__(self):
+        self.values = {}
+
+    async def get(self, key):
+        return self.values.get(key)
+
+    async def create(self, key, value):
+        self.values[key] = value
+
+    async def replace(self, key, before, after):
+        if self.values.get(key) != before:
+            return False
+        self.values[key] = after
+        return True
+
+
+class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_every_task_has_code_owned_foundation_and_mutable_profile(self):
+        registry = TaskBehaviorRegistry(FakeRecords())
+        profiles = await registry.list()
+        self.assertEqual({item.task for item in profiles}, set(TASK_BEHAVIOR_LABELS))
+        self.assertEqual(set(TASK_FOUNDATIONS), set(TASK_BEHAVIOR_LABELS))
+        for profile in profiles:
+            self.assertTrue(TASK_FOUNDATIONS[profile.task])
+
+    async def test_external_behavior_is_mutable_but_does_not_replace_foundation(self):
+        registry = TaskBehaviorRegistry(FakeRecords())
+        profiles = await registry.list()
+        updated = [
+            item.model_copy(update={"instructions": "Be concise and state uncertainty."})
+            if item.task == "vision" else item
+            for item in profiles
+        ]
+        saved = await registry.replace(updated)
+        vision = next(item for item in saved if item.task == "vision")
+        self.assertEqual(vision.instructions, "Be concise and state uncertainty.")
+        self.assertEqual(vision.revision, 2)
+        self.assertEqual(TASK_FOUNDATIONS["vision"].startswith("You are Axiom"), True)
+        self.assertFalse(hasattr(vision, "foundation"))
+
+    async def test_prompt_layers_foundation_behavior_assignment_and_compact_context(self):
+        registry = TaskBehaviorRegistry(FakeRecords())
+        profiles = await registry.list()
+        await registry.replace([
+            item.model_copy(update={"instructions": "Be concise."})
+            if item.task == "vision" else item
+            for item in profiles
+        ])
+        assembler = TaskPromptAssembler(registry)
+        prompt = await assembler.system_prompt(TaskExecutionContext(
+            task="vision",
+            provider="local",
+            model="vision-model",
+            behavior_revision=2,
+            session_id="session-17",
+            state_ref="working-state-9",
+            memory_refs=("memory-3",),
+            working_context="Current frame shows a doorway.",
+        ))
+        self.assertLess(prompt.index("IMMUTABLE AXIOM TASK FOUNDATION"), prompt.index("CONFIGURABLE TASK BEHAVIOR"))
+        self.assertLess(prompt.index("CONFIGURABLE TASK BEHAVIOR"), prompt.index("CURRENT ASSIGNMENT"))
+        self.assertIn(TASK_FOUNDATIONS["vision"], prompt)
+        self.assertIn("Be concise.", prompt)
+        self.assertIn("Model: vision-model", prompt)
+        self.assertIn("Session reference: session-17", prompt)
+        self.assertIn("Working-state reference: working-state-9", prompt)
+        self.assertIn("memory-3", prompt)
+        self.assertIn("Current frame shows a doorway.", prompt)
+        self.assertNotIn("entire conversation", prompt)
+
+    async def test_empty_behavior_does_not_hide_immutable_foundation(self):
+        registry = TaskBehaviorRegistry(FakeRecords())
+        assembler = TaskPromptAssembler(registry)
+        prompt = await assembler.system_prompt(TaskExecutionContext(task="audio"))
+        self.assertIn(TASK_FOUNDATIONS["audio"], prompt)
+        self.assertNotIn("CONFIGURABLE TASK BEHAVIOR", prompt)
+
+    async def test_reasoning_has_its_own_mutable_profile_without_model_assignment(self):
+        registry = TaskBehaviorRegistry(FakeRecords())
+        profiles = await registry.list()
+        reasoning = next(item for item in profiles if item.task == "reasoning")
+        self.assertEqual(reasoning.name, "Reasoning (connected host)")
+        prompt = await TaskPromptAssembler(registry).system_prompt(TaskExecutionContext(task="reasoning", provider="connected-host", model="host-selected"))
+        self.assertIn(TASK_FOUNDATIONS["reasoning"], prompt)
+        self.assertIn("Model: host-selected", prompt)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -89,8 +89,35 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(method, "POST")
         self.assertEqual(url, "http://localhost:8000/v1/chat/completions")
         self.assertEqual(kwargs["json"]["model"], "vision-arbitrary-model")
+        self.assertEqual(kwargs["json"]["messages"][0]["role"], "system")
+        self.assertIn("IMMUTABLE AXIOM TASK FOUNDATION", kwargs["json"]["messages"][0]["content"])
+        self.assertIn("vision-arbitrary-model", kwargs["json"]["messages"][0]["content"])
         self.assertIn("image_url", str(kwargs["json"]["messages"]))
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer admin-key")
+
+    async def test_runtime_contract_dispatches_compact_context_to_stateless_adapter(self):
+        records = await self.configured()
+        client = FakeClient(FakeResponse({
+            "choices": [{"message": {"content": "Observed."}}]
+        }))
+        dispatcher = TaskModelDispatcher(records, client=client)
+        from aicognitive_mind.task_behaviors import TaskExecutionContext
+
+        result = await dispatcher.execute(
+            TaskExecutionContext(
+                task="vision",
+                session_id="session-compact",
+                state_ref="state-compact",
+                memory_refs=("memory-7",),
+            ),
+            {"operation": "chat", "messages": [{"role": "user", "content": "Describe."}]},
+        )
+
+        self.assertEqual(result, "Observed.")
+        prompt = client.calls[0][2]["json"]["messages"][0]["content"]
+        self.assertIn("Session reference: session-compact", prompt)
+        self.assertIn("Working-state reference: state-compact", prompt)
+        self.assertIn("memory-7", prompt)
 
     async def test_transcription_uses_assigned_model(self):
         records = await self.configured(model="my-audio-model")
@@ -112,6 +139,8 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "Hello there")
         self.assertEqual(client.calls[0][1], "http://localhost:8000/v1/audio/transcriptions")
         self.assertEqual(client.calls[0][2]["data"]["model"], "my-audio-model")
+        self.assertIn("IMMUTABLE AXIOM TASK FOUNDATION", client.calls[0][2]["data"]["prompt"])
+        self.assertIn("my-audio-model", client.calls[0][2]["data"]["prompt"])
 
     async def test_provider_failure_is_reported_without_fallback(self):
         records = await self.configured()
