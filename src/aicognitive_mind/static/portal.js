@@ -337,6 +337,7 @@ const taskModelLabels = {
 
 function allTaskNames() {
   return [...new Set([
+    ...Object.keys(taskModelLabels),
     ...state.taskModelAssignments.map(item => item.task),
     ...state.taskBehaviors.map(item => item.task),
     ...Object.keys(state.taskFoundations),
@@ -346,7 +347,15 @@ function allTaskNames() {
 function renderTaskProfiles() {
   if (!el.taskProfileList) return;
   el.taskProfileList.replaceChildren();
-  for (const task of allTaskNames()) {
+  const tasks = allTaskNames();
+  if (!tasks.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Task profiles are not available yet. Refresh Profiles to retry loading the configuration.";
+    el.taskProfileList.append(empty);
+    return;
+  }
+  for (const task of tasks) {
     const assignment = state.taskModelAssignments.find(item => item.task === task) || {};
     const behavior = state.taskBehaviors.find(item => item.task === task) || {};
     const endpoint = state.providerEndpoints.find(item =>
@@ -1412,6 +1421,31 @@ refresh();
 if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBehavior);
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
 if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
+
+const adminSectionIds = {
+  tasks: "tasksSection",
+  behaviors: "behaviorsSection",
+  memories: "memoriesSection",
+  journals: "journalsSection",
+  overview: "overviewSection",
+};
+
+function showAdminSection(sectionName) {
+  for (const [name, id] of Object.entries(adminSectionIds)) {
+    const panel = document.getElementById(id);
+    if (panel) panel.classList.toggle("hidden", name !== sectionName);
+  }
+  document.querySelectorAll("[data-admin-section]").forEach(button => {
+    const active = button.dataset.adminSection === sectionName;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+  if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
+}
+
+document.querySelectorAll("[data-admin-section]").forEach(button => {
+  button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
+});
 if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", () => Promise.all([refreshTaskModelAssignments(), refreshTaskBehaviors(), refreshProviderEndpoints()]).catch(error => toast(error.message, true)));
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
