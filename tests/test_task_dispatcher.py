@@ -2,7 +2,7 @@ import unittest
 
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
-from aicognitive_mind.task_model_assignments import TaskModelAssignment, TaskModelAssignmentRegistry
+from aicognitive_mind.task_model_assignments import TaskModelAssignmentRegistry
 
 
 class FakeRecords:
