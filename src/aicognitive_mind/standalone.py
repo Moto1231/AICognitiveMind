@@ -18,6 +18,7 @@ class StandaloneRuntime:
         self.model = "not started"
         self.engine: Any = None
         self.interpreter: Any = None
+        self.task_dispatcher: Any = None
         self._lock = asyncio.Lock()
         self._until = 0.0
         self._calls: deque[float] = deque()
@@ -64,10 +65,11 @@ class StandaloneRuntime:
         else:
             raise ProviderUnavailable("Unknown standalone reasoning provider")
         if self.records is not None:
-            self.interpreter.task_dispatcher = TaskModelDispatcher(
+            self.task_dispatcher = TaskModelDispatcher(
                 self.records,
                 timeout=self.settings.reasoning_timeout_seconds,
             )
+            self.interpreter.task_dispatcher = self.task_dispatcher
         for target in (self.engine, self.interpreter):
             if hasattr(target, "_client"):
                 target._client = MeteredClient(target._client, self)
@@ -148,6 +150,14 @@ class StandaloneRuntime:
     async def interpret(self, percept: Any, *, focus: str | None = None) -> str:
         await self._admit()
         try:
+            if self.task_dispatcher is not None:
+                modality = getattr(getattr(percept, "modality", None), "value", "")
+                if modality in {"vision", "audio"}:
+                    specialist_result = await self.task_dispatcher.interpret_percept(
+                        percept, focus=focus
+                    )
+                    if specialist_result is not None:
+                        return specialist_result
             return await asyncio.wait_for(
                 self.interpreter.interpret(percept, focus=focus),
                 self.settings.reasoning_timeout_seconds,
