@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 
 from aicognitive_mind.mcp_server import execute_task
-from aicognitive_mind.task_behaviors import TaskBehavior
+from aicognitive_mind.task_behaviors import default_task_behaviors
 
 
 class FakeDispatcher:
@@ -16,7 +16,10 @@ class FakeDispatcher:
         return SimpleNamespace(provider="provider-a", model="model-a")
 
     async def list_behaviors(self):
-        return [TaskBehavior(task="vision", name="Vision", instructions="", revision=3)]
+        return [
+            item.model_copy(update={"revision": 3}) if item.task == "vision" else item
+            for item in default_task_behaviors()
+        ]
 
     async def execute(self, context, payload):
         self.calls.append((context, payload))
