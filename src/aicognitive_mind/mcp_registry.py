@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class MCPToolRecord(BaseModel):
@@ -36,10 +37,12 @@ class MCPServerRecord(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_url(cls, value: str) -> str:
-        parsed = HttpUrl(value)
-        if parsed.scheme not in {"http", "https"}:
-            raise ValueError("MCP server URL must use HTTP or HTTPS")
-        return str(parsed).rstrip("/")
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError("MCP server URL must use HTTP or HTTPS and include a hostname")
+        if parsed.username or parsed.password or parsed.fragment:
+            raise ValueError("MCP server URL cannot embed credentials or a fragment")
+        return value.rstrip("/")
 
 
 class MCPServerRegistry:
