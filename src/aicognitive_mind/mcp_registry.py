@@ -138,6 +138,17 @@ class MCPServerRegistry:
                 },
             )
             initialize.raise_for_status()
+            initialize_payload = self._decode_response(initialize)
+            if "error" in initialize_payload:
+                error = initialize_payload["error"]
+                message = error.get("message", "Unknown MCP initialization error") if isinstance(error, dict) else str(error)
+                raise ValueError(f"MCP initialization failed: {message}")
+            initialize_result = initialize_payload.get("result", {})
+            if not isinstance(initialize_result, dict):
+                raise ValueError("MCP server returned an invalid initialization result")
+            headers["MCP-Protocol-Version"] = str(
+                initialize_result.get("protocolVersion") or "2025-03-26"
+            )
             session_id = initialize.headers.get("mcp-session-id")
             if session_id:
                 headers["MCP-Session-Id"] = session_id
