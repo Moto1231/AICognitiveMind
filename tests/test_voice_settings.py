@@ -12,9 +12,17 @@ class VoiceSettingsTests(unittest.IsolatedAsyncioTestCase):
         second = VoiceSettings(mind)
 
         self.assertEqual((await first.read())["revision"], 0)
-        updated = await first.update(expected_revision=0, rate=1.2, volume=0.7)
+        updated = await first.update(
+            expected_revision=0,
+            rate=1.2,
+            volume=0.7,
+            fish_audio_model="s2.1-pro-free",
+            fish_audio_reference_id="voice-ref",
+        )
         self.assertEqual(updated["revision"], 1)
         self.assertEqual((await second.read())["rate"], 1.2)
+        self.assertEqual((await second.read())["fishAudioModel"], "s2.1-pro-free")
+        self.assertEqual((await second.read())["fishAudioReferenceId"], "voice-ref")
         with self.assertRaises(CommitConflict):
             await second.update(expected_revision=0, pitch=1.1)
 
@@ -24,6 +32,8 @@ class VoiceSettingsTests(unittest.IsolatedAsyncioTestCase):
             await store.update(expected_revision=0, rate=float("nan"))
         with self.assertRaises(ValueError):
             await store.update(expected_revision=0, volume=2)
+        with self.assertRaises(ValueError):
+            await store.update(expected_revision=0, fish_audio_model="")
 
 
 if __name__ == "__main__":
