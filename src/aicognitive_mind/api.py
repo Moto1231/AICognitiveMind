@@ -76,6 +76,7 @@ from aicognitive_mind.host_runtime import (
     RuntimeRecords,
 )
 from aicognitive_mind.mcp_service import CognitiveMcpService
+from aicognitive_mind.mcp_registry import MCPServerRecord, MCPServerRegistry
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.presence_resolver import PresenceResolver
 from aicognitive_mind.standalone import ProviderUnavailable, StandaloneRuntime
@@ -120,6 +121,16 @@ class TaskBehaviorListRequest(BaseModel):
 
 class ProviderEndpointListRequest(BaseModel):
     items: list[ProviderEndpoint]
+
+
+class MCPServerListRequest(BaseModel):
+    items: list[MCPServerRecord]
+
+
+class MCPToolCallRequest(BaseModel):
+    server_id: str = Field(min_length=1, max_length=80)
+    tool_name: str = Field(min_length=1, max_length=160)
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class BodyVoiceSettingsUpdateRequest(BaseModel):
@@ -519,6 +530,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.task_model_assignments = TaskModelAssignmentRegistry(records)
     app.state.task_behaviors = TaskBehaviorRegistry(records)
     app.state.provider_endpoints = ProviderEndpointRegistry(records)
+    app.state.mcp_servers = MCPServerRegistry(records)
     app.state.accounts = AccountService(settings, records)
     from aicognitive_mind.voice_settings import VoiceSettings
 
@@ -1506,6 +1518,67 @@ async def discover_admin_provider_endpoint_models(
         logger.info("Provider model discovery failed for %s: %s", payload.name, exc)
         raise HTTPException(status_code=502, detail=f"Model discovery failed: {exc}") from exc
     return details
+
+
+@app.get("/v1/admin/mcp/servers")
+async def admin_mcp_servers(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    items = await request.app.state.mcp_servers.list()
+    return {"items": [item.model_dump(mode="json", by_alias=True) for item in items]}
+
+
+@app.put("/v1/admin/mcp/servers")
+async def replace_admin_mcp_servers(
+    payload: MCPServerListRequest,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    try:
+        items = await request.app.state.mcp_servers.replace(payload.items)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"items": [item.model_dump(mode="json", by_alias=True) for item in items]}
+
+
+@app.post("/v1/admin/mcp/servers/discover")
+async def discover_admin_mcp_server(
+    payload: MCPServerRecord,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    try:
+        tools = await request.app.state.mcp_servers.discover(payload)
+    except Exception as exc:
+        logger.info("MCP tool discovery failed for %s: %s", payload.name, exc)
+        raise HTTPException(status_code=502, detail=f"MCP tool discovery failed: {exc}") from exc
+    return {
+        "items": [item.model_dump(mode="json", by_alias=True) for item in tools],
+        "server_id": payload.id,
+    }
+
+
+@app.post("/v1/admin/mcp/tools/call")
+async def call_admin_mcp_tool(
+    payload: MCPToolCallRequest,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    servers = await request.app.state.mcp_servers.list()
+    server = next((item for item in servers if item.id == payload.server_id), None)
+    if server is None:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+    try:
+        result = await request.app.state.mcp_servers.call_tool(
+            server,
+            payload.tool_name,
+            payload.arguments,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.info("MCP tool call failed for %s/%s: %s", server.name, payload.tool_name, exc)
+        raise HTTPException(status_code=502, detail=f"MCP tool call failed: {exc}") from exc
+    return result
 
 
 @app.get("/v1/admin/task-behaviors")
