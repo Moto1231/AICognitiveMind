@@ -333,7 +333,10 @@
     let sensesEnabled = false;
     let sensoryLoopGeneration = 0;
     let sensoryRequestInFlight = false;
-    const AUDIO_WINDOW_MS = 4_000;
+    const AUDIO_IDLE_WINDOW_MS = 4_000;
+    const AUDIO_MAX_DURATION_MS = 30_000;
+    const AUDIO_SILENCE_MS = 900;
+    const AUDIO_SPEECH_THRESHOLD = 0.012;
     const SENSE_PAUSE_MS = 15_000;
     const VISION_INTERVAL_MS = 3_000;
     const DEFAULT_LOOK_SECONDS = 5;
@@ -1025,19 +1028,28 @@
           : new MediaRecorder(microphoneStream);
         const chunks = [];
         const startedAt = performance.now();
-        let stopTimer = null;
+        let monitorTimer = null;
+        let speechDetected = false;
+        let silenceStartedAt = 0;
+        const clearMonitor = () => {
+          if (monitorTimer !== null) window.clearInterval(monitorTimer);
+          monitorTimer = null;
+        };
+        const stopRecording = () => {
+          if (activeRecorder.state === "recording") activeRecorder.stop();
+        };
 
         recorder = activeRecorder;
         activeRecorder.addEventListener("dataavailable", (event) => {
           if (event.data.size > 0) chunks.push(event.data);
         });
         activeRecorder.addEventListener("error", (event) => {
-          if (stopTimer) clearTimeout(stopTimer);
+          clearMonitor();
           if (recorder === activeRecorder) recorder = null;
           reject(event.error || new Error("Microphone recording failed"));
         }, { once: true });
         activeRecorder.addEventListener("stop", () => {
-          if (stopTimer) clearTimeout(stopTimer);
+          clearMonitor();
           if (recorder === activeRecorder) recorder = null;
 
           if (
@@ -1051,7 +1063,7 @@
 
           const durationMs = Math.max(
             1,
-            Math.min(30_000, Math.round(performance.now() - startedAt))
+            Math.min(AUDIO_MAX_DURATION_MS, Math.round(performance.now() - startedAt))
           );
           resolve({
             blob: new Blob(
@@ -1063,9 +1075,48 @@
         }, { once: true });
 
         activeRecorder.start();
-        stopTimer = window.setTimeout(() => {
-          if (activeRecorder.state === "recording") activeRecorder.stop();
-        }, AUDIO_WINDOW_MS);
+        monitorTimer = window.setInterval(() => {
+          if (activeRecorder.state !== "recording") {
+            clearMonitor();
+            return;
+          }
+          const elapsedMs = performance.now() - startedAt;
+          if (elapsedMs >= AUDIO_MAX_DURATION_MS) {
+            stopRecording();
+            return;
+          }
+
+          // Follow a complete utterance instead of cutting every sample at a
+          // fixed three- or four-second boundary. Use the live mic analyser;
+          // no audio is copied into logs or persisted by this monitor.
+          let rms = 0;
+          if (audioAnalyser) {
+            const samples = new Uint8Array(audioAnalyser.fftSize);
+            audioAnalyser.getByteTimeDomainData(samples);
+            let sum = 0;
+            for (const sample of samples) {
+              const amplitude = (sample - 128) / 128;
+              sum += amplitude * amplitude;
+            }
+            rms = Math.sqrt(sum / Math.max(1, samples.length));
+          }
+
+          if (rms >= AUDIO_SPEECH_THRESHOLD) {
+            speechDetected = true;
+            silenceStartedAt = 0;
+          } else if (speechDetected) {
+            if (!silenceStartedAt) silenceStartedAt = performance.now();
+            if (
+              elapsedMs >= 1_500 &&
+              performance.now() - silenceStartedAt >= AUDIO_SILENCE_MS
+            ) {
+              stopRecording();
+            }
+          } else if (elapsedMs >= AUDIO_IDLE_WINDOW_MS) {
+            // Don't wait the full maximum when the room is quiet.
+            stopRecording();
+          }
+        }, 100);
       });
     }
 
