@@ -723,3 +723,34 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 
 
 .task-profile-revision { margin-top: 10px !important; }
+
+
+/* Separate filter controls from result lists in every search workspace. */
+.filter-area, .result-area {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255,255,255,.018);
+}
+.result-area { margin-top: 12px; }
+.filter-area .memory-search, .filter-area .journal-search { margin-bottom: 0; }
+.page-size-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.page-size-control select {
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+@media (max-width: 560px) {
+  .filter-area, .result-area { padding: 12px; }
+  .page-size-control { justify-content: space-between; }
+}
