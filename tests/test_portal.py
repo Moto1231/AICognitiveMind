@@ -41,7 +41,6 @@ class PortalTests(unittest.TestCase):
             "taskProfileDiscover",
             "taskProfileAssignmentSection",
             "taskProfileModel",
-            "taskProfileModels",
             "taskProfileFallbackProvider",
             "taskProfileFallbackModel",
             "taskProfileFoundation",
@@ -50,6 +49,12 @@ class PortalTests(unittest.TestCase):
             "taskProfileEnabled",
             "taskProfileRevision",
             "saveTaskProfile",
+            "fishAudioModel",
+            "fishAudioReferenceId",
+            "voiceRate",
+            "voicePitch",
+            "voiceVolume",
+            "voiceName",
         )
         for element_id in profile_ids:
             with self.subTest(element_id=element_id):

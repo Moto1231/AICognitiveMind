@@ -26,6 +26,7 @@ const state = {
   activeEndpointId: null,
   activeEndpointOriginalName: "",
   deviceInventory: [],
+  voiceSettingsRevision: 0,
 };
 
 const el = {
@@ -143,6 +144,16 @@ const el = {
   taskProfileModels: document.getElementById("taskProfileModels"),
   taskProfileFallbackProvider: document.getElementById("taskProfileFallbackProvider"),
   taskProfileFallbackModel: document.getElementById("taskProfileFallbackModel"),
+  addBehaviorShortcut: document.getElementById("addBehaviorShortcut"),
+  fishAudioModel: document.getElementById("fishAudioModel"),
+  fishAudioReferenceId: document.getElementById("fishAudioReferenceId"),
+  voiceRate: document.getElementById("voiceRate"),
+  voicePitch: document.getElementById("voicePitch"),
+  voiceVolume: document.getElementById("voiceVolume"),
+  voiceName: document.getElementById("voiceName"),
+  voiceSettingsRevision: document.getElementById("voiceSettingsRevision"),
+  saveVoiceSettings: document.getElementById("saveVoiceSettings"),
+  refreshVoiceSettings: document.getElementById("refreshVoiceSettings"),
   taskProfileFoundation: document.getElementById("taskProfileFoundation"),
   taskProfileBehaviorName: document.getElementById("taskProfileBehaviorName"),
   taskProfileInstructions: document.getElementById("taskProfileInstructions"),
@@ -196,9 +207,10 @@ async function api(path, options = {}, admin = false) {
     : await response.text();
 
   if (!response.ok) {
-    const detail = payload && typeof payload === "object" && payload.detail
+    const rawDetail = payload && typeof payload === "object" && payload.detail
       ? payload.detail
       : `Request failed (${response.status})`;
+    const detail = typeof rawDetail === "string" ? rawDetail : JSON.stringify(rawDetail);
     const error = new Error(detail);
     error.status = response.status;
     throw error;
@@ -213,7 +225,12 @@ function displayLabel(value) {
 }
 
 function toast(message, error = false) {
-  el.toast.textContent = message;
+  const displayMessage = typeof message === "string"
+    ? message
+    : message instanceof Error
+      ? message.message
+      : JSON.stringify(message);
+  el.toast.textContent = displayMessage ?? "";
   el.toast.classList.toggle("error", error);
   el.toast.classList.remove("hidden");
   clearTimeout(toast.timer);
@@ -444,18 +461,50 @@ function renderTaskProfileEndpointOptions() {
   select.value = state.activeEndpointId || "";
 }
 
+function fillSelect(select, values, selected, placeholder) {
+  select.replaceChildren();
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = placeholder;
+  select.append(blank);
+  for (const value of [...new Set(values.filter(value => typeof value === "string" && value.trim()))]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.append(option);
+  }
+  if (selected && ![...select.options].some(option => option.value === selected)) {
+    const option = document.createElement("option");
+    option.value = selected;
+    option.textContent = selected + " (saved)";
+    select.append(option);
+  }
+  select.value = selected || "";
+}
+
+function renderFallbackSelectors() {
+  const provider = el.taskProfileFallbackProvider.value;
+  const fallbackModel = el.taskProfileFallbackModel.value;
+  fillSelect(
+    el.taskProfileFallbackProvider,
+    state.providerEndpoints.map(item => item.name),
+    provider,
+    "No fallback provider",
+  );
+  const endpoint = state.providerEndpoints.find(item =>
+    item.name === el.taskProfileFallbackProvider.value || item.id === el.taskProfileFallbackProvider.value
+  );
+  fillSelect(el.taskProfileFallbackModel, endpoint?.models || [], fallbackModel, "No fallback model");
+}
+
 function loadEndpointIntoForm() {
   const { endpoint } = activeProfileRecords();
   el.taskProfileEndpointName.value = endpoint?.name || "";
   el.taskProfileBaseUrl.value = endpoint?.base_url || "";
   el.taskProfileApiKey.value = endpoint?.api_key || "";
-  const models = endpoint?.models || [];
-  el.taskProfileModels.replaceChildren();
-  for (const model of models) {
-    const option = document.createElement("option");
-    option.value = model;
-    el.taskProfileModels.append(option);
-  }
+  const selectedModel = el.taskProfileModel.value;
+  fillSelect(el.taskProfileModel, endpoint?.models || [], selectedModel, "Discover models or choose a model");
+  renderFallbackSelectors();
 }
 
 function openTaskProfile(task) {
@@ -490,10 +539,16 @@ function openTaskProfile(task) {
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
   el.taskProfileRevision.textContent = "Profile revision: " + (behavior.revision || 1);
-  el.taskProfileModel.value = assignment?.model || "";
+  renderTaskProfileEndpointOptions();
+  fillSelect(
+    el.taskProfileModel,
+    selectedEndpoint()?.models || [],
+    assignment?.model || "",
+    "Discover models or choose a model",
+  );
+  renderFallbackSelectors();
   el.taskProfileFallbackProvider.value = assignment?.fallback_provider || "";
   el.taskProfileFallbackModel.value = assignment?.fallback_model || "";
-  renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   el.taskProfileOverview.classList.add("hidden");
   el.taskProfileList.classList.add("hidden");
@@ -639,6 +694,44 @@ function addTaskProfileEndpoint() {
   el.taskProfileEndpointName.focus();
 }
 
+async function loadVoiceSettings() {
+  try {
+    const settings = await api("/v1/body/voice/settings", {}, true);
+    state.voiceSettingsRevision = Number(settings.revision || 0);
+    el.fishAudioModel.value = settings.fishAudioModel || "s2.1-pro-free";
+    el.fishAudioReferenceId.value = settings.fishAudioReferenceId || "";
+    el.voiceRate.value = String(settings.rate ?? 1);
+    el.voicePitch.value = String(settings.pitch ?? 1);
+    el.voiceVolume.value = String(settings.volume ?? 1);
+    el.voiceName.value = settings.voiceName || "";
+    el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
+  } catch (error) {
+    toast("Could not load voice settings: " + error.message, true);
+  }
+}
+
+async function saveVoiceSettings() {
+  try {
+    const settings = await api("/v1/admin/body/voice/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        expected_revision: state.voiceSettingsRevision,
+        fish_audio_model: el.fishAudioModel.value.trim(),
+        fish_audio_reference_id: el.fishAudioReferenceId.value.trim(),
+        rate: Number(el.voiceRate.value),
+        pitch: Number(el.voicePitch.value),
+        volume: Number(el.voiceVolume.value),
+        voice_name: el.voiceName.value.trim(),
+      }),
+    }, true);
+    state.voiceSettingsRevision = Number(settings.revision || 0);
+    el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
+    toast("Voice settings saved");
+  } catch (error) {
+    toast("Could not save voice settings: " + error.message, true);
+  }
+}
+
 async function enterAdminMode() {
   try {
     const allowed = await validateAdmin();
@@ -651,6 +744,7 @@ async function enterAdminMode() {
       refreshTaskModelAssignments(),
       refreshTaskBehaviors(),
       refreshProviderEndpoints(),
+      loadVoiceSettings(),
     ]);
   } catch (error) {
     toast(error.message, true);
@@ -1080,7 +1174,7 @@ function renderJournalList() {
 
     const preview = document.createElement("div");
     preview.className = "journal-entry-preview";
-    preview.textContent = entry.preview || "Open to inspect the exact journal record.";
+    preview.textContent = entry.preview || "";
 
     item.append(meta, title, preview);
     el.journalTimeline.appendChild(item);
@@ -1567,6 +1661,7 @@ const adminSectionIds = {
   journals: "journalsSection",
   overview: "overviewSection",
   devices: "devicesSection",
+  voice: "voiceSection",
 };
 
 async function refreshTaskProfilesFromButton() {
@@ -1695,11 +1790,22 @@ if (el.refreshDevicesButton) el.refreshDevicesButton.addEventListener("click", r
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
   state.activeEndpointOriginalName = selectedEndpoint()?.name || "";
+  el.taskProfileModel.value = "";
   loadEndpointIntoForm();
 });
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
+if (el.taskProfileFallbackProvider) el.taskProfileFallbackProvider.addEventListener("change", () => {
+  el.taskProfileFallbackModel.value = "";
+  renderFallbackSelectors();
+});
+if (el.addBehaviorShortcut) el.addBehaviorShortcut.addEventListener("click", () => {
+  showAdminSection("behaviors");
+  addHostBehavior();
+});
+if (el.refreshVoiceSettings) el.refreshVoiceSettings.addEventListener("click", loadVoiceSettings);
+if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);
 
 const BODY_DEVICE_STORAGE_KEYS = {
   videoinput: "aicognitive_mind.device.videoInput",
@@ -1758,7 +1864,7 @@ async function refreshDeviceInventory() {
       const section = document.createElement("section");
       section.className = "device-inventory-group";
       const title = document.createElement("h4");
-      title.textContent = `${heading} (${matches.length})`;
+      title.textContent = heading;
       section.append(title);
       const pickerLabel = document.createElement("label");
       pickerLabel.className = "host-behavior-field";

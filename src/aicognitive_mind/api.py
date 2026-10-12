@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from aicognitive_mind.accounts import AccountService
+from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.backup import (
     backup_filename,
     build_backup_archive,
@@ -119,6 +120,16 @@ class TaskBehaviorListRequest(BaseModel):
 
 class ProviderEndpointListRequest(BaseModel):
     items: list[ProviderEndpoint]
+
+
+class BodyVoiceSettingsUpdateRequest(BaseModel):
+    expected_revision: int = Field(ge=0)
+    voice_name: str | None = Field(default=None, max_length=120)
+    rate: float | None = None
+    pitch: float | None = None
+    volume: float | None = None
+    fish_audio_model: str | None = Field(default=None, max_length=120)
+    fish_audio_reference_id: str | None = Field(default=None, max_length=200)
 
 
 class AdminMemoryRevisionRequest(BaseModel):
@@ -703,8 +714,43 @@ async def live_body_page() -> FileResponse:
 
 @app.get("/v1/body/voice/settings")
 async def body_voice_settings(request: Request) -> dict[str, Any]:
-    """Read voice preferences shared with Axiom's ChatGPT MCP host."""
-    return await request.app.state.voice_settings.read()
+    """Read non-secret voice preferences shared with Body clients."""
+    values = await request.app.state.voice_settings.read()
+    settings = get_settings()
+    if values.get("fishAudioModel") is None:
+        values["fishAudioModel"] = settings.fish_audio_model
+    if values.get("fishAudioReferenceId") is None:
+        values["fishAudioReferenceId"] = settings.fish_audio_reference_id
+    return values
+
+
+@app.post("/v1/admin/body/voice/settings")
+async def update_admin_body_voice_settings(
+    payload: BodyVoiceSettingsUpdateRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Persist voice and Fish Audio parameters without exposing the API key."""
+    require_admin(request)
+    try:
+        values = await request.app.state.voice_settings.update(
+            expected_revision=payload.expected_revision,
+            voice_name=payload.voice_name,
+            rate=payload.rate,
+            pitch=payload.pitch,
+            volume=payload.volume,
+            fish_audio_model=payload.fish_audio_model,
+            fish_audio_reference_id=payload.fish_audio_reference_id,
+        )
+    except CommitConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    settings = get_settings()
+    if values.get("fishAudioModel") is None:
+        values["fishAudioModel"] = settings.fish_audio_model
+    if values.get("fishAudioReferenceId") is None:
+        values["fishAudioReferenceId"] = settings.fish_audio_reference_id
+    return values
 
 
 @app.post("/v1/mind/body/see", response_model=EmbodiedInteractionResult)
@@ -1045,10 +1091,15 @@ async def fish_audio_speech(
 
     # Browser voice settings use a 0-1 volume scale; Fish uses dB.
     fish_volume = (body.volume - 1.0) * 20.0
+    voice_settings = await request.app.state.voice_settings.read()
     renderer = FishAudioRenderer(
         api_key=settings.fish_audio_api_key,
-        model=settings.fish_audio_model,
-        reference_id=settings.fish_audio_reference_id,
+        model=voice_settings.get("fishAudioModel") or settings.fish_audio_model,
+        reference_id=(
+            voice_settings.get("fishAudioReferenceId")
+            if voice_settings.get("fishAudioReferenceId") is not None
+            else settings.fish_audio_reference_id
+        ),
     )
     try:
         audio = await renderer.synthesize(
