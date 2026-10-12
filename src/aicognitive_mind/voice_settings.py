@@ -14,6 +14,7 @@ DEFAULT_VOICE_SETTINGS: dict[str, Any] = {
     "pitch": 1.0,
     "volume": 1.0,
     "fishAudioModel": None,
+    "fishAudioApiKey": "",
     "fishAudioReferenceId": None,
     "revision": 0,
 }
@@ -37,6 +38,7 @@ class VoiceSettings:
         rate: float | None = None,
         pitch: float | None = None,
         volume: float | None = None,
+        fish_audio_api_key: str | None = None,
         fish_audio_model: str | None = None,
         fish_audio_reference_id: str | None = None,
     ) -> dict[str, Any]:
@@ -54,6 +56,10 @@ class VoiceSettings:
                 if not math.isfinite(value) or not lower <= value <= upper:
                     raise ValueError(f"{name} must be between {lower} and {upper}")
                 changes[name] = value
+        if fish_audio_api_key is not None:
+            if len(fish_audio_api_key) > 4096:
+                raise ValueError("Fish Audio API key is too long")
+            changes["fishAudioApiKey"] = fish_audio_api_key.strip()
         if fish_audio_model is not None:
             model = fish_audio_model.strip()
             if not model or len(model) > 120:
