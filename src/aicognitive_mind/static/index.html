@@ -155,7 +155,6 @@
           <button class="admin-section-button active" type="button" data-admin-section="overview">System Overview</button>
           <button class="admin-section-button" type="button" data-admin-section="tasks">Task Profiles</button>
           <button class="admin-section-button" type="button" data-admin-section="behaviors">Interaction Behaviors</button>
-          <button id="addBehaviorShortcut" class="secondary-button" type="button">Add Behavior</button>
           <button class="admin-section-button" type="button" data-admin-section="voice">Voice / Fish Audio</button>
           <button class="admin-section-button" type="button" data-admin-section="memories">Memories</button>
           <button class="admin-section-button" type="button" data-admin-section="journals">Journals</button>
@@ -229,7 +228,7 @@
                 </div>
               </section>
               <section class="task-profile-section">
-                <h4>Behavior</h4>
+                <div class="panel-heading task-profile-behavior-heading"><h4>Behavior</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Add Behavior</button></div>
                 <label class="host-behavior-field">Immutable foundation (code-owned)
                   <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
                 </label>
@@ -369,8 +368,11 @@
               <div><p class="eyebrow">VOICE OUTPUT</p><h3>Voice / Fish Audio</h3></div>
               <button id="refreshVoiceSettings" class="secondary-button" type="button">Refresh Settings</button>
             </div>
-            <p class="muted-copy">These settings control Body speech. The Fish Audio API key remains server-side in Render environment settings and is never displayed here.</p>
+            <p class="muted-copy">These settings control Body speech. This administrator-only field can view and update the Fish Audio API key.</p>
             <div class="task-model-fields">
+              <label class="host-behavior-field">Fish Audio API key
+                <input id="fishAudioApiKey" type="password" autocomplete="new-password" maxlength="4096" placeholder="Fish Audio API key">
+              </label>
               <label class="host-behavior-field">Fish Audio model
                 <input id="fishAudioModel" type="text" maxlength="120" placeholder="s2.1-pro-free">
               </label>
