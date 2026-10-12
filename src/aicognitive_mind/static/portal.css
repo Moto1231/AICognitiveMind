@@ -800,10 +800,18 @@ select optgroup {
   font-size: 12px;
 }
 #mcpSection .host-behavior-card { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
-# mcpSection .host-behavior-card strong { display: block; font-size: 13px; }
-# mcpSection .host-behavior-card p { margin-top: 7px; }
-# mcpSection .task-profile-section { margin-top: 20px; }
-# mcpSection .task-profile-inline-actions { flex-wrap: wrap; }
+.host-behavior-card strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.host-behavior-card p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.task-profile-section { margin-top: 20px; }
+.task-profile-inline-actions { flex-wrap: wrap; }
 @media (max-width: 760px) {
-  #mcpSection .host-behavior-card { grid-template-columns: minmax(0, 1fr); }
+  .host-behavior-card { grid-template-columns: minmax(0, 1fr); }
 }
