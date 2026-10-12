@@ -252,16 +252,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   transform: translateY(-1px);
   outline: none;
 }
-.memory-item::after {
-  content: "Inspect exact record →";
-  display: block;
-  margin-top: 10px;
-  color: var(--accent);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
+/* Journal cards remain visually quiet; actions appear only where explicitly available. */
 .inspector-backdrop {
   position: fixed;
   inset: 0;
@@ -619,42 +610,87 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 
 
 /* Administration is organized as distinct work areas, not one long dashboard. */
+#adminView > .hero {
+  align-items: center;
+  margin-bottom: 28px;
+}
+#adminView > .hero > div {
+  min-width: 0;
+}
+#adminView > .hero h2 {
+  line-height: 1.04;
+  letter-spacing: -.045em;
+}
+#adminView > .hero .hero-copy {
+  max-width: 620px;
+}
+#adminView > .hero > .secondary-button {
+  flex: 0 0 auto;
+  min-height: 42px;
+}
 .admin-section-nav {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
-  margin: 0 0 18px;
-  padding: 8px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
+  margin: 0 0 24px;
+  padding: 7px;
+  border: 1px solid rgba(161,190,226,.19);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(15,27,46,.96), rgba(10,20,35,.92));
+  box-shadow: 0 10px 28px rgba(0,0,0,.12);
 }
 .admin-section-button {
-  min-height: 40px;
+  min-height: 42px;
   padding: 10px 14px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 11px;
   background: transparent;
-  color: var(--muted);
+  color: #a9bbd3;
   font-size: 12px;
-  font-weight: 750;
+  font-weight: 720;
+  letter-spacing: .005em;
+  transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-.admin-section-button:hover,
-.admin-section-button:focus-visible {
-  border-color: var(--border);
+.admin-section-button:hover {
+  border-color: rgba(161,190,226,.22);
+  background: rgba(255,255,255,.035);
   color: var(--text);
-  outline: none;
+}
+.admin-section-button:focus-visible,
+.admin-section-nav .secondary-button:focus-visible,
+#adminView > .hero .secondary-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.admin-section-nav .secondary-button {
+  min-height: 42px;
+  margin-left: auto;
+  border-color: rgba(104,216,255,.22);
+  background: rgba(104,216,255,.055);
+  color: #c9eafa;
+}
+.admin-section-nav .secondary-button:hover {
+  border-color: rgba(104,216,255,.42);
+  background: rgba(104,216,255,.11);
 }
 .admin-section-button.active {
-  border-color: rgba(104,216,255,.28);
-  background: rgba(104,216,255,.10);
+  border-color: rgba(104,216,255,.34);
+  background: linear-gradient(180deg, rgba(104,216,255,.13), rgba(104,216,255,.07));
   color: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 3px 10px rgba(0,0,0,.10);
 }
 #memoriesSection, #journalsSection { grid-column: 1 / -1; }
 #tasksSection .task-profile-grid { margin-top: 22px; }
+@media (max-width: 860px) {
+  #adminView > .hero { align-items: flex-start; }
+  .admin-section-nav { gap: 6px; }
+  .admin-section-nav .secondary-button { margin-left: 0; }
+}
 @media (max-width: 620px) {
-  .admin-section-nav { display: grid; grid-template-columns: 1fr 1fr; }
-  .admin-section-button { padding: 9px 8px; }
+  .admin-section-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-section-button { min-width: 0; padding: 10px 8px; line-height: 1.25; }
+  .admin-section-nav .secondary-button { width: 100%; margin: 0; }
 }
 
 
