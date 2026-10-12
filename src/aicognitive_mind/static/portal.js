@@ -731,7 +731,7 @@ async function saveVoiceSettings() {
       }),
     }, true);
     state.voiceSettingsRevision = Number(settings.revision || 0);
-    el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
+    el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
     toast("Voice settings saved");
   } catch (error) {
     toast("Could not save voice settings: " + error.message, true);
