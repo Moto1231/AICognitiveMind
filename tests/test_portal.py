@@ -30,7 +30,7 @@ class PortalTests(unittest.TestCase):
             "taskProfileList",
             "taskProfileEditor",
             "taskProfileTitle",
-            "taskProfileSummary",
+            "taskProfileRevision",
             "taskProfileBack",
             "taskProfileEndpointSection",
             "taskProfileEndpointSelect",
@@ -111,7 +111,7 @@ class PortalTests(unittest.TestCase):
         self.assertIn("memoryPageSize: 25", script_text)
         self.assertIn("loadMoreMemories", script_text)
         self.assertNotIn("function memoryMatches", script_text)
-        self.assertIn("Journal Timeline", markup)
+        self.assertIn("<h3>History</h3>", markup)
         self.assertIn("JOURNAL INSPECTOR", markup)
         self.assertIn("renderJournalList", script_text)
         self.assertIn("openJournalInspector", script_text)
