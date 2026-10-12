@@ -10,20 +10,20 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import AnyHttpUrl
 
-from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
+from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.config import get_settings
+from aicognitive_mind.domain import DiagnosticObservation
 from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_registry import MCPServerRegistry
-from aicognitive_mind.domain import DiagnosticObservation
 from aicognitive_mind.mcp_server import AppState, lifespan, execute_task as execute_configured_task
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
-from aicognitive_mind.voice_settings import VoiceSettings
 from aicognitive_mind.task_model_assignments import TaskKind
+from aicognitive_mind.voice_settings import VoiceSettings
 
 async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
     """Persist an exact MCP transport event for one Axiom interaction."""
