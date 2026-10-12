@@ -235,7 +235,43 @@ class HostRuntime:
         host = await self.records.get("active_host")
         if not host or host["expires"] <= time.time():
             return None
-        return {key: host[key] for key in ("name", "model", "expires")}
+        return {
+            key: host.get(key)
+            for key in ("name", "model", "expires", "attached_at", "last_heartbeat_at")
+        }
+
+    async def status(self) -> dict:
+        now = time.time()
+        host = await self.active()
+        requests = await self.records.pending()
+        items = []
+        for request in requests:
+            claim_until = float(request.get("claim_until", 0) or 0)
+            in_progress = bool(request.get("claim")) and claim_until > now
+            items.append({
+                "request_id": request["request_id"],
+                "state": "in_progress" if in_progress else "pending",
+                "age_seconds": max(0, int(now - float(request.get("created", now)))),
+                "remaining_seconds": max(0, int(float(request.get("deadline", now)) - now)),
+            })
+        pending_count = sum(item["state"] == "pending" for item in items)
+        in_progress_count = sum(item["state"] == "in_progress" for item in items)
+        return {
+            "connected": host is not None,
+            "host": host,
+            "lease_remaining_seconds": (
+                max(0, int(float(host["expires"]) - now)) if host else 0
+            ),
+            "last_heartbeat_age_seconds": (
+                max(0, int(now - float(host["last_heartbeat_at"])))
+                if host and host.get("last_heartbeat_at") is not None else None
+            ),
+            "requests": {
+                "pending": pending_count,
+                "in_progress": in_progress_count,
+                "items": items,
+            },
+        }
 
     async def attach(self, name: str, model: str, lease_seconds: int = 120) -> dict:
         if (
@@ -249,10 +285,13 @@ class HostRuntime:
         if before and before["expires"] > time.time():
             raise CommitConflict("An external host already owns the live lease")
         token = secrets.token_urlsafe(32)
+        now = time.time()
         host = {
             "name": name,
             "model": model,
-            "expires": time.time() + lease_seconds,
+            "attached_at": now,
+            "last_heartbeat_at": now,
+            "expires": now + lease_seconds,
             "token_hash": hashlib.sha256(token.encode()).hexdigest(),
         }
         if before:
@@ -275,7 +314,12 @@ class HostRuntime:
 
     async def renew(self, token: str, detach: bool = False) -> dict:
         host = await self.require(token)
-        revised = {**host, "expires": 0 if detach else time.time() + 120}
+        now = time.time()
+        revised = {
+            **host,
+            "expires": 0 if detach else now + 120,
+            "last_heartbeat_at": now,
+        }
         if not await self.records.replace("active_host", host, revised):
             raise CommitConflict("Host lease changed")
         return {"expires": revised["expires"]}

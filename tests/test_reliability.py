@@ -120,6 +120,32 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await host_b.active())["model"], "model-b")
         await host_b.renew(lease_b["lease_token"], detach=True)
 
+    async def test_host_status_reports_lease_and_in_flight_request(self):
+        host = HostRuntime(self.mind, self.service, timeout=3)
+        lease = await host.attach("status-host", "model-status")
+        status = await host.status()
+        self.assertTrue(status["connected"])
+        self.assertEqual(status["host"]["name"], "status-host")
+        self.assertEqual(status["host"]["model"], "model-status")
+        self.assertGreater(status["lease_remaining_seconds"], 0)
+
+        pending = asyncio.create_task(host.submit("status test input"))
+        for _ in range(30):
+            status = await host.status()
+            if status["requests"]["pending"]:
+                break
+            await asyncio.sleep(0.01)
+        self.assertEqual(status["requests"]["pending"], 1)
+
+        request = await host.next_request(lease["lease_token"])
+        self.assertIsNotNone(request)
+        status = await host.status()
+        self.assertEqual(status["requests"]["in_progress"], 1)
+        self.assertNotIn("message", status["requests"]["items"][0])
+        result = await host.complete(lease["lease_token"], request["request_id"], "Completed")
+        self.assertEqual(await pending, result)
+        await host.renew(lease["lease_token"], detach=True)
+
     async def test_body_queues_are_isolated_fifo_across_instances(self):
         first = BodyQueue(RuntimeRecords(self.mind), "mouth", BrowserVoiceOutput())
         second = BodyQueue(
