@@ -515,16 +515,6 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.journal-entry::after {
-  content: "Inspect exact record →";
-  display: block;
-  margin-top: 9px;
-  color: var(--accent);
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-}
 .journal-structured-detail {
   display: grid;
   gap: 12px;
@@ -604,6 +594,8 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 .task-profile-card small { color: var(--muted); font-size: 11px; }
 .task-profile-editor { margin-top: 8px; }
 .task-profile-editor-heading { align-items: flex-start; }
+.task-profile-behavior-heading { align-items: center; margin: 0; }
+.task-profile-behavior-heading h4 { margin: 0; }
 .task-profile-editor-heading h3 { margin: 0; }
 .task-profile-section { display: grid; gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); }
 .task-profile-section h4 { margin: 0; font-size: 14px; }
