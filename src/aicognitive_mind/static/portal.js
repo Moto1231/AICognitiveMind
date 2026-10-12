@@ -1982,6 +1982,8 @@ async function removeMcpServer() {
   if (!state.activeMcpServerId) return;
   state.mcpServers = state.mcpServers.filter(server => server.id !== state.activeMcpServerId);
   state.activeMcpServerId = state.mcpServers[0]?.id || null;
+  renderMcpServerOptions();
+  loadMcpServerIntoForm();
   await saveMcpServers();
 }
 
