@@ -159,6 +159,7 @@
           <button class="admin-section-button" type="button" data-admin-section="devices">Devices</button>
           <button class="admin-section-button" type="button" data-admin-section="voice">Voice / Fish Audio</button>
           <button class="admin-section-button" type="button" data-admin-section="tasks">Task Profiles</button>
+          <button class="admin-section-button" type="button" data-admin-section="mcp">MCP Servers &amp; Tools</button>
           <button class="admin-section-button" type="button" data-admin-section="memories">Memories</button>
           <button class="admin-section-button" type="button" data-admin-section="journals">Journals</button>
         </nav>
@@ -247,6 +248,57 @@
                 <button id="saveTaskProfile" class="primary-button" type="button">Save</button>
               </div>
             </section>
+          </article>
+
+          <article id="mcpSection" class="panel admin-behavior-panel hidden">
+            <div class="panel-heading">
+              <div><p class="eyebrow">EXTERNAL INTEGRATIONS</p><h3>MCP Servers &amp; Tools</h3></div>
+              <button id="refreshMcpServers" class="secondary-button" type="button">Refresh</button>
+            </div>
+            <p class="muted-copy">Connect to Streamable HTTP MCP servers, discover their tools, and enable only the tools you intend to use. Credentials are stored in Axiom's runtime registry and are returned only to authenticated administrators.</p>
+            <div class="task-profile-section">
+              <div class="task-profile-endpoint-picker">
+                <label class="host-behavior-field">Configured server
+                  <select id="mcpServerSelect"><option value="">Add a new server</option></select>
+                </label>
+                <button id="mcpAddServer" class="secondary-button" type="button">Add Server</button>
+              </div>
+              <div class="task-model-fields">
+                <label class="host-behavior-field">Server name
+                  <input id="mcpServerName" type="text" maxlength="120" placeholder="My MCP server">
+                </label>
+                <label class="host-behavior-field">Streamable HTTP URL
+                  <input id="mcpServerUrl" type="url" maxlength="2000" placeholder="https://example.com/mcp">
+                </label>
+                <label class="host-behavior-field task-model-notes">Bearer token (optional)
+                  <input id="mcpServerToken" type="password" autocomplete="new-password" maxlength="4096" placeholder="Paste token if required">
+                </label>
+                <label class="host-behavior-enabled"><input id="mcpServerEnabled" type="checkbox" checked> Enable this server</label>
+              </div>
+              <div class="task-profile-inline-actions">
+                <button id="mcpDiscoverTools" class="secondary-button" type="button">Discover Tools</button>
+                <button id="mcpDeleteServer" class="secondary-button" type="button">Remove Server</button>
+                <span id="mcpServerStatus" class="muted-copy" role="status">Add a server URL, then discover its tools.</span>
+              </div>
+            </div>
+            <section class="task-profile-section">
+              <div class="panel-heading"><div><h4>Available tools</h4><p class="muted-copy">Disable any tool you do not want Axiom to call.</p></div></div>
+              <div id="mcpToolList" class="record-list"><p class="record-empty">Select a server to view its tools.</p></div>
+            </section>
+            <section class="task-profile-section">
+              <h4>Test a tool</h4>
+              <div class="task-model-fields">
+                <label class="host-behavior-field">Enabled tool
+                  <select id="mcpToolRunnerSelect"><option value="">Discover and enable a tool first</option></select>
+                </label>
+                <label class="host-behavior-field task-model-notes">Arguments (JSON object)
+                  <textarea id="mcpToolArguments" rows="5" spellcheck="false">{}</textarea>
+                </label>
+              </div>
+              <button id="mcpRunTool" class="secondary-button" type="button">Run Tool</button>
+              <pre id="mcpToolOutput" class="mcp-tool-output" aria-live="polite">Tool results will appear here.</pre>
+            </section>
+            <div class="edit-actions"><button id="saveMcpServers" class="primary-button" type="button">Save MCP Configuration</button></div>
           </article>
 
           <article id="memoriesSection" class="panel admin-memory-panel hidden">
