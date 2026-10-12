@@ -719,3 +719,6 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   color: var(--text);
   font-size: 12px;
 }
+
+
+.task-profile-revision { margin-top: 10px !important; }
