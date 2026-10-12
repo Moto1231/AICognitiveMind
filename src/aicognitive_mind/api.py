@@ -40,6 +40,7 @@ from aicognitive_mind.body import (
     ExpressionModality,
     Percept,
 )
+from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
 from aicognitive_mind.body_sessions import BodyQueue, body_session
 from aicognitive_mind.config import (
@@ -202,9 +203,9 @@ class FishSpeechRequest(BaseModel):
 
 class MouthSpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
-    rate: float = Field(default=1.0, ge=0.1, le=10.0)
-    pitch: float = Field(default=1.0, ge=0.0, le=2.0)
-    volume: float = Field(default=1.0, ge=0.0, le=1.0)
+    rate: float | None = Field(default=None, ge=0.1, le=10.0)
+    pitch: float | None = Field(default=None, ge=0.0, le=2.0)
+    volume: float | None = Field(default=None, ge=0.0, le=1.0)
     voice_name: str | None = Field(default=None, max_length=200)
 
 
@@ -1124,15 +1125,14 @@ async def speak_through_mouth(
     request: Request,
 ) -> ExpressionIntent:
     runtime = cast(BodyRuntime, request.app.state.body)
-    intent = ExpressionIntent(
-        modality=ExpressionModality.VOICE,
-        text=body.text,
-        metadata={
-            "rate": body.rate,
-            "pitch": body.pitch,
-            "volume": body.volume,
-            "voice_name": body.voice_name,
-        },
+    voice_settings = await request.app.state.voice_settings.read()
+    intent = configured_voice_intent(
+        body.text,
+        voice_settings,
+        rate=body.rate,
+        pitch=body.pitch,
+        volume=body.volume,
+        voice_name=body.voice_name,
     )
     try:
         await runtime.speak_intent(intent)
