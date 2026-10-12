@@ -39,6 +39,7 @@ class SensoryEvidenceAdministrationTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertIn(("/v1/portal/evidence", "GET"), paths)
         self.assertIn(("/v1/portal/evidence/{sha256}", "DELETE"), paths)
+        self.assertIn(("/v1/admin/body/voice/settings", "POST"), paths)
 
         markup = Path("src/aicognitive_mind/static/index.html").read_text(encoding="utf-8")
         script = Path("src/aicognitive_mind/static/portal.js").read_text(encoding="utf-8")
@@ -77,6 +78,8 @@ class SensoryEvidenceAdministrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('bodyMediaConstraints("videoInput")', live_body)
         self.assertIn('bodyMediaConstraints("audioInput")', live_body)
         self.assertIn("applyBodyAudioOutput(audio)", live_body)
+        self.assertIn('id="status" role="status" aria-live="polite"', live_body)
+        self.assertNotIn("min-height: 6rem", live_body)
         self.assertIn('el.taskProfileOverview.classList.add("hidden")', script)
         self.assertIn('el.taskProfileOverview.classList.remove("hidden")', script)
 
