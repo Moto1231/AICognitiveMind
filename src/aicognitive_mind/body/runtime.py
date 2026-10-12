@@ -16,6 +16,39 @@ from aicognitive_mind.body.domain import (
 )
 
 
+def configured_voice_intent(
+    text: str,
+    settings: dict[str, object] | None = None,
+    *,
+    rate: float | None = None,
+    pitch: float | None = None,
+    volume: float | None = None,
+    voice_name: str | None = None,
+) -> ExpressionIntent:
+    """Build the canonical voice intent using shared settings plus explicit overrides."""
+    speech_text = text.strip()
+    if not speech_text:
+        raise ValueError("Speech text cannot be empty")
+    configured = settings or {}
+    metadata = {
+        "rate": configured.get("rate", 1.0) if rate is None else rate,
+        "pitch": configured.get("pitch", 1.0) if pitch is None else pitch,
+        "volume": configured.get("volume", 1.0) if volume is None else volume,
+        "voice_name": (
+            (configured.get("voiceName") or None)
+            if voice_name is None
+            else voice_name
+        ),
+        # Queue acceptance is not proof that browser playback completed.
+        "delivery_status": "queued",
+    }
+    return ExpressionIntent(
+        modality=ExpressionModality.VOICE,
+        text=speech_text,
+        metadata=metadata,
+    )
+
+
 @dataclass(slots=True)
 class BodyRuntime:
     """Coordinates replaceable Body faculties without owning Mind state."""
