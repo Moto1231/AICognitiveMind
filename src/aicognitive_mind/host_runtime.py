@@ -419,8 +419,8 @@ class HostAwareInterpreter:
                 }[modality]
                 raise RuntimeError(
                     f"No external reasoning host is attached and the {task_label} "
-                    "task has no usable provider/model assignment (or both its primary "
-                    "and fallback failed). Configure the specialist task in Axiom settings "
+                    "task has no configured provider/model assignment, or both its "
+                    "primary and fallback failed. Configure the specialist task in Axiom settings "
                     "or reconnect the reasoning host."
                 )
             raise RuntimeError(
