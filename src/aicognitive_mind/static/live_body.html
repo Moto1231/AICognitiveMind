@@ -27,7 +27,7 @@
       align-items: center;
       justify-content: space-between;
       gap: .75rem;
-      margin-bottom: .85rem;
+      margin-bottom: 0;
     }
     .page-links { display: flex; gap: .6rem; flex-wrap: wrap; }
     .page-links a {
@@ -191,7 +191,7 @@
       color: #fff;
     }
     .sense-panel {
-      margin-top: 1rem;
+      margin-top: 0;
       padding: .8rem 1rem;
       display: flex;
       align-items: center;
@@ -231,6 +231,19 @@
     .senses-toggle.on::before {
       background: #65d39b;
       box-shadow: 0 0 0 3px rgba(101, 211, 155, .14);
+    }
+    @media (max-width: 600px) {
+      .sense-panel { padding: .55rem .75rem; }
+      .interaction-form { gap: .4rem; padding: .55rem; }
+      .interaction-actions { gap: .35rem; }
+      .interaction-actions button { padding: .6rem .7rem; }
+    }
+    @media (max-height: 680px) {
+      main { padding-top: .5rem; padding-bottom: .5rem; gap: .45rem; }
+      #stage { min-height: 110px; }
+      .sense-status-grid { max-height: 5rem; }
+      .sense-status { padding: .4rem .6rem; }
+      .sense-panel { padding-top: .45rem; padding-bottom: .45rem; }
     }
   </style>
 
