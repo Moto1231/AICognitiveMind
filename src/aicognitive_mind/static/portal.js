@@ -5,6 +5,7 @@ const state = {
     admin: { items: [], total: 0, hasMore: false, nextOffset: 0 },
   },
   memoryPageSize: 25,
+  memoryPageSizes: { mind: 25, admin: 25 },
   memoryFilterTimers: { mind: null, admin: null },
   journals: [],
   journalTotal: 0,
@@ -54,6 +55,7 @@ const el = {
   memorySort: document.getElementById("memorySort"),
   clearMemoryFilters: document.getElementById("clearMemoryFilters"),
   memoryResultCount: document.getElementById("memoryResultCount"),
+  memoryPageSize: document.getElementById("memoryPageSize"),
   loadMoreMemories: document.getElementById("loadMoreMemories"),
   refreshButton: document.getElementById("refreshButton"),
   adminRefreshButton: document.getElementById("adminRefreshButton"),
@@ -75,6 +77,7 @@ const el = {
   adminMemorySort: document.getElementById("adminMemorySort"),
   adminClearMemoryFilters: document.getElementById("adminClearMemoryFilters"),
   adminMemoryResultCount: document.getElementById("adminMemoryResultCount"),
+  adminMemoryPageSize: document.getElementById("adminMemoryPageSize"),
   adminLoadMoreMemories: document.getElementById("adminLoadMoreMemories"),
   journalRefreshButton: document.getElementById("journalRefreshButton"),
   journalSearch: document.getElementById("journalSearch"),
@@ -84,6 +87,7 @@ const el = {
   journalSort: document.getElementById("journalSort"),
   clearJournalFilters: document.getElementById("clearJournalFilters"),
   journalResultCount: document.getElementById("journalResultCount"),
+  journalPageSize: document.getElementById("journalPageSize"),
   journalTimeline: document.getElementById("journalTimeline"),
   loadMoreJournals: document.getElementById("loadMoreJournals"),
   journalInspector: document.getElementById("journalInspector"),
@@ -179,6 +183,7 @@ const filters = {
     count: el.memoryResultCount,
     list: el.memoryList,
     loadMore: el.loadMoreMemories,
+    pageSize: el.memoryPageSize,
   },
   admin: {
     key: "admin",
@@ -192,6 +197,7 @@ const filters = {
     count: el.adminMemoryResultCount,
     list: el.adminMemoryList,
     loadMore: el.adminLoadMoreMemories,
+    pageSize: el.adminMemoryPageSize,
   },
 };
 
@@ -1016,7 +1022,7 @@ async function saveMemoryEdit(event) {
 
 function memoryQuery(config, offset = 0) {
   const params = new URLSearchParams({
-    limit: String(state.memoryPageSize),
+    limit: String(state.memoryPageSizes[config.key]),
     offset: String(offset),
     order: config.sort.value,
   });
@@ -1041,6 +1047,7 @@ function renderMemoryList(config, sourceMode) {
   config.count.textContent =
     `Showing ${page.items.length.toLocaleString()} of ${page.total.toLocaleString()} Memories`;
   config.loadMore.classList.toggle("hidden", !page.hasMore);
+  config.loadMore.textContent = "Get More";
 
   if (!page.items.length) {
     const empty = document.createElement("div");
@@ -1089,11 +1096,7 @@ async function refreshMemory(config, reset = true) {
     const offset = reset ? 0 : pageState.nextOffset;
     const page = await api(memoryQuery(config, offset));
 
-    if (reset) {
-      pageState.items = page.items;
-    } else {
-      pageState.items.push(...page.items);
-    }
+    pageState.items = page.items;
     pageState.total = page.total;
     pageState.hasMore = page.has_more;
     pageState.nextOffset = page.next_offset ?? pageState.items.length;
@@ -1133,6 +1136,7 @@ function renderJournalList() {
   el.journalResultCount.textContent =
     `Showing ${state.journals.length.toLocaleString()} of ${state.journalTotal.toLocaleString()} Experiences`;
   el.loadMoreJournals.classList.toggle("hidden", !state.journalHasMore);
+  el.loadMoreJournals.textContent = "Get More";
 
   if (!state.journals.length) {
     const empty = document.createElement("div");
@@ -1490,11 +1494,7 @@ async function refreshJournal(reset = true) {
     const offset = reset ? 0 : state.journalNextOffset;
     const page = await api(journalQuery(offset));
 
-    if (reset) {
-      state.journals = page.items;
-    } else {
-      state.journals.push(...page.items);
-    }
+    state.journals = page.items;
     state.journalTotal = page.total;
     state.journalHasMore = page.has_more;
     state.journalNextOffset = page.next_offset ?? state.journals.length;
@@ -1608,6 +1608,10 @@ el.adminRefreshButton.addEventListener("click", () => Promise.all([
 ]));
 el.journalRefreshButton.addEventListener("click", () => refreshJournal(true));
 el.loadMoreJournals.addEventListener("click", () => refreshJournal(false));
+el.journalPageSize.addEventListener("change", () => {
+  state.journalPageSize = Number(el.journalPageSize.value) || 25;
+  refreshJournal(true);
+});
 el.initializeForm.addEventListener("submit", initializeMind);
 el.closeMemoryInspector.addEventListener("click", closeMemoryInspector);
 el.memoryInspector.addEventListener("click", event => {
@@ -1619,7 +1623,15 @@ el.memoryEditForm.addEventListener("submit", saveMemoryEdit);
 el.clearMemoryFilters.addEventListener("click", () => clearFilters(filters.mind));
 el.adminClearMemoryFilters.addEventListener("click", () => clearFilters(filters.admin));
 el.loadMoreMemories.addEventListener("click", () => refreshMemory(filters.mind, false));
+el.memoryPageSize.addEventListener("change", () => {
+  state.memoryPageSizes.mind = Number(el.memoryPageSize.value) || 25;
+  refreshMemory(filters.mind, true);
+});
 el.adminLoadMoreMemories.addEventListener("click", () => refreshMemory(filters.admin, false));
+el.adminMemoryPageSize.addEventListener("change", () => {
+  state.memoryPageSizes.admin = Number(el.adminMemoryPageSize.value) || 25;
+  refreshMemory(filters.admin, true);
+});
 el.clearJournalFilters.addEventListener("click", clearJournalFilters);
 el.journalSearch.addEventListener("input", scheduleJournalRefresh);
 for (const control of [
