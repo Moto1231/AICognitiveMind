@@ -136,6 +136,23 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
             }.issubset(names)
         )
 
+    async def test_deployed_surface_registers_execute_task(self):
+        provider = AxiomAuthorizationServerProvider(
+            "https://axiom.example",
+            username="mind",
+            password="secret",
+        )
+        server = build_chatgpt_mcp("https://axiom.example", provider)
+        tools = {tool.name: tool for tool in await server.list_tools()}
+        self.assertIn("execute_task", tools)
+        schema = tools["execute_task"].input_schema
+        self.assertIn("task", schema["properties"])
+        self.assertIn("operation", schema["properties"])
+        self.assertIn("messages", schema["properties"])
+        self.assertIn("audio_base64", schema["properties"])
+        self.assertIn("task", schema["required"])
+        self.assertIn("operation", schema["required"])
+
     async def test_deployed_surface_registers_interaction_trace_tool(self):
         provider = AxiomAuthorizationServerProvider(
             "https://axiom.example",

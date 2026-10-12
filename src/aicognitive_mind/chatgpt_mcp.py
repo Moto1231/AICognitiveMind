@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.mcpserver import Context, MCPServer
@@ -17,11 +17,12 @@ from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime
 from aicognitive_mind.domain import DiagnosticObservation
-from aicognitive_mind.mcp_server import AppState, lifespan
+from aicognitive_mind.mcp_server import AppState, lifespan, execute_task as execute_configured_task
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.voice_settings import VoiceSettings
+from aicognitive_mind.task_model_assignments import TaskKind
 
 async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
     """Persist an exact MCP transport event for one Axiom interaction."""
@@ -356,6 +357,49 @@ def build_chatgpt_mcp(
             content=content,
             message=message,
             branch=branch,
+        )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    async def execute_task(
+        task: TaskKind,
+        operation: Literal["chat", "transcribe"],
+        ctx: Context[AppState],
+        messages: list[dict[str, Any]] | None = None,
+        temperature: float | None = None,
+        filename: str | None = None,
+        audio_base64: str | None = None,
+        media_type: str | None = None,
+        session_id: str | None = None,
+        state_ref: str | None = None,
+        memory_refs: list[str] | None = None,
+        working_context: str = "",
+    ) -> dict[str, Any]:
+        """Run a configured specialist task using Axiom's saved provider/model assignment.
+
+        Use operation="chat" with messages for chat-style tasks, or operation="transcribe"
+        with base64-encoded audio, filename, and media_type. Provider, model, and behavior
+        come from Axiom's saved configuration rather than caller-supplied model names.
+        """
+        return await execute_configured_task(
+            task=task,
+            operation=operation,
+            ctx=ctx,
+            messages=messages,
+            temperature=temperature,
+            filename=filename,
+            audio_base64=audio_base64,
+            media_type=media_type,
+            session_id=session_id,
+            state_ref=state_ref,
+            memory_refs=memory_refs,
+            working_context=working_context,
         )
 
     @server.tool(
