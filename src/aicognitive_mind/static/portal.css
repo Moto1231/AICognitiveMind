@@ -799,7 +799,7 @@ select optgroup {
   overflow-wrap: anywhere;
   font-size: 12px;
 }
-# mcpSection .host-behavior-card { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+#mcpSection .host-behavior-card { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
 # mcpSection .host-behavior-card strong { display: block; font-size: 13px; }
 # mcpSection .host-behavior-card p { margin-top: 7px; }
 # mcpSection .task-profile-section { margin-top: 20px; }
