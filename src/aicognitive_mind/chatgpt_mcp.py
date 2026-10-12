@@ -14,8 +14,6 @@ from pydantic import AnyHttpUrl
 from aicognitive_mind.body import (
     BodyRuntime,
     BrowserVoiceOutput,
-    ExpressionIntent,
-    ExpressionModality,
 )
 from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body_sessions import BodyQueue, body_session
