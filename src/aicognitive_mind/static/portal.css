@@ -618,9 +618,9 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 
 /* Administration is organized as distinct work areas, not one long dashboard. */
 .admin-section-nav {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  flex-wrap: wrap;
   margin: 0 0 18px;
   padding: 8px;
   border: 1px solid var(--border);
@@ -628,6 +628,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   background: var(--surface);
 }
 .admin-section-button {
+  min-width: 0;
   min-height: 40px;
   padding: 10px 14px;
   border: 1px solid transparent;
@@ -651,7 +652,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 #memoriesSection, #journalsSection { grid-column: 1 / -1; }
 #tasksSection .task-profile-grid { margin-top: 22px; }
 @media (max-width: 620px) {
-  .admin-section-nav { display: grid; grid-template-columns: 1fr 1fr; }
+  .admin-section-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-section-button { padding: 9px 8px; }
 }
 
