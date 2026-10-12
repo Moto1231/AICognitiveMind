@@ -539,10 +539,11 @@ function openTaskProfile(task) {
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
   el.taskProfileRevision.textContent = "Profile revision: " + (behavior.revision || 1);
+  renderTaskProfileEndpointOptions();
+  renderFallbackSelectors();
   el.taskProfileModel.value = assignment?.model || "";
   el.taskProfileFallbackProvider.value = assignment?.fallback_provider || "";
   el.taskProfileFallbackModel.value = assignment?.fallback_model || "";
-  renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   el.taskProfileOverview.classList.add("hidden");
   el.taskProfileList.classList.add("hidden");
