@@ -415,6 +415,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/v1/mind/body/see?express=false", markup)
         self.assertIn("/v1/body/ears/observe", markup)
         self.assertIn("/v1/mind/body/hear?express=false", markup)
+        self.assertIn('modality: "audio", consumeOutputs: false', markup)
         self.assertIn('id="connectedHostStatus"', markup)
         self.assertIn("refreshConnectedHostStatus", markup)
         self.assertIn("AUDIO_MAX_DURATION_MS", markup)
