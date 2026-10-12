@@ -57,6 +57,7 @@ const el = {
   loadMoreMemories: document.getElementById("loadMoreMemories"),
   refreshButton: document.getElementById("refreshButton"),
   adminRefreshButton: document.getElementById("adminRefreshButton"),
+  adminMemoryRefreshButton: document.getElementById("adminMemoryRefreshButton"),
   protocolValue: document.getElementById("protocolValue"),
   reasoningOwner: document.getElementById("reasoningOwner"),
   identityOwner: document.getElementById("identityOwner"),
@@ -64,7 +65,6 @@ const el = {
   adminMindName: document.getElementById("adminMindName"),
   adminMemoryCount: document.getElementById("adminMemoryCount"),
   adminJournalCount: document.getElementById("adminJournalCount"),
-  adminAuthorizationState: document.getElementById("adminAuthorizationState"),
   adminMemoryList: document.getElementById("adminMemoryList"),
   adminMemorySearch: document.getElementById("adminMemorySearch"),
   adminMemoryClassFilter: document.getElementById("adminMemoryClassFilter"),
@@ -263,14 +263,12 @@ async function validateAdmin() {
     if (state.adminPin) {
       sessionStorage.setItem("acm_admin_pin", state.adminPin);
     }
-    el.adminAuthorizationState.textContent = pinRequired ? "Authorized" : "Local Admin";
     return true;
   } catch (error) {
     state.adminAuthorized = false;
     if (error.status === 401) {
       sessionStorage.removeItem("acm_admin_pin");
       state.adminPin = "";
-      el.adminAuthorizationState.textContent = "Authorization Required";
       toast("Administrator authorization was not accepted", true);
       return false;
     }
@@ -785,12 +783,6 @@ function renderStatus(status) {
   el.adminMindName.textContent = mind.identity.self_name;
   el.adminMemoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.adminJournalCount.textContent = Number(status.journal_experience_count).toLocaleString();
-
-  if (!state.adminAuthorized) {
-    el.adminAuthorizationState.textContent = status.administration?.pin_required
-      ? "PIN Required"
-      : "Local Admin";
-  }
 
   el.foundationalValues.innerHTML = "";
   const values = mind.identity.foundational_values || [];
@@ -1608,6 +1600,7 @@ el.refreshButton.addEventListener("click", () => Promise.all([
   refreshStatus(),
   refreshMemory(filters.mind, true),
 ]));
+el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));
 el.adminRefreshButton.addEventListener("click", () => Promise.all([
   refreshStatus(),
   refreshMemory(filters.admin, true),

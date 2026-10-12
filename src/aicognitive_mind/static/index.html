@@ -13,18 +13,17 @@
         <div class="brand-mark">A</div>
         <div>
           <h1>Axiom</h1>
-          <p>Persistent identity and memory across reasoning systems</p>
         </div>
       </div>
       <div class="top-actions">
-        <a href="/body/live" class="secondary-button">Live Body</a>
+        <a href="/body/live" class="secondary-button">Live</a>
         <div class="status-pill">
           <span class="status-dot"></span>
           <span id="connectionLabel">Connecting…</span>
         </div>
         <button id="logoutButton" class="secondary-button" type="button">Log Out</button>
         <nav class="mode-switch" aria-label="Portal mode">
-          <button id="mindTab" class="mode-button active" type="button">Mind</button>
+          <button id="mindTab" class="mode-button active" type="button">Main</button>
           <button id="adminTab" class="mode-button" type="button">Administration</button>
         </nav>
       </div>
@@ -72,7 +71,7 @@
           </article>
 
           <article class="panel stat-panel">
-            <p class="eyebrow">COGNITIVE HISTORY</p>
+            <p class="eyebrow">HISTORY</p>
             <div id="journalCount" class="big-stat">—</div>
             <p>Journal Experiences</p>
           </article>
@@ -149,12 +148,12 @@
 
         <nav class="admin-section-nav" aria-label="Administration sections">
           <button class="admin-section-button active" type="button" data-admin-section="overview">System Overview</button>
-          <button class="admin-section-button" type="button" data-admin-section="tasks">Task Profiles</button>
-          <button class="admin-section-button" type="button" data-admin-section="behaviors">Interaction Behaviors</button>
+          <button class="admin-section-button" type="button" data-admin-section="behaviors">Behavior</button>
+          <button class="admin-section-button" type="button" data-admin-section="devices">Devices</button>
           <button class="admin-section-button" type="button" data-admin-section="voice">Voice / Fish Audio</button>
+          <button class="admin-section-button" type="button" data-admin-section="tasks">Task Profiles</button>
           <button class="admin-section-button" type="button" data-admin-section="memories">Memories</button>
           <button class="admin-section-button" type="button" data-admin-section="journals">Journals</button>
-          <button class="admin-section-button" type="button" data-admin-section="devices">Devices</button>
         </nav>
 
         <div class="admin-grid">
@@ -245,10 +244,10 @@
           <article id="memoriesSection" class="panel admin-memory-panel hidden">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">MEMORY ADMINISTRATION</p>
-                <h3>Search & Manage Durable Memory</h3>
+                
+                <h3>Durable Memory</h3>
               </div>
-              <span id="adminAuthorizationState" class="mini-status">Checking…</span>
+              <button id="adminMemoryRefreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
             <div class="memory-search">
               <div class="search-field search-wide">
@@ -306,8 +305,8 @@
           <article id="journalsSection" class="panel admin-journal-panel hidden">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">COGNITIVE HISTORY</p>
-                <h3>Journal Timeline</h3>
+                <p class="eyebrow">HISTORY</p>
+                <h3>History</h3>
               </div>
               <button id="journalRefreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
