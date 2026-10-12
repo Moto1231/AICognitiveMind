@@ -230,7 +230,8 @@
                 </div>
               </section>
               <section class="task-profile-section">
-                <div class="panel-heading task-profile-behavior-heading"><h4>Behavior</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Add Behavior</button></div>
+                <div class="panel-heading task-profile-behavior-heading"><h4>Behavior for this task</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Add Behavior</button></div>
+                <p>Editable behavior is saved independently for the selected task. Switching tasks loads that task's own instructions.</p>
                 <label class="host-behavior-field">Immutable foundation (code-owned)
                   <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
                 </label>
@@ -553,6 +554,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261012-dropdown-contrast"></script>
+  <script src="/static/portal.js?v=20261012-task-behavior-scope"></script>
 </body>
 </html>
