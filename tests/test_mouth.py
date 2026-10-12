@@ -72,6 +72,10 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(intent.metadata["voice_name"], "Axiom Voice")
         self.assertEqual(intent.metadata["delivery_status"], "queued")
 
+    async def test_configured_voice_intent_enforces_shared_text_limit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "4000 characters"):
+            configured_voice_intent("x" * 4001)
+
     async def test_configured_voice_intent_applies_explicit_overrides(self) -> None:
         intent = configured_voice_intent(
             "Override settings.",
