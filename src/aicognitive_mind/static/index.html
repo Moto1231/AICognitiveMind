@@ -480,6 +480,21 @@
             <div class="summary-row"><span>Created</span><strong id="adminCreatedAt">—</strong></div>
             <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
             <div class="summary-row"><span>Journal Experiences</span><strong id="adminJournalCount">—</strong></div>
+            <div class="admin-runtime-setting">
+              <div>
+                <p class="field-label">BODY REASONING FALLBACK</p>
+                <p class="muted-copy">Allow Body to use its configured standalone reasoning provider when no connected reasoning host is available.</p>
+                <p id="bodyFallbackSource" class="muted-copy" aria-live="polite">Loading setting…</p>
+              </div>
+              <label class="admin-setting-toggle" for="bodyFallbackEnabled">
+                <input id="bodyFallbackEnabled" type="checkbox">
+                <span>Enabled</span>
+              </label>
+              <div class="edit-actions">
+                <button id="saveBodyFallbackSetting" class="primary-button" type="button">Save fallback setting</button>
+              </div>
+              <p class="muted-copy">Admin changes apply immediately to this running instance. After a restart, the Render deployment setting is used again.</p>
+            </div>
           </article>
         </div>
       </section>
