@@ -10,19 +10,20 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import AnyHttpUrl
 
-from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
+from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.config import get_settings
+from aicognitive_mind.domain import DiagnosticObservation
 from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.host_context import HostWorkingContext
-from aicognitive_mind.host_runtime import HostRuntime
-from aicognitive_mind.domain import DiagnosticObservation
+from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
+from aicognitive_mind.mcp_registry import MCPServerRegistry
 from aicognitive_mind.mcp_server import AppState, lifespan, execute_task as execute_configured_task
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
-from aicognitive_mind.voice_settings import VoiceSettings
 from aicognitive_mind.task_model_assignments import TaskKind
+from aicognitive_mind.voice_settings import VoiceSettings
 
 async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
     """Persist an exact MCP transport event for one Axiom interaction."""
@@ -588,5 +589,57 @@ def build_chatgpt_mcp(
                 "integrity_verified": True,
             },
         )
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    async def list_mcp_tools(ctx: Context[AppState]) -> dict[str, Any]:
+        """List administrator-configured MCP servers and their available tool schemas.
+
+        Only enabled server/tool records are callable. Inspect this catalogue before calling
+        an external tool; the schema describes the arguments expected by the remote server.
+        """
+        storage = ctx.request_context.lifespan_context.storage
+        registry = MCPServerRegistry(RuntimeRecords(storage.mind))
+        servers = await registry.list()
+        return {
+            "servers": [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "url": item.url,
+                    "enabled": item.enabled,
+                    "tools": [
+                        {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "inputSchema": tool.input_schema,
+                            "enabled": tool.enabled,
+                        }
+                        for tool in item.tools
+                    ],
+                }
+                for item in servers
+            ]
+        }
+
+    @server.tool(annotations=ToolAnnotations(openWorldHint=True, destructiveHint=True))
+    async def call_mcp_tool(
+        server_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        ctx: Context[AppState],
+    ) -> dict[str, Any]:
+        """Call one enabled tool from an MCP server configured by an Axiom administrator.
+
+        Call list_mcp_tools first to obtain the server ID and the exact tool name/schema.
+        Only explicitly enabled servers and tools can be called. Tool effects occur on the
+        external server and are governed by that server's own permissions.
+        """
+        storage = ctx.request_context.lifespan_context.storage
+        registry = MCPServerRegistry(RuntimeRecords(storage.mind))
+        servers = await registry.list()
+        external_server = next((item for item in servers if item.id == server_id), None)
+        if external_server is None:
+            raise ValueError("Configured MCP server not found")
+        return await registry.call_tool(external_server, tool_name, arguments)
 
     return server
