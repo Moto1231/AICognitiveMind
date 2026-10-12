@@ -67,11 +67,39 @@ class TaskModelDispatcher:
         return next(item for item in await self.assignments.list() if item.task == task)
 
     async def is_configured(self, task: TaskKind) -> bool:
-        assignment = await self.assignment(task)
-        return bool(assignment.provider or assignment.model)
+        return bool(await self._candidate_assignments(task))
 
-    async def _resolve(self, task: TaskKind) -> tuple[TaskModelAssignment, ProviderEndpoint]:
-        assignment = await self.assignment(task)
+    async def _candidate_assignments(self, task: TaskKind) -> list[TaskModelAssignment]:
+        """Return distinct, complete task-primary then task-fallback choices."""
+        saved = await self.assignment(task)
+        candidates: list[TaskModelAssignment] = []
+        if saved.provider and saved.model:
+            candidates.append(saved.model_copy(update={
+                "fallback_provider": "", "fallback_model": "",
+            }))
+        if saved.fallback_provider and saved.fallback_model:
+            fallback = saved.model_copy(update={
+                "provider": saved.fallback_provider,
+                "model": saved.fallback_model,
+                "fallback_provider": "",
+                "fallback_model": "",
+            })
+            if not any(
+                item.provider.casefold() == fallback.provider.casefold()
+                and item.model.casefold() == fallback.model.casefold()
+                for item in candidates
+            ):
+                candidates.append(fallback)
+        if not candidates:
+            raise TaskDispatchError(
+                f"Task '{task}' has no complete provider/model assignment or fallback."
+            )
+        return candidates
+
+    async def _resolve(
+        self, task: TaskKind, assignment_override: TaskModelAssignment | None = None
+    ) -> tuple[TaskModelAssignment, ProviderEndpoint]:
+        assignment = assignment_override or await self.assignment(task)
         if not assignment.provider or not assignment.model:
             raise TaskDispatchError(
                 f"Task '{task}' has an incomplete provider/model assignment."
@@ -231,7 +259,32 @@ class TaskModelDispatcher:
         temperature: float | None = None,
         context: TaskExecutionContext | None = None,
     ) -> str:
-        assignment, endpoint = await self._resolve(task)
+        last_error: TaskDispatchError | None = None
+        for assignment in await self._candidate_assignments(task):
+            try:
+                return await self._complete_chat_with_assignment(
+                    task, messages, assignment=assignment,
+                    temperature=temperature, context=context,
+                )
+            except TaskDispatchError as exc:
+                last_error = exc
+                logger.warning(
+                    "task_provider_fallback task=%s provider=%s model=%s error=%s",
+                    task, assignment.provider, assignment.model, exc,
+                )
+        assert last_error is not None
+        raise last_error
+
+    async def _complete_chat_with_assignment(
+        self,
+        task: TaskKind,
+        messages: list[dict[str, Any]],
+        *,
+        assignment: TaskModelAssignment,
+        temperature: float | None = None,
+        context: TaskExecutionContext | None = None,
+    ) -> str:
+        assignment, endpoint = await self._resolve(task, assignment)
         profile = next(item for item in await self.behaviors.list() if item.task == task)
         runtime_context = context or TaskExecutionContext(task=task)
         # The selected assignment always comes from Axiom's registry, not a caller's context.
@@ -287,7 +340,33 @@ class TaskModelDispatcher:
         media_type: str,
         context: TaskExecutionContext | None = None,
     ) -> str:
-        assignment, endpoint = await self._resolve(task)
+        last_error: TaskDispatchError | None = None
+        for assignment in await self._candidate_assignments(task):
+            try:
+                return await self._transcribe_with_assignment(
+                    task, assignment=assignment, filename=filename,
+                    audio_bytes=audio_bytes, media_type=media_type, context=context,
+                )
+            except TaskDispatchError as exc:
+                last_error = exc
+                logger.warning(
+                    "task_provider_fallback task=%s provider=%s model=%s error=%s",
+                    task, assignment.provider, assignment.model, exc,
+                )
+        assert last_error is not None
+        raise last_error
+
+    async def _transcribe_with_assignment(
+        self,
+        task: TaskKind,
+        *,
+        assignment: TaskModelAssignment,
+        filename: str,
+        audio_bytes: bytes,
+        media_type: str,
+        context: TaskExecutionContext | None = None,
+    ) -> str:
+        assignment, endpoint = await self._resolve(task, assignment)
         profile = next(item for item in await self.behaviors.list() if item.task == task)
         runtime_context = context or TaskExecutionContext(task=task)
         runtime_context = TaskExecutionContext(
