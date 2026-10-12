@@ -70,6 +70,9 @@ const el = {
   adminCreatedAt: document.getElementById("adminCreatedAt"),
   adminMemoryCount: document.getElementById("adminMemoryCount"),
   adminJournalCount: document.getElementById("adminJournalCount"),
+  bodyFallbackEnabled: document.getElementById("bodyFallbackEnabled"),
+  bodyFallbackSource: document.getElementById("bodyFallbackSource"),
+  saveBodyFallbackSetting: document.getElementById("saveBodyFallbackSetting"),
   adminMemoryList: document.getElementById("adminMemoryList"),
   adminMemorySearch: document.getElementById("adminMemorySearch"),
   adminMemoryClassFilter: document.getElementById("adminMemoryClassFilter"),
@@ -775,6 +778,40 @@ async function saveVoiceSettings() {
   }
 }
 
+async function refreshBodyFallbackSettings() {
+  if (!state.adminAuthorized || !el.bodyFallbackEnabled) return;
+  try {
+    const settings = await api("/v1/admin/body/fallback", {}, true);
+    el.bodyFallbackEnabled.checked = Boolean(settings.enabled);
+    el.bodyFallbackSource.textContent = settings.runtime_override === null
+      ? `Using Render deployment setting (${settings.deployment_default ? "enabled" : "disabled"}).`
+      : `Runtime override active. Deployment default is ${settings.deployment_default ? "enabled" : "disabled"}.`;
+  } catch (error) {
+    if (el.bodyFallbackSource) el.bodyFallbackSource.textContent = `Could not load setting: ${error.message}`;
+  }
+}
+
+async function saveBodyFallbackSettings() {
+  if (!el.bodyFallbackEnabled) return;
+  if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = true;
+  try {
+    const settings = await api("/v1/admin/body/fallback", {
+      method: "PUT",
+      body: JSON.stringify({ enabled: el.bodyFallbackEnabled.checked }),
+    }, true);
+    el.bodyFallbackEnabled.checked = Boolean(settings.enabled);
+    el.bodyFallbackSource.textContent = settings.runtime_override === null
+      ? `Using Render deployment setting (${settings.deployment_default ? "enabled" : "disabled"}).`
+      : `Runtime override active. Deployment default is ${settings.deployment_default ? "enabled" : "disabled"}.`;
+    toast(`Body reasoning fallback ${settings.enabled ? "enabled" : "disabled"}`);
+  } catch (error) {
+    toast(`Could not save Body fallback setting: ${error.message}`, true);
+    await refreshBodyFallbackSettings();
+  } finally {
+    if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = false;
+  }
+}
+
 async function enterAdminMode() {
   try {
     const allowed = await validateAdmin();
@@ -789,6 +826,7 @@ async function enterAdminMode() {
       refreshProviderEndpoints(),
       refreshMcpServers(),
       loadVoiceSettings(),
+      refreshBodyFallbackSettings(),
     ]);
   } catch (error) {
     toast(error.message, true);
@@ -1640,7 +1678,9 @@ el.adminRefreshButton.addEventListener("click", () => Promise.all([
   refreshStatus(),
   refreshMemory(filters.admin, true),
   refreshJournal(true),
+  refreshBodyFallbackSettings(),
 ]));
+if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.addEventListener("click", saveBodyFallbackSettings);
 el.journalRefreshButton.addEventListener("click", () => refreshJournal(true));
 el.loadMoreJournals.addEventListener("click", () => refreshJournal(false));
 el.journalPageSize.addEventListener("change", () => {
