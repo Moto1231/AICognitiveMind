@@ -150,6 +150,8 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("operation", schema["properties"])
         self.assertIn("messages", schema["properties"])
         self.assertIn("audio_base64", schema["properties"])
+        self.assertIn("speak_body_text", tools)
+        self.assertIn("text", tools["speak_body_text"].input_schema["properties"])
         self.assertIn("task", schema["required"])
         self.assertIn("operation", schema["required"])
 
@@ -224,6 +226,8 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "complete_body_interaction",
             }.issubset(names)
         )
+        self.assertIn("speak_body_text", names)
+        self.assertIn("speak_body_text", HOST_INSTRUCTIONS)
 
 
 if __name__ == "__main__":
