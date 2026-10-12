@@ -402,6 +402,17 @@ class HostAwareInterpreter:
         from aicognitive_mind.config import get_settings
 
         if not get_settings().body_allow_standalone_fallback:
+            modality = getattr(getattr(percept, "modality", None), "value", "unknown")
+            if modality in {"audio", "vision"} and self.task_dispatcher is not None:
+                task_label = {
+                    "audio": "Audio & Transcription",
+                    "vision": "Vision",
+                }[modality]
+                raise RuntimeError(
+                    f"No external reasoning host is attached and the {task_label} "
+                    "task has no configured provider/model assignment. Configure the "
+                    "specialist task in Axiom settings or reconnect the reasoning host."
+                )
             raise RuntimeError(
                 "No external reasoning host is attached. Body standalone fallback is disabled."
             )
