@@ -1189,6 +1189,21 @@ async def acknowledge_body_output(modality: str, request: Request, delivery_id: 
     return {"acknowledged": True}
 
 
+@app.get("/v1/body/hosts/status")
+async def body_hosts_status(request: Request) -> dict[str, Any]:
+    """Return safe, read-only connection and Body request diagnostics."""
+    hosts = getattr(request.app.state, "hosts", None)
+    if hosts is None:
+        return {
+            "connected": False,
+            "host": None,
+            "lease_remaining_seconds": 0,
+            "last_heartbeat_age_seconds": None,
+            "requests": {"pending": 0, "in_progress": 0, "items": []},
+        }
+    return await hosts.status()
+
+
 @app.get("/v1/body/camera/request")
 async def next_camera_request(request: Request) -> dict[str, Any] | None:
     """Let the active browser Body poll for a host-requested bounded camera capture."""
