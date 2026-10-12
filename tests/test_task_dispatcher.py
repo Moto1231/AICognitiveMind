@@ -119,6 +119,20 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Working-state reference: state-compact", prompt)
         self.assertIn("memory-7", prompt)
 
+
+    async def test_v3_endpoint_with_transcription_operation_suffix_is_normalized(self):
+        endpoint = ProviderEndpoint(
+            id="eden",
+            name="Eden Text-to-speech",
+            base_url="https://api.edenai.run/v3/audio/transcriptions",
+            api_key="test-key",
+        )
+
+        self.assertEqual(
+            TaskModelDispatcher._url(endpoint, "audio/transcriptions"),
+            "https://api.edenai.run/v3/audio/transcriptions",
+        )
+
     async def test_transcription_uses_assigned_model(self):
         records = await self.configured(model="my-audio-model")
         assignments = await TaskModelAssignmentRegistry(records).list()
