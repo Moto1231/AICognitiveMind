@@ -170,6 +170,12 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   resize: vertical;
   line-height: 1.5;
 }
+.voice-slider-field { grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; }
+.voice-slider-field output { color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.voice-slider-field input[type="range"] { grid-column: 1 / -1; width: 100%; min-height: 24px; height: 24px; padding: 0; border: 0; border-radius: 0; background: transparent; accent-color: var(--accent); cursor: pointer; }
+.voice-slider-field input[type="range"]:focus { box-shadow: none; }
+.voice-slider-field input[type="range"]::-webkit-slider-thumb { cursor: grab; }
+.voice-slider-field input[type="range"]::-moz-range-thumb { cursor: grab; }
 .host-behavior-field input:focus,
 .host-behavior-field select:focus,
 .host-behavior-field textarea:focus {
