@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 
 from aicognitive_mind.api import app
+from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body import (
     BodyRuntime,
     BrowserVoiceOutput,
@@ -57,6 +58,32 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(delivered.text, "Good morning.")
         self.assertEqual(delivered.metadata["rate"], 0.95)
         self.assertEqual(delivered.metadata["pitch"], 1.1)
+
+    async def test_configured_voice_intent_uses_shared_settings_and_marks_queue_state(self) -> None:
+        intent = configured_voice_intent(
+            "  Shared response.  ",
+            {"rate": 1.15, "pitch": 1.1, "volume": 0.7, "voiceName": "Axiom Voice"},
+        )
+
+        self.assertEqual(intent.text, "Shared response.")
+        self.assertEqual(intent.metadata["rate"], 1.15)
+        self.assertEqual(intent.metadata["pitch"], 1.1)
+        self.assertEqual(intent.metadata["volume"], 0.7)
+        self.assertEqual(intent.metadata["voice_name"], "Axiom Voice")
+        self.assertEqual(intent.metadata["delivery_status"], "queued")
+
+    async def test_configured_voice_intent_applies_explicit_overrides(self) -> None:
+        intent = configured_voice_intent(
+            "Override settings.",
+            {"rate": 1.0, "pitch": 1.0, "volume": 1.0, "voiceName": "Saved"},
+            rate=1.3,
+            voice_name="Explicit",
+        )
+
+        self.assertEqual(intent.metadata["rate"], 1.3)
+        self.assertEqual(intent.metadata["pitch"], 1.0)
+        self.assertEqual(intent.metadata["volume"], 1.0)
+        self.assertEqual(intent.metadata["voice_name"], "Explicit")
 
     async def test_mouth_rejects_non_voice_intent(self) -> None:
         mouth = BrowserVoiceOutput()
