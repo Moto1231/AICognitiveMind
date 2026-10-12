@@ -13,6 +13,8 @@ DEFAULT_VOICE_SETTINGS: dict[str, Any] = {
     "rate": 1.0,
     "pitch": 1.0,
     "volume": 1.0,
+    "fishAudioModel": None,
+    "fishAudioReferenceId": None,
     "revision": 0,
 }
 
@@ -35,6 +37,8 @@ class VoiceSettings:
         rate: float | None = None,
         pitch: float | None = None,
         volume: float | None = None,
+        fish_audio_model: str | None = None,
+        fish_audio_reference_id: str | None = None,
     ) -> dict[str, Any]:
         changes: dict[str, Any] = {}
         if voice_name is not None:
@@ -50,6 +54,16 @@ class VoiceSettings:
                 if not math.isfinite(value) or not lower <= value <= upper:
                     raise ValueError(f"{name} must be between {lower} and {upper}")
                 changes[name] = value
+        if fish_audio_model is not None:
+            model = fish_audio_model.strip()
+            if not model or len(model) > 120:
+                raise ValueError("Fish Audio model must be 1–120 characters")
+            changes["fishAudioModel"] = model
+        if fish_audio_reference_id is not None:
+            reference_id = fish_audio_reference_id.strip()
+            if len(reference_id) > 200:
+                raise ValueError("Fish Audio reference ID must be at most 200 characters")
+            changes["fishAudioReferenceId"] = reference_id
         if not changes:
             raise ValueError("Supply at least one voice setting")
 
