@@ -65,6 +65,9 @@ class PortalTests(unittest.TestCase):
                 )
         self.assertIn("function renderTaskProfiles()", script)
         self.assertIn("renderTaskProfiles();", script)
+        self.assertIn("el.taskProfileFoundation.value = state.taskFoundations[task] || \"\";", script)
+        self.assertIn("el.taskProfileInstructions.value = behavior.instructions || \"\";", script)
+        self.assertIn("el.taskProfileEnabled.checked = behavior.enabled !== false;", script)
 
     def test_portal_assets_are_packaged_and_routes_are_registered(self) -> None:
         index = STATIC_DIR / "index.html"
