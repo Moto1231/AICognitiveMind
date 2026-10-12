@@ -119,6 +119,20 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Working-state reference: state-compact", prompt)
         self.assertIn("memory-7", prompt)
 
+
+    async def test_v3_endpoint_with_transcription_operation_suffix_is_normalized(self):
+        endpoint = ProviderEndpoint(
+            id="eden",
+            name="Eden Text-to-speech",
+            base_url="https://api.edenai.run/v3/audio/transcriptions",
+            api_key="test-key",
+        )
+
+        self.assertEqual(
+            TaskModelDispatcher._url(endpoint, "audio/transcriptions"),
+            "https://api.edenai.run/v3/audio/transcriptions",
+        )
+
     async def test_transcription_uses_assigned_model(self):
         records = await self.configured(model="my-audio-model")
         assignments = await TaskModelAssignmentRegistry(records).list()
@@ -211,6 +225,27 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(TaskDispatchError, "not configured"):
             await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
 
+
+
+    async def test_unconfigured_audio_without_host_reports_task_routing_problem(self):
+        class InactiveHosts:
+            async def active(self):
+                return None
+
+        class Fallback:
+            records = FakeRecords()
+
+        interpreter = HostAwareInterpreter(Fallback(), InactiveHosts())
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="audio"),
+            content_ref="data:audio/webm;base64,YXVkaW8=",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Audio & Transcription task has no configured provider/model assignment",
+        ):
+            await interpreter.interpret(percept)
 
 if __name__ == "__main__":
     unittest.main()
