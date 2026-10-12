@@ -130,7 +130,6 @@ const el = {
   taskProfileList: document.getElementById("taskProfileList"),
   taskProfileEditor: document.getElementById("taskProfileEditor"),
   taskProfileTitle: document.getElementById("taskProfileTitle"),
-  taskProfileSummary: document.getElementById("taskProfileSummary"),
   taskProfileBack: document.getElementById("taskProfileBack"),
   taskProfileEndpointSection: document.getElementById("taskProfileEndpointSection"),
   taskProfileEndpointSelect: document.getElementById("taskProfileEndpointSelect"),
@@ -407,7 +406,7 @@ function renderTaskProfiles() {
   if (!tasks.length) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
-    empty.textContent = "Task profiles are not available yet. Refresh Profiles to retry loading the configuration.";
+    empty.textContent = "Task profiles are not available yet. Refresh to retry loading the configuration.";
     el.taskProfileList.append(empty);
     return;
   }
@@ -535,14 +534,7 @@ function openTaskProfile(task) {
   el.taskProfileEndpointSection.classList.toggle("hidden", task === "reasoning");
   el.taskProfileAssignmentSection.classList.toggle("hidden", task === "reasoning");
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
-  el.taskProfileSummary.textContent = task === "reasoning"
-    ? "The connected reasoning host owns model selection. Configure the reasoning behavior here."
-    : "Configure this task's endpoint, model assignment, and behavior in one place.";
-  el.taskProfileFoundation.value = state.taskFoundations[task] || "";
-  el.taskProfileBehaviorName.value = behavior.name || (taskModelLabels[task] || displayLabel(task));
-  el.taskProfileInstructions.value = behavior.instructions || "";
-  el.taskProfileEnabled.checked = behavior.enabled !== false;
-  el.taskProfileRevision.textContent = "Profile revision: " + (behavior.revision || 1);
+  el.taskProfileRevision.textContent = "Revision: " + (behavior.revision || 1);
   renderTaskProfileEndpointOptions();
   fillSelect(
     el.taskProfileModel,
@@ -717,7 +709,7 @@ async function loadVoiceSettings() {
     el.voiceVolume.value = String(settings.volume ?? 1);
     el.voiceName.value = settings.voiceName || "";
     updateVoiceSliderReadouts();
-    el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
+    el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
   } catch (error) {
     toast("Could not load voice settings: " + error.message, true);
   }
@@ -739,7 +731,7 @@ async function saveVoiceSettings() {
       }),
     }, true);
     state.voiceSettingsRevision = Number(settings.revision || 0);
-    el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
+    el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
     toast("Voice settings saved");
   } catch (error) {
     toast("Could not save voice settings: " + error.message, true);
