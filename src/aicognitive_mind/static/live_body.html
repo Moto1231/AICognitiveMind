@@ -1340,7 +1340,7 @@
         if (!response.ok) throw new Error(await responseErrorMessage(response));
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
-        await showMindResult(await response.json(), { modality: "audio", consumeOutputs: true });
+        await showMindResult(await response.json(), { modality: "audio", consumeOutputs: false });
       } catch (error) {
         if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
         throw error;
