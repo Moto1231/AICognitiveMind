@@ -169,11 +169,11 @@
         startedAt = performance.now();
         startButton.disabled = true;
         stopButton.disabled = false;
-        setStatus("LISTENING\nSpeak now. Recording will stop automatically after 10 seconds.");
+        setStatus("LISTENING\nSpeak now. Recording will stop automatically after 30 seconds. Press Stop and send when finished.");
 
         stopTimer = setTimeout(() => {
           if (recorder?.state === "recording") recorder.stop();
-        }, 10_000);
+        }, 30_000);
       } catch (error) {
         releaseMicrophone();
         setStatus("Microphone access failed: " + error.message);

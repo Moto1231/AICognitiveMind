@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
 from typing import Any
 from urllib.parse import urlparse
 
@@ -14,6 +15,9 @@ from aicognitive_mind.task_behaviors import (
     TaskExecutionContext,
     TaskPromptAssembler,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class TaskDispatchError(RuntimeError):
@@ -93,7 +97,10 @@ class TaskModelDispatcher:
         base = endpoint.base_url.rstrip("/")
         parsed = urlparse(base)
         prefix = parsed.path.rstrip("/")
-        if prefix.endswith("/v1"):
+        # Providers may expose an OpenAI-compatible API under /v1 or a
+        # provider-specific API version such as Eden AI's /v3. Preserve an
+        # explicit version prefix instead of incorrectly creating /v3/v1/....
+        if prefix.endswith(("/v1", "/v3")):
             return base + "/" + path.lstrip("/")
         return base + "/v1/" + path.lstrip("/")
 
@@ -113,19 +120,33 @@ class TaskModelDispatcher:
         files: dict[str, tuple[str, bytes, str]] | None = None,
     ) -> dict[str, Any]:
         headers = self._headers(endpoint)
-        if self.client is not None:
-            response = await self.client.request(
-                "POST", self._url(endpoint, path), headers=headers,
-                json=json_body, data=data, files=files, timeout=self.timeout,
-            )
-        else:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    self._url(endpoint, path), headers=headers,
-                    json=json_body, data=data, files=files,
+        request_url = self._url(endpoint, path)
+        try:
+            if self.client is not None:
+                response = await self.client.request(
+                    "POST", request_url, headers=headers,
+                    json=json_body, data=data, files=files, timeout=self.timeout,
                 )
+            else:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(
+                        request_url, headers=headers,
+                        json=json_body, data=data, files=files,
+                    )
+        except httpx.HTTPError as exc:
+            logger.exception(
+                "task_provider_transport_error endpoint=%s url=%s operation=%s",
+                endpoint.name, request_url, path,
+            )
+            raise TaskDispatchError(
+                f"Provider endpoint '{endpoint.name}' could not complete {path}: {exc.__class__.__name__}"
+            ) from exc
         if response.is_error:
             excerpt = response.text[:1200]
+            logger.error(
+                "task_provider_http_error endpoint=%s url=%s operation=%s status=%s response=%r",
+                endpoint.name, request_url, path, response.status_code, excerpt,
+            )
             raise TaskDispatchError(
                 f"Provider endpoint '{endpoint.name}' returned HTTP {response.status_code}: {excerpt}"
             )

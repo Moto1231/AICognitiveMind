@@ -142,15 +142,44 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("IMMUTABLE AXIOM TASK FOUNDATION", client.calls[0][2]["data"]["prompt"])
         self.assertIn("my-audio-model", client.calls[0][2]["data"]["prompt"])
 
+    async def test_v3_provider_base_url_does_not_duplicate_v1_prefix(self):
+        records = await self.configured(model="eden-audio-model")
+        endpoints = await ProviderEndpointRegistry(records).list()
+        await ProviderEndpointRegistry(records).replace([
+            endpoints[0].model_copy(update={"base_url": "https://api.edenai.run/v3"})
+        ])
+        assignments = await TaskModelAssignmentRegistry(records).list()
+        await TaskModelAssignmentRegistry(records).replace([
+            item.model_copy(update={"provider": "Local endpoint", "model": "eden-audio-model"})
+            if item.task == "audio" else item
+            for item in assignments
+        ])
+        client = FakeClient(FakeResponse({"text": "Recognized speech"}))
+        dispatcher = TaskModelDispatcher(records, client=client)
+
+        result = await dispatcher.transcribe(
+            "audio", filename="clip.webm", audio_bytes=b"audio",
+            media_type="audio/webm",
+        )
+
+        self.assertEqual(result, "Recognized speech")
+        self.assertEqual(
+            client.calls[0][1],
+            "https://api.edenai.run/v3/audio/transcriptions",
+        )
+
     async def test_provider_failure_is_reported_without_fallback(self):
         records = await self.configured()
         client = FakeClient(FakeResponse({"error": {"message": "unsupported modality"}}, 400, "unsupported modality"))
         dispatcher = TaskModelDispatcher(records, client=client)
 
-        with self.assertRaisesRegex(TaskDispatchError, "HTTP 400"):
-            await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
+        with self.assertLogs("aicognitive_mind.task_dispatcher", level="ERROR") as captured:
+            with self.assertRaisesRegex(TaskDispatchError, "HTTP 400"):
+                await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
 
         self.assertEqual(len(client.calls), 1)
+        self.assertIn("task_provider_http_error", captured.output[0])
+        self.assertIn("status=400", captured.output[0])
 
     async def test_host_aware_interpreter_uses_assigned_sensory_dispatcher(self):
         class ActiveHosts:
