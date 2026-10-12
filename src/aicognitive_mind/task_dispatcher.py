@@ -97,7 +97,10 @@ class TaskModelDispatcher:
         base = endpoint.base_url.rstrip("/")
         parsed = urlparse(base)
         prefix = parsed.path.rstrip("/")
-        if prefix.endswith("/v1"):
+        # Providers may expose an OpenAI-compatible API under /v1 or a
+        # provider-specific API version such as Eden AI's /v3. Preserve an
+        # explicit version prefix instead of incorrectly creating /v3/v1/....
+        if prefix.endswith(("/v1", "/v3")):
             return base + "/" + path.lstrip("/")
         return base + "/v1/" + path.lstrip("/")
 
