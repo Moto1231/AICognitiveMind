@@ -413,7 +413,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/v1/body/eyes/observe", markup)
         self.assertIn("/v1/mind/body/see?express=false", markup)
         self.assertIn("/v1/body/ears/observe", markup)
-        self.assertIn("/v1/mind/body/hear?express=false", markup)
+        self.assertIn("/v1/mind/body/hear?express=true", markup)
         self.assertIn("AUDIO_MAX_DURATION_MS", markup)
         self.assertIn("AUDIO_SILENCE_MS", markup)
         self.assertIn("SENSE_PAUSE_MS", markup)
