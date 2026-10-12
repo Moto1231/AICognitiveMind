@@ -469,7 +469,12 @@ function renderTaskProfileEndpointOptions() {
   select.value = state.activeEndpointId || "";
 }
 
-function fillSelect(select, values, selected, placeholder) {
+function modelCapabilityLabel(model, capabilityMap) {
+  const capabilities = capabilityMap?.[model];
+  return capabilities?.length ? `${model} · ${capabilities.join(" · ")}` : `${model} · Capabilities unknown`;
+}
+
+function fillSelect(select, values, selected, placeholder, capabilityMap = null) {
   select.replaceChildren();
   const blank = document.createElement("option");
   blank.value = "";
@@ -478,13 +483,13 @@ function fillSelect(select, values, selected, placeholder) {
   for (const value of [...new Set(values.filter(value => typeof value === "string" && value.trim()))]) {
     const option = document.createElement("option");
     option.value = value;
-    option.textContent = value;
+    option.textContent = capabilityMap ? modelCapabilityLabel(value, capabilityMap) : value;
     select.append(option);
   }
   if (selected && ![...select.options].some(option => option.value === selected)) {
     const option = document.createElement("option");
     option.value = selected;
-    option.textContent = selected + " (saved)";
+    option.textContent = capabilityMap ? `${modelCapabilityLabel(selected, capabilityMap)} (saved)` : selected + " (saved)";
     select.append(option);
   }
   select.value = selected || "";
@@ -502,7 +507,7 @@ function renderFallbackSelectors() {
   const endpoint = state.providerEndpoints.find(item =>
     item.name === el.taskProfileFallbackProvider.value || item.id === el.taskProfileFallbackProvider.value
   );
-  fillSelect(el.taskProfileFallbackModel, endpoint?.models || [], fallbackModel, "No fallback model");
+  fillSelect(el.taskProfileFallbackModel, endpoint?.models || [], fallbackModel, "No fallback model", endpoint?.model_capabilities || {});
 }
 
 function loadEndpointIntoForm() {
@@ -511,7 +516,7 @@ function loadEndpointIntoForm() {
   el.taskProfileBaseUrl.value = endpoint?.base_url || "";
   el.taskProfileApiKey.value = endpoint?.api_key || "";
   const selectedModel = el.taskProfileModel.value;
-  fillSelect(el.taskProfileModel, endpoint?.models || [], selectedModel, "Discover models or choose a model");
+  fillSelect(el.taskProfileModel, endpoint?.models || [], selectedModel, "Discover models or choose a model", endpoint?.model_capabilities || {});
   renderFallbackSelectors();
 }
 
@@ -672,6 +677,7 @@ async function discoverTaskProfileModels() {
       body: JSON.stringify(endpoint),
     }, true);
     endpoint.models = payload.models || [];
+    endpoint.model_capabilities = payload.model_capabilities || {};
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
     toast(`Discovered ${endpoint.models.length} model(s)`);
@@ -687,6 +693,7 @@ function addTaskProfileEndpoint() {
     base_url: "",
     api_key: "",
     models: [],
+    model_capabilities: {},
   };
   state.providerEndpoints.push(endpoint);
   state.activeEndpointId = endpoint.id;
