@@ -461,18 +461,50 @@ function renderTaskProfileEndpointOptions() {
   select.value = state.activeEndpointId || "";
 }
 
+function fillSelect(select, values, selected, placeholder) {
+  select.replaceChildren();
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = placeholder;
+  select.append(blank);
+  for (const value of [...new Set(values.filter(value => typeof value === "string" && value.trim()))]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.append(option);
+  }
+  if (selected && ![...select.options].some(option => option.value === selected)) {
+    const option = document.createElement("option");
+    option.value = selected;
+    option.textContent = selected + " (saved)";
+    select.append(option);
+  }
+  select.value = selected || "";
+}
+
+function renderFallbackSelectors() {
+  const provider = el.taskProfileFallbackProvider.value;
+  const fallbackModel = el.taskProfileFallbackModel.value;
+  fillSelect(
+    el.taskProfileFallbackProvider,
+    state.providerEndpoints.map(item => item.name),
+    provider,
+    "No fallback provider",
+  );
+  const endpoint = state.providerEndpoints.find(item =>
+    item.name === el.taskProfileFallbackProvider.value || item.id === el.taskProfileFallbackProvider.value
+  );
+  fillSelect(el.taskProfileFallbackModel, endpoint?.models || [], fallbackModel, "No fallback model");
+}
+
 function loadEndpointIntoForm() {
   const { endpoint } = activeProfileRecords();
   el.taskProfileEndpointName.value = endpoint?.name || "";
   el.taskProfileBaseUrl.value = endpoint?.base_url || "";
   el.taskProfileApiKey.value = endpoint?.api_key || "";
-  const models = endpoint?.models || [];
-  el.taskProfileModels.replaceChildren();
-  for (const model of models) {
-    const option = document.createElement("option");
-    option.value = model;
-    el.taskProfileModels.append(option);
-  }
+  const selectedModel = el.taskProfileModel.value;
+  fillSelect(el.taskProfileModel, endpoint?.models || [], selectedModel, "Discover models or choose a model");
+  renderFallbackSelectors();
 }
 
 function openTaskProfile(task) {
@@ -1097,7 +1129,7 @@ function renderJournalList() {
 
     const preview = document.createElement("div");
     preview.className = "journal-entry-preview";
-    preview.textContent = entry.preview || "Open to inspect the exact journal record.";
+    preview.textContent = entry.preview || "";
 
     item.append(meta, title, preview);
     el.journalTimeline.appendChild(item);
@@ -1712,11 +1744,22 @@ if (el.refreshDevicesButton) el.refreshDevicesButton.addEventListener("click", r
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
   state.activeEndpointOriginalName = selectedEndpoint()?.name || "";
+  el.taskProfileModel.value = "";
   loadEndpointIntoForm();
 });
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
+if (el.taskProfileFallbackProvider) el.taskProfileFallbackProvider.addEventListener("change", () => {
+  el.taskProfileFallbackModel.value = "";
+  renderFallbackSelectors();
+});
+if (el.addBehaviorShortcut) el.addBehaviorShortcut.addEventListener("click", () => {
+  showAdminSection("behaviors");
+  addHostBehavior();
+});
+if (el.refreshVoiceSettings) el.refreshVoiceSettings.addEventListener("click", loadVoiceSettings);
+if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);
 
 const BODY_DEVICE_STORAGE_KEYS = {
   videoinput: "aicognitive_mind.device.videoInput",
@@ -1775,7 +1818,7 @@ async function refreshDeviceInventory() {
       const section = document.createElement("section");
       section.className = "device-inventory-group";
       const title = document.createElement("h4");
-      title.textContent = `${heading} (${matches.length})`;
+      title.textContent = heading;
       section.append(title);
       const pickerLabel = document.createElement("label");
       pickerLabel.className = "host-behavior-field";
