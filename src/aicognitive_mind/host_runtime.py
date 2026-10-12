@@ -371,9 +371,9 @@ class HostAwareCore:
             if input_context:
                 message += "\nBody context: " + json.dumps(input_context, default=str)
             return InteractionResult.model_validate(await self.hosts.submit(message))
-        from aicognitive_mind.config import get_settings
+        from aicognitive_mind.config import body_allow_standalone_fallback_enabled
 
-        if not get_settings().body_allow_standalone_fallback:
+        if not body_allow_standalone_fallback_enabled():
             raise RuntimeError(
                 "No external reasoning host is attached. Body standalone fallback is disabled."
             )
@@ -408,9 +408,9 @@ class HostAwareInterpreter:
                         return specialist_result
         if await self.hosts.active():
             return f"Uninterpreted {percept.modality.value} observation. Use the sensory evidence reference in Body context to inspect the original media."
-        from aicognitive_mind.config import get_settings
+        from aicognitive_mind.config import body_allow_standalone_fallback_enabled
 
-        if not get_settings().body_allow_standalone_fallback:
+        if not body_allow_standalone_fallback_enabled():
             modality = getattr(getattr(percept, "modality", None), "value", "unknown")
             if modality in {"audio", "vision"} and self.task_dispatcher is not None:
                 task_label = {

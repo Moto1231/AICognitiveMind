@@ -815,3 +815,24 @@ select optgroup {
 @media (max-width: 760px) {
   .host-behavior-card { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+/* Body fallback runtime control in Administration */
+.admin-runtime-setting {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border, #d9dde5);
+}
+.admin-setting-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: fit-content;
+  font-weight: 600;
+}
+.admin-setting-toggle input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
