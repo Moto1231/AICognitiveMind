@@ -124,7 +124,9 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/v1/body/mouth/status", paths)
         self.assertIn("/v1/body/mouth/next", paths)
         self.assertIn("/v1/body/session/active", paths)
-        live_markup = Path("src/aicognitive_mind/static/live_body.html").read_text(encoding="utf-8")
+        live_markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
+            encoding="utf-8"
+        )
         self.assertIn("/v1/body/session/active", live_markup)
         self.assertIn("pollBodyMouth", live_markup)
 
