@@ -147,10 +147,13 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         client = FakeClient(FakeResponse({"error": {"message": "unsupported modality"}}, 400, "unsupported modality"))
         dispatcher = TaskModelDispatcher(records, client=client)
 
-        with self.assertRaisesRegex(TaskDispatchError, "HTTP 400"):
-            await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
+        with self.assertLogs("aicognitive_mind.task_dispatcher", level="ERROR") as captured:
+            with self.assertRaisesRegex(TaskDispatchError, "HTTP 400"):
+                await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
 
         self.assertEqual(len(client.calls), 1)
+        self.assertIn("task_provider_http_error", captured.output[0])
+        self.assertIn("status=400", captured.output[0])
 
     async def test_host_aware_interpreter_uses_assigned_sensory_dispatcher(self):
         class ActiveHosts:
