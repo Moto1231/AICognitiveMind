@@ -784,12 +784,6 @@ function renderStatus(status) {
   el.adminMemoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.adminJournalCount.textContent = Number(status.journal_experience_count).toLocaleString();
 
-  if (!state.adminAuthorized) {
-    el.adminAuthorizationState.textContent = status.administration?.pin_required
-      ? "PIN Required"
-      : "Local Admin";
-  }
-
   el.foundationalValues.innerHTML = "";
   const values = mind.identity.foundational_values || [];
   if (!values.length) {
