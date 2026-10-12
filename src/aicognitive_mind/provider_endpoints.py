@@ -91,9 +91,9 @@ async def discover_endpoint_model_details(endpoint: ProviderEndpoint) -> dict[st
     url = endpoint.base_url.rstrip("/") + "/models"
     headers = {"Authorization": f"Bearer {endpoint.api_key}"} if endpoint.api_key else {}
     async with httpx.AsyncClient(timeout=20.0) as client:
+        # The configured base URL is authoritative. Do not silently rewrite it
+        # by adding /v1: providers may use /v3, custom paths, or root-level APIs.
         response = await client.get(url, headers=headers)
-        if response.status_code == 404 and not endpoint.base_url.endswith("/v1"):
-            response = await client.get(endpoint.base_url.rstrip("/") + "/v1/models", headers=headers)
         response.raise_for_status()
         payload = response.json()
 
