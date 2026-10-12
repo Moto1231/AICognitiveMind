@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import time
 from typing import Any, Literal
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
@@ -10,6 +11,12 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import AnyHttpUrl
 
+from aicognitive_mind.body import (
+    BodyRuntime,
+    BrowserVoiceOutput,
+)
+from aicognitive_mind.body.runtime import configured_voice_intent
+from aicognitive_mind.body_sessions import BodyQueue, body_session
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.config import get_settings
@@ -78,6 +85,9 @@ BODY HOST LIFECYCLE:
   when needed, then call complete_body_interaction.
 - Keep this external-host lease active for the live Body session. Detach only when the user asks
   to stop/handoff the Body or the host session is ending.
+- When an active live Body session exists and you are answering ordinary ChatGPT chat rather than completing a claimed Body request, call speak_body_text with the same user-facing response so the Body speaks it. Respect explicit requests not to speak, and do not speak passive sensory observations or diagnostics by default.
+- For a claimed Body request, complete_body_interaction is the response path and the Body bridge handles expression; do not also call speak_body_text for that same response.
+- speak_body_text confirms queueing, not successful playback. If no active Body session is registered or speech delivery fails, report that honestly.
 - Never enable standalone fallback merely to compensate for a missing external-host attachment.
 """.strip()
 
@@ -205,6 +215,73 @@ def build_chatgpt_mcp(
             pitch=pitch,
             volume=volume,
         )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    async def speak_body_text(
+        text: str,
+        ctx: Context[AppState],
+        rate: float | None = None,
+        pitch: float | None = None,
+        volume: float | None = None,
+        voice_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Queue text for the active live Body to speak through its configured Mouth.
+
+        Use for ordinary reasoning-host replies when a live Body session is active.
+        Completing a claimed Body interaction already returns through the normal Body
+        expression path, so do not queue the same response twice.
+        """
+        speech_text = text.strip()
+        if not speech_text:
+            raise ValueError("Speech text cannot be empty")
+
+        state = ctx.request_context.lifespan_context
+        records = RuntimeRecords(state.storage.mind)
+        active = await records.get("active_body_session")
+        if not active:
+            raise RuntimeError("No active live Body session is registered")
+        try:
+            session_id = str(active["session_id"])
+            updated_at = float(active["updated_at"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Active Body session registration is invalid") from exc
+        if not session_id or time.time() - updated_at > 120:
+            raise RuntimeError("No active live Body session has checked in recently")
+
+        settings = await VoiceSettings(state.storage.mind).read()
+        intent = configured_voice_intent(
+            speech_text,
+            settings,
+            rate=rate,
+            pitch=pitch,
+            volume=volume,
+            voice_name=voice_name,
+        )
+        token = body_session.set(session_id)
+        try:
+            body = BodyRuntime(
+                voice=BodyQueue(records, "mouth", BrowserVoiceOutput())
+            )
+            await body.speak_intent(intent)
+        finally:
+            body_session.reset(token)
+
+        return {
+            "status": "queued",
+            "playback_confirmed": False,
+            "characters": len(speech_text),
+            "voice_name": intent.metadata["voice_name"],
+            "rate": intent.metadata["rate"],
+            "pitch": intent.metadata["pitch"],
+            "volume": intent.metadata["volume"],
+        }
 
     @server.tool(
         annotations=ToolAnnotations(

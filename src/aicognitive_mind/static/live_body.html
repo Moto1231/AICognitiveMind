@@ -594,6 +594,7 @@
 
     let pageSourceSnapshot = null;
     let pageRefreshPending = false;
+    let mouthPollBusy = false;
     let pageRefreshProbeBusy = false;
 
     function setStatus(message) {
@@ -903,14 +904,37 @@
     }
 
     async function consumeExpressionOutputs() {
-      const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
-      if (!mouthResponse.ok) return false;
-      const mouthIntent = await mouthResponse.json();
-      if (!mouthIntent) return false;
-      // Dispatch this expression before considering the direct response.
-      // This prevents both paths from starting speech for the same interaction.
-      await speakIntent(mouthIntent);
-      return true;
+      if (mouthPollBusy) return false;
+      mouthPollBusy = true;
+      try {
+        const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
+        if (!mouthResponse.ok) return false;
+        const mouthIntent = await mouthResponse.json();
+        if (!mouthIntent) return false;
+        // Dispatch this expression before considering the direct response.
+        // This prevents both paths from starting speech for the same interaction.
+        await speakIntent(mouthIntent);
+        return true;
+      } finally {
+        mouthPollBusy = false;
+      }
+    }
+
+    async function pollBodyMouth() {
+      if (bodyIsBusy() || mouthPollBusy || talkSpeaking || window.speechSynthesis?.speaking) return;
+      try {
+        await consumeExpressionOutputs();
+      } catch (_) {
+        // Speech polling must not interrupt active Body sensing or conversation.
+      }
+    }
+
+    async function registerActiveBodySession() {
+      try {
+        await bodyFetch("/v1/body/session/active", { method: "POST" });
+      } catch (_) {
+        // Keep the Body usable when session registration is temporarily unavailable.
+      }
     }
 
     async function showMindResult(result, { modality, consumeOutputs = true } = {}) {
@@ -1510,8 +1534,11 @@
       window.speechSynthesis?.cancel();
     });
 
+    registerActiveBodySession();
     refreshSharedVoiceSettings();
     refreshConnectedHostStatus();
+    window.setInterval(registerActiveBodySession, 10_000);
+    window.setInterval(pollBodyMouth, 1_000);
     window.setInterval(refreshSharedVoiceSettings, 10_000);
     window.setInterval(refreshConnectedHostStatus, 5_000);
     checkForHostCameraRequest();
