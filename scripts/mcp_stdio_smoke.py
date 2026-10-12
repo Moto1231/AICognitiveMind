@@ -62,6 +62,7 @@ async def main() -> None:
             "mind_status",
             "begin_interaction",
             "complete_interaction",
+            "execute_task",
         }
         missing = expected - names
         if missing:

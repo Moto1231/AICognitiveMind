@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import CallToolResult, ImageContent, AudioContent, TextContent
@@ -12,7 +14,7 @@ from mcp.types import CallToolResult, ImageContent, AudioContent, TextContent
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.host_context import HostWorkingContext
-from aicognitive_mind.host_runtime import HostRuntime
+from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.mcp_service import (
     BeliefReframeProposal,
@@ -24,6 +26,9 @@ from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.persistence import StorageRuntime, create_storage
 from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.tenancy import verify_live_tenancy
+from aicognitive_mind.task_behaviors import TaskExecutionContext
+from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
+from aicognitive_mind.task_model_assignments import TaskKind
 
 
 @dataclass
@@ -32,6 +37,7 @@ class AppState:
     mind_service: CognitiveMcpService
     storage: Any = None
     hosts: Any = None
+    task_dispatcher: TaskModelDispatcher | None = None
     tenancy_probe: dict[str, Any] | None = None
 
 
@@ -50,6 +56,7 @@ async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
             mind_service=service,
             storage=storage,
             hosts=HostRuntime(storage.mind, service),
+            task_dispatcher=TaskModelDispatcher(RuntimeRecords(storage.mind)),
             tenancy_probe=tenancy_probe,
         )
 
@@ -86,6 +93,98 @@ async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
     result = await state.mind_service.status()
     result["storage_tenancy"] = state.tenancy_probe
     return result
+
+
+@mcp.tool()
+async def execute_task(
+    task: TaskKind,
+    operation: Literal["chat", "transcribe"],
+    ctx: Context[AppState],
+    messages: list[dict[str, Any]] | None = None,
+    temperature: float | None = None,
+    filename: str | None = None,
+    audio_base64: str | None = None,
+    media_type: str | None = None,
+    session_id: str | None = None,
+    state_ref: str | None = None,
+    memory_refs: list[str] | None = None,
+    working_context: str = "",
+) -> dict[str, Any]:
+    """Run a configured specialist task through its saved provider/model assignment.
+
+    Use operation="chat" with messages for vision, coding, summarization, research,
+    extraction, memory-recall, or other chat-style tasks. Use operation="transcribe"
+    with base64-encoded audio, filename, and media_type for transcription. The provider,
+    model, and behavior are resolved from Axiom's saved configuration, not supplied by
+    the caller. Optional compact context references are included in the task prompt.
+    """
+    state = ctx.request_context.lifespan_context
+    dispatcher = state.task_dispatcher
+    if dispatcher is None:
+        raise RuntimeError("Task execution is not available in this MCP session.")
+
+    if operation == "chat":
+        if (
+            messages is None
+            or not messages
+            or not all(isinstance(item, dict) for item in messages)
+        ):
+            raise ValueError('operation="chat" requires a non-empty messages list.')
+        payload: dict[str, Any] = {"operation": "chat", "messages": messages}
+        if temperature is not None:
+            payload["temperature"] = temperature
+    else:
+        if not filename or not media_type or not audio_base64:
+            raise ValueError(
+                'operation="transcribe" requires filename, media_type, and audio_base64.'
+            )
+        try:
+            audio_bytes = base64.b64decode(audio_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("audio_base64 must contain valid base64-encoded audio.") from exc
+        if not audio_bytes:
+            raise ValueError("audio_base64 decoded to an empty audio payload.")
+        payload = {
+            "operation": "transcribe",
+            "filename": filename,
+            "audio_bytes": audio_bytes,
+            "media_type": media_type,
+        }
+
+    assignment = await dispatcher.assignment(task)
+    behaviors = await dispatcher.behaviors.list()
+    behavior = next(item for item in behaviors if item.task == task)
+    execution_context = TaskExecutionContext(
+        task=task,
+        provider=assignment.provider,
+        model=assignment.model,
+        behavior_revision=behavior.revision,
+        session_id=session_id,
+        state_ref=state_ref,
+        memory_refs=tuple(memory_refs or ()),
+        working_context=working_context,
+    )
+    try:
+        result = await dispatcher.execute(execution_context, payload)
+    except TaskDispatchError as exc:
+        return {
+            "status": "task_failed",
+            "task": task,
+            "provider": assignment.provider,
+            "model": assignment.model,
+            "operation": operation,
+            "error": str(exc),
+        }
+    return {
+        "status": "completed",
+        "task": task,
+        "provider": assignment.provider,
+        "model": assignment.model,
+        "behavior_revision": behavior.revision,
+        "operation": operation,
+        "result": result,
+    }
+
 
 @mcp.tool()
 async def run_sleep_cycle(ctx: Context[AppState]) -> dict[str, Any]:
