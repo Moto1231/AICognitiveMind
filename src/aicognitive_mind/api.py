@@ -1091,6 +1091,33 @@ async def mouth_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "mouth.html")
 
 
+@app.post("/v1/body/session/active")
+async def register_active_body_session(request: Request) -> dict[str, bool]:
+    """Register the browser's live Body session for reasoning-host speech delivery."""
+    session_id = body_session.get()
+    if session_id == "legacy":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A named live Body session is required",
+        )
+    records = cast(RuntimeRecords, request.app.state.runtime_records)
+    value = {"session_id": session_id, "updated_at": time_module.time()}
+    for _ in range(10):
+        before = await records.get("active_body_session")
+        if before is None:
+            try:
+                await records.create("active_body_session", value)
+                return {"registered": True}
+            except CommitConflict:
+                continue
+        if await records.replace("active_body_session", before, value):
+            return {"registered": True}
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Could not register the active Body session; retry",
+    )
+
+
 @app.post("/v1/body/mouth/speak", response_model=ExpressionIntent)
 async def speak_through_mouth(
     body: MouthSpeechRequest,
