@@ -22,6 +22,18 @@ from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
 class PortalTests(unittest.TestCase):
+    def test_admin_save_buttons_use_consistent_label_and_mcp_add_starts_new_record(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+
+        for element_id in ("saveHostBehaviors", "saveTaskProfile", "saveMcpServers", "saveVoiceSettings"):
+            with self.subTest(element_id=element_id):
+                self.assertIn(f'id="{element_id}" class="primary-button" type="button">Save</button>', markup)
+
+        self.assertIn("if (!selectedId) {\n    addMcpServer();\n    return;\n  }", script)
+        self.assertIn("function addMcpServer() {\n  syncMcpServerForm();", script)
+        self.assertIn('name: "",\n    url: "",\n    bearer_token: "",', script)
+
     def test_task_profile_controls_are_bound_and_renderable(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
