@@ -29,6 +29,8 @@ def configured_voice_intent(
     speech_text = text.strip()
     if not speech_text:
         raise ValueError("Speech text cannot be empty")
+    if len(speech_text) > 4000:
+        raise ValueError("Speech text cannot exceed 4000 characters")
     configured = settings or {}
     metadata = {
         "rate": configured.get("rate", 1.0) if rate is None else rate,
