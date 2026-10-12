@@ -67,7 +67,10 @@ class TaskModelDispatcher:
         return next(item for item in await self.assignments.list() if item.task == task)
 
     async def is_configured(self, task: TaskKind) -> bool:
-        return bool(await self._candidate_assignments(task))
+        try:
+            return bool(await self._candidate_assignments(task))
+        except TaskDispatchError:
+            return False
 
     async def _candidate_assignments(self, task: TaskKind) -> list[TaskModelAssignment]:
         """Return distinct, complete task-primary then task-fallback choices."""
