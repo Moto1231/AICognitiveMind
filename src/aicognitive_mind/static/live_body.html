@@ -930,7 +930,7 @@
         responseLabel
       );
       const interpreted = Boolean(result.interpretation) &&
-        !/^Uninterpreted\\b/i.test(result.interpretation);
+        !/^Uninterpreted\b/i.test(result.interpretation);
       setSenseStatus(
         modality,
         "Evidence saved (" + evidence.media_type + ") at " + evidence.captured_at +
