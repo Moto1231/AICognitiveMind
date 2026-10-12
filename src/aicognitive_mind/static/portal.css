@@ -754,3 +754,20 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   .filter-area, .result-area { padding: 12px; }
   .page-size-control { justify-content: space-between; }
 }
+
+
+/* Keep native dropdown menus readable against the dark portal theme. */
+select,
+.search-field select,
+.host-behavior-field select,
+.memory-edit-form select,
+.page-size-control select {
+  color-scheme: dark;
+  background-color: #101d30;
+  color: #eaf1fb;
+}
+select option,
+select optgroup {
+  background-color: #101d30;
+  color: #eaf1fb;
+}
