@@ -26,6 +26,7 @@ const state = {
   activeEndpointId: null,
   activeEndpointOriginalName: "",
   deviceInventory: [],
+  voiceSettingsRevision: 0,
 };
 
 const el = {
@@ -143,6 +144,16 @@ const el = {
   taskProfileModels: document.getElementById("taskProfileModels"),
   taskProfileFallbackProvider: document.getElementById("taskProfileFallbackProvider"),
   taskProfileFallbackModel: document.getElementById("taskProfileFallbackModel"),
+  addBehaviorShortcut: document.getElementById("addBehaviorShortcut"),
+  fishAudioModel: document.getElementById("fishAudioModel"),
+  fishAudioReferenceId: document.getElementById("fishAudioReferenceId"),
+  voiceRate: document.getElementById("voiceRate"),
+  voicePitch: document.getElementById("voicePitch"),
+  voiceVolume: document.getElementById("voiceVolume"),
+  voiceName: document.getElementById("voiceName"),
+  voiceSettingsRevision: document.getElementById("voiceSettingsRevision"),
+  saveVoiceSettings: document.getElementById("saveVoiceSettings"),
+  refreshVoiceSettings: document.getElementById("refreshVoiceSettings"),
   taskProfileFoundation: document.getElementById("taskProfileFoundation"),
   taskProfileBehaviorName: document.getElementById("taskProfileBehaviorName"),
   taskProfileInstructions: document.getElementById("taskProfileInstructions"),
@@ -196,9 +207,10 @@ async function api(path, options = {}, admin = false) {
     : await response.text();
 
   if (!response.ok) {
-    const detail = payload && typeof payload === "object" && payload.detail
+    const rawDetail = payload && typeof payload === "object" && payload.detail
       ? payload.detail
       : `Request failed (${response.status})`;
+    const detail = typeof rawDetail === "string" ? rawDetail : JSON.stringify(rawDetail);
     const error = new Error(detail);
     error.status = response.status;
     throw error;
@@ -213,7 +225,12 @@ function displayLabel(value) {
 }
 
 function toast(message, error = false) {
-  el.toast.textContent = message;
+  const displayMessage = typeof message === "string"
+    ? message
+    : message instanceof Error
+      ? message.message
+      : JSON.stringify(message);
+  el.toast.textContent = displayMessage ?? "";
   el.toast.classList.toggle("error", error);
   el.toast.classList.remove("hidden");
   clearTimeout(toast.timer);
