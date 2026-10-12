@@ -67,6 +67,27 @@ class Settings(BaseSettings):
         ).strip().lower()
 
 
+_body_allow_standalone_fallback_override: bool | None = None
+
+
+def body_allow_standalone_fallback_enabled() -> bool:
+    """Return the runtime override when set, otherwise the deployment setting."""
+    if _body_allow_standalone_fallback_override is not None:
+        return _body_allow_standalone_fallback_override
+    return get_settings().body_allow_standalone_fallback
+
+
+def body_allow_standalone_fallback_override() -> bool | None:
+    """Return the current runtime override, or None when using deployment config."""
+    return _body_allow_standalone_fallback_override
+
+
+def set_body_allow_standalone_fallback_override(enabled: bool | None) -> None:
+    """Set an in-process admin override; None restores the deployment setting."""
+    global _body_allow_standalone_fallback_override
+    _body_allow_standalone_fallback_override = enabled
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
