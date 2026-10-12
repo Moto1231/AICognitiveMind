@@ -144,7 +144,8 @@ const el = {
   taskProfileModels: document.getElementById("taskProfileModels"),
   taskProfileFallbackProvider: document.getElementById("taskProfileFallbackProvider"),
   taskProfileFallbackModel: document.getElementById("taskProfileFallbackModel"),
-  addBehaviorShortcut: document.getElementById("addBehaviorShortcut"),
+  taskProfileAddBehavior: document.getElementById("taskProfileAddBehavior"),
+  fishAudioApiKey: document.getElementById("fishAudioApiKey"),
   fishAudioModel: document.getElementById("fishAudioModel"),
   fishAudioReferenceId: document.getElementById("fishAudioReferenceId"),
   voiceRate: document.getElementById("voiceRate"),
@@ -550,6 +551,7 @@ function openTaskProfile(task) {
   el.taskProfileFallbackProvider.value = assignment?.fallback_provider || "";
   el.taskProfileFallbackModel.value = assignment?.fallback_model || "";
   loadEndpointIntoForm();
+  renderFallbackSelectors();
   el.taskProfileOverview.classList.add("hidden");
   el.taskProfileList.classList.add("hidden");
   el.taskProfileEditor.classList.remove("hidden");
@@ -647,7 +649,7 @@ async function saveTaskProfile() {
     }, true);
     state.taskBehaviors = behaviorPayload.items || [];
     state.taskFoundations = behaviorPayload.foundations || state.taskFoundations;
-    toast("Task profile saved");
+    toast(`Saved ${taskModelLabels[task] || displayLabel(task)} task profile`);
     renderTaskProfiles();
     openTaskProfile(task);
   } catch (error) {
@@ -696,8 +698,9 @@ function addTaskProfileEndpoint() {
 
 async function loadVoiceSettings() {
   try {
-    const settings = await api("/v1/body/voice/settings", {}, true);
+    const settings = await api("/v1/admin/body/voice/settings", {}, true);
     state.voiceSettingsRevision = Number(settings.revision || 0);
+    el.fishAudioApiKey.value = settings.fishAudioApiKey || "";
     el.fishAudioModel.value = settings.fishAudioModel || "s2.1-pro-free";
     el.fishAudioReferenceId.value = settings.fishAudioReferenceId || "";
     el.voiceRate.value = String(settings.rate ?? 1);
@@ -716,6 +719,7 @@ async function saveVoiceSettings() {
       method: "POST",
       body: JSON.stringify({
         expected_revision: state.voiceSettingsRevision,
+        fish_audio_api_key: el.fishAudioApiKey.value,
         fish_audio_model: el.fishAudioModel.value.trim(),
         fish_audio_reference_id: el.fishAudioReferenceId.value.trim(),
         rate: Number(el.voiceRate.value),
@@ -1800,9 +1804,10 @@ if (el.taskProfileFallbackProvider) el.taskProfileFallbackProvider.addEventListe
   el.taskProfileFallbackModel.value = "";
   renderFallbackSelectors();
 });
-if (el.addBehaviorShortcut) el.addBehaviorShortcut.addEventListener("click", () => {
-  showAdminSection("behaviors");
-  addHostBehavior();
+if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click", () => {
+  el.taskProfileEnabled.checked = true;
+  el.taskProfileBehaviorName.focus();
+  toast("Behavior editor ready. Save the task profile to keep your changes.");
 });
 if (el.refreshVoiceSettings) el.refreshVoiceSettings.addEventListener("click", loadVoiceSettings);
 if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);

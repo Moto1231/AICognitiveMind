@@ -128,6 +128,7 @@ class BodyVoiceSettingsUpdateRequest(BaseModel):
     rate: float | None = None
     pitch: float | None = None
     volume: float | None = None
+    fish_audio_api_key: str | None = Field(default=None, max_length=4096)
     fish_audio_model: str | None = Field(default=None, max_length=120)
     fish_audio_reference_id: str | None = Field(default=None, max_length=200)
 
@@ -716,7 +717,23 @@ async def live_body_page() -> FileResponse:
 async def body_voice_settings(request: Request) -> dict[str, Any]:
     """Read non-secret voice preferences shared with Body clients."""
     values = await request.app.state.voice_settings.read()
+    values.pop("fishAudioApiKey", None)
     settings = get_settings()
+    if values.get("fishAudioModel") is None:
+        values["fishAudioModel"] = settings.fish_audio_model
+    if values.get("fishAudioReferenceId") is None:
+        values["fishAudioReferenceId"] = settings.fish_audio_reference_id
+    return values
+
+
+@app.get("/v1/admin/body/voice/settings")
+async def admin_body_voice_settings(request: Request) -> dict[str, Any]:
+    """Read voice settings, including the API key, for authenticated administrators only."""
+    require_admin(request)
+    values = await request.app.state.voice_settings.read()
+    settings = get_settings()
+    if not values.get("fishAudioApiKey"):
+        values["fishAudioApiKey"] = settings.fish_audio_api_key
     if values.get("fishAudioModel") is None:
         values["fishAudioModel"] = settings.fish_audio_model
     if values.get("fishAudioReferenceId") is None:
@@ -729,12 +746,13 @@ async def update_admin_body_voice_settings(
     payload: BodyVoiceSettingsUpdateRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Persist voice and Fish Audio parameters without exposing the API key."""
+    """Persist voice and Fish Audio parameters for an authenticated administrator."""
     require_admin(request)
     try:
         values = await request.app.state.voice_settings.update(
             expected_revision=payload.expected_revision,
             voice_name=payload.voice_name,
+            fish_audio_api_key=payload.fish_audio_api_key,
             rate=payload.rate,
             pitch=payload.pitch,
             volume=payload.volume,
@@ -746,6 +764,8 @@ async def update_admin_body_voice_settings(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     settings = get_settings()
+    if not values.get("fishAudioApiKey"):
+        values["fishAudioApiKey"] = settings.fish_audio_api_key
     if values.get("fishAudioModel") is None:
         values["fishAudioModel"] = settings.fish_audio_model
     if values.get("fishAudioReferenceId") is None:
@@ -1083,7 +1103,9 @@ async def fish_audio_speech(
 ) -> Response:
     """Render Axiom's spoken output through Fish Audio without exposing its API key."""
     settings = get_settings()
-    if not settings.fish_audio_api_key:
+    voice_settings = await request.app.state.voice_settings.read()
+    fish_api_key = voice_settings.get("fishAudioApiKey") or settings.fish_audio_api_key
+    if not fish_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="FISH_AUDIO_API_KEY is not configured.",
@@ -1091,9 +1113,8 @@ async def fish_audio_speech(
 
     # Browser voice settings use a 0-1 volume scale; Fish uses dB.
     fish_volume = (body.volume - 1.0) * 20.0
-    voice_settings = await request.app.state.voice_settings.read()
     renderer = FishAudioRenderer(
-        api_key=settings.fish_audio_api_key,
+        api_key=fish_api_key,
         model=voice_settings.get("fishAudioModel") or settings.fish_audio_model,
         reference_id=(
             voice_settings.get("fishAudioReferenceId")

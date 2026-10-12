@@ -16,11 +16,13 @@ class VoiceSettingsTests(unittest.IsolatedAsyncioTestCase):
             expected_revision=0,
             rate=1.2,
             volume=0.7,
+            fish_audio_api_key="fish-test-key",
             fish_audio_model="s2.1-pro-free",
             fish_audio_reference_id="voice-ref",
         )
         self.assertEqual(updated["revision"], 1)
         self.assertEqual((await second.read())["rate"], 1.2)
+        self.assertEqual((await second.read())["fishAudioApiKey"], "fish-test-key")
         self.assertEqual((await second.read())["fishAudioModel"], "s2.1-pro-free")
         self.assertEqual((await second.read())["fishAudioReferenceId"], "voice-ref")
         with self.assertRaises(CommitConflict):
