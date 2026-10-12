@@ -253,7 +253,7 @@ def build_chatgpt_mcp(
             updated_at = float(active["updated_at"])
         except (KeyError, TypeError, ValueError) as exc:
             raise RuntimeError("Active Body session registration is invalid") from exc
-        if not session_id or time.time() - updated_at > 60:
+        if not session_id or time.time() - updated_at > 120:
             raise RuntimeError("No active live Body session has checked in recently")
 
         settings = await VoiceSettings(state.storage.mind).read()
@@ -261,7 +261,11 @@ def build_chatgpt_mcp(
             "rate": settings["rate"] if rate is None else rate,
             "pitch": settings["pitch"] if pitch is None else pitch,
             "volume": settings["volume"] if volume is None else volume,
-            "voice_name": (settings.get("voiceName") or None) if voice_name is None else voice_name,
+            "voice_name": (
+                (settings.get("voiceName") or None)
+                if voice_name is None
+                else voice_name
+            ),
         }
         token = body_session.set(session_id)
         try:
