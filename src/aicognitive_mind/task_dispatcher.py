@@ -97,6 +97,22 @@ class TaskModelDispatcher:
         base = endpoint.base_url.rstrip("/")
         parsed = urlparse(base)
         prefix = parsed.path.rstrip("/")
+        # Some saved endpoints were entered as a full operation URL instead of
+        # an API base URL (for example, Eden AI /v3/audio/transcriptions).
+        # Normalize known operation suffixes before appending the operation
+        # selected by this dispatcher, so transcription does not become
+        # /v3/audio/transcriptions/v1/audio/transcriptions.
+        for suffix in (
+            "/audio/transcriptions",
+            "/audio/speech",
+            "/chat/completions",
+            "/models",
+        ):
+            if prefix.endswith(suffix):
+                base = base[:-len(suffix)]
+                parsed = urlparse(base)
+                prefix = parsed.path.rstrip("/")
+                break
         # Providers may expose an OpenAI-compatible API under /v1 or a
         # provider-specific API version such as Eden AI's /v3. Preserve an
         # explicit version prefix instead of incorrectly creating /v3/v1/....
