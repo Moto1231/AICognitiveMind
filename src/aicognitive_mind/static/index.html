@@ -85,6 +85,7 @@
               <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
 
+            <div class="filter-area">
             <div class="memory-search">
               <div class="search-field search-wide">
                 <label for="memorySearch">Search</label>
@@ -127,12 +128,18 @@
               </div>
               <button id="clearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
             </div>
+            </div>
+            <div class="result-area">
             <div class="search-summary">
               <span id="memoryResultCount">0 Memories</span>
+              <label class="page-size-control" for="memoryPageSize">Results per page
+                <select id="memoryPageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select>
+              </label>
             </div>
             <div id="memoryList" class="memory-list"></div>
             <div class="memory-pagination">
-              <button id="loadMoreMemories" class="secondary-button hidden" type="button">Load 25 More</button>
+              <button id="loadMoreMemories" class="secondary-button hidden" type="button">Get More</button>
+            </div>
             </div>
           </article>
         </div>
@@ -249,6 +256,7 @@
               </div>
               <button id="adminMemoryRefreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
+            <div class="filter-area">
             <div class="memory-search">
               <div class="search-field search-wide">
                 <label for="adminMemorySearch">Search</label>
@@ -291,13 +299,19 @@
               </div>
               <button id="adminClearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
             </div>
+            </div>
+            <div class="result-area">
             <div class="search-summary">
               <span id="adminMemoryResultCount">0 Memories</span>
               <span>Open a memory to edit its persisted record.</span>
+              <label class="page-size-control" for="adminMemoryPageSize">Results per page
+                <select id="adminMemoryPageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select>
+              </label>
             </div>
             <div id="adminMemoryList" class="memory-list"></div>
             <div class="memory-pagination">
-              <button id="adminLoadMoreMemories" class="secondary-button hidden" type="button">Load 25 More</button>
+              <button id="adminLoadMoreMemories" class="secondary-button hidden" type="button">Get More</button>
+            </div>
             </div>
           </article>
 
@@ -310,6 +324,7 @@
               </div>
               <button id="journalRefreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
+            <div class="filter-area">
             <div class="journal-search">
               <div class="search-field search-wide">
                 <label for="journalSearch">Search</label>
@@ -347,13 +362,19 @@
               </div>
               <button id="clearJournalFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
             </div>
+            </div>
+            <div class="result-area">
             <div class="search-summary">
               <span id="journalResultCount">0 Experiences</span>
               <span>Journal history is read-only.</span>
+              <label class="page-size-control" for="journalPageSize">Results per page
+                <select id="journalPageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select>
+              </label>
             </div>
             <div id="journalTimeline" class="journal-timeline"></div>
             <div class="journal-pagination">
-              <button id="loadMoreJournals" class="secondary-button hidden" type="button">Load 25 More</button>
+              <button id="loadMoreJournals" class="secondary-button hidden" type="button">Get More</button>
+            </div>
             </div>
           </article>
 
@@ -531,6 +552,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261012-voice-sliders"></script>
+  <script src="/static/portal.js?v=20261012-filter-pagination"></script>
 </body>
 </html>
