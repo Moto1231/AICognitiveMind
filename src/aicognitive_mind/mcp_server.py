@@ -26,7 +26,7 @@ from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.persistence import StorageRuntime, create_storage
 from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.tenancy import verify_live_tenancy
-from aicognitive_mind.task_behaviors import TaskExecutionContext, TaskBehaviorRegistry
+from aicognitive_mind.task_behaviors import TaskExecutionContext
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskKind
 
@@ -124,14 +124,20 @@ async def execute_task(
         raise RuntimeError("Task execution is not available in this MCP session.")
 
     if operation == "chat":
-        if messages is None or not messages or not all(isinstance(item, dict) for item in messages):
+        if (
+            messages is None
+            or not messages
+            or not all(isinstance(item, dict) for item in messages)
+        ):
             raise ValueError('operation="chat" requires a non-empty messages list.')
         payload: dict[str, Any] = {"operation": "chat", "messages": messages}
         if temperature is not None:
             payload["temperature"] = temperature
     else:
         if not filename or not media_type or not audio_base64:
-            raise ValueError('operation="transcribe" requires filename, media_type, and audio_base64.')
+            raise ValueError(
+                'operation="transcribe" requires filename, media_type, and audio_base64.'
+            )
         try:
             audio_bytes = base64.b64decode(audio_base64, validate=True)
         except (binascii.Error, ValueError) as exc:
