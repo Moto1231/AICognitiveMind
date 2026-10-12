@@ -921,7 +921,7 @@
     }
 
     async function pollBodyMouth() {
-      if (document.hidden || bodyIsBusy() || mouthPollBusy) return;
+      if (bodyIsBusy() || mouthPollBusy) return;
       try {
         await consumeExpressionOutputs();
       } catch (_) {
