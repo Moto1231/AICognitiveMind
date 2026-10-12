@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from aicognitive_mind.accounts import AccountService
+from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.backup import (
     backup_filename,
     build_backup_archive,
@@ -119,6 +120,16 @@ class TaskBehaviorListRequest(BaseModel):
 
 class ProviderEndpointListRequest(BaseModel):
     items: list[ProviderEndpoint]
+
+
+class BodyVoiceSettingsUpdateRequest(BaseModel):
+    expected_revision: int = Field(ge=0)
+    voice_name: str | None = Field(default=None, max_length=120)
+    rate: float | None = None
+    pitch: float | None = None
+    volume: float | None = None
+    fish_audio_model: str | None = Field(default=None, max_length=120)
+    fish_audio_reference_id: str | None = Field(default=None, max_length=200)
 
 
 class AdminMemoryRevisionRequest(BaseModel):
