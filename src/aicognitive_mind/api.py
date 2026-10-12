@@ -64,7 +64,7 @@ from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
 from aicognitive_mind.task_behaviors import TASK_FOUNDATIONS, TaskBehavior, TaskBehaviorRegistry
-from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, discover_endpoint_models
+from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, discover_endpoint_model_details
 from aicognitive_mind.task_model_assignments import (
     TaskModelAssignment,
     TaskModelAssignmentRegistry,
@@ -1501,11 +1501,11 @@ async def discover_admin_provider_endpoint_models(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        models = await discover_endpoint_models(payload)
+        details = await discover_endpoint_model_details(payload)
     except Exception as exc:
         logger.info("Provider model discovery failed for %s: %s", payload.name, exc)
         raise HTTPException(status_code=502, detail=f"Model discovery failed: {exc}") from exc
-    return {"models": models}
+    return details
 
 
 @app.get("/v1/admin/task-behaviors")

@@ -2,7 +2,7 @@ import unittest
 
 from pydantic import ValidationError
 
-from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
+from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, _reported_capabilities
 
 
 class FakeRecords:
@@ -40,6 +40,13 @@ class ProviderEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(loaded[0].base_url, "http://localhost:8000/v1")
         self.assertEqual(loaded[0].api_key, "admin-visible-key")
         self.assertEqual(loaded[0].models, ["vision-model", "audio-model"])
+
+    def test_capability_labels_use_only_explicit_provider_metadata(self):
+        self.assertEqual(
+            _reported_capabilities({"id": "model-a", "architecture": {"input_modalities": ["text", "image"]}}),
+            ["Text", "Vision"],
+        )
+        self.assertEqual(_reported_capabilities({"id": "model-b"}), [])
 
     async def test_endpoint_ids_must_be_unique(self):
         registry = ProviderEndpointRegistry(FakeRecords())
