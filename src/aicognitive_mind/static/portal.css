@@ -771,3 +771,39 @@ select optgroup {
   background-color: #101d30;
   color: #eaf1fb;
 }
+
+
+.mcp-tool-schema {
+  display: block;
+  margin-top: 10px;
+  padding: 10px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: #c7d8eb;
+  background: rgba(0,0,0,.18);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.mcp-tool-output {
+  max-height: 360px;
+  margin-top: 12px;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(0,0,0,.22);
+  color: #d8e8f8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+# mcpSection .host-behavior-card { grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+# mcpSection .host-behavior-card strong { display: block; font-size: 13px; }
+# mcpSection .host-behavior-card p { margin-top: 7px; }
+# mcpSection .task-profile-section { margin-top: 20px; }
+# mcpSection .task-profile-inline-actions { flex-wrap: wrap; }
+@media (max-width: 760px) {
+  #mcpSection .host-behavior-card { grid-template-columns: minmax(0, 1fr); }
+}
