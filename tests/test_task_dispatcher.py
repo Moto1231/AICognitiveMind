@@ -292,6 +292,58 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_failed_task_providers_defer_to_connected_reasoning(self):
+        class ActiveHosts:
+            async def active(self):
+                return True
+
+        class Fallback:
+            records = FakeRecords()
+
+        class FailedDispatcher:
+            async def interpret_percept(self, percept, *, focus=None):
+                raise TaskDispatchError("both configured providers failed")
+
+        interpreter = HostAwareInterpreter(Fallback(), ActiveHosts())
+        interpreter.task_dispatcher = FailedDispatcher()
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="audio"),
+            content_ref="data:audio/webm;base64,YXVkaW8=",
+        )
+
+        with self.assertLogs("aicognitive_mind.auth_diagnostics", level="WARNING"):
+            result = await interpreter.interpret(percept)
+
+        self.assertIn("Uninterpreted audio observation", result)
+        self.assertIn("sensory evidence reference", result)
+
+    async def test_failed_task_providers_defer_to_body_reasoning_fallback(self):
+        class InactiveHosts:
+            async def active(self):
+                return None
+
+        class Fallback:
+            records = FakeRecords()
+
+        class FailedDispatcher:
+            async def interpret_percept(self, percept, *, focus=None):
+                raise TaskDispatchError("both configured providers failed")
+
+        interpreter = HostAwareInterpreter(Fallback(), InactiveHosts())
+        interpreter.task_dispatcher = FailedDispatcher()
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="audio"),
+            content_ref="data:audio/webm;base64,YXVkaW8=",
+        )
+
+        from unittest.mock import patch
+        with patch("aicognitive_mind.config.get_settings") as settings:
+            settings.return_value.body_allow_standalone_fallback = True
+            with self.assertLogs("aicognitive_mind.auth_diagnostics", level="WARNING"):
+                result = await interpreter.interpret(percept)
+
+        self.assertIn("task primary and fallback failed", result)
+
     async def test_unconfigured_audio_without_host_reports_task_routing_problem(self):
         class InactiveHosts:
             async def active(self):
