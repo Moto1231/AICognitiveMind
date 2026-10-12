@@ -23,6 +23,8 @@ const state = {
   taskBehaviors: [],
   taskFoundations: {},
   providerEndpoints: [],
+  mcpServers: [],
+  activeMcpServerId: null,
   activeTaskProfile: null,
   activeEndpointId: null,
   activeEndpointOriginalName: "",
@@ -100,6 +102,22 @@ const el = {
   journalEvidenceDetail: document.getElementById("journalEvidenceDetail"),
   journalEvidenceList: document.getElementById("journalEvidenceList"),
   taskProfileOverview: document.getElementById("taskProfileOverview"),
+  refreshMcpServers: document.getElementById("refreshMcpServers"),
+  mcpServerSelect: document.getElementById("mcpServerSelect"),
+  mcpServerName: document.getElementById("mcpServerName"),
+  mcpServerUrl: document.getElementById("mcpServerUrl"),
+  mcpServerToken: document.getElementById("mcpServerToken"),
+  mcpServerEnabled: document.getElementById("mcpServerEnabled"),
+  mcpAddServer: document.getElementById("mcpAddServer"),
+  mcpDiscoverTools: document.getElementById("mcpDiscoverTools"),
+  mcpDeleteServer: document.getElementById("mcpDeleteServer"),
+  mcpServerStatus: document.getElementById("mcpServerStatus"),
+  mcpToolList: document.getElementById("mcpToolList"),
+  mcpToolRunnerSelect: document.getElementById("mcpToolRunnerSelect"),
+  mcpToolArguments: document.getElementById("mcpToolArguments"),
+  mcpRunTool: document.getElementById("mcpRunTool"),
+  mcpToolOutput: document.getElementById("mcpToolOutput"),
+  saveMcpServers: document.getElementById("saveMcpServers"),
   refreshDevicesButton: document.getElementById("refreshDevicesButton"),
   devicePermissionStatus: document.getElementById("devicePermissionStatus"),
   deviceSelectionSummary: document.getElementById("deviceSelectionSummary"),
@@ -769,6 +787,7 @@ async function enterAdminMode() {
       refreshTaskModelAssignments(),
       refreshTaskBehaviors(),
       refreshProviderEndpoints(),
+      refreshMcpServers(),
       loadVoiceSettings(),
     ]);
   } catch (error) {
@@ -1682,6 +1701,7 @@ if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHos
 if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
 
 const adminSectionIds = {
+  mcp: "mcpSection",
   tasks: "tasksSection",
   behaviors: "behaviorsSection",
   memories: "memoriesSection",
@@ -1794,6 +1814,208 @@ function evidenceMediaUrl(artifact) {
   return `/v1/evidence/${encodeURIComponent(artifact.sha256)}?${query}`;
 }
 
+function selectedMcpServer() {
+  return state.mcpServers.find(server => server.id === state.activeMcpServerId) || null;
+}
+
+function syncMcpServerForm() {
+  const server = selectedMcpServer();
+  if (!server) return null;
+  server.name = el.mcpServerName.value.trim();
+  server.url = el.mcpServerUrl.value.trim();
+  server.bearer_token = el.mcpServerToken.value;
+  server.enabled = el.mcpServerEnabled.checked;
+  return server;
+}
+
+function renderMcpServerOptions() {
+  el.mcpServerSelect.replaceChildren();
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "Add a new server";
+  el.mcpServerSelect.append(blank);
+  for (const server of state.mcpServers) {
+    const option = document.createElement("option");
+    option.value = server.id;
+    option.textContent = server.name || server.url || "Unnamed MCP server";
+    el.mcpServerSelect.append(option);
+  }
+  el.mcpServerSelect.value = state.activeMcpServerId || "";
+}
+
+function loadMcpServerIntoForm() {
+  const server = selectedMcpServer();
+  el.mcpServerName.value = server?.name || "";
+  el.mcpServerUrl.value = server?.url || "";
+  el.mcpServerToken.value = server?.bearer_token || "";
+  el.mcpServerEnabled.checked = server ? server.enabled !== false : true;
+  el.mcpServerStatus.textContent = server
+    ? `${server.tools?.length || 0} discovered tool(s). Save after changing server or tool settings.`
+    : "Add a server URL, then discover its tools.";
+  renderMcpTools();
+}
+
+function renderMcpTools() {
+  const server = selectedMcpServer();
+  el.mcpToolList.replaceChildren();
+  el.mcpToolRunnerSelect.replaceChildren();
+  const runnerPlaceholder = document.createElement("option");
+  runnerPlaceholder.value = "";
+  runnerPlaceholder.textContent = "Choose an enabled tool";
+  el.mcpToolRunnerSelect.append(runnerPlaceholder);
+  if (!server?.tools?.length) {
+    const empty = document.createElement("p");
+    empty.className = "record-empty";
+    empty.textContent = "No tools discovered for this server yet.";
+    el.mcpToolList.append(empty);
+    return;
+  }
+  for (const tool of server.tools) {
+    const row = document.createElement("div");
+    row.className = "memory-card host-behavior-card";
+    const details = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = tool.name;
+    const description = document.createElement("p");
+    description.className = "muted-copy";
+    description.textContent = tool.description || "No description provided by server.";
+    const schema = document.createElement("code");
+    schema.className = "mcp-tool-schema";
+    schema.textContent = JSON.stringify(tool.inputSchema || {}, null, 2);
+    details.append(title, description, schema);
+    const toggleLabel = document.createElement("label");
+    toggleLabel.className = "host-behavior-enabled";
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = tool.enabled !== false;
+    toggle.addEventListener("change", () => {
+      tool.enabled = toggle.checked;
+      renderMcpTools();
+    });
+    toggleLabel.append(toggle, document.createTextNode(" Enabled"));
+    row.append(details, toggleLabel);
+    el.mcpToolList.append(row);
+    if (tool.enabled !== false) {
+      const option = document.createElement("option");
+      option.value = tool.name;
+      option.textContent = tool.name;
+      el.mcpToolRunnerSelect.append(option);
+    }
+  }
+}
+
+async function refreshMcpServers() {
+  try {
+    const payload = await api("/v1/admin/mcp/servers", {}, true);
+    state.mcpServers = payload.items || [];
+    if (!state.mcpServers.some(server => server.id === state.activeMcpServerId)) {
+      state.activeMcpServerId = state.mcpServers[0]?.id || null;
+    }
+    renderMcpServerOptions();
+    loadMcpServerIntoForm();
+  } catch (error) {
+    toast(`Could not load MCP servers: ${error.message}`, true);
+  }
+}
+
+function addMcpServer() {
+  const server = {
+    id: crypto.randomUUID(),
+    name: "New MCP server",
+    url: "",
+    bearer_token: "",
+    enabled: true,
+    tools: [],
+  };
+  state.mcpServers.push(server);
+  state.activeMcpServerId = server.id;
+  renderMcpServerOptions();
+  loadMcpServerIntoForm();
+  el.mcpServerName.focus();
+}
+
+async function discoverMcpTools() {
+  const server = syncMcpServerForm();
+  if (!server) {
+    addMcpServer();
+    toast("Enter a server URL, then discover its tools", true);
+    return;
+  }
+  if (!server.name || !server.url) {
+    toast("Server name and URL are required", true);
+    return;
+  }
+  el.mcpServerStatus.textContent = "Connecting and discovering tools…";
+  try {
+    const payload = await api("/v1/admin/mcp/servers/discover", {
+      method: "POST",
+      body: JSON.stringify(server),
+    }, true);
+    server.tools = payload.items || [];
+    renderMcpServerOptions();
+    loadMcpServerIntoForm();
+    el.mcpServerStatus.textContent = `Connected. Discovered ${server.tools.length} tool(s). Save to persist this configuration.`;
+    toast(`Discovered ${server.tools.length} MCP tool(s)`);
+  } catch (error) {
+    el.mcpServerStatus.textContent = `Connection failed: ${error.message}`;
+    toast(error.message, true);
+  }
+}
+
+async function saveMcpServers() {
+  syncMcpServerForm();
+  try {
+    const payload = await api("/v1/admin/mcp/servers", {
+      method: "PUT",
+      body: JSON.stringify({ items: state.mcpServers }),
+    }, true);
+    state.mcpServers = payload.items || [];
+    renderMcpServerOptions();
+    loadMcpServerIntoForm();
+    toast("MCP server and tool configuration saved");
+  } catch (error) {
+    toast(`Could not save MCP configuration: ${error.message}`, true);
+  }
+}
+
+async function removeMcpServer() {
+  if (!state.activeMcpServerId) return;
+  state.mcpServers = state.mcpServers.filter(server => server.id !== state.activeMcpServerId);
+  state.activeMcpServerId = state.mcpServers[0]?.id || null;
+  await saveMcpServers();
+}
+
+async function runMcpTool() {
+  const server = syncMcpServerForm();
+  const toolName = el.mcpToolRunnerSelect.value;
+  if (!server || !toolName) {
+    toast("Choose a server and an enabled tool", true);
+    return;
+  }
+  let argumentsValue;
+  try {
+    argumentsValue = JSON.parse(el.mcpToolArguments.value || "{}");
+    if (!argumentsValue || Array.isArray(argumentsValue) || typeof argumentsValue !== "object") {
+      throw new Error("Arguments must be a JSON object");
+    }
+  } catch (error) {
+    toast(`Invalid tool arguments: ${error.message}`, true);
+    return;
+  }
+  el.mcpToolOutput.textContent = "Running tool…";
+  try {
+    const result = await api("/v1/admin/mcp/tools/call", {
+      method: "POST",
+      body: JSON.stringify({ server_id: server.id, tool_name: toolName, arguments: argumentsValue }),
+    }, true);
+    el.mcpToolOutput.textContent = JSON.stringify(result, null, 2);
+    toast(`MCP tool ${toolName} completed`);
+  } catch (error) {
+    el.mcpToolOutput.textContent = error.message;
+    toast(error.message, true);
+  }
+}
+
 function showAdminSection(sectionName) {
   for (const [name, id] of Object.entries(adminSectionIds)) {
     const panel = document.getElementById(id);
@@ -1807,12 +2029,23 @@ function showAdminSection(sectionName) {
   if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
   if (sectionName === "tasks") renderTaskProfiles();
   if (sectionName === "devices") refreshDeviceInventory();
+  if (sectionName === "mcp" && state.adminAuthorized) refreshMcpServers();
 }
 
 document.querySelectorAll("[data-admin-section]").forEach(button => {
   button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
 });
 if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", refreshTaskProfilesFromButton);
+if (el.refreshMcpServers) el.refreshMcpServers.addEventListener("click", refreshMcpServers);
+if (el.mcpAddServer) el.mcpAddServer.addEventListener("click", addMcpServer);
+if (el.mcpServerSelect) el.mcpServerSelect.addEventListener("change", () => {
+  state.activeMcpServerId = el.mcpServerSelect.value || null;
+  loadMcpServerIntoForm();
+});
+if (el.mcpDiscoverTools) el.mcpDiscoverTools.addEventListener("click", discoverMcpTools);
+if (el.mcpDeleteServer) el.mcpDeleteServer.addEventListener("click", removeMcpServer);
+if (el.saveMcpServers) el.saveMcpServers.addEventListener("click", saveMcpServers);
+if (el.mcpRunTool) el.mcpRunTool.addEventListener("click", runMcpTool);
 if (el.refreshDevicesButton) el.refreshDevicesButton.addEventListener("click", refreshDeviceInventory);
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
