@@ -545,6 +545,13 @@ function openTaskProfile(task) {
   el.taskProfileAssignmentSection.classList.toggle("hidden", task === "reasoning");
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
   el.taskProfileRevision.textContent = "Revision: " + (behavior.revision || 1);
+  // Populate the editor from the selected task's own behavior profile.
+  // Without this, switching tasks leaves the previous task's instructions in
+  // the form and saving can copy those instructions into another task.
+  el.taskProfileFoundation.value = state.taskFoundations[task] || "";
+  el.taskProfileBehaviorName.value = behavior.name || (taskModelLabels[task] || displayLabel(task));
+  el.taskProfileInstructions.value = behavior.instructions || "";
+  el.taskProfileEnabled.checked = behavior.enabled !== false;
   renderTaskProfileEndpointOptions();
   fillSelect(
     el.taskProfileModel,

@@ -47,6 +47,9 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
         vision = next(item for item in saved if item.task == "vision")
         self.assertEqual(vision.instructions, "Be concise and state uncertainty.")
         self.assertEqual(vision.revision, 2)
+        audio = next(item for item in saved if item.task == "audio")
+        self.assertEqual(audio.instructions, "")
+        self.assertEqual(audio.revision, 1)
         self.assertEqual(TASK_FOUNDATIONS["vision"].startswith("You are Axiom"), True)
         self.assertFalse(hasattr(vision, "foundation"))
 
