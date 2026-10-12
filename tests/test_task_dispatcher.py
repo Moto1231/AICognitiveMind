@@ -212,5 +212,26 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
             await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
 
 
+
+    async def test_unconfigured_audio_without_host_reports_task_routing_problem(self):
+        class InactiveHosts:
+            async def active(self):
+                return None
+
+        class Fallback:
+            records = FakeRecords()
+
+        interpreter = HostAwareInterpreter(Fallback(), InactiveHosts())
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="audio"),
+            content_ref="data:audio/webm;base64,YXVkaW8=",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Audio & Transcription task has no configured provider/model assignment",
+        ):
+            await interpreter.interpret(percept)
+
 if __name__ == "__main__":
     unittest.main()
