@@ -929,11 +929,13 @@
         "Perception:\n" + result.interpretation +
         responseLabel
       );
+      const interpreted = Boolean(result.interpretation) &&
+        !/^Uninterpreted\\b/i.test(result.interpretation);
       setSenseStatus(
         modality,
         "Evidence saved (" + evidence.media_type + ") at " + evidence.captured_at +
           "\nPerception: " + (result.interpretation || "Admitted."),
-        "success"
+        interpreted ? "success" : "warning"
       );
       if (consumeOutputs) {
         await consumeExpressionOutputs();
