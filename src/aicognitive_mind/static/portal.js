@@ -688,6 +688,44 @@ function addTaskProfileEndpoint() {
   el.taskProfileEndpointName.focus();
 }
 
+async function loadVoiceSettings() {
+  try {
+    const settings = await api("/v1/body/voice/settings", {}, true);
+    state.voiceSettingsRevision = Number(settings.revision || 0);
+    el.fishAudioModel.value = settings.fishAudioModel || "s2.1-pro-free";
+    el.fishAudioReferenceId.value = settings.fishAudioReferenceId || "";
+    el.voiceRate.value = String(settings.rate ?? 1);
+    el.voicePitch.value = String(settings.pitch ?? 1);
+    el.voiceVolume.value = String(settings.volume ?? 1);
+    el.voiceName.value = settings.voiceName || "";
+    el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
+  } catch (error) {
+    toast("Could not load voice settings: " + error.message, true);
+  }
+}
+
+async function saveVoiceSettings() {
+  try {
+    const settings = await api("/v1/admin/body/voice/settings", {
+      method: "POST",
+      body: JSON.stringify({
+        expected_revision: state.voiceSettingsRevision,
+        fish_audio_model: el.fishAudioModel.value.trim(),
+        fish_audio_reference_id: el.fishAudioReferenceId.value.trim(),
+        rate: Number(el.voiceRate.value),
+        pitch: Number(el.voicePitch.value),
+        volume: Number(el.voiceVolume.value),
+        voice_name: el.voiceName.value.trim(),
+      }),
+    }, true);
+    state.voiceSettingsRevision = Number(settings.revision || 0);
+    el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
+    toast("Voice settings saved");
+  } catch (error) {
+    toast("Could not save voice settings: " + error.message, true);
+  }
+}
+
 async function enterAdminMode() {
   try {
     const allowed = await validateAdmin();
@@ -700,6 +738,7 @@ async function enterAdminMode() {
       refreshTaskModelAssignments(),
       refreshTaskBehaviors(),
       refreshProviderEndpoints(),
+      loadVoiceSettings(),
     ]);
   } catch (error) {
     toast(error.message, true);
@@ -1616,6 +1655,7 @@ const adminSectionIds = {
   journals: "journalsSection",
   overview: "overviewSection",
   devices: "devicesSection",
+  voice: "voiceSection",
 };
 
 async function refreshTaskProfilesFromButton() {
