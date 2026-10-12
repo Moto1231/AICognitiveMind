@@ -149,8 +149,11 @@ const el = {
   fishAudioModel: document.getElementById("fishAudioModel"),
   fishAudioReferenceId: document.getElementById("fishAudioReferenceId"),
   voiceRate: document.getElementById("voiceRate"),
+  voiceRateValue: document.getElementById("voiceRateValue"),
   voicePitch: document.getElementById("voicePitch"),
+  voicePitchValue: document.getElementById("voicePitchValue"),
   voiceVolume: document.getElementById("voiceVolume"),
+  voiceVolumeValue: document.getElementById("voiceVolumeValue"),
   voiceName: document.getElementById("voiceName"),
   voiceSettingsRevision: document.getElementById("voiceSettingsRevision"),
   saveVoiceSettings: document.getElementById("saveVoiceSettings"),
@@ -696,6 +699,12 @@ function addTaskProfileEndpoint() {
   el.taskProfileEndpointName.focus();
 }
 
+function updateVoiceSliderReadouts() {
+  if (el.voiceRateValue) el.voiceRateValue.value = Number(el.voiceRate.value).toFixed(2);
+  if (el.voicePitchValue) el.voicePitchValue.value = Number(el.voicePitch.value).toFixed(2);
+  if (el.voiceVolumeValue) el.voiceVolumeValue.value = Number(el.voiceVolume.value).toFixed(2);
+}
+
 async function loadVoiceSettings() {
   try {
     const settings = await api("/v1/admin/body/voice/settings", {}, true);
@@ -707,6 +716,7 @@ async function loadVoiceSettings() {
     el.voicePitch.value = String(settings.pitch ?? 1);
     el.voiceVolume.value = String(settings.volume ?? 1);
     el.voiceName.value = settings.voiceName || "";
+    updateVoiceSliderReadouts();
     el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
   } catch (error) {
     toast("Could not load voice settings: " + error.message, true);
@@ -1811,6 +1821,9 @@ if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click
 });
 if (el.refreshVoiceSettings) el.refreshVoiceSettings.addEventListener("click", loadVoiceSettings);
 if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);
+[el.voiceRate, el.voicePitch, el.voiceVolume].forEach((slider) => {
+  if (slider) slider.addEventListener("input", updateVoiceSliderReadouts);
+});
 
 const BODY_DEVICE_STORAGE_KEYS = {
   videoinput: "aicognitive_mind.device.videoInput",

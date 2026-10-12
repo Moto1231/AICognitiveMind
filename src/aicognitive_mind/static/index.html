@@ -185,7 +185,7 @@
             <div id="taskProfileList" class="task-profile-grid"></div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
               <div class="panel-heading task-profile-editor-heading">
-                <div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileSummary" class="muted-copy"></p></div>
+                <div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileSummary" class="muted-copy"></p><p id="taskProfileRevision" class="muted-copy">Profile revision: 1</p></div>
                 <button id="taskProfileBack" class="secondary-button" type="button">All Tasks</button>
               </div>
               <section id="taskProfileEndpointSection" class="task-profile-section">
@@ -239,7 +239,6 @@
                   <textarea id="taskProfileInstructions" maxlength="4000" rows="6" placeholder="Task-specific style, priorities, workflow, and preferences"></textarea>
                 </label>
                 <label class="host-behavior-enabled"><input id="taskProfileEnabled" type="checkbox"> Enable editable behavior layer</label>
-                <p id="taskProfileRevision" class="muted-copy">Profile revision: 1</p>
               </section>
               <div class="edit-actions">
                 <button id="saveTaskProfile" class="primary-button" type="button">Save Task Profile</button>
@@ -365,8 +364,8 @@
 
           <article id="voiceSection" class="panel hidden">
             <div class="panel-heading">
-              <div><p class="eyebrow">VOICE OUTPUT</p><h3>Voice / Fish Audio</h3></div>
-              <button id="refreshVoiceSettings" class="secondary-button" type="button">Refresh Settings</button>
+              <div><p class="eyebrow">VOICE OUTPUT</p><h3>Voice / Fish Audio</h3><p id="voiceSettingsRevision" class="muted-copy">Settings revision: 0</p></div>
+              <button id="refreshVoiceSettings" class="secondary-button" type="button">Refresh</button>
             </div>
             <p class="muted-copy">These settings control Body speech. This administrator-only field can view and update the Fish Audio API key.</p>
             <div class="task-model-fields">
@@ -379,21 +378,20 @@
               <label class="host-behavior-field">Fish Audio reference / voice ID
                 <input id="fishAudioReferenceId" type="text" maxlength="200" placeholder="Optional voice reference ID">
               </label>
-              <label class="host-behavior-field">Speech rate
-                <input id="voiceRate" type="number" min="0.5" max="1.75" step="0.05" value="1">
+              <label class="host-behavior-field voice-slider-field">Speech rate <output id="voiceRateValue" for="voiceRate">1.00</output>
+                <input id="voiceRate" type="range" min="0.5" max="1.75" step="0.05" value="1">
               </label>
-              <label class="host-behavior-field">Pitch (browser voices)
-                <input id="voicePitch" type="number" min="0.5" max="1.5" step="0.05" value="1">
+              <label class="host-behavior-field voice-slider-field">Pitch (browser voices) <output id="voicePitchValue" for="voicePitch">1.00</output>
+                <input id="voicePitch" type="range" min="0.5" max="1.5" step="0.05" value="1">
               </label>
-              <label class="host-behavior-field">Volume
-                <input id="voiceVolume" type="number" min="0" max="1" step="0.05" value="1">
+              <label class="host-behavior-field voice-slider-field">Volume <output id="voiceVolumeValue" for="voiceVolume">1.00</output>
+                <input id="voiceVolume" type="range" min="0" max="1" step="0.05" value="1">
               </label>
               <label class="host-behavior-field">Browser voice name
                 <input id="voiceName" type="text" maxlength="120" placeholder="Blank uses browser default">
               </label>
             </div>
-            <p id="voiceSettingsRevision" class="muted-copy">Settings revision: 0</p>
-            <div class="edit-actions"><button id="saveVoiceSettings" class="primary-button" type="button">Save Voice Settings</button></div>
+            <div class="edit-actions"><button id="saveVoiceSettings" class="primary-button" type="button">Save</button></div>
           </article>
 
           <article id="devicesSection" class="panel hidden">
@@ -538,6 +536,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261012-task-profile-fish-key"></script>
+  <script src="/static/portal.js?v=20261012-voice-sliders"></script>
 </body>
 </html>
