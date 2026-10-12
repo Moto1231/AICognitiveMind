@@ -1837,7 +1837,7 @@ function renderMcpServerOptions() {
   for (const server of state.mcpServers) {
     const option = document.createElement("option");
     option.value = server.id;
-    option.textContent = server.name || server.url || "Unnamed MCP server";
+    option.textContent = server.name || server.url || (server.id === state.activeMcpServerId ? "New MCP server" : "Unnamed MCP server");
     el.mcpServerSelect.append(option);
   }
   el.mcpServerSelect.value = state.activeMcpServerId || "";
@@ -1919,9 +1919,10 @@ async function refreshMcpServers() {
 }
 
 function addMcpServer() {
+  syncMcpServerForm();
   const server = {
     id: crypto.randomUUID(),
-    name: "New MCP server",
+    name: "",
     url: "",
     bearer_token: "",
     enabled: true,
@@ -2041,7 +2042,13 @@ if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", ref
 if (el.refreshMcpServers) el.refreshMcpServers.addEventListener("click", refreshMcpServers);
 if (el.mcpAddServer) el.mcpAddServer.addEventListener("click", addMcpServer);
 if (el.mcpServerSelect) el.mcpServerSelect.addEventListener("change", () => {
-  state.activeMcpServerId = el.mcpServerSelect.value || null;
+  const selectedId = el.mcpServerSelect.value;
+  if (!selectedId) {
+    addMcpServer();
+    return;
+  }
+  syncMcpServerForm();
+  state.activeMcpServerId = selectedId;
   loadMcpServerIntoForm();
 });
 if (el.mcpDiscoverTools) el.mcpDiscoverTools.addEventListener("click", discoverMcpTools);
