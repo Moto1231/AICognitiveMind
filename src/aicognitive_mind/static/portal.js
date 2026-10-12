@@ -65,6 +65,7 @@ const el = {
   identityOwner: document.getElementById("identityOwner"),
   memoryOwner: document.getElementById("memoryOwner"),
   adminMindName: document.getElementById("adminMindName"),
+  adminCreatedAt: document.getElementById("adminCreatedAt"),
   adminMemoryCount: document.getElementById("adminMemoryCount"),
   adminJournalCount: document.getElementById("adminJournalCount"),
   adminMemoryList: document.getElementById("adminMemoryList"),
@@ -787,6 +788,7 @@ function renderStatus(status) {
   if (el.identityOwner) el.identityOwner.textContent = integration.identity_owner;
   if (el.memoryOwner) el.memoryOwner.textContent = integration.memory_owner;
   el.adminMindName.textContent = mind.identity.self_name;
+  el.adminCreatedAt.textContent = new Date(mind.created_at).toLocaleString();
   el.adminMemoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.adminJournalCount.textContent = Number(status.journal_experience_count).toLocaleString();
 
