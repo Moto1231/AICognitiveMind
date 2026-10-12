@@ -540,8 +540,13 @@ function openTaskProfile(task) {
   el.taskProfileEnabled.checked = behavior.enabled !== false;
   el.taskProfileRevision.textContent = "Profile revision: " + (behavior.revision || 1);
   renderTaskProfileEndpointOptions();
+  fillSelect(
+    el.taskProfileModel,
+    selectedEndpoint()?.models || [],
+    assignment?.model || "",
+    "Discover models or choose a model",
+  );
   renderFallbackSelectors();
-  el.taskProfileModel.value = assignment?.model || "";
   el.taskProfileFallbackProvider.value = assignment?.fallback_provider || "";
   el.taskProfileFallbackModel.value = assignment?.fallback_model || "";
   loadEndpointIntoForm();
