@@ -414,15 +414,6 @@ def require_admin(request: Request) -> None:
         )
 
 
-def require_mcp_admin(request: Request) -> None:
-    if not get_settings().admin_pin:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Configure ADMIN_PIN before managing external MCP servers or calling their tools",
-        )
-    require_admin(request)
-
-
 def get_core(request: Request) -> CognitiveCore:
     return cast(CognitiveCore, request.app.state.core)
 
@@ -1531,7 +1522,7 @@ async def discover_admin_provider_endpoint_models(
 
 @app.get("/v1/admin/mcp/servers")
 async def admin_mcp_servers(request: Request) -> dict[str, Any]:
-    require_mcp_admin(request)
+    require_admin(request)
     items = await request.app.state.mcp_servers.list()
     return {"items": [item.model_dump(mode="json", by_alias=True) for item in items]}
 
@@ -1541,7 +1532,7 @@ async def replace_admin_mcp_servers(
     payload: MCPServerListRequest,
     request: Request,
 ) -> dict[str, Any]:
-    require_mcp_admin(request)
+    require_admin(request)
     try:
         items = await request.app.state.mcp_servers.replace(payload.items)
     except (ValueError, RuntimeError) as exc:
@@ -1554,7 +1545,7 @@ async def discover_admin_mcp_server(
     payload: MCPServerRecord,
     request: Request,
 ) -> dict[str, Any]:
-    require_mcp_admin(request)
+    require_admin(request)
     try:
         tools = await request.app.state.mcp_servers.discover(payload)
     except Exception as exc:
@@ -1571,7 +1562,7 @@ async def call_admin_mcp_tool(
     payload: MCPToolCallRequest,
     request: Request,
 ) -> dict[str, Any]:
-    require_mcp_admin(request)
+    require_admin(request)
     servers = await request.app.state.mcp_servers.list()
     server = next((item for item in servers if item.id == payload.server_id), None)
     if server is None:
