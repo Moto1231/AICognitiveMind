@@ -28,14 +28,11 @@ class PortalTests(unittest.TestCase):
 
         for element_id in ("saveHostBehaviors", "saveTaskProfile", "saveMcpServers", "saveVoiceSettings"):
             with self.subTest(element_id=element_id):
-                import re
-                match = re.search(rf'<button\\b[^>]*\\bid="{element_id}"[^>]*>(.*?)</button>', markup)
-                self.assertIsNotNone(match)
-                self.assertEqual(match.group(1).strip(), "Save")
+                self.assertIn(f'id="{element_id}" class="primary-button" type="button">Save</button>', markup)
 
-        self.assertIn('if (!selectedId) {\\n    addMcpServer();\\n    return;\\n  }', script)
-        self.assertIn('function addMcpServer() {\\n  syncMcpServerForm();', script)
-        self.assertIn('name: "",\\n    url: "",\\n    bearer_token: "",', script)
+        self.assertIn("if (!selectedId) {\n    addMcpServer();\n    return;\n  }", script)
+        self.assertIn("function addMcpServer() {\n  syncMcpServerForm();", script)
+        self.assertIn('name: "",\n    url: "",\n    bearer_token: "",', script)
 
     def test_task_profile_controls_are_bound_and_renderable(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
