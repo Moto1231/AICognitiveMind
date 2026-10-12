@@ -1,8 +1,15 @@
 import unittest
 
+from unittest.mock import patch
+
 from pydantic import ValidationError
 
-from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, _reported_capabilities
+from aicognitive_mind.provider_endpoints import (
+    ProviderEndpoint,
+    ProviderEndpointRegistry,
+    _reported_capabilities,
+    discover_endpoint_model_details,
+)
 
 
 class FakeRecords:
@@ -47,6 +54,44 @@ class ProviderEndpointTests(unittest.IsolatedAsyncioTestCase):
             ["Text", "Vision"],
         )
         self.assertEqual(_reported_capabilities({"id": "model-b"}), [])
+
+
+    async def test_model_discovery_uses_exact_configured_base_url_without_v1_fallback(self):
+        requested_urls = []
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"data": [{"id": "model-a"}]}
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def get(self, url, headers=None):
+                requested_urls.append(url)
+                return FakeResponse()
+
+        endpoint = ProviderEndpoint(
+            id="custom",
+            name="Custom versioned API",
+            base_url="https://provider.example/custom/v3",
+        )
+        with patch("aicognitive_mind.provider_endpoints.httpx.AsyncClient", FakeClient):
+            details = await discover_endpoint_model_details(endpoint)
+
+        self.assertEqual(requested_urls, ["https://provider.example/custom/v3/models"])
+        self.assertEqual(details["models"], ["model-a"])
 
     async def test_endpoint_ids_must_be_unique(self):
         registry = ProviderEndpointRegistry(FakeRecords())
