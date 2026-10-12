@@ -17,6 +17,7 @@ from aicognitive_mind.body import (
     ExpressionIntent,
     ExpressionModality,
 )
+from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body_sessions import BodyQueue, body_session
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
@@ -257,38 +258,31 @@ def build_chatgpt_mcp(
             raise RuntimeError("No active live Body session has checked in recently")
 
         settings = await VoiceSettings(state.storage.mind).read()
-        metadata = {
-            "rate": settings["rate"] if rate is None else rate,
-            "pitch": settings["pitch"] if pitch is None else pitch,
-            "volume": settings["volume"] if volume is None else volume,
-            "voice_name": (
-                (settings.get("voiceName") or None)
-                if voice_name is None
-                else voice_name
-            ),
-        }
+        intent = configured_voice_intent(
+            speech_text,
+            settings,
+            rate=rate,
+            pitch=pitch,
+            volume=volume,
+            voice_name=voice_name,
+        )
         token = body_session.set(session_id)
         try:
             body = BodyRuntime(
                 voice=BodyQueue(records, "mouth", BrowserVoiceOutput())
             )
-            await body.speak_intent(
-                ExpressionIntent(
-                    modality=ExpressionModality.VOICE,
-                    text=speech_text,
-                    metadata=metadata,
-                )
-            )
+            await body.speak_intent(intent)
         finally:
             body_session.reset(token)
 
         return {
-            "queued": True,
+            "status": "queued",
+            "playback_confirmed": False,
             "characters": len(speech_text),
-            "voice_name": metadata["voice_name"],
-            "rate": metadata["rate"],
-            "pitch": metadata["pitch"],
-            "volume": metadata["volume"],
+            "voice_name": intent.metadata["voice_name"],
+            "rate": intent.metadata["rate"],
+            "pitch": intent.metadata["pitch"],
+            "volume": intent.metadata["volume"],
         }
 
     @server.tool(
