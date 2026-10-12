@@ -48,6 +48,16 @@ class FakeClient:
         return self.response
 
 
+class SequencedFakeClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    async def request(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs))
+        return self.responses.pop(0)
+
+
 class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
     async def configured(self, *, model="vision-arbitrary-model", provider="Local endpoint"):
         records = FakeRecords()
@@ -195,6 +205,61 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("task_provider_http_error", captured.output[0])
         self.assertIn("status=400", captured.output[0])
 
+    async def test_chat_retries_configured_task_fallback_after_primary_failure(self):
+        records = await self.configured(model="primary-model")
+        assignments = await TaskModelAssignmentRegistry(records).list()
+        await TaskModelAssignmentRegistry(records).replace([
+            item.model_copy(update={
+                "fallback_provider": "Local endpoint",
+                "fallback_model": "backup-model",
+            }) if item.task == "vision" else item
+            for item in assignments
+        ])
+        client = SequencedFakeClient([
+            FakeResponse({"error": {"message": "primary unavailable"}}, 503, "primary unavailable"),
+            FakeResponse({"choices": [{"message": {"content": "Fallback result"}}]}),
+        ])
+        dispatcher = TaskModelDispatcher(records, client=client)
+
+        with self.assertLogs("aicognitive_mind.task_dispatcher", level="WARNING"):
+            result = await dispatcher.complete_chat(
+                "vision", [{"role": "user", "content": "Describe"}]
+            )
+
+        self.assertEqual(result, "Fallback result")
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(client.calls[0][2]["json"]["model"], "primary-model")
+        self.assertEqual(client.calls[1][2]["json"]["model"], "backup-model")
+
+    async def test_transcription_retries_configured_task_fallback_after_primary_failure(self):
+        records = await self.configured(model="primary-audio")
+        assignments = await TaskModelAssignmentRegistry(records).list()
+        await TaskModelAssignmentRegistry(records).replace([
+            item.model_copy(update={
+                "provider": "Local endpoint",
+                "model": "primary-audio",
+                "fallback_provider": "Local endpoint",
+                "fallback_model": "backup-audio",
+            }) if item.task == "audio" else item
+            for item in assignments
+        ])
+        client = SequencedFakeClient([
+            FakeResponse({"error": {"message": "primary unavailable"}}, 503, "primary unavailable"),
+            FakeResponse({"text": "Fallback transcription"}),
+        ])
+        dispatcher = TaskModelDispatcher(records, client=client)
+
+        with self.assertLogs("aicognitive_mind.task_dispatcher", level="WARNING"):
+            result = await dispatcher.transcribe(
+                "audio", filename="clip.webm", audio_bytes=b"audio",
+                media_type="audio/webm",
+            )
+
+        self.assertEqual(result, "Fallback transcription")
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(client.calls[0][2]["data"]["model"], "primary-audio")
+        self.assertEqual(client.calls[1][2]["data"]["model"], "backup-audio")
+
     async def test_host_aware_interpreter_uses_assigned_sensory_dispatcher(self):
         class ActiveHosts:
             async def active(self):
@@ -226,6 +291,58 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
             await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
 
 
+
+    async def test_failed_task_providers_defer_to_connected_reasoning(self):
+        class ActiveHosts:
+            async def active(self):
+                return True
+
+        class Fallback:
+            records = FakeRecords()
+
+        class FailedDispatcher:
+            async def interpret_percept(self, percept, *, focus=None):
+                raise TaskDispatchError("both configured providers failed")
+
+        interpreter = HostAwareInterpreter(Fallback(), ActiveHosts())
+        interpreter.task_dispatcher = FailedDispatcher()
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="audio"),
+            content_ref="data:audio/webm;base64,YXVkaW8=",
+        )
+
+        with self.assertLogs("aicognitive_mind.auth_diagnostics", level="WARNING"):
+            result = await interpreter.interpret(percept)
+
+        self.assertIn("Uninterpreted audio observation", result)
+        self.assertIn("sensory evidence reference", result)
+
+    async def test_failed_task_providers_defer_to_body_reasoning_fallback(self):
+        class InactiveHosts:
+            async def active(self):
+                return None
+
+        class Fallback:
+            records = FakeRecords()
+
+        class FailedDispatcher:
+            async def interpret_percept(self, percept, *, focus=None):
+                raise TaskDispatchError("both configured providers failed")
+
+        interpreter = HostAwareInterpreter(Fallback(), InactiveHosts())
+        interpreter.task_dispatcher = FailedDispatcher()
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="audio"),
+            content_ref="data:audio/webm;base64,YXVkaW8=",
+        )
+
+        from unittest.mock import patch
+        with patch("aicognitive_mind.config.get_settings") as settings:
+            settings.return_value.body_allow_standalone_fallback = True
+            with self.assertLogs("aicognitive_mind.auth_diagnostics", level="WARNING"):
+                result = await interpreter.interpret(percept)
+
+        self.assertIn("task primary and fallback failed", result)
 
     async def test_unconfigured_audio_without_host_reports_task_routing_problem(self):
         class InactiveHosts:

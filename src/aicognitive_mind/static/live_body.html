@@ -1289,13 +1289,13 @@
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
         const response = await bodyFetch(
-          "/v1/mind/body/hear?express=false",
+          "/v1/mind/body/hear?express=true",
           { method: "POST" }
         );
         if (!response.ok) throw new Error(await responseErrorMessage(response));
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
-        await showMindResult(await response.json(), { modality: "audio", consumeOutputs: false });
+        await showMindResult(await response.json(), { modality: "audio", consumeOutputs: true });
       } catch (error) {
         if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
         throw error;

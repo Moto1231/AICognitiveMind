@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from aicognitive_mind.commit import CommitConflict, backend, surreal_query
-from aicognitive_mind.task_dispatcher import TaskModelDispatcher
+from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 
 
 logger = logging.getLogger('aicognitive_mind.auth_diagnostics')
@@ -389,14 +389,23 @@ class HostAwareInterpreter:
         )
 
     async def interpret(self, percept: Any, *, focus: str | None = None) -> str:
+        task_dispatch_failed = False
         if self.task_dispatcher is not None:
             modality = getattr(getattr(percept, "modality", None), "value", "")
             if modality in {"vision", "audio"}:
-                specialist_result = await self.task_dispatcher.interpret_percept(
-                    percept, focus=focus
-                )
-                if specialist_result is not None:
-                    return specialist_result
+                try:
+                    specialist_result = await self.task_dispatcher.interpret_percept(
+                        percept, focus=focus
+                    )
+                except TaskDispatchError as exc:
+                    task_dispatch_failed = True
+                    logger.warning(
+                        "sensory_task_failed modality=%s error=%s; handing preserved evidence to reasoning",
+                        modality, exc,
+                    )
+                else:
+                    if specialist_result is not None:
+                        return specialist_result
         if await self.hosts.active():
             return f"Uninterpreted {percept.modality.value} observation. Use the sensory evidence reference in Body context to inspect the original media."
         from aicognitive_mind.config import get_settings
@@ -410,10 +419,19 @@ class HostAwareInterpreter:
                 }[modality]
                 raise RuntimeError(
                     f"No external reasoning host is attached and the {task_label} "
-                    "task has no configured provider/model assignment. Configure the "
-                    "specialist task in Axiom settings or reconnect the reasoning host."
+                    "task has no configured provider/model assignment, or both its "
+                    "primary and fallback failed. Configure the specialist task in Axiom settings "
+                    "or reconnect the reasoning host."
                 )
             raise RuntimeError(
                 "No external reasoning host is attached. Body standalone fallback is disabled."
+            )
+        if task_dispatch_failed:
+            # Let the independently configured Body reasoning fallback inspect the
+            # preserved evidence rather than retrying the same failed task route.
+            return (
+                f"Uninterpreted {percept.modality.value} observation after the configured "
+                "task primary and fallback failed. Use the sensory evidence reference "
+                "in Body context to inspect the original media."
             )
         return await self.fallback.interpret(percept, focus=focus)
