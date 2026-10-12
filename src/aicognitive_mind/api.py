@@ -42,7 +42,12 @@ from aicognitive_mind.body import (
 )
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
 from aicognitive_mind.body_sessions import BodyQueue, body_session
-from aicognitive_mind.config import get_settings
+from aicognitive_mind.config import (
+    body_allow_standalone_fallback_enabled,
+    body_allow_standalone_fallback_override,
+    get_settings,
+    set_body_allow_standalone_fallback_override,
+)
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
@@ -131,6 +136,10 @@ class MCPToolCallRequest(BaseModel):
     server_id: str = Field(min_length=1, max_length=80)
     tool_name: str = Field(min_length=1, max_length=160)
     arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class BodyFallbackSettingsRequest(BaseModel):
+    enabled: bool | None = None
 
 
 class BodyVoiceSettingsUpdateRequest(BaseModel):
@@ -1477,6 +1486,32 @@ async def admin_backup(request: Request) -> Response:
 async def admin_status(request: Request) -> dict[str, bool]:
     require_admin(request)
     return {"authorized": True, "memory_editing": True}
+
+
+@app.get("/v1/admin/body/fallback")
+async def admin_body_fallback_settings(request: Request) -> dict[str, Any]:
+    """Read Body fallback state for authenticated administrators."""
+    require_admin(request)
+    return {
+        "enabled": body_allow_standalone_fallback_enabled(),
+        "deployment_default": get_settings().body_allow_standalone_fallback,
+        "runtime_override": body_allow_standalone_fallback_override(),
+    }
+
+
+@app.put("/v1/admin/body/fallback")
+async def update_admin_body_fallback_settings(
+    payload: BodyFallbackSettingsRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Change the effective Body fallback setting until the service restarts."""
+    require_admin(request)
+    set_body_allow_standalone_fallback_override(payload.enabled)
+    return {
+        "enabled": body_allow_standalone_fallback_enabled(),
+        "deployment_default": get_settings().body_allow_standalone_fallback,
+        "runtime_override": body_allow_standalone_fallback_override(),
+    }
 
 
 @app.get("/v1/admin/host-behaviors")
