@@ -120,6 +120,32 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await host_b.active())["model"], "model-b")
         await host_b.renew(lease_b["lease_token"], detach=True)
 
+    async def test_reasoning_host_and_body_request_do_not_expire(self):
+        host = HostRuntime(self.mind, self.service, timeout=0.01)
+        lease = await host.attach("persistent-host", "model-persistent")
+        await asyncio.sleep(0.03)
+        self.assertEqual((await host.active())["model"], "model-persistent")
+
+        pending = asyncio.create_task(host.submit("wait for reasoning"))
+        for _ in range(30):
+            requests = await host.records.pending()
+            if requests:
+                break
+            await asyncio.sleep(0.01)
+        self.assertEqual(len(requests), 1)
+        self.assertIsNone(requests[0].get("deadline"))
+
+        request = await host.next_request(lease["lease_token"])
+        self.assertIsNotNone(request)
+        await asyncio.sleep(0.03)
+        result = await host.complete(
+            lease["lease_token"], request["request_id"], "Interpretation delivered"
+        )
+        self.assertEqual((await pending)["response_text"], "Interpretation delivered")
+        self.assertEqual(result["response_text"], "Interpretation delivered")
+        await host.renew(lease["lease_token"], detach=True)
+        self.assertIsNone(await host.active())
+
     async def test_host_status_reports_lease_and_in_flight_request(self):
         host = HostRuntime(self.mind, self.service, timeout=3)
         lease = await host.attach("status-host", "model-status")
@@ -127,7 +153,8 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(status["connected"])
         self.assertEqual(status["host"]["name"], "status-host")
         self.assertEqual(status["host"]["model"], "model-status")
-        self.assertGreater(status["lease_remaining_seconds"], 0)
+        self.assertIsNone(status["lease_remaining_seconds"])
+        self.assertIsNone(status["host"]["expires"])
 
         pending = asyncio.create_task(host.submit("status test input"))
         for _ in range(30):

@@ -267,7 +267,7 @@
     async function bodyFetch(url, options = {}) {
       const headers = new Headers(options.headers || {});
       headers.set("X-Body-Session", bodySessionId);
-      const response = await fetch(url, { ...options, headers, signal: options.signal || AbortSignal.timeout(130000) });
+      const response = await fetch(url, { ...options, headers, signal: options.signal });
       const receipt = response.headers.get("X-Body-Delivery");
       if (response.ok && receipt) {
         await response.clone().arrayBuffer();
@@ -624,7 +624,7 @@
         connectedHostStatus.dataset.state = "connected";
         connectedHostStatus.textContent =
           "Connected host: " + (host.name || "unnamed") + model +
-          " · lease " + status.lease_remaining_seconds + "s · " + heartbeat +
+          " · " + (status.lease_remaining_seconds == null ? "persistent connection" : "lease " + status.lease_remaining_seconds + "s") + " · " + heartbeat +
           " · " + pending + " waiting / " + inProgress + " in progress";
       } catch (_) {
         connectedHostStatus.dataset.state = "unavailable";

@@ -83,7 +83,7 @@ class PortalTests(unittest.TestCase):
         self.assertIn("el.taskProfileFoundation.value = state.taskFoundations[task] || \"\";", script)
         self.assertIn("el.taskProfileInstructions.value = behavior.instructions || \"\";", script)
         self.assertIn("el.taskProfileEnabled.checked = behavior.enabled !== false;", script)
-        self.assertIn('audio_voice: "Audio / Voice (Fish Audio)"', script)
+        self.assertIn('audio_voice: "Audio/Voice"', script)
         self.assertIn("assignment.fallbacks.push({ provider: \"\", model: \"\" })", script)
         self.assertIn('id="taskProfileFallbackList"', markup)
         self.assertIn('id="voiceRate"', markup)
