@@ -22,6 +22,25 @@ from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
 class PortalTests(unittest.TestCase):
+    def test_system_overview_exposes_live_body_host_diagnostics(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+        for element_id in (
+            "hostConnectionState",
+            "hostConnectionName",
+            "hostLeaseRemaining",
+            "hostHeartbeatAge",
+            "hostLastPollAge",
+            "hostRequestsPending",
+            "hostRequestsInProgress",
+            "hostLatestRequest",
+        ):
+            self.assertIn(f'id="{element_id}"', markup)
+            self.assertIn(element_id, script)
+        self.assertIn('api("/v1/body/hosts/status")', script)
+        self.assertIn("setInterval(() =>", script)
+
+
     def test_admin_save_buttons_use_consistent_label_and_mcp_add_starts_new_record(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
