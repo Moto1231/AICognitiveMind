@@ -843,3 +843,26 @@ select optgroup {
 .task-fallback-list { display: grid; gap: 12px; }
 .task-fallback-row { align-items: end; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
 @media (max-width: 680px) { .task-fallback-row { grid-template-columns: minmax(0, 1fr); } }
+
+
+/* Global vertical rhythm: consistent breathing room across portal sections and copy. */
+body {
+  line-height: 1.5;
+}
+:where(h1, h2, h3, h4, h5, h6) {
+  line-height: 1.25;
+  margin-block: 0 0.6em;
+}
+:where(p, .muted-copy, .hero-copy, .field-description, .section-description) {
+  line-height: 1.55;
+  margin-block: 0 0.8em;
+}
+:where(section, article, .admin-grid, .task-profile-section, .task-fallbacks-editor) {
+  row-gap: 18px;
+}
+:where(.panel-heading, .admin-section-nav, .task-model-fields, .host-behavior-fields) {
+  row-gap: 12px;
+}
+:where(.panel > :not(:last-child), .admin-grid > :not(:last-child)) {
+  margin-block-end: 0.7rem;
+}
