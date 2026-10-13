@@ -345,9 +345,13 @@ async def renew_reasoning_host(lease_token: str, ctx: Context[AppState], detach:
     return await ctx.request_context.lifespan_context.hosts.renew(lease_token, detach)
 
 @mcp.tool()
-async def next_body_interaction(lease_token: str, ctx: Context[AppState]) -> dict[str, Any] | None:
-    """Claim a Body request and receive its identity/memory context; poll while attached."""
-    return await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
+async def next_body_interaction(
+    lease_token: str, ctx: Context[AppState], wait_seconds: float = 20
+) -> dict[str, Any] | None:
+    """Wait up to 20 seconds for Body input, then claim it with identity/memory context."""
+    return await ctx.request_context.lifespan_context.hosts.next_request(
+        lease_token, wait_seconds=wait_seconds
+    )
 
 @mcp.tool()
 async def complete_body_interaction(lease_token: str, request_id: str, response_text: str,
