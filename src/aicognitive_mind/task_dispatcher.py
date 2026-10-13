@@ -8,6 +8,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
+
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_model_assignments import TaskKind, TaskModelAssignment, TaskModelAssignmentRegistry
 from aicognitive_mind.task_behaviors import (
@@ -78,14 +80,15 @@ class TaskModelDispatcher:
         candidates: list[TaskModelAssignment] = []
         if saved.provider and saved.model:
             candidates.append(saved.model_copy(update={
-                "fallback_provider": "", "fallback_model": "",
+                "fallbacks": [],
             }))
-        if saved.fallback_provider and saved.fallback_model:
+        for configured_fallback in saved.fallbacks:
+            if not configured_fallback.provider or not configured_fallback.model:
+                continue
             fallback = saved.model_copy(update={
-                "provider": saved.fallback_provider,
-                "model": saved.fallback_model,
-                "fallback_provider": "",
-                "fallback_model": "",
+                "provider": configured_fallback.provider,
+                "model": configured_fallback.model,
+                "fallbacks": [],
             })
             if not any(
                 item.provider.casefold() == fallback.provider.casefold()
@@ -98,6 +101,31 @@ class TaskModelDispatcher:
                 f"Task '{task}' has no complete provider/model assignment or fallback."
             )
         return candidates
+
+    async def synthesize_voice(
+        self, text: str, *, speed: float = 1.0, volume: float = 0.0
+    ) -> bytes:
+        """Synthesize speech using the configured Audio/Voice task fallback chain."""
+        last_error: TaskDispatchError | None = None
+        for assignment in await self._candidate_assignments("audio_voice"):
+            try:
+                assignment, endpoint = await self._resolve("audio_voice", assignment)
+                renderer = FishAudioRenderer(
+                    api_key=endpoint.api_key,
+                    model=assignment.model,
+                    reference_id=assignment.voice_reference_id or None,
+                    endpoint_url=endpoint.base_url,
+                )
+                return await renderer.synthesize(text, speed=speed, volume=volume)
+            except (TaskDispatchError, FishAudioError) as exc:
+                last_error = exc if isinstance(exc, TaskDispatchError) else TaskDispatchError(str(exc))
+                logger.warning(
+                    "task_provider_fallback task=audio_voice provider=%s model=%s error=%s",
+                    assignment.provider, assignment.model, exc,
+                )
+        if last_error is not None:
+            raise last_error
+        raise TaskDispatchError("Audio/Voice task has no configured provider/model assignment.")
 
     async def _resolve(
         self, task: TaskKind, assignment_override: TaskModelAssignment | None = None

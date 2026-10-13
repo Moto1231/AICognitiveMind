@@ -167,12 +167,14 @@ const el = {
   taskProfileAssignmentSection: document.getElementById("taskProfileAssignmentSection"),
   taskProfileModel: document.getElementById("taskProfileModel"),
   taskProfileModels: document.getElementById("taskProfileModels"),
-  taskProfileFallbackProvider: document.getElementById("taskProfileFallbackProvider"),
-  taskProfileFallbackModel: document.getElementById("taskProfileFallbackModel"),
+  taskProfileStandardModelField: document.getElementById("taskProfileStandardModelField"),
+  taskProfileVoiceModelField: document.getElementById("taskProfileVoiceModelField"),
+  taskProfileVoiceModel: document.getElementById("taskProfileVoiceModel"),
+  taskProfileVoiceReferenceField: document.getElementById("taskProfileVoiceReferenceField"),
+  taskProfileVoiceReferenceId: document.getElementById("taskProfileVoiceReferenceId"),
+  taskProfileFallbackList: document.getElementById("taskProfileFallbackList"),
+  taskProfileAddFallback: document.getElementById("taskProfileAddFallback"),
   taskProfileAddBehavior: document.getElementById("taskProfileAddBehavior"),
-  fishAudioApiKey: document.getElementById("fishAudioApiKey"),
-  fishAudioModel: document.getElementById("fishAudioModel"),
-  fishAudioReferenceId: document.getElementById("fishAudioReferenceId"),
   voiceRate: document.getElementById("voiceRate"),
   voiceRateValue: document.getElementById("voiceRateValue"),
   voicePitch: document.getElementById("voicePitch"),
@@ -408,6 +410,7 @@ const taskModelLabels = {
   reasoning: "Reasoning",
   vision: "Vision",
   audio: "Audio & Transcription",
+  audio_voice: "Audio / Voice (Fish Audio)",
   coding: "Coding",
   image_generation: "Drawing & Image Generation",
   summarization: "Summarizing",
@@ -517,18 +520,54 @@ function fillSelect(select, values, selected, placeholder, capabilityMap = null)
 }
 
 function renderFallbackSelectors() {
-  const provider = el.taskProfileFallbackProvider.value;
-  const fallbackModel = el.taskProfileFallbackModel.value;
-  fillSelect(
-    el.taskProfileFallbackProvider,
-    state.providerEndpoints.map(item => item.name),
-    provider,
-    "No fallback provider",
-  );
-  const endpoint = state.providerEndpoints.find(item =>
-    item.name === el.taskProfileFallbackProvider.value || item.id === el.taskProfileFallbackProvider.value
-  );
-  fillSelect(el.taskProfileFallbackModel, endpoint?.models || [], fallbackModel, "No fallback model", endpoint?.model_capabilities || {});
+  if (!el.taskProfileFallbackList) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const fallbacks = assignment?.fallbacks || [];
+  el.taskProfileFallbackList.replaceChildren();
+  if (!fallbacks.length) {
+    const empty = document.createElement("p");
+    empty.className = "record-empty";
+    empty.textContent = "No fallback endpoints configured.";
+    el.taskProfileFallbackList.append(empty);
+  }
+  fallbacks.forEach((fallback, index) => {
+    const row = document.createElement("div");
+    row.className = "task-fallback-row task-model-fields";
+    const providerLabel = document.createElement("label");
+    providerLabel.className = "host-behavior-field";
+    providerLabel.textContent = "Fallback " + (index + 1) + " provider";
+    const provider = document.createElement("select");
+    provider.setAttribute("aria-label", "Fallback " + (index + 1) + " provider");
+    fillSelect(provider, state.providerEndpoints.map(item => item.name), fallback.provider, "Choose endpoint");
+    provider.addEventListener("change", () => {
+      fallback.provider = provider.value;
+      fallback.model = "";
+      renderFallbackSelectors();
+    });
+    providerLabel.append(provider);
+    const modelLabel = document.createElement("label");
+    modelLabel.className = "host-behavior-field";
+    modelLabel.textContent = "Fallback " + (index + 1) + " model";
+    const model = document.createElement("input");
+    model.type = "text";
+    model.maxLength = 160;
+    model.placeholder = "Model ID";
+    model.value = fallback.model || "";
+    model.setAttribute("aria-label", "Fallback " + (index + 1) + " model");
+    model.addEventListener("input", () => { fallback.model = model.value.trim(); });
+    modelLabel.append(model);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary-button";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", "Remove fallback " + (index + 1));
+    remove.addEventListener("click", () => {
+      assignment.fallbacks.splice(index, 1);
+      renderFallbackSelectors();
+    });
+    row.append(providerLabel, modelLabel, remove);
+    el.taskProfileFallbackList.append(row);
+  });
 }
 
 function loadEndpointIntoForm() {
@@ -545,7 +584,7 @@ function openTaskProfile(task) {
   state.activeTaskProfile = task;
   let assignment = task === "reasoning" ? null : state.taskModelAssignments.find(item => item.task === task);
   if (!assignment && task !== "reasoning") {
-    assignment = { task, provider: "", model: "", fallback_provider: "", fallback_model: "", notes: "" };
+    assignment = { task, provider: "", model: "", fallbacks: [], voice_reference_id: "", notes: "" };
     state.taskModelAssignments.push(assignment);
   }
   let behavior = state.taskBehaviors.find(item => item.task === task);
@@ -564,6 +603,10 @@ function openTaskProfile(task) {
 
   el.taskProfileEndpointSection.classList.toggle("hidden", task === "reasoning");
   el.taskProfileAssignmentSection.classList.toggle("hidden", task === "reasoning");
+  const isAudioVoice = task === "audio_voice";
+  el.taskProfileStandardModelField.classList.toggle("hidden", isAudioVoice);
+  el.taskProfileVoiceModelField.classList.toggle("hidden", !isAudioVoice);
+  el.taskProfileVoiceReferenceField.classList.toggle("hidden", !isAudioVoice);
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
   el.taskProfileRevision.textContent = "Revision: " + (behavior.revision || 1);
   // Populate the editor from the selected task's own behavior profile.
@@ -577,12 +620,12 @@ function openTaskProfile(task) {
   fillSelect(
     el.taskProfileModel,
     selectedEndpoint()?.models || [],
-    assignment?.model || "",
+    isAudioVoice ? "" : (assignment?.model || ""),
     "Discover models or choose a model",
   );
+  el.taskProfileVoiceModel.value = assignment?.model || "s2.1-pro-free";
+  el.taskProfileVoiceReferenceId.value = assignment?.voice_reference_id || "";
   renderFallbackSelectors();
-  el.taskProfileFallbackProvider.value = assignment?.fallback_provider || "";
-  el.taskProfileFallbackModel.value = assignment?.fallback_model || "";
   loadEndpointIntoForm();
   renderFallbackSelectors();
   el.taskProfileOverview.classList.add("hidden");
@@ -643,7 +686,9 @@ async function saveTaskProfile() {
       if (previousName && previousName !== nextName) {
         for (const item of state.taskModelAssignments) {
           if (item.provider === previousName) item.provider = nextName;
-          if (item.fallback_provider === previousName) item.fallback_provider = nextName;
+          for (const fallback of (item.fallbacks || [])) {
+            if (fallback.provider === previousName) fallback.provider = nextName;
+          }
         }
       }
       state.activeEndpointOriginalName = nextName;
@@ -652,9 +697,9 @@ async function saveTaskProfile() {
     const assignment = state.taskModelAssignments.find(item => item.task === task);
     if (task !== "reasoning" && assignment) {
       assignment.provider = endpoint?.name || "";
-      assignment.model = el.taskProfileModel.value.trim();
-      assignment.fallback_provider = el.taskProfileFallbackProvider.value.trim();
-      assignment.fallback_model = el.taskProfileFallbackModel.value.trim();
+      assignment.model = task === "audio_voice" ? el.taskProfileVoiceModel.value.trim() : el.taskProfileModel.value.trim();
+      assignment.fallbacks = (assignment.fallbacks || []).filter(item => item.provider && item.model);
+      assignment.voice_reference_id = task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : (assignment.voice_reference_id || "");
     }
 
     const behavior = state.taskBehaviors.find(item => item.task === task);
@@ -741,9 +786,6 @@ async function loadVoiceSettings() {
   try {
     const settings = await api("/v1/admin/body/voice/settings", {}, true);
     state.voiceSettingsRevision = Number(settings.revision || 0);
-    el.fishAudioApiKey.value = settings.fishAudioApiKey || "";
-    el.fishAudioModel.value = settings.fishAudioModel || "s2.1-pro-free";
-    el.fishAudioReferenceId.value = settings.fishAudioReferenceId || "";
     el.voiceRate.value = String(settings.rate ?? 1);
     el.voicePitch.value = String(settings.pitch ?? 1);
     el.voiceVolume.value = String(settings.volume ?? 1);
@@ -761,9 +803,6 @@ async function saveVoiceSettings() {
       method: "POST",
       body: JSON.stringify({
         expected_revision: state.voiceSettingsRevision,
-        fish_audio_api_key: el.fishAudioApiKey.value,
-        fish_audio_model: el.fishAudioModel.value.trim(),
-        fish_audio_reference_id: el.fishAudioReferenceId.value.trim(),
         rate: Number(el.voiceRate.value),
         pitch: Number(el.voicePitch.value),
         volume: Number(el.voiceVolume.value),
@@ -2105,8 +2144,11 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
-if (el.taskProfileFallbackProvider) el.taskProfileFallbackProvider.addEventListener("change", () => {
-  el.taskProfileFallbackModel.value = "";
+if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", () => {
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (!assignment) return;
+  assignment.fallbacks = assignment.fallbacks || [];
+  assignment.fallbacks.push({ provider: "", model: "" });
   renderFallbackSelectors();
 });
 if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click", () => {

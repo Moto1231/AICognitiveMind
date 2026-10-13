@@ -53,16 +53,19 @@ class PortalTests(unittest.TestCase):
             "taskProfileDiscover",
             "taskProfileAssignmentSection",
             "taskProfileModel",
-            "taskProfileFallbackProvider",
-            "taskProfileFallbackModel",
+            "taskProfileStandardModelField",
+            "taskProfileVoiceModelField",
+            "taskProfileVoiceModel",
+            "taskProfileVoiceReferenceField",
+            "taskProfileVoiceReferenceId",
+            "taskProfileFallbackList",
+            "taskProfileAddFallback",
             "taskProfileFoundation",
             "taskProfileBehaviorName",
             "taskProfileInstructions",
             "taskProfileEnabled",
             "taskProfileRevision",
             "saveTaskProfile",
-            "fishAudioModel",
-            "fishAudioReferenceId",
             "voiceRate",
             "voicePitch",
             "voiceVolume",
@@ -80,6 +83,11 @@ class PortalTests(unittest.TestCase):
         self.assertIn("el.taskProfileFoundation.value = state.taskFoundations[task] || \"\";", script)
         self.assertIn("el.taskProfileInstructions.value = behavior.instructions || \"\";", script)
         self.assertIn("el.taskProfileEnabled.checked = behavior.enabled !== false;", script)
+        self.assertIn('audio_voice: "Audio / Voice (Fish Audio)"', script)
+        self.assertIn("assignment.fallbacks.push({ provider: \"\", model: \"\" })", script)
+        self.assertIn('id="taskProfileFallbackList"', markup)
+        self.assertIn('id="voiceRate"', markup)
+        self.assertNotIn('id="fishAudioApiKey"', markup)
 
     def test_portal_assets_are_packaged_and_routes_are_registered(self) -> None:
         index = STATIC_DIR / "index.html"

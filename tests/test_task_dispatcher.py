@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from aicognitive_mind.host_runtime import HostAwareInterpreter
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
-from aicognitive_mind.task_model_assignments import TaskModelAssignmentRegistry
+from aicognitive_mind.task_model_assignments import TaskFallbackAssignment, TaskModelAssignmentRegistry
 
 
 class FakeRecords:
@@ -210,13 +210,16 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         assignments = await TaskModelAssignmentRegistry(records).list()
         await TaskModelAssignmentRegistry(records).replace([
             item.model_copy(update={
-                "fallback_provider": "Local endpoint",
-                "fallback_model": "backup-model",
+                "fallbacks": [
+                    TaskFallbackAssignment(provider="Local endpoint", model="backup-model"),
+                    TaskFallbackAssignment(provider="Local endpoint", model="last-resort-model"),
+                ],
             }) if item.task == "vision" else item
             for item in assignments
         ])
         client = SequencedFakeClient([
             FakeResponse({"error": {"message": "primary unavailable"}}, 503, "primary unavailable"),
+            FakeResponse({"error": {"message": "first fallback unavailable"}}, 503, "first fallback unavailable"),
             FakeResponse({"choices": [{"message": {"content": "Fallback result"}}]}),
         ])
         dispatcher = TaskModelDispatcher(records, client=client)
@@ -227,9 +230,10 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result, "Fallback result")
-        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(len(client.calls), 3)
         self.assertEqual(client.calls[0][2]["json"]["model"], "primary-model")
         self.assertEqual(client.calls[1][2]["json"]["model"], "backup-model")
+        self.assertEqual(client.calls[2][2]["json"]["model"], "last-resort-model")
 
     async def test_transcription_retries_configured_task_fallback_after_primary_failure(self):
         records = await self.configured(model="primary-audio")
@@ -238,8 +242,7 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
             item.model_copy(update={
                 "provider": "Local endpoint",
                 "model": "primary-audio",
-                "fallback_provider": "Local endpoint",
-                "fallback_model": "backup-audio",
+                "fallbacks": [TaskFallbackAssignment(provider="Local endpoint", model="backup-audio")],
             }) if item.task == "audio" else item
             for item in assignments
         ])
