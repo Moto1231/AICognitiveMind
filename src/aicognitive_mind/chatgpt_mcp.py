@@ -180,10 +180,10 @@ def build_chatgpt_mcp(
             else settings.openai_model if provider_name == "openai"
             else None
         )
+        hosts = HostRuntime(state.storage.mind, state.mind_service)
         return {
-            "active_external_host": await HostRuntime(
-                state.storage.mind, state.mind_service
-            ).active(),
+            "active_external_host": await hosts.active(),
+            "host_runtime_status": await hosts.status(),
             "fallback_provider": provider_name,
             "fallback_requested_model": requested_model,
         }
@@ -342,12 +342,12 @@ def build_chatgpt_mcp(
     async def next_body_interaction(
         lease_token: str,
         ctx: Context[AppState],
+        wait_seconds: float = 20,
     ) -> dict[str, Any] | None:
-        """Claim the next pending Body interaction for this attached ChatGPT host.
-
-        The returned context already includes Axiom identity and memory for that Body input.
-        """
-        return await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
+        """Wait up to 20 seconds for Body input, then claim it with identity/memory context."""
+        return await ctx.request_context.lifespan_context.hosts.next_request(
+            lease_token, wait_seconds=wait_seconds
+        )
 
     @server.tool(
         annotations=ToolAnnotations(
