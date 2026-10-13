@@ -161,7 +161,7 @@ async def execute_task(
     # every unconfigured task stranded at "not connected".
     has_specialist = bool(
         (assignment.provider and assignment.model)
-        or (assignment.fallback_provider and assignment.fallback_model)
+        or any(item.provider and item.model for item in assignment.fallbacks)
     )
     if not has_specialist:
         host = await state.hosts.active() if state.hosts is not None else None
