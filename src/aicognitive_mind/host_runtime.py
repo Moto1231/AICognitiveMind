@@ -192,7 +192,11 @@ class RuntimeRecords:
                         "mind_id": self.mind_id,
                         "kind": "body_request",
                         "state": "pending",
-                        "deadline": {"$gt": now},
+                        "$or": [
+                            {"deadline": {"$gt": now}},
+                            {"deadline": {"$exists": False}},
+                            {"deadline": None},
+                        ],
                     }
                 )
                 .sort("created", 1)
@@ -210,7 +214,7 @@ class RuntimeRecords:
             return await self.db.query(
                 "SELECT * OMIT id, mind_id, key FROM runtime_records "
                 "WHERE mind_id = $mind_id AND kind = 'body_request' "
-                "AND state = 'pending' AND deadline > $now "
+                "AND state = 'pending' AND (deadline IS NONE OR deadline > $now) "
                 "ORDER BY created LIMIT 20;",
                 {"now": now, "mind_id": self.mind_id},
             )
@@ -220,7 +224,7 @@ class RuntimeRecords:
                 for v in getattr(self.db, "_runtime_records", {}).values()
                 if v.get("kind") == "body_request"
                 and v["state"] == "pending"
-                and v["deadline"] > now
+                and (v.get("deadline") is None or v["deadline"] > now)
             ],
             key=lambda v: v["created"],
         )[:20]
@@ -233,7 +237,9 @@ class HostRuntime:
 
     async def active(self) -> dict | None:
         host = await self.records.get("active_host")
-        if not host or host["expires"] <= time.time():
+        if not host or (
+            host.get("expires") is not None and host["expires"] <= time.time()
+        ):
             return None
         return {
             key: host.get(key)
@@ -247,12 +253,17 @@ class HostRuntime:
         items = []
         for request in requests:
             claim_until = float(request.get("claim_until", 0) or 0)
-            in_progress = bool(request.get("claim")) and claim_until > now
+            in_progress = bool(request.get("claim")) and (
+                claim_until is None or claim_until > now
+            )
             items.append({
                 "request_id": request["request_id"],
                 "state": "in_progress" if in_progress else "pending",
                 "age_seconds": max(0, int(now - float(request.get("created", now)))),
-                "remaining_seconds": max(0, int(float(request.get("deadline", now)) - now)),
+                "remaining_seconds": (
+                    max(0, int(float(request["deadline"]) - now))
+                    if request.get("deadline") is not None else None
+                ),
             })
         pending_count = sum(item["state"] == "pending" for item in items)
         in_progress_count = sum(item["state"] == "in_progress" for item in items)
@@ -260,7 +271,8 @@ class HostRuntime:
             "connected": host is not None,
             "host": host,
             "lease_remaining_seconds": (
-                max(0, int(float(host["expires"]) - now)) if host else 0
+                max(0, int(float(host["expires"]) - now))
+                if host and host.get("expires") is not None else None
             ),
             "last_heartbeat_age_seconds": (
                 max(0, int(now - float(host["last_heartbeat_at"])))
@@ -278,11 +290,15 @@ class HostRuntime:
             not name.strip()
             or len(name) > 120
             or len(model) > 200
-            or not 15 <= lease_seconds <= 300
         ):
-            raise ValueError("Invalid host name, model or lease duration (15–300 seconds)")
+            raise ValueError("Invalid host name or model")
+        # The reasoning host is persistent. Specialist/task-provider calls own their
+        # own deadlines; a Body request or idle period must not expire this connection.
+        # Keep lease_seconds as a compatibility parameter for existing callers.
         before = await self.records.get("active_host")
-        if before and before["expires"] > time.time():
+        if before and (
+            before.get("expires") is None or before["expires"] > time.time()
+        ):
             raise CommitConflict("An external host already owns the live lease")
         token = secrets.token_urlsafe(32)
         now = time.time()
@@ -291,7 +307,7 @@ class HostRuntime:
             "model": model,
             "attached_at": now,
             "last_heartbeat_at": now,
-            "expires": now + lease_seconds,
+            "expires": None,
             "token_hash": hashlib.sha256(token.encode()).hexdigest(),
         }
         if before:
@@ -306,7 +322,10 @@ class HostRuntime:
         digest = hashlib.sha256(token.encode()).hexdigest()
         if (
             not host
-            or host["expires"] <= time.time()
+            or (
+                host.get("expires") is not None
+                and host["expires"] <= time.time()
+            )
             or not secrets.compare_digest(host["token_hash"], digest)
         ):
             raise PermissionError("External-host lease is absent, expired or owned by another host")
@@ -317,7 +336,7 @@ class HostRuntime:
         now = time.time()
         revised = {
             **host,
-            "expires": 0 if detach else now + 120,
+            "expires": 0 if detach else None,
             "last_heartbeat_at": now,
         }
         if not await self.records.replace("active_host", host, revised):
@@ -334,18 +353,19 @@ class HostRuntime:
             "state": "pending",
             "message": message,
             "created": time.time(),
-            "deadline": time.time() + self.timeout,
+            # Main reasoning requests have no task-provider deadline. They remain
+            # pending until the connected reasoning host explicitly completes them.
+            "deadline": None,
             "claim": "",
             "claim_until": 0.0,
             "result": {},
         }
         await self.records.create(key, request)
-        while time.time() < request["deadline"]:
+        while True:
             latest = await self.records.get(key)
             if latest and latest["state"] == "complete":
                 return latest["result"]
             await asyncio.sleep(0.2)
-        raise TimeoutError("External host did not complete the Body request before its deadline")
 
     async def next_request(self, token: str) -> dict | None:
         host = await self.require(token)
@@ -353,7 +373,11 @@ class HostRuntime:
             claimed = {
                 **request,
                 "claim": host["token_hash"],
-                "claim_until": min(host["expires"], request["deadline"]),
+                "claim_until": (
+                    min(host["expires"], request["deadline"])
+                    if host.get("expires") is not None and request.get("deadline") is not None
+                    else None
+                ),
             }
             if await self.records.replace(request["request_id"], request, claimed):
                 context = await self.service.begin_interaction(request["message"])
@@ -379,7 +403,12 @@ class HostRuntime:
             if request["result"]["response_text"] != response_text:
                 raise CommitConflict("Body request already completed with another response")
             return request["result"]
-        if min(request["deadline"], request["claim_until"]) <= time.time():
+        deadlines = [
+            float(value)
+            for value in (request.get("deadline"), request.get("claim_until"))
+            if value is not None
+        ]
+        if deadlines and min(deadlines) <= time.time():
             raise CommitConflict("Body request claim expired")
         committed = await self.service.complete_interaction(
             request["message"],
