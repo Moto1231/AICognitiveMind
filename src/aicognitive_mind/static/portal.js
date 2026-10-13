@@ -74,6 +74,7 @@ const el = {
   hostConnectionName: document.getElementById("hostConnectionName"),
   hostLeaseRemaining: document.getElementById("hostLeaseRemaining"),
   hostHeartbeatAge: document.getElementById("hostHeartbeatAge"),
+  hostLastPollAge: document.getElementById("hostLastPollAge"),
   hostRequestsPending: document.getElementById("hostRequestsPending"),
   hostRequestsInProgress: document.getElementById("hostRequestsInProgress"),
   hostLatestRequest: document.getElementById("hostLatestRequest"),
@@ -891,6 +892,7 @@ async function refreshHostDiagnostics() {
   if (el.hostConnectionName) el.hostConnectionName.textContent = host ? `${host.name || "Unnamed host"} / ${host.model || "Model not reported"}` : "No active lease";
   if (el.hostLeaseRemaining) el.hostLeaseRemaining.textContent = diagnostics.connected ? `${Number(diagnostics.lease_remaining_seconds || 0)} sec` : "Expired / none";
   if (el.hostHeartbeatAge) el.hostHeartbeatAge.textContent = diagnostics.last_heartbeat_age_seconds == null ? "No heartbeat" : `${Number(diagnostics.last_heartbeat_age_seconds)} sec ago`;
+  if (el.hostLastPollAge) el.hostLastPollAge.textContent = diagnostics.last_poll_age_seconds == null ? "Never polled" : `${Number(diagnostics.last_poll_age_seconds)} sec ago`;
   const requests = diagnostics.requests || {};
   if (el.hostRequestsPending) el.hostRequestsPending.textContent = String(requests.pending ?? 0);
   if (el.hostRequestsInProgress) el.hostRequestsInProgress.textContent = String(requests.in_progress ?? 0);
