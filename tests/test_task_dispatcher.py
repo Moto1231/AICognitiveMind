@@ -295,7 +295,11 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_task_providers_defer_to_connected_reasoning(self):
         class ActiveHosts:
             async def active(self):
-                return True
+                return {"name": "ChatGPT", "model": "GPT-6"}
+
+            async def submit(self, message):
+                self.message = message
+                return {"response_text": "The audio contains a short spoken phrase."}
 
         class Fallback:
             records = FakeRecords()
@@ -304,18 +308,32 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
             async def interpret_percept(self, percept, *, focus=None):
                 raise TaskDispatchError("both configured providers failed")
 
-        interpreter = HostAwareInterpreter(Fallback(), ActiveHosts())
+        hosts = ActiveHosts()
+        interpreter = HostAwareInterpreter(Fallback(), hosts)
         interpreter.task_dispatcher = FailedDispatcher()
         percept = SimpleNamespace(
             modality=SimpleNamespace(value="audio"),
+            observed_at="2026-10-12T12:00:00Z",
+            source="test microphone",
+            summary="incoming audio",
+            metadata={"evidence_ref": "evidence-audio-1"},
             content_ref="data:audio/webm;base64,YXVkaW8=",
+            model_dump=lambda mode="json": {
+                "modality": "audio",
+                "observed_at": "2026-10-12T12:00:00Z",
+                "source": "test microphone",
+                "summary": "incoming audio",
+                "metadata": {"evidence_ref": "evidence-audio-1"},
+                "content_ref": "data:audio/webm;base64,YXVkaW8=",
+            },
         )
 
         with self.assertLogs("aicognitive_mind.auth_diagnostics", level="WARNING"):
             result = await interpreter.interpret(percept)
 
-        self.assertIn("Uninterpreted audio observation", result)
-        self.assertIn("sensory evidence reference", result)
+        self.assertEqual(result, "The audio contains a short spoken phrase.")
+        self.assertIn("Interpret this audio percept", hosts.message)
+        self.assertIn("evidence-audio-1", hosts.message)
 
     async def test_failed_task_providers_defer_to_body_reasoning_fallback(self):
         class InactiveHosts:
