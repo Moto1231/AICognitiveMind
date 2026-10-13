@@ -2301,3 +2301,9 @@ if (navigator.mediaDevices?.addEventListener) {
 // even if an admin configuration request fails or is slow.
 renderTaskProfiles();
 refresh();
+
+
+// Keep System Overview's Body-side host and queue telemetry current while open.
+setInterval(() => {
+  if (state.mode === "admin") refreshHostDiagnostics().catch(() => {});
+}, 5000);
