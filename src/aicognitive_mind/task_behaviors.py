@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from aicognitive_mind.task_model_assignments import TASK_LABELS
 
 TaskBehaviorKind = Literal[
-    "vision", "audio", "coding", "image_generation", "summarization",
+    "vision", "audio", "audio_voice", "coding", "image_generation", "summarization",
     "memory_recall", "web_research", "structured_extraction", "reasoning",
 ]
 
@@ -37,6 +37,11 @@ TASK_FOUNDATIONS: dict[TaskBehaviorKind, str] = {
         "You are Axiom's auditory perception task. Preserve what the audio supports, distinguish "
         "transcription from interpretation, and mark uncertainty. Do not invent unheard words, "
         "speakers, causes, or background events."
+    ),
+    "audio_voice": (
+        "You are Axiom's audio/voice output task. Synthesize only the supplied text using the "
+        "configured speech endpoint and selected voice reference. Preserve the exact text and "
+        "requested speech settings; do not add or rewrite spoken content."
     ),
     "coding": (
         "You are Axiom's coding task. Prefer correct, maintainable, testable changes. Inspect the "
