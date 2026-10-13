@@ -210,8 +210,7 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         assignments = await TaskModelAssignmentRegistry(records).list()
         await TaskModelAssignmentRegistry(records).replace([
             item.model_copy(update={
-                "fallback_provider": "Local endpoint",
-                "fallback_model": "backup-model",
+                "fallbacks": [{"provider": "Local endpoint", "model": "backup-model"}],
             }) if item.task == "vision" else item
             for item in assignments
         ])
@@ -238,8 +237,7 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
             item.model_copy(update={
                 "provider": "Local endpoint",
                 "model": "primary-audio",
-                "fallback_provider": "Local endpoint",
-                "fallback_model": "backup-audio",
+                "fallbacks": [{"provider": "Local endpoint", "model": "backup-audio"}],
             }) if item.task == "audio" else item
             for item in assignments
         ])
