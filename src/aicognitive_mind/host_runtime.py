@@ -214,7 +214,7 @@ class RuntimeRecords:
             return await self.db.query(
                 "SELECT * OMIT id, mind_id, key FROM runtime_records "
                 "WHERE mind_id = $mind_id AND kind = 'body_request' "
-                "AND state = 'pending' AND (deadline IS NONE OR deadline > $now) "
+                "AND state = 'pending' AND (deadline IS NONE OR deadline IS NULL OR deadline > $now) "
                 "ORDER BY created LIMIT 20;",
                 {"now": now, "mind_id": self.mind_id},
             )
