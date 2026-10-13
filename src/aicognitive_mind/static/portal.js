@@ -409,8 +409,8 @@ async function saveHostBehaviors() {
 const taskModelLabels = {
   reasoning: "Reasoning",
   vision: "Vision",
-  audio: "Audio & Transcription",
-  audio_voice: "Audio / Voice (Fish Audio)",
+  audio: "Audio/Transcription",
+  audio_voice: "Audio/Voice",
   coding: "Coding",
   image_generation: "Drawing & Image Generation",
   summarization: "Summarizing",
