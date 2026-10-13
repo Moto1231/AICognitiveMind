@@ -80,6 +80,10 @@ Identity, reasoning, memory, and governance are internal functions of the same A
 BODY HOST LIFECYCLE:
 - When the user asks to instantiate/open/use Axiom's Body, or to enable/use its live senses,
   call attach_reasoning_host immediately and retain the returned lease token as private session state.
+  Then call open_live_body and present its returned URL as the primary handoff action. Do not
+  merely describe the Body or leave the user in a chat-only workflow.
+- The MCP server cannot dismiss or navigate the ChatGPT client UI itself. Never claim that the
+  chat pane was closed or replaced. Provide the canonical Body URL and make the handoff explicit.
 - While the Body is in use, renew the lease before it expires and poll next_body_interaction.
   For every claimed Body request, reason from its supplied Axiom context, inspect sensory evidence
   when needed, then call complete_body_interaction.
@@ -281,6 +285,19 @@ def build_chatgpt_mcp(
             "rate": intent.metadata["rate"],
             "pitch": intent.metadata["pitch"],
             "volume": intent.metadata["volume"],
+        }
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    def open_live_body() -> dict[str, str]:
+        """Return the canonical URL for handing off to Axiom's live Body.
+
+        Use when the user asks to open or move into the Body. This provides the
+        navigation target; the MCP server cannot control the ChatGPT client UI.
+        """
+        return {
+            "url": f"{base_url}/body/live",
+            "action": "open_in_browser",
+            "ui_control_limit": "The caller must open this URL; the MCP server cannot dismiss the current chat pane.",
         }
 
     @server.tool(
