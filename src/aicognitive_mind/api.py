@@ -75,6 +75,7 @@ from aicognitive_mind.task_model_assignments import (
     TaskModelAssignment,
     TaskModelAssignmentRegistry,
 )
+from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.host_runtime import (
     HostAwareCore,
     HostAwareInterpreter,
@@ -1152,32 +1153,37 @@ async def fish_audio_speech(
     """Render Axiom's spoken output through Fish Audio without exposing its API key."""
     settings = get_settings()
     voice_settings = await request.app.state.voice_settings.read()
-    fish_api_key = voice_settings.get("fishAudioApiKey") or settings.fish_audio_api_key
-    if not fish_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="FISH_AUDIO_API_KEY is not configured.",
-        )
-
     # Browser voice settings use a 0-1 volume scale; Fish uses dB.
     fish_volume = (body.volume - 1.0) * 20.0
-    renderer = FishAudioRenderer(
-        api_key=fish_api_key,
-        model=voice_settings.get("fishAudioModel") or settings.fish_audio_model,
-        reference_id=(
-            voice_settings.get("fishAudioReferenceId")
-            if voice_settings.get("fishAudioReferenceId") is not None
-            else settings.fish_audio_reference_id
-        ),
-    )
+    dispatcher = TaskModelDispatcher(request.app.state.runtime_records)
     try:
-        audio = await renderer.synthesize(
-            body.text,
-            speed=body.rate,
-            volume=fish_volume,
-        )
-    except FishAudioError as exc:
-        logger.warning("Fish Audio speech synthesis failed: %s", exc)
+        if await dispatcher.is_configured("audio_voice"):
+            audio = await dispatcher.synthesize_voice(
+                body.text, speed=body.rate, volume=fish_volume
+            )
+        else:
+            # Keep deployment-provided/previously saved settings usable until an
+            # administrator configures the new Audio/Voice task profile.
+            fish_api_key = voice_settings.get("fishAudioApiKey") or settings.fish_audio_api_key
+            if not fish_api_key:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Audio/Voice task is not configured and FISH_AUDIO_API_KEY is absent.",
+                )
+            renderer = FishAudioRenderer(
+                api_key=fish_api_key,
+                model=voice_settings.get("fishAudioModel") or settings.fish_audio_model,
+                reference_id=(
+                    voice_settings.get("fishAudioReferenceId")
+                    if voice_settings.get("fishAudioReferenceId") is not None
+                    else settings.fish_audio_reference_id
+                ),
+            )
+            audio = await renderer.synthesize(
+                body.text, speed=body.rate, volume=fish_volume
+            )
+    except (FishAudioError, TaskDispatchError) as exc:
+        logger.warning("Audio/Voice task synthesis failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
