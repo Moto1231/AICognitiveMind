@@ -17,6 +17,7 @@ class FishAudioRenderer:
     api_key: str
     model: str = "s2.1-pro-free"
     reference_id: str | None = None
+    endpoint_url: str = FISH_TTS_URL
 
     async def synthesize(
         self,
@@ -44,7 +45,10 @@ class FishAudioRenderer:
 
         try:
             async with httpx.AsyncClient(timeout=45.0) as client:
-                response = await client.post(FISH_TTS_URL, headers=headers, json=payload)
+                endpoint_url = self.endpoint_url.rstrip("/")
+            if not endpoint_url.endswith("/tts"):
+                endpoint_url += "/tts"
+            response = await client.post(endpoint_url, headers=headers, json=payload)
         except httpx.HTTPError as exc:
             raise FishAudioError("Fish Audio could not be reached.") from exc
 
