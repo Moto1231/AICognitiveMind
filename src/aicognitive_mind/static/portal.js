@@ -70,6 +70,14 @@ const el = {
   adminCreatedAt: document.getElementById("adminCreatedAt"),
   adminMemoryCount: document.getElementById("adminMemoryCount"),
   adminJournalCount: document.getElementById("adminJournalCount"),
+  hostConnectionState: document.getElementById("hostConnectionState"),
+  hostConnectionName: document.getElementById("hostConnectionName"),
+  hostLeaseRemaining: document.getElementById("hostLeaseRemaining"),
+  hostHeartbeatAge: document.getElementById("hostHeartbeatAge"),
+  hostRequestsPending: document.getElementById("hostRequestsPending"),
+  hostRequestsInProgress: document.getElementById("hostRequestsInProgress"),
+  hostLatestRequest: document.getElementById("hostLatestRequest"),
+  hostDiagnosticsUpdated: document.getElementById("hostDiagnosticsUpdated"),
   bodyFallbackEnabled: document.getElementById("bodyFallbackEnabled"),
   bodyFallbackSource: document.getElementById("bodyFallbackSource"),
   saveBodyFallbackSetting: document.getElementById("saveBodyFallbackSetting"),
@@ -277,6 +285,10 @@ function setMode(mode) {
   el.adminView.classList.toggle("hidden", !admin);
   el.mindTab.classList.toggle("active", !admin);
   el.adminTab.classList.toggle("active", admin);
+  if (admin) refreshHostDiagnostics().catch(error => {
+    if (el.hostConnectionState) el.hostConnectionState.textContent = "Unavailable";
+    if (el.hostDiagnosticsUpdated) el.hostDiagnosticsUpdated.textContent = error.message;
+  });
 }
 
 async function validateAdmin() {
@@ -870,6 +882,22 @@ async function enterAdminMode() {
   } catch (error) {
     toast(error.message, true);
   }
+}
+
+async function refreshHostDiagnostics() {
+  const diagnostics = await api("/v1/body/hosts/status");
+  const host = diagnostics.host;
+  if (el.hostConnectionState) el.hostConnectionState.textContent = diagnostics.connected ? "Connected" : "Not connected";
+  if (el.hostConnectionName) el.hostConnectionName.textContent = host ? `${host.name || "Unnamed host"} / ${host.model || "Model not reported"}` : "No active lease";
+  if (el.hostLeaseRemaining) el.hostLeaseRemaining.textContent = diagnostics.connected ? `${Number(diagnostics.lease_remaining_seconds || 0)} sec` : "Expired / none";
+  if (el.hostHeartbeatAge) el.hostHeartbeatAge.textContent = diagnostics.last_heartbeat_age_seconds == null ? "No heartbeat" : `${Number(diagnostics.last_heartbeat_age_seconds)} sec ago`;
+  const requests = diagnostics.requests || {};
+  if (el.hostRequestsPending) el.hostRequestsPending.textContent = String(requests.pending ?? 0);
+  if (el.hostRequestsInProgress) el.hostRequestsInProgress.textContent = String(requests.in_progress ?? 0);
+  const latest = Array.isArray(requests.items) ? requests.items[0] : null;
+  if (el.hostLatestRequest) el.hostLatestRequest.textContent = latest ? `${latest.state} · ${latest.age_seconds}s old` : "No active requests";
+  if (el.hostDiagnosticsUpdated) el.hostDiagnosticsUpdated.textContent = `Updated ${new Date().toLocaleTimeString()}. Connection and queue state are live; this does not prove a host is actively polling.`;
+  return diagnostics;
 }
 
 function renderStatus(status) {
@@ -1714,6 +1742,7 @@ el.refreshButton.addEventListener("click", () => Promise.all([
 ]));
 el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));
 el.adminRefreshButton.addEventListener("click", () => Promise.all([
+  refreshHostDiagnostics(),
   refreshStatus(),
   refreshMemory(filters.admin, true),
   refreshJournal(true),
