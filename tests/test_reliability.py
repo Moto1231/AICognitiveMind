@@ -133,7 +133,7 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
                 break
             await asyncio.sleep(0.01)
         self.assertEqual(len(requests), 1)
-        self.assertIsNone(requests[0]["deadline"])
+        self.assertIsNone(requests[0].get("deadline"))
 
         request = await host.next_request(lease["lease_token"])
         self.assertIsNotNone(request)
