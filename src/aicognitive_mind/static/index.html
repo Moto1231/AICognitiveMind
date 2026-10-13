@@ -219,15 +219,20 @@
               <section id="taskProfileAssignmentSection" class="task-profile-section">
                 <h4>Model assignment</h4>
                 <div class="task-model-fields">
-                  <label class="host-behavior-field">Model ID
+                  <label id="taskProfileStandardModelField" class="host-behavior-field">Model ID
                     <select id="taskProfileModel" aria-label="Model ID"><option value="">Discover models or choose a model</option></select>
                   </label>
-                  <label class="host-behavior-field">Fallback provider
-                    <select id="taskProfileFallbackProvider" aria-label="Fallback provider"><option value="">No fallback provider</option></select>
+                  <label id="taskProfileVoiceModelField" class="host-behavior-field hidden">Fish Audio model ID
+                    <input id="taskProfileVoiceModel" type="text" maxlength="160" placeholder="s2.1-pro-free">
                   </label>
-                  <label class="host-behavior-field">Fallback model
-                    <select id="taskProfileFallbackModel" aria-label="Fallback model"><option value="">No fallback model</option></select>
+                  <label id="taskProfileVoiceReferenceField" class="host-behavior-field hidden">Fish Audio reference / voice ID
+                    <input id="taskProfileVoiceReferenceId" type="text" maxlength="200" placeholder="Optional voice reference ID">
                   </label>
+                  <div class="task-fallbacks-editor">
+                    <div class="panel-heading"><h4>Fallback endpoints</h4><button id="taskProfileAddFallback" class="secondary-button" type="button">Add fallback</button></div>
+                    <p class="muted-copy">Fallbacks are attempted in order. Add as many provider/model pairs as needed.</p>
+                    <div id="taskProfileFallbackList" class="task-fallback-list"></div>
+                  </div>
                 </div>
               </section>
               <section class="task-profile-section">
@@ -436,17 +441,8 @@
               <div><p class="eyebrow">VOICE OUTPUT</p><h3>Voice / Fish Audio</h3><p id="voiceSettingsRevision" class="muted-copy">Revision: 0</p></div>
               <button id="refreshVoiceSettings" class="secondary-button" type="button">Refresh</button>
             </div>
-            <p class="muted-copy">These settings control Body speech. This administrator-only field can view and update the Fish Audio API key.</p>
+            <p class="muted-copy">Speech rate, browser voice pitch, volume, and browser voice selection live here. Configure Fish Audio endpoint credentials, model, and voice reference in the Audio / Voice task profile.</p>
             <div class="task-model-fields">
-              <label class="host-behavior-field">Fish Audio API key
-                <input id="fishAudioApiKey" type="password" autocomplete="new-password" maxlength="4096" placeholder="Fish Audio API key">
-              </label>
-              <label class="host-behavior-field">Fish Audio model
-                <input id="fishAudioModel" type="text" maxlength="120" placeholder="s2.1-pro-free">
-              </label>
-              <label class="host-behavior-field">Fish Audio reference / voice ID
-                <input id="fishAudioReferenceId" type="text" maxlength="200" placeholder="Optional voice reference ID">
-              </label>
               <label class="host-behavior-field voice-slider-field">Speech rate <output id="voiceRateValue" for="voiceRate">1.00</output>
                 <input id="voiceRate" type="range" min="0.5" max="1.75" step="0.05" value="1">
               </label>
