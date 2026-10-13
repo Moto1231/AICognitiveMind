@@ -44,11 +44,11 @@ class FishAudioRenderer:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                endpoint_url = self.endpoint_url.rstrip("/")
+            endpoint_url = self.endpoint_url.rstrip("/")
             if not endpoint_url.endswith("/tts"):
                 endpoint_url += "/tts"
-            response = await client.post(endpoint_url, headers=headers, json=payload)
+            async with httpx.AsyncClient(timeout=45.0) as client:
+                response = await client.post(endpoint_url, headers=headers, json=payload)
         except httpx.HTTPError as exc:
             raise FishAudioError("Fish Audio could not be reached.") from exc
 
