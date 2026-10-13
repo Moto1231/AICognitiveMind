@@ -180,10 +180,10 @@ def build_chatgpt_mcp(
             else settings.openai_model if provider_name == "openai"
             else None
         )
+        hosts = HostRuntime(state.storage.mind, state.mind_service)
         return {
-            "active_external_host": await HostRuntime(
-                state.storage.mind, state.mind_service
-            ).active(),
+            "active_external_host": await hosts.active(),
+            "host_runtime_status": await hosts.status(),
             "fallback_provider": provider_name,
             "fallback_requested_model": requested_model,
         }
