@@ -548,11 +548,13 @@ function renderFallbackSelectors() {
     const modelLabel = document.createElement("label");
     modelLabel.className = "host-behavior-field";
     modelLabel.textContent = "Fallback " + (index + 1) + " model";
-    const model = document.createElement("select");
+    const model = document.createElement("input");
+    model.type = "text";
+    model.maxLength = 160;
+    model.placeholder = "Model ID";
+    model.value = fallback.model || "";
     model.setAttribute("aria-label", "Fallback " + (index + 1) + " model");
-    const endpoint = state.providerEndpoints.find(item => item.name === fallback.provider || item.id === fallback.provider);
-    fillSelect(model, endpoint?.models || [], fallback.model, "Choose model", endpoint?.model_capabilities || {});
-    model.addEventListener("change", () => { fallback.model = model.value; });
+    model.addEventListener("input", () => { fallback.model = model.value.trim(); });
     modelLabel.append(model);
     const remove = document.createElement("button");
     remove.type = "button";
