@@ -450,8 +450,44 @@ class HostAwareInterpreter:
                 else:
                     if specialist_result is not None:
                         return specialist_result
-        if await self.hosts.active():
-            return f"Uninterpreted {percept.modality.value} observation. Use the sensory evidence reference in Body context to inspect the original media."
+        host = await self.hosts.active()
+        if host:
+            # The reasoning host is the default interpreter whenever no specialist
+            # is explicitly configured. Preserve the evidence locator and metadata
+            # in the request so the host can use the same evidence trail as the Body.
+            import json
+
+            percept_payload = percept.model_dump(mode="json")
+            content_ref = percept_payload.get("content_ref")
+            if isinstance(content_ref, str) and content_ref.startswith("data:"):
+                # Large inline media is not a useful text prompt. Evidence IDs and
+                # metadata remain available for the host to retrieve the persisted item.
+                percept_payload["content_ref"] = (
+                    content_ref if len(content_ref) <= 120_000
+                    else "[inline media omitted from text handoff; use persisted evidence references]"
+                )
+            prompt = (
+                f"Interpret this {percept.modality.value} percept as Axiom's default "
+                "reasoning host. Describe only what the evidence supports. If the original "
+                "media is not accessible from the supplied evidence reference, say so clearly "
+                "instead of inventing an interpretation.\n"
+                + (f"Requested focus: {focus}\n" if focus else "")
+                + "PERCEPT:\n"
+                + json.dumps(percept_payload, ensure_ascii=False, separators=(",", ":"))
+            )
+            try:
+                result = await self.hosts.submit(prompt)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Reasoning-host interpretation failed for {percept.modality.value}: "
+                    f"{exc.__class__.__name__}: {exc}"
+                ) from exc
+            response_text = result.get("response_text") if isinstance(result, dict) else None
+            if isinstance(response_text, str) and response_text.strip():
+                return response_text.strip()
+            raise RuntimeError(
+                f"Reasoning host returned no interpretation for {percept.modality.value} evidence."
+            )
         from aicognitive_mind.config import body_allow_standalone_fallback_enabled
 
         if not body_allow_standalone_fallback_enabled():
