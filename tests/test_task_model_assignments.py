@@ -41,8 +41,10 @@ class TaskModelAssignmentRegistryTests(unittest.IsolatedAsyncioTestCase):
             task=assignments[0].task,
             provider="Example Provider",
             model="example-vision-model",
-            fallback_provider="Fallback Provider",
-            fallback_model="fallback-vision-model",
+            fallbacks=[
+                {"provider": "Fallback Provider", "model": "fallback-vision-model"},
+                {"provider": "Third Provider", "model": "third-vision-model"},
+            ],
         )
 
         saved = await registry.replace(assignments)
@@ -51,7 +53,19 @@ class TaskModelAssignmentRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved, loaded)
         self.assertEqual(loaded[0].provider, "Example Provider")
         self.assertEqual(loaded[0].model, "example-vision-model")
-        self.assertEqual(loaded[0].fallback_model, "fallback-vision-model")
+        self.assertEqual(loaded[0].fallbacks[0].model, "fallback-vision-model")
+        self.assertEqual(loaded[0].fallbacks[1].provider, "Third Provider")
+
+    async def test_migrates_legacy_single_fallback_into_chain(self):
+        records = FakeRecords()
+        records.values["task_model_assignments"] = {"items": [
+            {"task": "vision", "provider": "Primary", "model": "primary-model",
+             "fallback_provider": "Backup", "fallback_model": "backup-model"}
+        ]}
+        loaded = await TaskModelAssignmentRegistry(records).list()
+        vision = next(item for item in loaded if item.task == "vision")
+        self.assertEqual(vision.fallbacks[0].provider, "Backup")
+        self.assertEqual(vision.fallbacks[0].model, "backup-model")
 
     async def test_rejects_incomplete_task_list(self):
         registry = TaskModelAssignmentRegistry(FakeRecords())
