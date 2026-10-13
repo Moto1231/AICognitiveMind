@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 TaskKind = Literal[
     "vision",
     "audio",
+    "audio_voice",
     "coding",
     "image_generation",
     "summarization",
@@ -19,6 +20,7 @@ TaskKind = Literal[
 TASK_LABELS: dict[TaskKind, str] = {
     "vision": "Vision",
     "audio": "Audio & Transcription",
+    "audio_voice": "Audio / Voice (Fish Audio)",
     "coding": "Coding",
     "image_generation": "Drawing & Image Generation",
     "summarization": "Summarizing",
@@ -28,15 +30,25 @@ TASK_LABELS: dict[TaskKind, str] = {
 }
 
 
+class TaskFallbackAssignment(BaseModel):
+    provider: str = Field(default="", max_length=80)
+    model: str = Field(default="", max_length=160)
+
+    @field_validator("provider", "model")
+    @classmethod
+    def strip_values(cls, value: str) -> str:
+        return value.strip()
+
+
 class TaskModelAssignment(BaseModel):
     task: TaskKind
     provider: str = Field(default="", max_length=80)
     model: str = Field(default="", max_length=160)
-    fallback_provider: str = Field(default="", max_length=80)
-    fallback_model: str = Field(default="", max_length=160)
+    fallbacks: list[TaskFallbackAssignment] = Field(default_factory=list)
+    voice_reference_id: str = Field(default="", max_length=200)
     notes: str = Field(default="", max_length=500)
 
-    @field_validator("provider", "model", "fallback_provider", "fallback_model", "notes")
+    @field_validator("provider", "model", "voice_reference_id", "notes")
     @classmethod
     def strip_values(cls, value: str) -> str:
         return value.strip()
@@ -56,13 +68,20 @@ class TaskModelAssignmentRegistry:
         record = await self.records.get(self.RECORD_KEY)
         if not record:
             return default_task_assignments()
-        by_task = {
-            item.task: item
-            for item in (
-                TaskModelAssignment.model_validate(value)
-                for value in record.get("items", [])
-            )
-        }
+        by_task = {}
+        for value in record.get("items", []):
+            normalized = dict(value)
+            # Preserve the former single fallback as the first entry in the new chain.
+            if "fallbacks" not in normalized:
+                provider = str(normalized.pop("fallback_provider", "") or "").strip()
+                model = str(normalized.pop("fallback_model", "") or "").strip()
+                normalized["fallbacks"] = ([{"provider": provider, "model": model}]
+                                           if provider and model else [])
+            else:
+                normalized.pop("fallback_provider", None)
+                normalized.pop("fallback_model", None)
+            item = TaskModelAssignment.model_validate(normalized)
+            by_task[item.task] = item
         # Keep newly introduced task kinds visible when older saved configurations exist.
         return [
             by_task.get(task, TaskModelAssignment(task=task))
