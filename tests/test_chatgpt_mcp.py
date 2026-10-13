@@ -115,6 +115,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("current reasoning faculty", HOST_INSTRUCTIONS)
         self.assertIn("begin_interaction", HOST_INSTRUCTIONS)
         self.assertIn("complete_interaction", HOST_INSTRUCTIONS)
+        self.assertIn("open_live_body", HOST_INSTRUCTIONS)
 
     async def test_deployed_surface_registers_github_tools(self):
         provider = AxiomAuthorizationServerProvider(
@@ -178,6 +179,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         server = build_chatgpt_mcp("https://axiom.example", provider)
         names = {tool.name for tool in await server.list_tools()}
         self.assertIn("interaction_trace", names)
+        self.assertIn("open_live_body", names)
 
     async def test_deployed_surface_registers_camera_tool(self):
         provider = AxiomAuthorizationServerProvider(
