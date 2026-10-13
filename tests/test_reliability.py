@@ -140,10 +140,31 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         request = await host.next_request(lease["lease_token"])
         self.assertIsNotNone(request)
         status = await host.status()
+        self.assertIsNotNone(status["host"]["last_poll_at"])
+        self.assertIsNotNone(status["last_poll_age_seconds"])
         self.assertEqual(status["requests"]["in_progress"], 1)
         self.assertNotIn("message", status["requests"]["items"][0])
         result = await host.complete(lease["lease_token"], request["request_id"], "Completed")
         self.assertEqual(await pending, result)
+        await host.renew(lease["lease_token"], detach=True)
+
+
+    async def test_next_request_waits_briefly_for_new_body_input(self):
+        host = HostRuntime(self.mind, self.service, timeout=3)
+        lease = await host.attach("waiting-host", "model-waiting")
+        waiter = asyncio.create_task(
+            host.next_request(lease["lease_token"], wait_seconds=1)
+        )
+        await asyncio.sleep(0.05)
+        pending = asyncio.create_task(host.submit("arriving body input"))
+        request = await waiter
+        self.assertIsNotNone(request)
+        self.assertEqual(request["user_message"], "arriving body input")
+        pending.cancel()
+        try:
+            await pending
+        except asyncio.CancelledError:
+            pass
         await host.renew(lease["lease_token"], detach=True)
 
     async def test_body_queues_are_isolated_fifo_across_instances(self):
