@@ -252,7 +252,10 @@ class HostRuntime:
         requests = await self.records.pending()
         items = []
         for request in requests:
-            claim_until = float(request.get("claim_until", 0) or 0)
+            raw_claim_until = request.get("claim_until")
+            claim_until = (
+                float(raw_claim_until) if raw_claim_until is not None else None
+            )
             in_progress = bool(request.get("claim")) and (
                 claim_until is None or claim_until > now
             )
