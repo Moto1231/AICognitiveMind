@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from aicognitive_mind.host_runtime import HostAwareInterpreter
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
-from aicognitive_mind.task_model_assignments import TaskModelAssignmentRegistry
+from aicognitive_mind.task_model_assignments import TaskFallbackAssignment, TaskModelAssignmentRegistry
 
 
 class FakeRecords:
@@ -211,8 +211,8 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         await TaskModelAssignmentRegistry(records).replace([
             item.model_copy(update={
                 "fallbacks": [
-                    {"provider": "Local endpoint", "model": "backup-model"},
-                    {"provider": "Local endpoint", "model": "last-resort-model"},
+                    TaskFallbackAssignment(provider="Local endpoint", model="backup-model"),
+                    TaskFallbackAssignment(provider="Local endpoint", model="last-resort-model"),
                 ],
             }) if item.task == "vision" else item
             for item in assignments
@@ -242,7 +242,7 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
             item.model_copy(update={
                 "provider": "Local endpoint",
                 "model": "primary-audio",
-                "fallbacks": [{"provider": "Local endpoint", "model": "backup-audio"}],
+                "fallbacks": [TaskFallbackAssignment(provider="Local endpoint", model="backup-audio")],
             }) if item.task == "audio" else item
             for item in assignments
         ])
