@@ -352,27 +352,35 @@ class HostRuntime:
             await asyncio.sleep(0.2)
         raise TimeoutError("External host did not complete the Body request before its deadline")
 
-    async def next_request(self, token: str) -> dict | None:
+    async def next_request(self, token: str, wait_seconds: float = 0) -> dict | None:
+        if not 0 <= wait_seconds <= 25:
+            raise ValueError("wait_seconds must be between 0 and 25")
         host = await self.require(token)
         polled_at = time.time()
         revised_host = {**host, "last_poll_at": polled_at}
         if not await self.records.replace("active_host", host, revised_host):
             raise CommitConflict("Host lease changed while recording its poll")
         host = revised_host
-        for request in await self.records.pending():
-            claimed = {
-                **request,
-                "claim": host["token_hash"],
-                "claim_until": min(host["expires"], request["deadline"]),
-            }
-            if await self.records.replace(request["request_id"], request, claimed):
-                context = await self.service.begin_interaction(request["message"])
-                return {
-                    "request_id": request["request_id"],
-                    "user_message": request["message"],
-                    "context": context,
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            for request in await self.records.pending():
+                claimed = {
+                    **request,
+                    "claim": host["token_hash"],
+                    "claim_until": min(host["expires"], request["deadline"]),
                 }
-        return None
+                if await self.records.replace(request["request_id"], request, claimed):
+                    context = await self.service.begin_interaction(request["message"])
+                    return {
+                        "request_id": request["request_id"],
+                        "user_message": request["message"],
+                        "context": context,
+                    }
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            await asyncio.sleep(min(0.25, remaining))
+            host = await self.require(token)
 
     async def complete(
         self, token: str, request_id: str, response_text: str, proposed_memories: tuple = ()
