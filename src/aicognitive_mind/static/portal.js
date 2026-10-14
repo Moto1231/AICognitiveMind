@@ -159,6 +159,8 @@ const el = {
   taskProfileBack: document.getElementById("taskProfileBack"),
   taskProfileEndpointSection: document.getElementById("taskProfileEndpointSection"),
   taskProfileEndpointSelect: document.getElementById("taskProfileEndpointSelect"),
+  taskProfileEndpointPreset: document.getElementById("taskProfileEndpointPreset"),
+  taskProfileAddPreset: document.getElementById("taskProfileAddPreset"),
   taskProfileAddEndpoint: document.getElementById("taskProfileAddEndpoint"),
   taskProfileEndpointName: document.getElementById("taskProfileEndpointName"),
   taskProfileBaseUrl: document.getElementById("taskProfileBaseUrl"),
@@ -2181,7 +2183,8 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
   el.taskProfileModel.value = "";
   loadEndpointIntoForm();
 });
-if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);\n if (el.taskProfileAddPreset) el.taskProfileAddPreset.addEventListener("click", addTaskProfileEndpointFromPreset);
+if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
+if (el.taskProfileAddPreset) el.taskProfileAddPreset.addEventListener("click", addTaskProfileEndpointFromPreset);
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
 if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", () => {
