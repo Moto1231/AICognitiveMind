@@ -200,7 +200,7 @@ class RuntimeRecords:
                     }
                 )
                 .sort("created", 1)
-                .limit(20)
+                .limit(512)
             )
             return [
                 {
@@ -215,7 +215,7 @@ class RuntimeRecords:
                 "SELECT * OMIT id, mind_id, key FROM runtime_records "
                 "WHERE mind_id = $mind_id AND kind = 'body_request' "
                 "AND state = 'pending' AND (deadline IS NONE OR deadline IS NULL OR deadline > $now) "
-                "ORDER BY created LIMIT 20;",
+                "ORDER BY created LIMIT 512;",
                 {"now": now, "mind_id": self.mind_id},
             )
         return sorted(
@@ -227,7 +227,7 @@ class RuntimeRecords:
                 and (v.get("deadline") is None or v["deadline"] > now)
             ],
             key=lambda v: v["created"],
-        )[:20]
+        )[:512]
 
 
 class HostRuntime:
@@ -354,7 +354,7 @@ class HostRuntime:
             raise CommitConflict("Host lease changed")
         return {"expires": revised["expires"]}
 
-    async def submit(self, message: str) -> dict:
+    async def submit(self, message: str, *, priority: int = 0) -> dict:
         if not await self.active():
             raise RuntimeError("No external reasoning host is attached")
         key = uuid4().hex
@@ -363,6 +363,9 @@ class HostRuntime:
             "request_id": key,
             "state": "pending",
             "message": message,
+            # Lower numbers run first. Human text stays ahead of background
+            # sensory interpretation requests even when those requests arrived earlier.
+            "priority": int(priority),
             "created": time.time(),
             # Main reasoning requests have no task-provider deadline. They remain
             # pending until the connected reasoning host explicitly completes them.
@@ -380,7 +383,19 @@ class HostRuntime:
 
     async def next_request(self, token: str) -> dict | None:
         host = await self.require(token)
-        for request in await self.records.pending():
+        requests = await self.records.pending()
+
+        def request_priority(request: dict) -> tuple[int, float]:
+            priority = request.get("priority")
+            if isinstance(priority, int):
+                return priority, float(request.get("created", 0))
+            # Backward compatibility for requests queued before priorities existed.
+            message = str(request.get("message", "")).lstrip().lower()
+            if message.startswith("interpret this ") and "percept:" in message:
+                return 10, float(request.get("created", 0))
+            return 0, float(request.get("created", 0))
+
+        for request in sorted(requests, key=request_priority):
             claimed = {
                 **request,
                 "claim": host["token_hash"],
@@ -516,7 +531,7 @@ class HostAwareInterpreter:
                 + json.dumps(percept_payload, ensure_ascii=False, separators=(",", ":"))
             )
             try:
-                result = await self.hosts.submit(prompt)
+                result = await self.hosts.submit(prompt, priority=10)
             except Exception as exc:
                 raise RuntimeError(
                     f"Reasoning-host interpretation failed for {percept.modality.value}: "
