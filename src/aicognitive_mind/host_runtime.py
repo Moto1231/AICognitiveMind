@@ -231,15 +231,47 @@ class RuntimeRecords:
 
 
 class HostRuntime:
+    # Host liveness is separate from task deadlines. A quiet Body must not expire
+    # a host, but a host that has stopped heartbeating must be recoverable.
+    HEARTBEAT_STALE_AFTER_SECONDS = 180
+    REQUEST_WAIT_SECONDS = 25
+
     def __init__(self, mind: Any, service: Any, timeout: float = 120) -> None:
         self.records = RuntimeRecords(mind)
         self.service, self.timeout = service, timeout
 
-    async def active(self) -> dict | None:
+    @classmethod
+    def _heartbeat_stale(cls, host: dict | None, now: float | None = None) -> bool:
+        if not host or host.get("last_heartbeat_at") is None:
+            return bool(host)
+        current = time.time() if now is None else now
+        return current - float(host["last_heartbeat_at"]) > cls.HEARTBEAT_STALE_AFTER_SECONDS
+
+    async def _has_claimed_request(self) -> bool:
+        now = time.time()
+        for request in await self.records.pending():
+            if not request.get("claim"):
+                continue
+            claim_until = request.get("claim_until")
+            if claim_until is None or float(claim_until) > now:
+                return True
+        return False
+
+    async def _raw_live_host(self) -> dict | None:
         host = await self.records.get("active_host")
         if not host or (
             host.get("expires") is not None and host["expires"] <= time.time()
         ):
+            return None
+        return host
+
+    async def active(self) -> dict | None:
+        host = await self._raw_live_host()
+        if not host:
+            return None
+        # Do not declare a host dead while it owns an in-flight request. This
+        # protects long reasoning calls from being interrupted by task timeouts.
+        if self._heartbeat_stale(host) and not await self._has_claimed_request():
             return None
         return {
             key: host.get(key)
@@ -248,7 +280,12 @@ class HostRuntime:
 
     async def status(self) -> dict:
         now = time.time()
-        host = await self.active()
+        raw_host = await self._raw_live_host()
+        stale = self._heartbeat_stale(raw_host, now) and not await self._has_claimed_request()
+        host = None if stale else (
+            {key: raw_host.get(key) for key in ("name", "model", "expires", "attached_at", "last_heartbeat_at")}
+            if raw_host else None
+        )
         requests = await self.records.pending()
         items = []
         for request in requests:
@@ -273,6 +310,7 @@ class HostRuntime:
         return {
             "connected": host is not None,
             "host": host,
+            "host_state": "stale" if stale else ("connected" if host else "disconnected"),
             "lease_remaining_seconds": (
                 max(0, int(float(host["expires"]) - now))
                 if host and host.get("expires") is not None else None
@@ -302,7 +340,11 @@ class HostRuntime:
         if before and (
             before.get("expires") is None or before["expires"] > time.time()
         ):
-            raise CommitConflict("An external host already owns the live lease")
+            stale = self._heartbeat_stale(before)
+            claimed = await self._has_claimed_request() if stale else True
+            if not stale or claimed:
+                raise CommitConflict("An external host already owns the live lease")
+            logger.warning("recovering stale reasoning-host registration after heartbeat timeout")
         token = secrets.token_urlsafe(32)
         now = time.time()
         host = {
@@ -371,25 +413,38 @@ class HostRuntime:
             await asyncio.sleep(0.2)
 
     async def next_request(self, token: str) -> dict | None:
-        host = await self.require(token)
-        for request in await self.records.pending():
-            claimed = {
-                **request,
-                "claim": host["token_hash"],
-                "claim_until": (
-                    min(host["expires"], request["deadline"])
-                    if host.get("expires") is not None and request.get("deadline") is not None
-                    else None
-                ),
-            }
-            if await self.records.replace(request["request_id"], request, claimed):
-                context = await self.service.begin_interaction(request["message"])
-                return {
-                    "request_id": request["request_id"],
-                    "user_message": request["message"],
-                    "context": context,
+        # MCP cannot push an unsolicited tool call into a connected client. Use a
+        # bounded long-poll so sensory ingress wakes the waiting host promptly,
+        # without requiring a tight client-side polling loop.
+        deadline = time.monotonic() + self.REQUEST_WAIT_SECONDS
+        while True:
+            host = await self.require(token)
+            for request in await self.records.pending():
+                now = time.time()
+                claim_until = request.get("claim_until")
+                if request.get("claim") and (
+                    claim_until is None or float(claim_until) > now
+                ):
+                    continue
+                claimed = {
+                    **request,
+                    "claim": host["token_hash"],
+                    "claim_until": (
+                        min(float(request["deadline"]), now + self.timeout)
+                        if request.get("deadline") is not None
+                        else None
+                    ),
                 }
-        return None
+                if await self.records.replace(request["request_id"], request, claimed):
+                    context = await self.service.begin_interaction(request["message"])
+                    return {
+                        "request_id": request["request_id"],
+                        "user_message": request["message"],
+                        "context": context,
+                    }
+            if time.monotonic() >= deadline:
+                return None
+            await asyncio.sleep(0.25)
 
     async def complete(
         self, token: str, request_id: str, response_text: str, proposed_memories: tuple = ()
