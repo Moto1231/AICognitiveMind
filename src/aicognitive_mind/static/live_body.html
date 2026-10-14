@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom — Live Body</title>
   <style>
-    :root { color-scheme: dark; }
+    :root { color-scheme: dark; font-size: calc(100% - 1px); }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
     body { font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
     main {
@@ -40,7 +40,7 @@
       background: #181a20;
       color: #d7d9df;
       text-decoration: none;
-      font-size: calc(.92rem - 1px);
+      font-size: .92rem;
     }
     .page-links a:hover { border-color: #687388; }
     #stage {
@@ -72,7 +72,7 @@
       background: rgba(16,17,20,.88);
       display: none;
     }
-    .audio-meter-label { display: flex; justify-content: space-between; gap: .5rem; color: #c8ccd5; font-size: calc(.8rem - 1px); margin-bottom: .35rem; }
+    .audio-meter-label { display: flex; justify-content: space-between; gap: .5rem; color: #c8ccd5; font-size: .8rem; margin-bottom: .35rem; }
     .audio-meter-track { height: .55rem; border-radius: 999px; background: #2a2d36; overflow: hidden; }
     #audioMeterFill { height: 100%; width: 0%; background: #65d39b; border-radius: inherit; transition: width .08s linear; }
     button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
@@ -80,8 +80,8 @@
     #status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     .sense-status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin: 0; max-height: 7.5rem; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
     .sense-status { min-width: 0; padding: .75rem .85rem; border: 1px solid #373a44; border-radius: 10px; background: #181a20; }
-    .sense-status strong { display: block; margin-bottom: .3rem; font-size: calc(.86rem - 1px); }
-    .sense-status span { display: block; color: #c8ccd5; font-size: calc(.82rem - 1px); line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .sense-status strong { display: block; margin-bottom: .3rem; font-size: .86rem; }
+    .sense-status span { display: block; color: #c8ccd5; font-size: .82rem; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
     .sense-status[data-state="success"] { border-color: #38795d; }
     .sense-status[data-state="error"] { border-color: #a34a55; }
     .sense-status[data-state="warning"] { border-color: #8a7040; }
@@ -90,7 +90,7 @@
       color: #c8ccd5;
       text-align: right;
       overflow-wrap: anywhere;
-      font-size: calc(.8rem - 1px);
+      font-size: .8rem;
       line-height: 1.35;
     }
     .host-status[data-state="connected"] { color: #9be0bc; }
