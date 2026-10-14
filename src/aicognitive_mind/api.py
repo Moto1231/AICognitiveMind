@@ -69,7 +69,12 @@ from aicognitive_mind.embodiment import (
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
-from aicognitive_mind.task_behaviors import TASK_FOUNDATIONS, TaskBehavior, TaskBehaviorRegistry, TaskExecutionContext
+from aicognitive_mind.task_behaviors import (
+    TASK_FOUNDATIONS,
+    TaskBehavior,
+    TaskBehaviorRegistry,
+    TaskExecutionContext,
+)
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, discover_endpoint_model_details
 from aicognitive_mind.task_model_assignments import (
     TaskModelAssignment,
