@@ -1694,9 +1694,12 @@ async function refreshStatus() {
 
 async function refresh() {
   try {
+    const admin = state.mode === "admin" && state.adminAuthorized;
     await Promise.all([
       refreshStatus(),
-      refreshMemory(filters.mind, true),
+      refreshMemory(admin ? filters.admin : filters.mind, true),
+      refreshJournal(true),
+      ...(admin ? [refreshBodyFallbackSettings()] : []),
     ]);
     el.initializeOverlay.classList.add("hidden");
   } catch (error) {
@@ -1750,10 +1753,7 @@ function bindFilterEvents(config) {
 el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
 el.logoutButton.addEventListener("click", logout);
-el.refreshButton.addEventListener("click", () => Promise.all([
-  refreshStatus(),
-  refreshMemory(filters.mind, true),
-]));
+el.refreshButton.addEventListener("click", refresh);
 el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));
 el.adminRefreshButton.addEventListener("click", () => Promise.all([
   refreshStatus(),
