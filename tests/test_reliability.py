@@ -120,6 +120,41 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await host_b.active())["model"], "model-b")
         await host_b.renew(lease_b["lease_token"], detach=True)
 
+    async def test_human_text_precedes_queued_sensory_interpretations(self):
+        host = HostRuntime(self.mind, self.service, timeout=3)
+        lease = await host.attach("priority-host", "model-priority")
+
+        sensory = asyncio.create_task(
+            host.submit(
+                "Interpret this vision percept as Axiom's default reasoning host.\nPERCEPT: {}",
+                priority=10,
+            )
+        )
+        human = asyncio.create_task(host.submit("Please answer this text message."))
+
+        requests = []
+        for _ in range(30):
+            requests = await host.records.pending()
+            if len(requests) == 2:
+                break
+            await asyncio.sleep(0.01)
+        self.assertEqual(len(requests), 2)
+
+        first = await host.next_request(lease["lease_token"])
+        self.assertEqual(first["user_message"], "Please answer this text message.")
+        await host.complete(
+            lease["lease_token"], first["request_id"], "Text reply delivered."
+        )
+        self.assertEqual((await human)["response_text"], "Text reply delivered.")
+
+        second = await host.next_request(lease["lease_token"])
+        self.assertIn("PERCEPT:", second["user_message"])
+        await host.complete(
+            lease["lease_token"], second["request_id"], "Vision interpreted."
+        )
+        self.assertEqual((await sensory)["response_text"], "Vision interpreted.")
+        await host.renew(lease["lease_token"], detach=True)
+
     async def test_reasoning_host_and_body_request_do_not_expire(self):
         host = HostRuntime(self.mind, self.service, timeout=0.01)
         lease = await host.attach("persistent-host", "model-persistent")
