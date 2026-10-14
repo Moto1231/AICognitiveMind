@@ -435,7 +435,7 @@ class HostRuntime:
                     return priority, float(request.get("created", 0))
                 # Backward compatibility for requests queued before priorities existed.
                 message = str(request.get("message", "")).lstrip().lower()
-                if message.startswith("interpret this ") and "percept:" in message:
+                if message.startswith("interpret this ") and "percept" in message:
                     return 10, float(request.get("created", 0))
                 return 0, float(request.get("created", 0))
 
