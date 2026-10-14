@@ -710,6 +710,7 @@
       const metadata = intent.metadata || {};
       const requestedRate = Number(metadata.rate ?? sharedVoicePack?.rate ?? 1);
       const requestedVolume = Number(metadata.volume ?? sharedVoicePack?.volume ?? 1);
+      let audioUrl = null;
 
       try {
         const response = await bodyFetch("/v1/body/speech/fish-audio", {
@@ -724,27 +725,34 @@
         if (!response.ok) throw new Error(await responseErrorMessage(response));
 
         const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
+        audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
         await applyBodyAudioOutput(audio);
         audio.volume = 1;
         talkSpeaking = true;
         audio.addEventListener("ended", () => {
           talkSpeaking = false;
-          URL.revokeObjectURL(url);
+          setStatus("VOICE PLAYBACK COMPLETE (Fish Audio)");
+          URL.revokeObjectURL(audioUrl);
         }, { once: true });
         audio.addEventListener("error", () => {
           talkSpeaking = false;
-          URL.revokeObjectURL(url);
+          setStatus("Fish Audio playback failed. Check the selected output device and browser audio permissions.");
+          URL.revokeObjectURL(audioUrl);
         }, { once: true });
         await audio.play();
+        setStatus("VOICE PLAYBACK STARTED (Fish Audio)");
         return;
       } catch (error) {
-        // Keep the Body usable when Fish is not configured during local development.
+        talkSpeaking = false;
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        // Keep the Body usable when Fish is not configured during local development,
+        // but make the fallback visible rather than implying Fish Audio played.
         if (!window.speechSynthesis) {
-          setStatus("Fish Audio speech failed: " + error.message);
+          setStatus("Fish Audio speech failed and browser speech is unavailable: " + error.message);
           return;
         }
+        setStatus("Fish Audio unavailable; falling back to browser speech: " + error.message);
       }
 
       loadVoices();
@@ -762,6 +770,18 @@
         const requestedVoice = voices.find((item) => item.name === metadata.voice_name);
         if (requestedVoice) utterance.voice = requestedVoice;
       }
+      utterance.onstart = () => {
+        talkSpeaking = true;
+        setStatus("VOICE PLAYBACK STARTED (browser speech)");
+      };
+      utterance.onend = () => {
+        talkSpeaking = false;
+        setStatus("VOICE PLAYBACK COMPLETE (browser speech)");
+      };
+      utterance.onerror = (event) => {
+        talkSpeaking = false;
+        setStatus("Browser speech playback failed: " + (event.error || "unknown speech error"));
+      };
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     }
