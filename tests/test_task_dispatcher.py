@@ -385,5 +385,35 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         ):
             await interpreter.interpret(percept)
 
+    async def test_runtime_contract_dispatches_voice_synthesis(self):
+        from unittest.mock import AsyncMock
+        from aicognitive_mind.task_behaviors import TaskExecutionContext
+
+        records = await self.configured()
+        dispatcher = TaskModelDispatcher(records, client=FakeClient(FakeResponse({})))
+        dispatcher.synthesize_voice = AsyncMock(return_value=b"speech-audio")
+
+        result = await dispatcher.execute(
+            TaskExecutionContext(task="audio_voice"),
+            {"operation": "synthesize_voice", "text": "Hello there", "speed": 1.2, "volume": -4.0},
+        )
+
+        self.assertEqual(result, b"speech-audio")
+        dispatcher.synthesize_voice.assert_awaited_once_with(
+            "Hello there", speed=1.2, volume=-4.0
+        )
+
+    async def test_runtime_contract_rejects_voice_synthesis_on_other_task(self):
+        from aicognitive_mind.task_behaviors import TaskExecutionContext
+
+        records = await self.configured()
+        dispatcher = TaskModelDispatcher(records, client=FakeClient(FakeResponse({})))
+
+        with self.assertRaisesRegex(TaskDispatchError, "requires the audio_voice task"):
+            await dispatcher.execute(
+                TaskExecutionContext(task="audio"),
+                {"operation": "synthesize_voice", "text": "Hello there"},
+            )
+
 if __name__ == "__main__":
     unittest.main()

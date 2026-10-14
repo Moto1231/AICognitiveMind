@@ -63,6 +63,19 @@ class TaskModelDispatcher:
                 context.task, filename=filename, audio_bytes=audio_bytes,
                 media_type=media_type, context=context,
             )
+        if operation == "synthesize_voice":
+            if context.task != "audio_voice":
+                raise TaskDispatchError("Voice synthesis runtime operation requires the audio_voice task.")
+            text = payload.get("text")
+            speed = payload.get("speed", 1.0)
+            volume = payload.get("volume", 0.0)
+            if not isinstance(text, str) or not text.strip():
+                raise TaskDispatchError("Voice synthesis runtime payload requires non-empty text.")
+            if isinstance(speed, bool) or not isinstance(speed, (int, float)) or not 0.1 <= speed <= 10:
+                raise TaskDispatchError("Voice synthesis speed must be between 0.1 and 10.")
+            if isinstance(volume, bool) or not isinstance(volume, (int, float)) or not -20 <= volume <= 0:
+                raise TaskDispatchError("Voice synthesis volume must be between -20 and 0 dB.")
+            return await self.synthesize_voice(text.strip(), speed=float(speed), volume=float(volume))
         raise TaskDispatchError("Unsupported task runtime operation.")
 
     async def assignment(self, task: TaskKind) -> TaskModelAssignment:
