@@ -759,6 +759,46 @@ async function discoverTaskProfileModels() {
   }
 }
 
+const COMMON_ENDPOINT_PRESETS = [
+  { id: "openai", name: "OpenAI", base_url: "https://api.openai.com/v1" },
+  { id: "openrouter", name: "OpenRouter", base_url: "https://openrouter.ai/api/v1" },
+  { id: "google-gemini", name: "Google Gemini (OpenAI-compatible)", base_url: "https://generativelanguage.googleapis.com/v1beta/openai" },
+  { id: "groq", name: "Groq", base_url: "https://api.groq.com/openai/v1" },
+  { id: "together", name: "Together AI", base_url: "https://api.together.xyz/v1" },
+  { id: "fireworks", name: "Fireworks AI", base_url: "https://api.fireworks.ai/inference/v1" },
+  { id: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com" },
+  { id: "mistral", name: "Mistral AI", base_url: "https://api.mistral.ai/v1" },
+  { id: "cerebras", name: "Cerebras", base_url: "https://api.cerebras.ai/v1" },
+  { id: "ollama", name: "Ollama (local)", base_url: "http://localhost:11434/v1" },
+  { id: "lm-studio", name: "LM Studio (local)", base_url: "http://localhost:1234/v1" },
+  { id: "vllm", name: "vLLM (local/self-hosted)", base_url: "http://localhost:8000/v1" },
+  { id: "localai", name: "LocalAI (local/self-hosted)", base_url: "http://localhost:8080/v1" },
+];
+function addTaskProfileEndpointFromPreset() {
+  const presetId = el.taskProfileEndpointPreset?.value;
+  const preset = COMMON_ENDPOINT_PRESETS.find(item => item.id === presetId);
+  if (!preset) {
+    toast("Choose an endpoint preset first", true);
+    return;
+  }
+  const endpoint = {
+    id: crypto.randomUUID(),
+    name: preset.name,
+    base_url: preset.base_url,
+    api_key: "",
+    models: [],
+    model_capabilities: {},
+  };
+  state.providerEndpoints.push(endpoint);
+  state.activeEndpointId = endpoint.id;
+  state.activeEndpointOriginalName = "";
+  renderTaskProfileEndpointOptions();
+  loadEndpointIntoForm();
+  if (el.taskProfileEndpointPreset) el.taskProfileEndpointPreset.value = "";
+  el.taskProfileApiKey.focus();
+  toast(`Added ${preset.name}. Add credentials if required, then discover models.`);
+}
+
 function addTaskProfileEndpoint() {
   const endpoint = {
     id: crypto.randomUUID(),
@@ -2141,7 +2181,7 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
   el.taskProfileModel.value = "";
   loadEndpointIntoForm();
 });
-if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
+if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);\n if (el.taskProfileAddPreset) el.taskProfileAddPreset.addEventListener("click", addTaskProfileEndpointFromPreset);
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
 if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", () => {
