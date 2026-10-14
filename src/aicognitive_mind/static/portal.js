@@ -1699,7 +1699,15 @@ async function refresh() {
       refreshStatus(),
       refreshMemory(admin ? filters.admin : filters.mind, true),
       refreshJournal(true),
-      ...(admin ? [refreshBodyFallbackSettings()] : []),
+      ...(admin ? [
+        refreshBodyFallbackSettings(),
+        refreshHostBehaviors(),
+        refreshTaskModelAssignments(),
+        refreshTaskBehaviors(),
+        refreshProviderEndpoints(),
+        refreshMcpServers(),
+        loadVoiceSettings(),
+      ] : []),
     ]);
     el.initializeOverlay.classList.add("hidden");
   } catch (error) {
