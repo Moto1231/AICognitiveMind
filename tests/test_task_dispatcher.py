@@ -300,8 +300,9 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
             async def active(self):
                 return {"name": "ChatGPT", "model": "GPT-6"}
 
-            async def submit(self, message):
+            async def submit(self, message, *, priority=0):
                 self.message = message
+                self.priority = priority
                 return {"response_text": "The audio contains a short spoken phrase."}
 
         class Fallback:
