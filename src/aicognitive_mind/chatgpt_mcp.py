@@ -87,6 +87,13 @@ BODY HOST LIFECYCLE:
 - While the Body is in use, renew the lease before it expires and poll next_body_interaction.
   For every claimed Body request, reason from its supplied Axiom context, inspect sensory evidence
   when needed, then call complete_body_interaction.
+- At the start of every incoming ChatGPT turn while the Body lease is active, check
+  next_body_interaction before answering the current chat message. If requests are waiting,
+  process and complete them, then keep checking until the queue is empty. Never leave a claimed
+  request unfinished. This is how the connected host services Body messages and sensory work
+  between user turns; a connected-host status label alone does not service the queue.
+- Human text interactions must be selected ahead of passive sensory interpretation requests.
+  Preserve sensory evidence, but do not let older percept prompts block a human waiting for a reply.
 - Keep this external-host lease active for the live Body session. Detach only when the user asks
   to stop/handoff the Body or the host session is ending.
 - When an active live Body session exists and you are answering ordinary ChatGPT chat rather than completing a claimed Body request, call speak_body_text with the same user-facing response so the Body speaks it. Respect explicit requests not to speak, and do not speak passive sensory observations or diagnostics by default.
