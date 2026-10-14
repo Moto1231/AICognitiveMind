@@ -299,9 +299,14 @@ class HostRuntime:
         # own deadlines; a Body request or idle period must not expire this connection.
         # Keep lease_seconds as a compatibility parameter for existing callers.
         before = await self.records.get("active_host")
+        same_host = bool(
+            before
+            and before.get("name") == name
+            and before.get("model") == model
+        )
         if before and (
             before.get("expires") is None or before["expires"] > time.time()
-        ):
+        ) and not same_host:
             raise CommitConflict("An external host already owns the live lease")
         token = secrets.token_urlsafe(32)
         now = time.time()
@@ -314,6 +319,9 @@ class HostRuntime:
             "token_hash": hashlib.sha256(token.encode()).hexdigest(),
         }
         if before:
+            # Reattaching the same host identity rotates its private capability and
+            # refreshes its heartbeat. This recovers from a lost client-side lease
+            # token without expiring a persistent reasoning host during idle periods.
             if not await self.records.replace("active_host", before, host):
                 raise CommitConflict("Another host attached concurrently")
         else:
