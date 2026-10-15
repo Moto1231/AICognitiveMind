@@ -30,8 +30,14 @@ from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.host_runtime import RuntimeRecords
 
+from aicognitive_mind.task_behaviors import (
+    TaskBehaviorRegistry,
+    TaskExecutionContext,
+    TaskPromptAssembler,
+)
+
 _SENSORY_DATA_URL = re.compile(
-    r'data:[^,\\s"\\']+;base64,[A-Za-z0-9+/=\\r\\n]+',
+    r"data:[^,\s\"']+;base64,[A-Za-z0-9+/=\r\n]+",
     re.IGNORECASE,
 )
 _SENSORY_PAYLOAD_KEYS = {"payload_base64", "image_data", "audio_data"}
@@ -55,12 +61,6 @@ def _journal_safe_value(value: Any, *, key: str | None = None) -> Any:
         value,
     )
 
-
-from aicognitive_mind.task_behaviors import (
-    TaskBehaviorRegistry,
-    TaskExecutionContext,
-    TaskPromptAssembler,
-)
 
 
 class MemoryProposal(BaseModel):
