@@ -25,6 +25,8 @@ Configure the API and MCP process to use the same persistent database. Separate 
 
 A live host takes precedence over standalone reasoning. A timed-out host request is not silently sent to a second model. The API reports actual active-host metadata separately from the configured primary architecture. Hosts must implement this polling protocol; displaying `External Host` alone does not attach a model.
 
+`begin_interaction` now includes a read-only `body_work` snapshot: whether a reasoning host is attached and counts of queued human, sensory, and other requests. The connected host should commit the current direct human response first, then claim at most one queued Body request during that turn. This bounded step makes sensory interpretation part of the normal interaction lifecycle without letting a backlog monopolize a human reply. The queue remains authoritative: `next_body_interaction` claims work, and `complete_body_interaction` marks it complete only after the host has produced a response. If the host is not attached, the snapshot reports that state but does not pretend to process the queue. This is turn-triggered processing, not autonomous between-turn awareness.
+
 MCP HTTP binds to loopback by default. Set `MCP_ACCESS_TOKEN` to use a non-loopback bind, and send `Authorization: Bearer <token>`. Use TLS at the deployment boundary for remote traffic. Stdio does not use HTTP authentication. The application password for the browser portal is a separate setting.
 
 ## Optional fallback and quotas
