@@ -123,6 +123,33 @@ async def execute_task(
     if dispatcher is None:
         raise RuntimeError("Task execution is not available in this MCP session.")
 
+    async def record_task_state(status: str, error: str | None = None) -> None:
+        task_value = {
+            "task": task,
+            "operation": operation,
+            "status": status,
+            "session_id": session_id,
+            "state_ref": state_ref,
+        }
+        if error:
+            task_value["error"] = error
+        mind_service = getattr(state, "mind_service", None)
+        if mind_service is None:
+            return
+        await mind_service.update_current_state(
+            event="task_changed",
+            updates={
+                "values": {
+                    "active_task": {"value": task_value, "source": "task_dispatch"},
+                    "pending_work": {
+                        "value": {"task": task, "status": status, "error": error},
+                        "source": "task_dispatch",
+                    },
+                }
+            },
+            source="task_dispatch",
+        )
+
     if operation == "chat":
         if (
             messages is None
@@ -151,6 +178,7 @@ async def execute_task(
             "media_type": media_type,
         }
 
+    await record_task_state("running")
     assignment = await dispatcher.assignment(task)
     behaviors = await dispatcher.behaviors.list()
     behavior = next(item for item in behaviors if item.task == task)
@@ -166,6 +194,7 @@ async def execute_task(
     if not has_specialist:
         host = await state.hosts.active() if state.hosts is not None else None
         if host is None:
+            await record_task_state("failed", "No specialist is selected and no reasoning host is connected.")
             return {
                 "status": "task_failed",
                 "task": task,
@@ -206,6 +235,7 @@ async def execute_task(
         try:
             result = await state.hosts.submit(prompt)
         except Exception as exc:
+            await record_task_state("failed", f"{exc.__class__.__name__}: {exc}")
             return {
                 "status": "task_failed",
                 "task": task,
@@ -214,6 +244,7 @@ async def execute_task(
                 "operation": operation,
                 "error": f"Reasoning-host task handoff failed: {exc.__class__.__name__}: {exc}",
             }
+        await record_task_state("completed")
         return {
             "status": "completed",
             "task": task,
@@ -238,6 +269,7 @@ async def execute_task(
     try:
         result = await dispatcher.execute(execution_context, payload)
     except TaskDispatchError as exc:
+        await record_task_state("failed", str(exc))
         return {
             "status": "task_failed",
             "task": task,
@@ -246,6 +278,7 @@ async def execute_task(
             "operation": operation,
             "error": str(exc),
         }
+    await record_task_state("completed")
     return {
         "status": "completed",
         "task": task,

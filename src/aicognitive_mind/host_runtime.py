@@ -365,7 +365,25 @@ class HostRuntime:
                 raise CommitConflict("Another host attached concurrently")
         else:
             await self.records.create("active_host", host)
+        if not same_host:
+            await self._record_connection_state({
+                "reasoning_host": "connected",
+                "name": name,
+                "model": model,
+            })
         return {"lease_token": token, "expires": host["expires"]}
+
+    async def _record_connection_state(self, value: dict) -> None:
+        """Keep the persistent state ledger synchronized with host lifecycle transitions."""
+        try:
+            await self.service.update_current_state(
+                event="connection_changed",
+                updates={"values": {"connection_status": value}},
+                source="host_runtime",
+            )
+        except Exception:
+            # Connection ownership is primary; surface ledger failures without losing the host.
+            logger.exception("Could not persist reasoning-host connection state")
 
     async def require(self, token: str) -> dict:
         host = await self.records.get("active_host")
@@ -391,6 +409,8 @@ class HostRuntime:
         }
         if not await self.records.replace("active_host", host, revised):
             raise CommitConflict("Host lease changed")
+        if detach:
+            await self._record_connection_state({"reasoning_host": "disconnected"})
         return {"expires": revised["expires"]}
 
     async def submit(self, message: str, *, priority: int = 0) -> dict:
