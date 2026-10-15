@@ -4,7 +4,6 @@
 # copyright holder.
 
 from aicognitive_mind.commit import atomic
-import json
 
 from aicognitive_mind.domain import (
     CognitiveActor,
