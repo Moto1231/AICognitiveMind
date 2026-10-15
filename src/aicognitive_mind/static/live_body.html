@@ -379,6 +379,7 @@
     let realtimeEvents = null;
     let realtimeMicrophone = null;
     let realtimeAudio = null;
+    let activeSpeechAudio = null;
     let realtimeMcpPending = 0;
     let audioContext = null;
     let audioAnalyser = null;
@@ -772,20 +773,26 @@
           })
         });
         if (!response.ok) throw new Error(await responseErrorMessage(response));
+        if (!voiceEnabled) return;
 
         const blob = await response.blob();
+        if (!voiceEnabled) return;
         audioUrl = URL.createObjectURL(blob);
         const audio = new Audio(audioUrl);
+        activeSpeechAudio = audio;
         await applyBodyAudioOutput(audio);
+        if (!voiceEnabled) { audio.pause(); activeSpeechAudio = null; return; }
         audio.volume = 1;
         talkSpeaking = true;
         audio.addEventListener("ended", () => {
           talkSpeaking = false;
+          if (activeSpeechAudio === audio) activeSpeechAudio = null;
           setStatus("VOICE PLAYBACK COMPLETE (Fish Audio)");
           URL.revokeObjectURL(audioUrl);
         }, { once: true });
         audio.addEventListener("error", () => {
           talkSpeaking = false;
+          if (activeSpeechAudio === audio) activeSpeechAudio = null;
           setStatus("Fish Audio playback failed. Check the selected output device and browser audio permissions.");
           URL.revokeObjectURL(audioUrl);
         }, { once: true });
@@ -804,6 +811,7 @@
         setStatus("Fish Audio unavailable; falling back to browser speech: " + error.message);
       }
 
+      if (!voiceEnabled) return;
       loadVoices();
       const utterance = new SpeechSynthesisUtterance(intent.text);
       applyVoicePack(utterance, sharedVoicePack, voices);
@@ -1617,6 +1625,12 @@
       refreshToggleUi();
       if (!voiceEnabled) {
         window.speechSynthesis?.cancel();
+        if (activeSpeechAudio) {
+          activeSpeechAudio.pause();
+          activeSpeechAudio.currentTime = 0;
+          activeSpeechAudio = null;
+        }
+        talkSpeaking = false;
         if (realtimeAudio) realtimeAudio.muted = true;
         setStatus("VOICE OFF\\nSpoken output is disabled; vision and hearing are unchanged.");
       } else {
