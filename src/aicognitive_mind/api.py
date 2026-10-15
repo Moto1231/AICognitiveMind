@@ -1251,19 +1251,19 @@ async def mouth_output_events(request: Request) -> StreamingResponse:
             if intent is not None:
                 while not subscriber.empty():
                     subscriber.get_nowait()
-                yield "event: voice-ready\\ndata: {}\\n\\n"
+                yield "event: voice-ready\ndata: {}\n\n"
             while not await request.is_disconnected():
                 try:
                     await asyncio.wait_for(subscriber.get(), timeout=15)
                 except TimeoutError:
-                    yield ": keep-alive\\n\\n"
+                    yield ": keep-alive\n\n"
                     continue
                 intent, _ = await mouth.deliver()
                 if intent is not None:
                     # One wake-up is enough: the browser drains the durable queue.
                     while not subscriber.empty():
                         subscriber.get_nowait()
-                    yield "event: voice-ready\\ndata: {}\\n\\n"
+                    yield "event: voice-ready\ndata: {}\n\n"
         finally:
             unsubscribe_body_output(session_id, "mouth", subscriber)
             body_session.reset(token)
