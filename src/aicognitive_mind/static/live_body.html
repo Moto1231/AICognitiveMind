@@ -289,14 +289,11 @@
       </div>
     </nav>
 
-    <section class="sense-panel" aria-label="Senses">
-      <span class="sense-label">Senses</span>
-      <button
-        id="sensesToggle"
-        class="senses-toggle"
-        type="button"
-        aria-pressed="false"
-      >Off</button>
+    <section class="sense-panel" aria-label="Body controls">
+      <span class="sense-label">Controls</span>
+      <button id="visionToggle" class="senses-toggle" type="button" aria-pressed="false">Vision Off</button>
+      <button id="hearingToggle" class="senses-toggle" type="button" aria-pressed="false">Hearing Off</button>
+      <button id="voiceToggle" class="senses-toggle" type="button" aria-pressed="true">Voice On</button>
     </section>
 
     <div id="stage">
@@ -353,7 +350,9 @@
     const audioMeterFill = document.getElementById("audioMeterFill");
     const audioMeterValue = document.getElementById("audioMeterValue");
     const canvas = document.getElementById("captureCanvas");
-    const sensesToggle = document.getElementById("sensesToggle");
+    const visionToggle = document.getElementById("visionToggle");
+    const hearingToggle = document.getElementById("hearingToggle");
+    const voiceToggle = document.getElementById("voiceToggle");
     const statusBox = document.getElementById("status");
     const interactionForm = document.getElementById("interactionForm");
     const interactionMessage = document.getElementById("interactionMessage");
@@ -387,7 +386,9 @@
     let audioMeterFrame = null;
     let realtimeResponseDone = false;
     let realtimeResponseUsedMcp = false;
-    let sensesEnabled = false;
+    let visionEnabled = false;
+    let hearingEnabled = false;
+    let voiceEnabled = localStorage.getItem("aicognitive_mind.voice") !== "off";
     let sensoryLoopGeneration = 0;
     let sensoryRequestInFlight = false;
     const AUDIO_IDLE_WINDOW_MS = 4_000;
@@ -474,7 +475,7 @@
     }
 
     async function performBoundedLook(seconds, spokenCommand) {
-      if (boundedLookActive) return;
+      if (!visionEnabled || boundedLookActive) return;
       boundedLookActive = true;
       let stream = cameraStream;
       let temporaryStream = false;
@@ -523,7 +524,7 @@
     let hostCameraPollDelayMs = 2_500;
 
     async function checkForHostCameraRequest() {
-      if (hostCameraRequestBusy || boundedLookActive || Date.now() < hostCameraNextPollAt) return;
+      if (!visionEnabled || hostCameraRequestBusy || boundedLookActive || Date.now() < hostCameraNextPollAt) return;
       hostCameraRequestBusy = true;
       try {
         const response = await bodyFetch("/v1/body/camera/request", { cache: "no-store" });
@@ -750,7 +751,7 @@
     }
 
     async function speakIntent(intent) {
-      if (!intent?.text) return;
+      if (!voiceEnabled || !intent?.text) return;
       const metadata = intent.metadata || {};
       const requestedRate = Number(metadata.rate ?? sharedVoicePack?.rate ?? 1);
       const requestedVolume = Number(metadata.volume ?? sharedVoicePack?.volume ?? 1);
@@ -894,7 +895,7 @@
         setStatus("Realtime voice is unavailable in this browser.");
         return;
       }
-      if (sensesEnabled) releaseSenses();
+      
       talkEnabled = true;
       talkBusy = true;
       setStatus("Connecting Axiom voice…");
@@ -968,7 +969,7 @@
     }
 
     async function consumeExpressionOutputs() {
-      if (mouthPollBusy) return false;
+      if (!voiceEnabled || mouthPollBusy) return false;
       mouthPollBusy = true;
       try {
         const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
@@ -985,7 +986,7 @@
     }
 
     async function pollBodyMouth() {
-      if (sensoryRequestInFlight || sendInteractionButton.disabled || mouthPollBusy || talkSpeaking || window.speechSynthesis?.speaking) return;
+      if (!voiceEnabled || sensoryRequestInFlight || sendInteractionButton.disabled || mouthPollBusy || talkSpeaking || window.speechSynthesis?.speaking) return;
       try {
         await consumeExpressionOutputs();
       } catch (_) {
@@ -1128,7 +1129,7 @@
       // The hidden video element can report dimensions while yielding black frames
       // on some browsers, which made the saved sensory evidence unusable.
       if (
-        !sensesEnabled ||
+        !visionEnabled ||
         generation !== sensoryLoopGeneration ||
         !cameraStream ||
         liveScene.readyState < 2 ||
@@ -1169,14 +1170,14 @@
         evidenceAccepted = true;
         setSenseStatus("vision", "Frame saved; requesting interpretation…", "warning");
         lastSuccessfulFrame = signature;
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
+        if (!visionEnabled || generation !== sensoryLoopGeneration) return;
 
         const response = await bodyFetch(
           "/v1/mind/body/see?express=false",
           { method: "POST" }
         );
         if (!response.ok) throw new Error(await responseErrorMessage(response));
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
+        if (!visionEnabled || generation !== sensoryLoopGeneration) return;
 
         lastSuccessfulFrame = signature;
         await showMindResult(await response.json(), { modality: "vision", consumeOutputs: false });
@@ -1190,7 +1191,7 @@
 
     function recordAudioWindow(generation) {
       if (
-        !sensesEnabled ||
+        !hearingEnabled ||
         generation !== sensoryLoopGeneration ||
         !microphoneStream ||
         !window.MediaRecorder
@@ -1230,7 +1231,7 @@
           if (recorder === activeRecorder) recorder = null;
 
           if (
-            !sensesEnabled ||
+            !hearingEnabled ||
             generation !== sensoryLoopGeneration ||
             chunks.length === 0
           ) {
@@ -1394,8 +1395,8 @@
 
       setStatus("SENSES ON\nListening...");
       const recording = await recordAudioWindow(generation);
-      if (!recording || !sensesEnabled || generation !== sensoryLoopGeneration) {
-        if (sensesEnabled && generation === sensoryLoopGeneration) {
+      if (!recording || !hearingEnabled || generation !== sensoryLoopGeneration) {
+        if (hearingEnabled && generation === sensoryLoopGeneration) {
           setSenseStatus("audio", "No audio chunk received in this window; retrying.", "warning");
         }
         return;
@@ -1421,14 +1422,14 @@
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
         evidenceAccepted = true;
         setSenseStatus("audio", "Audio saved; requesting interpretation…", "warning");
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
+        if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
 
         const response = await bodyFetch(
           "/v1/mind/body/hear?express=false",
           { method: "POST" }
         );
         if (!response.ok) throw new Error(await responseErrorMessage(response));
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
+        if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
 
         await showMindResult(await response.json(), { modality: "audio", consumeOutputs: false });
       } catch (error) {
@@ -1440,12 +1441,12 @@
     }
 
     async function runVisionLoop(generation) {
-      while (sensesEnabled && generation === sensoryLoopGeneration) {
+      while (visionEnabled && generation === sensoryLoopGeneration) {
         if (!document.hidden && !sendInteractionButton.disabled) {
           try {
             await perceiveVision(generation);
           } catch (error) {
-            if (sensesEnabled && generation === sensoryLoopGeneration) {
+            if (visionEnabled && generation === sensoryLoopGeneration) {
               reportSenseFailure("vision", error);
             }
           }
@@ -1455,12 +1456,12 @@
     }
 
     async function runHearingLoop(generation) {
-      while (sensesEnabled && generation === sensoryLoopGeneration) {
+      while (visionEnabled && generation === sensoryLoopGeneration) {
         if (!document.hidden && !sendInteractionButton.disabled) {
           try {
             await perceiveAudio(generation);
           } catch (error) {
-            if (sensesEnabled && generation === sensoryLoopGeneration) {
+            if (visionEnabled && generation === sensoryLoopGeneration) {
               reportSenseFailure("audio", error);
             }
           }
@@ -1472,95 +1473,152 @@
 
     function startSensoryLoop() {
       const generation = ++sensoryLoopGeneration;
-      runVisionLoop(generation);
-      runHearingLoop(generation);
+      if (visionEnabled) runVisionLoop(generation);
+      if (hearingEnabled) runHearingLoop(generation);
     }
 
-    function setSensesUi(enabled) {
-      sensesEnabled = enabled;
-      sensesToggle.classList.toggle("on", enabled);
-      sensesToggle.setAttribute("aria-pressed", String(enabled));
-      sensesToggle.textContent = enabled ? "On" : "Off";
+    function setToggleUi(button, enabled, label) {
+      button.classList.toggle("on", enabled);
+      button.setAttribute("aria-pressed", String(enabled));
+      button.textContent = label + (enabled ? " On" : " Off");
     }
 
-    async function enableSenses() {
+    function refreshToggleUi() {
+      setToggleUi(visionToggle, visionEnabled, "Vision");
+      setToggleUi(hearingToggle, hearingEnabled, "Hearing");
+      setToggleUi(voiceToggle, voiceEnabled, "Voice");
+    }
+
+    async function enableVision() {
+      if (visionEnabled) return;
       if (!navigator.mediaDevices?.getUserMedia) {
-        setStatus("This browser does not expose camera and microphone access.");
-        setSensesUi(false);
+        setStatus("This browser does not expose camera access.");
         return;
       }
-
-      sensesToggle.disabled = true;
+      visionToggle.disabled = true;
       try {
-        // Acquire each device separately. On mobile browsers, concurrent
-        // getUserMedia permission requests can race or cause one request to
-        // fail before any Body request ever reaches the server.
-        setStatus("SENSES ON\nRequesting camera access...");
+        setStatus("VISION ON\\nRequesting camera access…");
         cameraStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("videoInput"));
-
-        setStatus("SENSES ON\nCamera ready. Requesting microphone access...");
-        try {
-          microphoneStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
-        } catch (error) {
-          cameraStream.getTracks().forEach((track) => track.stop());
-          cameraStream = null;
-          throw new Error("Microphone access failed after camera access succeeded: " + (error?.message || error));
-        }
         video.srcObject = cameraStream;
         liveScene.srcObject = cameraStream;
         await video.play();
         await liveScene.play();
         liveScene.style.display = "block";
-        audioMeter.style.display = "block";
-        await startAudioMeter(microphoneStream);
-
-        setSensesUi(true);
-        localStorage.setItem("aicognitive_mind.senses", "on");
-        setStatus("SENSES ON\nContinuous vision and hearing are active.");
+        visionEnabled = true;
+        localStorage.setItem("aicognitive_mind.vision", "on");
+        refreshToggleUi();
+        setSenseStatus("vision", "Vision is active.", "success");
+        setStatus("VISION ON\\nCamera ready.");
         startSensoryLoop();
       } catch (error) {
-        releaseSenses();
-        setStatus("Could not turn senses on: " + error.message);
+        cameraStream?.getTracks().forEach((track) => track.stop());
+        cameraStream = null;
+        video.srcObject = null;
+        liveScene.srcObject = null;
+        liveScene.style.display = "none";
+        visionEnabled = false;
+        refreshToggleUi();
+        setSenseStatus("vision", "Could not start vision: " + error.message, "error");
+        setStatus("Could not turn vision on: " + error.message);
       } finally {
-        sensesToggle.disabled = false;
+        visionToggle.disabled = false;
       }
     }
 
-    function releaseSenses({ persist = true } = {}) {
+    function disableVision({ persist = true } = {}) {
+      visionEnabled = false;
       sensoryLoopGeneration += 1;
-      sensoryRequestInFlight = false;
-      if (recorder?.state === "recording") {
-        recorder.stop();
-      }
-      recorder = null;
-
       if (cameraStream) {
-        for (const track of cameraStream.getTracks()) track.stop();
+        cameraStream.getTracks().forEach((track) => track.stop());
         cameraStream = null;
       }
-      if (microphoneStream) {
-        for (const track of microphoneStream.getTracks()) track.stop();
-        microphoneStream = null;
-      }
-
       video.srcObject = null;
       liveScene.srcObject = null;
       liveScene.style.display = "none";
-      audioMeter.style.display = "none";
-      stopAudioMeter();
-      setSensesUi(false);
-      if (persist) {
-        localStorage.setItem("aicognitive_mind.senses", "off");
+      if (persist) localStorage.setItem("aicognitive_mind.vision", "off");
+      refreshToggleUi();
+      setSenseStatus("vision", "Vision is off. No camera polling or capture will run.", "idle");
+      startSensoryLoop();
+    }
+
+    async function enableHearing() {
+      if (hearingEnabled) return;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus("This browser does not expose microphone access.");
+        return;
+      }
+      hearingToggle.disabled = true;
+      try {
+        setStatus("HEARING ON\\nRequesting microphone access…");
+        microphoneStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
+        await startAudioMeter(microphoneStream);
+        hearingEnabled = true;
+        localStorage.setItem("aicognitive_mind.hearing", "on");
+        audioMeter.style.display = "block";
+        refreshToggleUi();
+        setSenseStatus("audio", "Hearing is active.", "success");
+        setStatus("HEARING ON\\nMicrophone ready.");
+        startSensoryLoop();
+      } catch (error) {
+        microphoneStream?.getTracks().forEach((track) => track.stop());
+        microphoneStream = null;
+        stopAudioMeter();
+        hearingEnabled = false;
+        refreshToggleUi();
+        setSenseStatus("audio", "Could not start hearing: " + error.message, "error");
+        setStatus("Could not turn hearing on: " + error.message);
+      } finally {
+        hearingToggle.disabled = false;
       }
     }
 
-    async function toggleSenses() {
-      if (sensesEnabled) {
-        releaseSenses();
-        setStatus("SENSES OFF\nContinuous perception stopped. Camera and microphone have been released.");
-        return;
+    function disableHearing({ persist = true } = {}) {
+      hearingEnabled = false;
+      sensoryLoopGeneration += 1;
+      if (recorder?.state === "recording") recorder.stop();
+      recorder = null;
+      if (microphoneStream) {
+        microphoneStream.getTracks().forEach((track) => track.stop());
+        microphoneStream = null;
       }
-      await enableSenses();
+      audioMeter.style.display = "none";
+      stopAudioMeter();
+      if (persist) localStorage.setItem("aicognitive_mind.hearing", "off");
+      refreshToggleUi();
+      setSenseStatus("audio", "Hearing is off. Microphone capture and processing have stopped.", "idle");
+      startSensoryLoop();
+    }
+
+    function toggleVision() {
+      if (visionEnabled) {
+        disableVision();
+        setStatus("VISION OFF\\nCamera released; hearing and voice are unchanged.");
+      } else {
+        enableVision();
+      }
+    }
+
+    function toggleHearing() {
+      if (hearingEnabled) {
+        disableHearing();
+        setStatus("HEARING OFF\\nMicrophone released; vision and voice are unchanged.");
+      } else {
+        enableHearing();
+      }
+    }
+
+    function toggleVoice() {
+      voiceEnabled = !voiceEnabled;
+      localStorage.setItem("aicognitive_mind.voice", voiceEnabled ? "on" : "off");
+      refreshToggleUi();
+      if (!voiceEnabled) {
+        window.speechSynthesis?.cancel();
+        if (realtimeAudio) realtimeAudio.muted = true;
+        setStatus("VOICE OFF\\nSpoken output is disabled; vision and hearing are unchanged.");
+      } else {
+        if (realtimeAudio) realtimeAudio.muted = false;
+        setStatus("VOICE ON\\nSpoken output is enabled.");
+      }
     }
 
     interactionForm.addEventListener("submit", submitTextInteraction);
@@ -1578,7 +1636,9 @@
       interactionMessage.focus();
     });
 
-    sensesToggle.addEventListener("click", toggleSenses);
+    visionToggle.addEventListener("click", toggleVision);
+    hearingToggle.addEventListener("click", toggleHearing);
+    voiceToggle.addEventListener("click", toggleVoice);
 
     if (window.speechSynthesis) {
       loadVoices();
@@ -1594,7 +1654,8 @@
     });
     window.addEventListener("beforeunload", () => {
       stopTalking();
-      releaseSenses({ persist: false });
+      disableVision({ persist: false });
+      disableHearing({ persist: false });
       window.speechSynthesis?.cancel();
     });
 
@@ -1611,11 +1672,20 @@
     window.setInterval(checkForHostCameraRequest, 1_000);
     checkForBodyPageUpdate();
     window.setInterval(checkForBodyPageUpdate, 12_000);
-    if (localStorage.getItem("aicognitive_mind.senses") === "on") {
-      enableSenses();
+    refreshToggleUi();
+    if (localStorage.getItem("aicognitive_mind.vision") === "on" ||
+        (localStorage.getItem("aicognitive_mind.vision") === null && localStorage.getItem("aicognitive_mind.senses") === "on")) {
+      enableVision();
     } else {
-      setSensesUi(false);
+      setSenseStatus("vision", "Vision is off.", "idle");
     }
+    if (localStorage.getItem("aicognitive_mind.hearing") === "on" ||
+        (localStorage.getItem("aicognitive_mind.hearing") === null && localStorage.getItem("aicognitive_mind.senses") === "on")) {
+      enableHearing();
+    } else {
+      setSenseStatus("audio", "Hearing is off.", "idle");
+    }
+    if (realtimeAudio) realtimeAudio.muted = !voiceEnabled;
   </script>
 </body>
 </html>
