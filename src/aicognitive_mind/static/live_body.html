@@ -848,7 +848,7 @@
     }
 
     async function refreshSharedVoiceSettings() {
-      if (document.hidden) return;
+      if (!voiceEnabled || document.hidden) return;
       try {
         const response = await bodyFetch("/v1/body/voice/settings", { cache: "no-store" });
         if (!response.ok) return;
@@ -1636,6 +1636,7 @@
         setStatus("VOICE OFF\nSpoken output is disabled; vision and hearing are unchanged.");
       } else {
         if (realtimeAudio) realtimeAudio.muted = false;
+        refreshSharedVoiceSettings();
         setStatus("VOICE ON\nSpoken output is enabled.");
       }
     }
