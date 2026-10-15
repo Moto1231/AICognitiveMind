@@ -143,7 +143,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("complete_interaction", HOST_INSTRUCTIONS)
         self.assertIn("open_live_body", HOST_INSTRUCTIONS)
         self.assertIn("Every begin_interaction result includes a body_work snapshot", HOST_INSTRUCTIONS)
-        self.assertIn("Human text interactions must be selected ahead", HOST_INSTRUCTIONS)
+        self.assertIn("queue server selects human text requests ahead", HOST_INSTRUCTIONS)
 
     async def test_deployed_surface_registers_github_tools(self):
         provider = AxiomAuthorizationServerProvider(
