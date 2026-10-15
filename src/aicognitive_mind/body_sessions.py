@@ -1,5 +1,6 @@
 """Durable per-Body FIFO queues shared across API workers."""
 
+import asyncio
 import hashlib
 from contextvars import ContextVar
 from typing import Any
@@ -9,6 +10,30 @@ from aicognitive_mind.body import DeviceStatus, ExpressionIntent, Percept
 from aicognitive_mind.host_runtime import RuntimeRecords
 
 body_session: ContextVar[str] = ContextVar("body_session", default="legacy")
+
+_body_output_subscribers: dict[tuple[str, str], set[asyncio.Queue[None]]] = {}
+
+
+def subscribe_body_output(session_id: str, modality: str) -> asyncio.Queue[None]:
+    subscriber: asyncio.Queue[None] = asyncio.Queue()
+    _body_output_subscribers.setdefault((session_id, modality), set()).add(subscriber)
+    return subscriber
+
+
+def unsubscribe_body_output(
+    session_id: str, modality: str, subscriber: asyncio.Queue[None]
+) -> None:
+    subscribers = _body_output_subscribers.get((session_id, modality))
+    if subscribers is None:
+        return
+    subscribers.discard(subscriber)
+    if not subscribers:
+        _body_output_subscribers.pop((session_id, modality), None)
+
+
+def notify_body_output(session_id: str, modality: str) -> None:
+    for subscriber in tuple(_body_output_subscribers.get((session_id, modality), ())):
+        subscriber.put_nowait(None)
 
 
 class BodyQueue:
@@ -68,6 +93,7 @@ class BodyQueue:
         adapter = type(self.adapter)()
         await adapter.speak(intent)
         await self.change({**adapter.consume().model_dump(mode="json"), "delivery_id": uuid4().hex})
+        notify_body_output(body_session.get(), self.modality)
 
     async def render(self, intent: ExpressionIntent) -> None:
         adapter = type(self.adapter)()
