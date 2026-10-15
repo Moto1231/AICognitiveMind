@@ -168,13 +168,16 @@ class CurrentStateLedgerRepository:
         ledger = CurrentStateLedger.empty()
         # Use the journal's bounded, database-side query instead of reading and
         # deep-copying the entire append-only history for every state event.
-        page, _ = await self._journal.query_page(
-            offset=0,
-            limit=1,
-            newest_first=True,
-            kind=JournalKind.CHECKPOINT.value,
-            search="current_state_ledger",
-        )
+        if hasattr(self._journal, "latest_checkpoint"):
+            page = await self._journal.latest_checkpoint("current_state_ledger")
+        else:
+            page, _ = await self._journal.query_page(
+                offset=0,
+                limit=1,
+                newest_first=True,
+                kind=JournalKind.CHECKPOINT.value,
+                search="current_state_ledger",
+            )
         for entry in page:
             if entry.experience.get("checkpoint_type") != "current_state_ledger":
                 continue
