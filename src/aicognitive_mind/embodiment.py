@@ -442,6 +442,37 @@ class MindBodyBridge:
             ),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
+        if percept.modality == SensoryModality.AUDIO and express and hasattr(self._interpreter, "respond_to_percept"):
+            direct_response = await self._interpreter.respond_to_percept(
+                percept, evidence=reference
+            )
+            if direct_response is not None:
+                await apply_current_state_event(
+                    self._journal,
+                    "scene_changed",
+                    {"values": {"current_scene": {
+                        "value": {
+                            "modality": "audio",
+                            "source": percept.source,
+                            "observed_at": percept.observed_at.isoformat(),
+                            "interpretation": "Live audio delivered directly to the attached reasoning host.",
+                            "evidence": reference.model_dump(mode="json"),
+                        },
+                        "source": "body:audio",
+                        "status": "current",
+                    }}},
+                    source="body:audio",
+                )
+                await self._body.express(direct_response)
+                return EmbodiedInteractionResult(
+                    sensory_modality=percept.modality,
+                    sensory_source=percept.source,
+                    evidence=reference,
+                    interpretation="Live audio delivered directly to the attached reasoning host.",
+                    response_text=direct_response,
+                    occurred_at=percept.observed_at,
+                )
+
         interpretation = await self._interpreter.interpret(percept)
         self._admit_presence_observation(
             percept=percept,

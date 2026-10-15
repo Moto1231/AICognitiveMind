@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from aicognitive_mind.domain import SensoryEvidenceArtifact
-from aicognitive_mind.mcp_server import read_sensory_evidence
+from aicognitive_mind.mcp_server import next_body_interaction, read_sensory_evidence
 from aicognitive_mind.storage import InMemoryEvidenceStore
 
 
@@ -34,3 +34,23 @@ class McpMediaTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "integrity"):
             await read_sensory_evidence(
                 corrupted.sha256, corrupted.captured_at.isoformat(), ctx)
+
+
+    async def test_next_body_interaction_delivers_live_audio_as_native_content(self):
+        payload = b"live spoken words"
+        data_url = "data:audio/webm;base64," + base64.b64encode(payload).decode()
+        class Hosts:
+            async def next_request(self, _token):
+                return {
+                    "request_id": "request-1",
+                    "user_message": "Listen and respond to the speaker.",
+                    "context": {"status": "ready_to_reason"},
+                    "media_data_url": data_url,
+                }
+        ctx = SimpleNamespace(request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(hosts=Hosts())))
+        result = await next_body_interaction("lease", ctx)
+        self.assertEqual(result.content[1].type, "audio")
+        self.assertEqual(result.content[1].mime_type, "audio/webm")
+        self.assertEqual(base64.b64decode(result.content[1].data), payload)
+        self.assertNotIn("media_data_url", result.structured_content)
