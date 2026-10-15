@@ -455,10 +455,23 @@ class MindBodyBridge:
             "evidence": reference.model_dump(mode="json"),
             "metadata": self._journal_safe_metadata(percept.metadata),
         }
-        # Passive sensory admission (used by continuous sensing) stops here.
-        # The Body supplies perception; the Mind records and interprets it, but
-        # does not enter a full conscious interaction for every observation.
+        # Passive sensing normally stops after interpretation and evidence
+        # admission. If no specialist could interpret the media, however, the
+        # connected reasoning host must receive the preserved evidence reference
+        # instead of leaving the observation permanently uninterpreted.
         if not express:
+            if interpretation.casefold().startswith("uninterpreted "):
+                interaction = await self._core.interact(
+                    (
+                        f"Interpret the preserved {percept.modality.value} sensory evidence "
+                        f"from {percept.source}. The specialist interpreter could not interpret "
+                        "the raw media. Inspect the exact evidence artifact in Body context and "
+                        "provide a concise, factual sensory interpretation. Do not invent details."
+                    ),
+                    source=f"body:{percept.modality.value}",
+                    input_context=self._with_presence_context(context, scope=presence_scope),
+                )
+                interpretation = interaction.response_text
             return EmbodiedInteractionResult(
                 sensory_modality=percept.modality,
                 sensory_source=percept.source,

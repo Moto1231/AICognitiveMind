@@ -448,5 +448,75 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("!expressionSpoken", markup)
 
 
+    async def test_uninterpreted_passive_audio_and_vision_reach_reasoning_host(self) -> None:
+        class HandoffCore:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, Any]] = []
+
+            async def interact(self, message: str, *, source: str, input_context: dict) -> Any:
+                self.calls.append({
+                    "message": message,
+                    "source": source,
+                    "input_context": input_context,
+                })
+                label = "Visual" if source == "body:vision" else "Auditory"
+                return SimpleNamespace(
+                    response_text=f"{label} perception: a clear sensory observation."
+                )
+
+        for modality in ("vision", "audio"):
+            with self.subTest(modality=modality):
+                journal = InMemoryJournalStore()
+                evidence = InMemoryEvidenceStore()
+                mouth = BrowserVoiceOutput()
+                face = BrowserAvatarOutput()
+                core = HandoffCore()
+
+                if modality == "vision":
+                    ingress = BrowserVisionIngress()
+                    body = BodyRuntime(vision=ingress, voice=mouth, avatar=face)
+                    ingress.accept(
+                        image_data_url=data_url("image/jpeg", b"host-handoff-jpeg"),
+                        width=640,
+                        height=480,
+                    )
+                else:
+                    ingress = BrowserAudioIngress()
+                    body = BodyRuntime(audio=ingress, voice=mouth, avatar=face)
+                    ingress.accept(
+                        audio_data_url=data_url("audio/webm", b"host-handoff-audio"),
+                        duration_ms=800,
+                    )
+
+                bridge = MindBodyBridge(
+                    core=core,
+                    body=body,
+                    interpreter=FixedInterpreter(
+                        f"Uninterpreted {modality} observation. "
+                        "Use the sensory evidence reference in Body context to inspect the original media."
+                    ),
+                    evidence=evidence,
+                    journal=journal,
+                )
+                result = (
+                    await bridge.see(express=False)
+                    if modality == "vision"
+                    else await bridge.hear(express=False)
+                )
+
+                self.assertEqual(len(core.calls), 1)
+                call = core.calls[0]
+                self.assertEqual(call["source"], f"body:{modality}")
+                self.assertIn("Inspect the exact evidence artifact", call["message"])
+                self.assertEqual(
+                    call["input_context"]["evidence"]["sha256"],
+                    result.evidence.sha256,
+                )
+                self.assertIn("perception:", result.interpretation.lower())
+                self.assertEqual(result.response_text, "")
+                self.assertIsNone(mouth.consume())
+                self.assertIsNone(face.consume())
+
+
 if __name__ == "__main__":
     unittest.main()
