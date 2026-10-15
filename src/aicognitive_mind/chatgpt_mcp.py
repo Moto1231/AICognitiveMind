@@ -25,7 +25,12 @@ from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_registry import MCPServerRegistry
-from aicognitive_mind.mcp_server import AppState, lifespan, execute_task as execute_configured_task
+from aicognitive_mind.mcp_server import (
+    AppState,
+    body_request_tool_result,
+    lifespan,
+    execute_task as execute_configured_task,
+)
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
@@ -398,12 +403,14 @@ def build_chatgpt_mcp(
     async def next_body_interaction(
         lease_token: str,
         ctx: Context[AppState],
-    ) -> dict[str, Any] | None:
-        """Claim the next pending Body interaction for this attached ChatGPT host.
+    ) -> CallToolResult:
+        """Claim the next Body interaction, including live audio as native MCP media content.
 
-        The returned context already includes Axiom identity and memory for that Body input.
+        The returned context includes Axiom identity and memory; audio is delivered as audio content,
+        not as a base64 string embedded in JSON.
         """
-        return await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
+        request = await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
+        return body_request_tool_result(request)
 
     @server.tool(
         annotations=ToolAnnotations(
