@@ -147,7 +147,6 @@ async def execute_task(
             source="task_dispatch",
         )
 
-    await record_task_state("running")
     if operation == "chat":
         if (
             messages is None
@@ -176,6 +175,7 @@ async def execute_task(
             "media_type": media_type,
         }
 
+    await record_task_state("running")
     assignment = await dispatcher.assignment(task)
     behaviors = await dispatcher.behaviors.list()
     behavior = next(item for item in behaviors if item.task == task)
