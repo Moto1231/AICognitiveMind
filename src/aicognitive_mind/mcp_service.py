@@ -145,7 +145,12 @@ class CognitiveMcpService:
         mind = await self._require_mind()
         from aicognitive_mind.retrieval import count
         memory_count = await count(self._memory)
-        journal_count = await count(self._journal)
+        journal_entries = await self._journal.read()
+        journal_count = sum(
+            1
+            for entry in journal_entries
+            if entry.experience.get("checkpoint_type") != "current_state_ledger"
+        )
         return {
             "mind": mind.model_dump(mode="json"),
             "durable_memory_count": memory_count,
@@ -369,6 +374,10 @@ class CognitiveMcpService:
     ) -> CurrentStateLedger:
         ledger = await self._load_current_state()
         ledger = ledger.model_copy(deep=True)
+        previous_fields = {
+            key: answer.model_dump(mode="json")
+            for key, answer in ledger.fields.items()
+        }
         ledger.answer(
             "identity",
             {
@@ -508,11 +517,16 @@ class CognitiveMcpService:
             ledger.invalidate("locality", event="locality_not_grounded")
         if ledger.fields.get("current_scene") is None:
             ledger.invalidate("current_scene", event="scene_not_grounded")
-        ledger.revision += 1
-        from aicognitive_mind.domain import utc_now
-        ledger.updated_at = utc_now()
-        ledger.last_event = "interaction_started"
-        await self._persist_current_state(ledger)
+        current_fields = {
+            key: answer.model_dump(mode="json")
+            for key, answer in ledger.fields.items()
+        }
+        if current_fields != previous_fields:
+            ledger.revision += 1
+            from aicognitive_mind.domain import utc_now
+            ledger.updated_at = utc_now()
+            ledger.last_event = "interaction_started"
+            await self._persist_current_state(ledger)
         return ledger
 
     async def _require_mind(self) -> CognitiveMind:
