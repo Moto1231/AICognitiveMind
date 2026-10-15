@@ -65,6 +65,14 @@ class CurrentStateLedger(BaseModel):
     ) -> None:
         if key not in self.FUNDAMENTAL_FIELDS:
             raise ValueError(f"Unsupported current-state field: {key}")
+        current = self.fields.get(key)
+        if current is not None and (
+            current.value == value
+            and current.status == status
+            and current.source == source
+            and current.note == note
+        ):
+            return
         self.fields[key] = StateAnswer(
             value=value,
             status=status,
@@ -76,12 +84,17 @@ class CurrentStateLedger(BaseModel):
     def invalidate(self, key: str, *, event: str, note: str | None = None) -> None:
         if key not in self.FUNDAMENTAL_FIELDS:
             raise ValueError(f"Unsupported current-state field: {key}")
+        source = f"invalidated by event:{event}"
+        note = note or "A state-changing event invalidated the previous answer."
+        current = self.fields.get(key)
+        if current is not None and current.value is None and current.status == "unknown" and current.source == source and current.note == note:
+            return
         self.fields[key] = StateAnswer(
             value=None,
             status="unknown",
-            source=f"invalidated by event:{event}",
+            source=source,
             observed_at=utc_now(),
-            note=note or "A state-changing event invalidated the previous answer.",
+            note=note,
         )
 
     def apply_event(
