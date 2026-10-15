@@ -208,6 +208,28 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
 
 
 
+    async def test_complete_interaction_redacts_encoded_sensory_payload_from_journal(self) -> None:
+        encoded_payload = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=" * 40
+        data_url = f"data:image/jpeg;base64,{encoded_payload}"
+        user_message = (
+            f"Interpret the preserved image; sha256={'a' * 64}; content_ref={data_url}"
+        )
+        response_text = f"Interpretation completed for {data_url}"
+
+        await self.service.complete_interaction(
+            user_message=user_message,
+            response_text=response_text,
+        )
+
+        journal = await self.journal.read()
+        entry = journal[-1]
+        journal_text = json.dumps(entry.model_dump(mode="json"))
+
+        self.assertNotIn("data:image/jpeg;base64", journal_text)
+        self.assertNotIn(encoded_payload, journal_text)
+        self.assertIn("encoded sensory payload omitted from journal", journal_text)
+        self.assertIn("a" * 64, journal_text)
+
     async def test_mcp_completion_accepts_appraised_current_evidence(self) -> None:
         completed = await self.service.complete_interaction(
             user_message="What does the current evidence say?",
