@@ -188,12 +188,16 @@ class CognitiveMcpService:
             }
         )
         reasoning_contract = await self._compose_reasoning_contract()
+        configured_behaviors = await self._host_behaviors.list()
         current_state = await self._refresh_current_state(
             mind=mind,
             recalled_context=recalled["context"],
             user_message=user_message,
             host_working_context=host_working_context or {},
             reasoning_contract=reasoning_contract,
+            configured_behaviors=[
+                behavior.model_dump(mode="json") for behavior in configured_behaviors
+            ],
         )
         return {
             "status": "ready_to_reason",
@@ -361,6 +365,7 @@ class CognitiveMcpService:
         user_message: str,
         host_working_context: dict[str, Any],
         reasoning_contract: str,
+        configured_behaviors: list[dict[str, Any]],
     ) -> CurrentStateLedger:
         ledger = await self._load_current_state()
         ledger = ledger.model_copy(deep=True)
@@ -385,8 +390,9 @@ class CognitiveMcpService:
         ledger.answer(
             "behaviors",
             {
-                "source": "composed_code_and_configured_behavior_contract",
-                "available": bool(reasoning_contract),
+                "rules": configured_behaviors,
+                "contract_loaded": bool(reasoning_contract),
+                "contract_reference": "conscious_workspace_contract returned in this State",
             },
             source="runtime_behavior_assembler",
         )
@@ -404,15 +410,19 @@ class CognitiveMcpService:
             ][:12],
             source="memory_steward_recall",
         )
-        ledger.answer(
-            "active_topic",
-            host_working_context.get("summary") or user_message,
-            source=(
-                "host_working_context"
-                if host_working_context.get("summary")
-                else "current_human_input"
-            ),
-        )
+        if host_working_context.get("summary"):
+            ledger.answer(
+                "active_topic",
+                host_working_context["summary"],
+                source="host_working_context",
+            )
+        elif ledger.fields.get("active_topic") is None or ledger.fields["active_topic"].status == "unknown":
+            ledger.answer(
+                "active_topic",
+                user_message,
+                source="current_human_input",
+                note="Initial topic anchor; use an explicit topic_changed event to replace it.",
+            )
         participants = host_working_context.get("participants", [])
         if participants:
             ledger.answer(
@@ -439,24 +449,42 @@ class CognitiveMcpService:
                 source="validated_host_working_context",
             )
         else:
-            ledger.invalidate(
-                "interlocutor",
-                event="no_grounded_participant_context",
-                note="No participant was supplied in the current host working context.",
+            if ledger.fields.get("interlocutor") is None or ledger.fields["interlocutor"].status == "unknown":
+                ledger.answer(
+                    "interlocutor",
+                    {
+                        "type": "current human interlocutor",
+                        "identity_status": "unresolved",
+                        "grounding": ["human input in the current interaction"],
+                    },
+                    source="current_human_input",
+                )
+            if ledger.fields.get("presence") is None or ledger.fields["presence"].status == "unknown":
+                ledger.answer(
+                    "presence",
+                    {
+                        "interaction_presence": "human input received",
+                        "physical_presence": "unknown",
+                    },
+                    source="current_human_input",
+                    note="Conversational participation does not establish physical presence.",
+                )
+        if host_working_context.get("summary") or host_working_context.get("unresolved_references"):
+            ledger.answer(
+                "decisions_and_open_questions",
+                {
+                    "working_summary": host_working_context.get("summary", ""),
+                    "unresolved_references": host_working_context.get("unresolved_references", []),
+                },
+                source="host_working_context",
             )
-            ledger.invalidate(
-                "presence",
-                event="no_grounded_presence_context",
-                note="No current presence evidence was supplied.",
+        elif ledger.fields.get("decisions_and_open_questions") is None:
+            ledger.answer(
+                "decisions_and_open_questions",
+                {"working_summary": "", "unresolved_references": []},
+                source="initial_state",
+                note="No working decisions or open questions have been established yet.",
             )
-        ledger.answer(
-            "decisions_and_open_questions",
-            {
-                "working_summary": host_working_context.get("summary", ""),
-                "unresolved_references": host_working_context.get("unresolved_references", []),
-            },
-            source="host_working_context",
-        )
         ledger.answer("active_task", "reasoning", source="active_mcp_interaction")
         ledger.answer(
             "connection_status",
@@ -468,11 +496,14 @@ class CognitiveMcpService:
             ["read_current_state", "update_current_state", "begin_interaction", "complete_interaction"],
             source="registered_mind_service_operations",
         )
-        ledger.answer(
-            "pending_work",
-            host_working_context.get("unresolved_references", []),
-            source="host_working_context",
-        )
+        if host_working_context.get("unresolved_references"):
+            ledger.answer(
+                "pending_work",
+                host_working_context["unresolved_references"],
+                source="host_working_context",
+            )
+        elif ledger.fields.get("pending_work") is None:
+            ledger.answer("pending_work", [], source="initial_state")
         if ledger.fields.get("locality") is None:
             ledger.invalidate("locality", event="locality_not_grounded")
         if ledger.fields.get("current_scene") is None:
