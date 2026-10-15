@@ -17,6 +17,7 @@
       </div>
       <div class="top-actions">
         <a href="/body/live" class="secondary-button">Live</a>
+        <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
         <div class="status-pill">
           <span class="status-dot"></span>
           <span id="connectionLabel">Connecting…</span>
@@ -82,7 +83,6 @@
                 <p class="eyebrow">MEMORY</p>
                 <h3>What Do I Remember</h3>
               </div>
-              <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
 
             <div class="filter-area">
@@ -200,6 +200,28 @@
                   </label>
                   <button id="taskProfileAddEndpoint" class="secondary-button" type="button">Add Endpoint</button>
                 </div>
+                <div class="task-profile-endpoint-picker">
+                  <label class="host-behavior-field">Common endpoint preset
+                    <select id="taskProfileEndpointPreset">
+                      <option value="">Choose a preset to add</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="google-gemini">Google Gemini (OpenAI-compatible)</option>
+                      <option value="groq">Groq</option>
+                      <option value="together">Together AI</option>
+                      <option value="fireworks">Fireworks AI</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="mistral">Mistral AI</option>
+                      <option value="cerebras">Cerebras</option>
+                      <option value="ollama">Ollama (local)</option>
+                      <option value="lm-studio">LM Studio (local)</option>
+                      <option value="vllm">vLLM (local/self-hosted)</option>
+                      <option value="localai">LocalAI (local/self-hosted)</option>
+                    </select>
+                  </label>
+                  <button id="taskProfileAddPreset" class="secondary-button" type="button">Add Preset</button>
+                </div>
+                <p class="muted-copy">Presets fill the endpoint name and base URL only. Add your own API key where required. Local URLs must be reachable from the Axiom server, not just your browser.</p>
                 <div class="task-model-fields">
                   <label class="host-behavior-field">Endpoint name
                     <input id="taskProfileEndpointName" type="text" maxlength="120" placeholder="Provider name">

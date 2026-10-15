@@ -159,6 +159,8 @@ const el = {
   taskProfileBack: document.getElementById("taskProfileBack"),
   taskProfileEndpointSection: document.getElementById("taskProfileEndpointSection"),
   taskProfileEndpointSelect: document.getElementById("taskProfileEndpointSelect"),
+  taskProfileEndpointPreset: document.getElementById("taskProfileEndpointPreset"),
+  taskProfileAddPreset: document.getElementById("taskProfileAddPreset"),
   taskProfileAddEndpoint: document.getElementById("taskProfileAddEndpoint"),
   taskProfileEndpointName: document.getElementById("taskProfileEndpointName"),
   taskProfileBaseUrl: document.getElementById("taskProfileBaseUrl"),
@@ -757,6 +759,46 @@ async function discoverTaskProfileModels() {
   } catch (error) {
     toast(error.message, true);
   }
+}
+
+const COMMON_ENDPOINT_PRESETS = [
+  { id: "openai", name: "OpenAI", base_url: "https://api.openai.com/v1" },
+  { id: "openrouter", name: "OpenRouter", base_url: "https://openrouter.ai/api/v1" },
+  { id: "google-gemini", name: "Google Gemini (OpenAI-compatible)", base_url: "https://generativelanguage.googleapis.com/v1beta/openai" },
+  { id: "groq", name: "Groq", base_url: "https://api.groq.com/openai/v1" },
+  { id: "together", name: "Together AI", base_url: "https://api.together.xyz/v1" },
+  { id: "fireworks", name: "Fireworks AI", base_url: "https://api.fireworks.ai/inference/v1" },
+  { id: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com" },
+  { id: "mistral", name: "Mistral AI", base_url: "https://api.mistral.ai/v1" },
+  { id: "cerebras", name: "Cerebras", base_url: "https://api.cerebras.ai/v1" },
+  { id: "ollama", name: "Ollama (local)", base_url: "http://localhost:11434/v1" },
+  { id: "lm-studio", name: "LM Studio (local)", base_url: "http://localhost:1234/v1" },
+  { id: "vllm", name: "vLLM (local/self-hosted)", base_url: "http://localhost:8000/v1" },
+  { id: "localai", name: "LocalAI (local/self-hosted)", base_url: "http://localhost:8080/v1" },
+];
+function addTaskProfileEndpointFromPreset() {
+  const presetId = el.taskProfileEndpointPreset?.value;
+  const preset = COMMON_ENDPOINT_PRESETS.find(item => item.id === presetId);
+  if (!preset) {
+    toast("Choose an endpoint preset first", true);
+    return;
+  }
+  const endpoint = {
+    id: crypto.randomUUID(),
+    name: preset.name,
+    base_url: preset.base_url,
+    api_key: "",
+    models: [],
+    model_capabilities: {},
+  };
+  state.providerEndpoints.push(endpoint);
+  state.activeEndpointId = endpoint.id;
+  state.activeEndpointOriginalName = "";
+  renderTaskProfileEndpointOptions();
+  loadEndpointIntoForm();
+  if (el.taskProfileEndpointPreset) el.taskProfileEndpointPreset.value = "";
+  el.taskProfileApiKey.focus();
+  toast(`Added ${preset.name}. Add credentials if required, then discover models.`);
 }
 
 function addTaskProfileEndpoint() {
@@ -1652,9 +1694,20 @@ async function refreshStatus() {
 
 async function refresh() {
   try {
+    const admin = state.mode === "admin" && state.adminAuthorized;
     await Promise.all([
       refreshStatus(),
-      refreshMemory(filters.mind, true),
+      refreshMemory(admin ? filters.admin : filters.mind, true),
+      refreshJournal(true),
+      ...(admin ? [
+        refreshBodyFallbackSettings(),
+        refreshHostBehaviors(),
+        refreshTaskModelAssignments(),
+        refreshTaskBehaviors(),
+        refreshProviderEndpoints(),
+        refreshMcpServers(),
+        loadVoiceSettings(),
+      ] : []),
     ]);
     el.initializeOverlay.classList.add("hidden");
   } catch (error) {
@@ -1708,10 +1761,7 @@ function bindFilterEvents(config) {
 el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
 el.logoutButton.addEventListener("click", logout);
-el.refreshButton.addEventListener("click", () => Promise.all([
-  refreshStatus(),
-  refreshMemory(filters.mind, true),
-]));
+el.refreshButton.addEventListener("click", refresh);
 el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));
 el.adminRefreshButton.addEventListener("click", () => Promise.all([
   refreshStatus(),
@@ -2142,6 +2192,7 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
   loadEndpointIntoForm();
 });
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
+if (el.taskProfileAddPreset) el.taskProfileAddPreset.addEventListener("click", addTaskProfileEndpointFromPreset);
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
 if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", () => {
