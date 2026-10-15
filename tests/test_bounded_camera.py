@@ -22,12 +22,19 @@ def test_realtime_session_enables_input_transcription():
     assert '"input": {"transcription": {"model": "gpt-4o-mini-transcribe"}}' in source
 
 
-def test_live_body_polls_for_host_camera_requests():
+def test_live_body_polls_for_host_camera_requests_without_overlapping_or_spamming():
     source = LIVE_BODY.read_text(encoding="utf-8")
     assert '"/v1/body/camera/request"' in source
     assert '"/v1/body/camera/complete"' in source
     assert "checkForHostCameraRequest" in source
     assert 'source: "browser-camera-mcp"' in source
+    function_start = source.index("async function checkForHostCameraRequest()")
+    request_start = source.index('bodyFetch("/v1/body/camera/request"', function_start)
+    busy_lock = source.index("hostCameraRequestBusy = true;", function_start)
+    assert busy_lock < request_start
+    assert "response.status === 429" in source[function_start:source.index("function setSenseStatus", function_start)]
+    assert 'response.headers.get("Retry-After")' in source[function_start:source.index("function setSenseStatus", function_start)]
+    assert "hostCameraPollDelayMs * 2" in source[function_start:source.index("function setSenseStatus", function_start)]
 
 def test_live_body_shows_independent_vision_and_audio_statuses():
     source = LIVE_BODY.read_text(encoding="utf-8")
