@@ -413,7 +413,9 @@ class HostRuntime:
             await self._record_connection_state({"reasoning_host": "disconnected"})
         return {"expires": revised["expires"]}
 
-    async def submit(self, message: str, *, priority: int = 0) -> dict:
+    async def submit(
+        self, message: str, *, priority: int = 0, media_data_url: str | None = None
+    ) -> dict:
         if not await self.active():
             raise RuntimeError("No external reasoning host is attached")
         key = uuid4().hex
@@ -422,6 +424,7 @@ class HostRuntime:
             "request_id": key,
             "state": "pending",
             "message": message,
+            "media_data_url": media_data_url,
             # Lower numbers run first. Human text stays ahead of background
             # sensory interpretation requests even when those requests arrived earlier.
             "priority": int(priority),
@@ -481,6 +484,7 @@ class HostRuntime:
                         "request_id": request["request_id"],
                         "user_message": request["message"],
                         "context": context,
+                        "media_data_url": request.get("media_data_url"),
                     }
             if time.monotonic() >= deadline:
                 return None
@@ -558,6 +562,36 @@ class HostAwareInterpreter:
             TaskModelDispatcher(fallback.records)
             if getattr(fallback, "records", None) is not None else None
         )
+
+    async def respond_to_percept(
+        self, percept: Any, *, evidence: Any | None = None
+    ) -> str | None:
+        """Deliver live audio to the attached host as native media in one interaction."""
+        modality = getattr(getattr(percept, "modality", None), "value", "")
+        media_data_url = getattr(percept, "content_ref", None)
+        if modality != "audio" or not isinstance(media_data_url, str) or not media_data_url.startswith("data:"):
+            return None
+        if not await self.hosts.active():
+            return None
+        import json
+        metadata = {
+            "modality": modality,
+            "source": getattr(percept, "source", "browser-microphone"),
+            "observed_at": getattr(percept, "observed_at", None),
+            "evidence": evidence.model_dump(mode="json") if hasattr(evidence, "model_dump") else evidence,
+        }
+        prompt = (
+            "This is live speech addressed to Axiom. Listen to the attached audio, understand the spoken input, "
+            "and respond naturally to the speaker as Axiom. Do not merely describe the audio or return a "
+            "transcription unless that is the appropriate answer. If the audio is unclear, say so honestly. "
+            "The original recording is preserved as sensory evidence. Metadata:\\n"
+            + json.dumps(metadata, ensure_ascii=False, default=str)
+        )
+        result = await self.hosts.submit(prompt, priority=-10, media_data_url=media_data_url)
+        response_text = str(result.get("response_text", "")).strip()
+        if not response_text:
+            raise RuntimeError("The connected reasoning host returned an empty live-audio response")
+        return response_text
 
     async def interpret(self, percept: Any, *, focus: str | None = None) -> str:
         task_dispatch_failed = False
