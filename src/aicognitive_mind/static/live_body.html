@@ -941,7 +941,7 @@
     }
 
     async function pollBodyMouth() {
-      if (bodyIsBusy() || mouthPollBusy || talkSpeaking || window.speechSynthesis?.speaking) return;
+      if (sensoryRequestInFlight || sendInteractionButton.disabled || mouthPollBusy || talkSpeaking || window.speechSynthesis?.speaking) return;
       try {
         await consumeExpressionOutputs();
       } catch (_) {
