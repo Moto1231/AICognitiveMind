@@ -233,11 +233,16 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(mouth.consume())
         self.assertIsNone(face.consume())
         entries = await journal.read()
-        self.assertEqual(entries[-1].kind.value, "sensory_evidence")
-        self.assertEqual(entries[-1].experience["status"], "admitted")
-        # Initialization is journaled before the passive observation; passive
-        # sensing must not create a conscious interaction entry.
-        self.assertEqual(len(entries), 2)
+        sensory = next(entry for entry in entries if entry.kind.value == "sensory_evidence")
+        self.assertEqual(sensory.experience["status"], "admitted")
+        state_checkpoint = entries[-1]
+        self.assertEqual(state_checkpoint.kind.value, "checkpoint")
+        self.assertEqual(state_checkpoint.experience["checkpoint_type"], "current_state_ledger")
+        scene = state_checkpoint.experience["state_ledger"]["fields"]["current_scene"]
+        self.assertEqual(scene["value"]["modality"], "vision")
+        self.assertEqual(scene["value"]["evidence"]["sha256"], result.evidence.sha256)
+        # Passive sensing updates state without creating a conscious interaction entry.
+        self.assertEqual(len(entries), 3)
         self.assertEqual(entries[0].kind.value, "initialization")
         self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
 
@@ -299,10 +304,12 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(mouth.consume())
         self.assertIsNone(face.consume())
         entries = await journal.read()
-        self.assertEqual(entries[-1].kind.value, "sensory_evidence")
-        # Initialization is journaled before the passive observation; passive
-        # sensing must not create a conscious interaction entry.
-        self.assertEqual(len(entries), 2)
+        sensory = next(entry for entry in entries if entry.kind.value == "sensory_evidence")
+        self.assertEqual(sensory.experience["status"], "admitted")
+        self.assertEqual(entries[-1].kind.value, "checkpoint")
+        self.assertEqual(entries[-1].experience["checkpoint_type"], "current_state_ledger")
+        # Passive sensing records a current-state revision but no conscious interaction.
+        self.assertEqual(len(entries), 3)
         self.assertEqual(entries[0].kind.value, "initialization")
         self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
 
