@@ -302,6 +302,15 @@ class InMemoryJournalStore:
         matching.sort(key=lambda entry: entry.occurred_at, reverse=newest_first)
         return deepcopy(matching[offset : offset + limit]), len(matching)
 
+    async def latest_checkpoint(self, checkpoint_type: str) -> list[JournalEntry]:
+        for entry in reversed(self._entries):
+            if (
+                entry.kind.value == "checkpoint"
+                and entry.experience.get("checkpoint_type") == checkpoint_type
+            ):
+                return [deepcopy(entry)]
+        return []
+
     async def find_exact(
         self,
         *,
