@@ -22,6 +22,7 @@ from aicognitive_mind.domain import (
     SensoryEvidenceReference,
 )
 from aicognitive_mind.presence_resolver import PresenceResolver
+from aicognitive_mind.state_context import apply_current_state_event
 from aicognitive_mind.storage import EvidenceStore, JournalStore
 
 
@@ -447,6 +448,33 @@ class MindBodyBridge:
             evidence=reference,
             interpretation=interpretation,
             scope=presence_scope,
+        )
+        state_values: dict[str, Any] = {
+            "current_scene": {
+                "value": {
+                    "modality": percept.modality.value,
+                    "source": percept.source,
+                    "observed_at": percept.observed_at.isoformat(),
+                    "interpretation": interpretation,
+                    "evidence": reference.model_dump(mode="json"),
+                },
+                "source": f"body:{percept.modality.value}",
+                "status": "current",
+            }
+        }
+        if self._presence is not None:
+            presence_context = self._presence.context(scope=presence_scope)
+            if presence_context.get("present_people"):
+                state_values["presence"] = {
+                    "value": presence_context,
+                    "source": "body_presence_resolver",
+                    "status": "current",
+                }
+        await apply_current_state_event(
+            self._journal,
+            "scene_changed",
+            {"values": state_values},
+            source=f"body:{percept.modality.value}",
         )
         context = {
             "modality": percept.modality.value,
