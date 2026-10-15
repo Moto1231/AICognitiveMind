@@ -204,6 +204,7 @@
       color: #fff;
     }
     .sense-panel {
+      flex-wrap: wrap;
       margin-top: 0;
       padding: .8rem 1rem;
       display: flex;
@@ -542,6 +543,7 @@
           hostCameraNextPollAt = Date.now() + hostCameraPollDelayMs;
           return;
         }
+        if (!visionEnabled) return;
         hostCameraPollDelayMs = 2_500;
         hostCameraNextPollAt = Date.now() + hostCameraPollDelayMs;
         const command = await response.json();
@@ -559,6 +561,7 @@
           }
 
           await delay(seconds * 1000);
+          if (!visionEnabled) return;
 
           const track = stream.getVideoTracks()[0];
           if (!track) throw new Error("Camera did not provide a video track.");
@@ -575,6 +578,7 @@
           canvas.height = Math.max(1, Math.round(liveScene.videoHeight * scale));
           canvas.getContext("2d").drawImage(liveScene, 0, 0, canvas.width, canvas.height);
           const imageDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+          if (!visionEnabled) return;
 
           const ingress = await bodyFetch("/v1/body/eyes/observe", {
             method: "POST",
