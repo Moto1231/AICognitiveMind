@@ -94,3 +94,14 @@ def test_live_body_voice_off_blocks_spoken_output_and_mouth_polling():
     assert 'if (!voiceEnabled || !intent?.text) return;' in source
     assert 'if (!voiceEnabled || mouthPollBusy) return false;' in source
     assert 'if (!voiceEnabled || sensoryRequestInFlight' in source
+
+
+def test_live_body_voice_off_stops_current_audio_playback():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    voice_toggle_start = source.index("function toggleVoice()")
+    voice_toggle_end = source.index("interactionForm.addEventListener", voice_toggle_start)
+    voice_toggle = source[voice_toggle_start:voice_toggle_end]
+    assert "activeSpeechAudio.pause()" in voice_toggle
+    assert "activeSpeechAudio.currentTime = 0" in voice_toggle
+    assert "window.speechSynthesis?.cancel()" in voice_toggle
+    assert "if (!voiceEnabled) return;" in source[source.index("async function speakIntent"):source.index("function resumeTalking")]
