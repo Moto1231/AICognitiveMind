@@ -282,7 +282,8 @@ async def begin_interaction(
     Do not answer the human as the Mind before consulting this tool.
     """
     result = await ctx.request_context.lifespan_context.mind_service.begin_interaction(
-        user_message
+        user_message,
+        host_working_context.model_dump(mode="json"),
     )
     return {
         **result,
@@ -333,6 +334,43 @@ async def complete_interaction(
         **result,
         "host_working_context": host_working_context.model_dump(mode="json"),
     }
+
+@mcp.tool()
+async def read_current_state(ctx: Context[AppState]) -> dict[str, Any]:
+    """Read Axiom's persistent current-state ledger: identity, foundations, locality, presence, topic, and operational state."""
+    return await ctx.request_context.lifespan_context.mind_service.read_current_state()
+
+
+@mcp.tool()
+async def update_current_state(
+    event: Literal[
+        "session_started",
+        "location_changed",
+        "speaker_changed",
+        "topic_changed",
+        "task_changed",
+        "connection_changed",
+        "scene_changed",
+        "evidence_conflict",
+        "state_refreshed",
+    ],
+    ctx: Context[AppState],
+    updates: dict[str, Any] | None = None,
+    source: str = "explicit_state_event",
+) -> dict[str, Any]:
+    """Record a state-changing event. The ledger invalidates only affected answers; supply grounded replacement values when available.
+
+    updates may contain values={field: value or {value, source, status, note}} and invalidate=[field, ...].
+    Supported fields are identity, foundations, behaviors, skills, locality, interlocutor, presence,
+    active_topic, active_task, decisions_and_open_questions, connection_status, capabilities,
+    pending_work, and current_scene. Unknown is preferable to an invented answer.
+    """
+    return await ctx.request_context.lifespan_context.mind_service.update_current_state(
+        event=event,
+        updates=updates,
+        source=source,
+    )
+
 
 @mcp.tool()
 async def attach_reasoning_host(name: str, model: str, ctx: Context[AppState]) -> dict[str, Any]:
