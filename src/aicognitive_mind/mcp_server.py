@@ -133,7 +133,10 @@ async def execute_task(
         }
         if error:
             task_value["error"] = error
-        await state.mind_service.update_current_state(
+        mind_service = getattr(state, "mind_service", None)
+        if mind_service is None:
+            return
+        await mind_service.update_current_state(
             event="task_changed",
             updates={
                 "values": {
