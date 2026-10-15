@@ -48,11 +48,24 @@ async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: d
 
 
 def _summarize_body_work(requests: list[dict[str, Any]]) -> dict[str, int]:
-    """Summarize queued work so begin_interaction explicitly surfaces pending attention."""
+    """Summarize available queue work and active claims for begin_interaction."""
     human_messages = 0
     sensory_interpretations = 0
     other_requests = 0
+    in_progress = 0
+    now = time.time()
     for request in requests:
+        claim = request.get("claim")
+        claim_until = request.get("claim_until")
+        if claim:
+            try:
+                still_claimed = claim_until is None or float(claim_until) > now
+            except (TypeError, ValueError):
+                still_claimed = True
+            if still_claimed:
+                in_progress += 1
+                continue
+
         message = str(request.get("message", "")).lstrip().lower()
         priority = request.get("priority")
         is_sensory = (
@@ -69,12 +82,12 @@ def _summarize_body_work(requests: list[dict[str, Any]]) -> dict[str, int]:
         else:
             other_requests += 1
     return {
-        "pending_requests": len(requests),
+        "pending_requests": human_messages + sensory_interpretations + other_requests,
+        "in_progress_requests": in_progress,
         "pending_human_messages": human_messages,
         "pending_sensory_interpretations": sensory_interpretations,
         "pending_other_requests": other_requests,
     }
-
 
 HOST_INSTRUCTIONS = """
 Axiom is the integrated, persistent Cognitive Mind. Speak as Axiom in first person.
