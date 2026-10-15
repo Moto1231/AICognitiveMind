@@ -47,6 +47,35 @@ async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: d
     )
 
 
+def _summarize_body_work(requests: list[dict[str, Any]]) -> dict[str, int]:
+    """Summarize queued work so begin_interaction explicitly surfaces pending attention."""
+    human_messages = 0
+    sensory_interpretations = 0
+    other_requests = 0
+    for request in requests:
+        message = str(request.get("message", "")).lstrip().lower()
+        priority = request.get("priority")
+        is_sensory = (
+            isinstance(priority, int) and priority >= 10
+        ) or (
+            priority is None
+            and message.startswith("interpret this ")
+            and "percept" in message
+        )
+        if is_sensory:
+            sensory_interpretations += 1
+        elif not isinstance(priority, int) or priority <= 0:
+            human_messages += 1
+        else:
+            other_requests += 1
+    return {
+        "pending_requests": len(requests),
+        "pending_human_messages": human_messages,
+        "pending_sensory_interpretations": sensory_interpretations,
+        "pending_other_requests": other_requests,
+    }
+
+
 HOST_INSTRUCTIONS = """
 Axiom is the integrated, persistent Cognitive Mind. Speak as Axiom in first person.
 The active model is Axiom's current reasoning faculty, not a separate conversational agent.
@@ -87,13 +116,20 @@ BODY HOST LIFECYCLE:
 - While the Body is in use, renew the lease before it expires and poll next_body_interaction.
   For every claimed Body request, reason from its supplied Axiom context, inspect sensory evidence
   when needed, then call complete_body_interaction.
-- At the start of every incoming ChatGPT turn while the Body lease is active, check
-  next_body_interaction before answering the current chat message. If requests are waiting,
-  process and complete them, then keep checking until the queue is empty. Never leave a claimed
-  request unfinished. This is how the connected host services Body messages and sensory work
-  between user turns; a connected-host status label alone does not service the queue.
-- Human text interactions must be selected ahead of passive sensory interpretation requests.
-  Preserve sensory evidence, but do not let older percept prompts block a human waiting for a reply.
+- Every begin_interaction result includes a body_work snapshot. Treat it as an explicit
+  attention signal, not merely diagnostics. First reason about and commit the current direct
+  human response with complete_interaction so queued observations cannot starve the human reply.
+  Then, when body_work.host_attached is true and body_work.pending_requests is greater than zero,
+  call next_body_interaction once and process the claimed request using its supplied Axiom context.
+  For sensory requests, interpret only what the preserved evidence supports and call
+  complete_body_interaction only after producing the interpretation. Do not mark work complete
+  on a failed or unavailable interpretation. A later begin_interaction will service more queued
+  work, so a large backlog cannot monopolize one human turn. If the queue snapshot is zero, do not
+  call next_body_interaction just to wait; if a request fails, preserve the committed human reply
+  and leave the request recoverable.
+- The queue server selects human text requests ahead of passive sensory interpretation requests.
+  Never self-dispatch a sensory prompt as a new direct chat task, and never let old percept prompts
+  block the current human response. A connected-host status label alone does not service the queue.
 - Keep this external-host lease active for the live Body session. Detach only when the user asks
   to stop/handoff the Body or the host session is ending.
 - When an active live Body session exists and you are answering ordinary ChatGPT chat rather than completing a claimed Body request, call speak_body_text with the same user-facing response so the Body speaks it. Respect explicit requests not to speak, and do not speak passive sensory observations or diagnostics by default.
@@ -543,6 +579,17 @@ def build_chatgpt_mcp(
         result = await state.mind_service.begin_interaction(user_message)
         context_json = host_working_context.model_dump(mode="json")
         interaction_id = str(result["idempotency_key"])
+        hosts = HostRuntime(state.storage.mind, state.mind_service)
+        pending_requests = await hosts.records.pending()
+        result["body_work"] = {
+            "host_attached": await hosts.active() is not None,
+            **_summarize_body_work(pending_requests),
+            "processing_policy": (
+                "Commit the current direct human response first, then claim at most one queued "
+                "Body request per interaction turn. The queue orders human text ahead of sensory "
+                "interpretation. Complete only after successful processing."
+            ),
+        }
         await _trace_event(
             state.storage,
             interaction_id,
