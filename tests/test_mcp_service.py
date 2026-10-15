@@ -330,7 +330,12 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             tension_entries[0].experience["competing_values"]["existing"],
             "February 7",
         )
-        self.assertEqual(journal[-1].kind.value, "interaction")
+        experience_entries = [
+            entry
+            for entry in journal
+            if entry.experience.get("checkpoint_type") != "current_state_ledger"
+        ]
+        self.assertEqual(experience_entries[-1].kind.value, "interaction")
 
     async def test_current_evidence_participates_when_tension_is_first_detected(self) -> None:
         await self.service.complete_interaction(
