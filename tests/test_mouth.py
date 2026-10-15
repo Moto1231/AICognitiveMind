@@ -189,7 +189,8 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
             encoding="utf-8"
         )
         self.assertIn("/v1/body/session/active", live_markup)
-        self.assertIn("pollBodyMouth", live_markup)
+        self.assertNotIn("pollBodyMouth", live_markup)
+        self.assertIn("new EventSource(", live_markup)
         self.assertIn("VOICE PLAYBACK STARTED (Fish Audio)", live_markup)
         self.assertIn("VOICE PLAYBACK COMPLETE (Fish Audio)", live_markup)
         self.assertIn("Fish Audio unavailable; falling back to browser speech:", live_markup)
