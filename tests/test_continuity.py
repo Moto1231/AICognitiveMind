@@ -72,6 +72,38 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
             ["engine-a", "engine-b"],
         )
 
+    async def test_journal_redacts_embedded_sensory_data_urls_but_preserves_live_input(self) -> None:
+        journal = InMemoryJournalStore()
+        core = CognitiveCore(
+            mind=InMemoryMindStore(),
+            journal=journal,
+            memory=InMemoryMemoryStore(),
+            diagnostics=InMemoryDiagnosticStore(),
+            engine=EchoReasoningEngine(),
+        )
+        await core.initialize("Axiom")
+        encoded_payload = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=" * 40
+        data_url = f"data:image/jpeg;base64,{encoded_payload}"
+        input_text = f"Inspect this evidence: {data_url}"
+        result = await core.interact(
+            input_text,
+            source="body:vision",
+            input_context={
+                "evidence": {"sha256": "a" * 64, "byte_length": 1024},
+                "content_ref": data_url,
+            },
+        )
+
+        entries = await core.read_journal()
+        journal_text = str(entries[-1].model_dump(mode="json"))
+
+        self.assertIn(data_url, result.response_text)
+        self.assertNotIn("data:image/jpeg;base64", journal_text)
+        self.assertNotIn(encoded_payload, journal_text)
+        self.assertIn("encoded sensory payload omitted from journal", journal_text)
+        self.assertIn("a" * 64, journal_text)
+        self.assertIn("1024", journal_text)
+
     def test_legacy_checkpoint_journal_entry_remains_readable(self) -> None:
         entry = JournalEntry.model_validate(
             {
