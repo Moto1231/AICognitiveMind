@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 
 from aicognitive_mind.domain import SensoryEvidenceArtifact
-from aicognitive_mind.mcp_server import next_body_interaction, read_sensory_evidence
+from aicognitive_mind.mcp_server import body_request_tool_result, next_body_interaction, read_sensory_evidence
 from aicognitive_mind.storage import InMemoryEvidenceStore
 
 
@@ -50,6 +50,20 @@ class McpMediaTests(unittest.IsolatedAsyncioTestCase):
         ctx = SimpleNamespace(request_context=SimpleNamespace(
             lifespan_context=SimpleNamespace(hosts=Hosts())))
         result = await next_body_interaction("lease", ctx)
+        self.assertEqual(result.content[1].type, "audio")
+        self.assertEqual(result.content[1].mime_type, "audio/webm")
+        self.assertEqual(base64.b64decode(result.content[1].data), payload)
+        self.assertNotIn("media_data_url", result.structured_content)
+
+
+    def test_body_request_tool_result_preserves_audio_as_native_content(self):
+        payload = b"spoken words"
+        data_url = "data:audio/webm;base64," + base64.b64encode(payload).decode()
+        result = body_request_tool_result({
+            "request_id": "request-2",
+            "user_message": "Listen to the speaker.",
+            "media_data_url": data_url,
+        })
         self.assertEqual(result.content[1].type, "audio")
         self.assertEqual(result.content[1].mime_type, "audio/webm")
         self.assertEqual(base64.b64decode(result.content[1].data), payload)
