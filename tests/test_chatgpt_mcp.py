@@ -126,7 +126,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("body_work snapshot", HOST_INSTRUCTIONS)
         self.assertIn("commit the current direct", HOST_INSTRUCTIONS)
         self.assertIn("human response with complete_interaction", HOST_INSTRUCTIONS)
-        self.assertIn("claim at most one queued", HOST_INSTRUCTIONS)
+        self.assertIn("A later begin_interaction will service more queued", HOST_INSTRUCTIONS)
         self.assertIn("Do not mark work complete", HOST_INSTRUCTIONS)
         self.assertIn("Never self-dispatch a sensory prompt", HOST_INSTRUCTIONS)
 
