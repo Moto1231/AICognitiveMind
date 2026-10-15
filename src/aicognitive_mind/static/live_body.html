@@ -621,10 +621,27 @@
     }
 
     async function refreshConnectedHostStatus() {
-      if (!connectedHostStatus || document.hidden) return;
+      // This status endpoint must not overlap itself when a response is slower
+      // than the five-second refresh interval or the server starts rate limiting.
+      if (!connectedHostStatus || document.hidden || refreshConnectedHostStatus.inFlight ||
+          Date.now() < (refreshConnectedHostStatus.nextPollAt || 0)) return;
+      refreshConnectedHostStatus.inFlight = true;
       try {
         const response = await bodyFetch("/v1/body/hosts/status", { cache: "no-store" });
+        if (response.status === 429) {
+          const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+          refreshConnectedHostStatus.pollDelayMs = Math.min(
+            30_000,
+            retryAfterSeconds > 0
+              ? retryAfterSeconds * 1_000
+              : Math.max(5_000, (refreshConnectedHostStatus.pollDelayMs || 5_000) * 2)
+          );
+          refreshConnectedHostStatus.nextPollAt = Date.now() + refreshConnectedHostStatus.pollDelayMs;
+          throw new Error("Host status rate limited");
+        }
         if (!response.ok) throw new Error(await responseErrorMessage(response));
+        refreshConnectedHostStatus.pollDelayMs = 5_000;
+        refreshConnectedHostStatus.nextPollAt = Date.now() + 5_000;
         const status = await response.json();
         const requests = status.requests || {};
         const pending = Number(requests.pending || 0);
@@ -646,8 +663,16 @@
           " · " + (status.lease_remaining_seconds == null ? "persistent connection" : "lease " + status.lease_remaining_seconds + "s") + " · " + heartbeat +
           " · " + pending + " waiting / " + inProgress + " in progress";
       } catch (_) {
+        if (Date.now() >= (refreshConnectedHostStatus.nextPollAt || 0)) {
+          refreshConnectedHostStatus.pollDelayMs = Math.min(
+            30_000, Math.max(5_000, (refreshConnectedHostStatus.pollDelayMs || 5_000) * 2)
+          );
+          refreshConnectedHostStatus.nextPollAt = Date.now() + refreshConnectedHostStatus.pollDelayMs;
+        }
         connectedHostStatus.dataset.state = "unavailable";
         connectedHostStatus.textContent = "Connected-host status unavailable";
+      } finally {
+        refreshConnectedHostStatus.inFlight = false;
       }
     }
 
