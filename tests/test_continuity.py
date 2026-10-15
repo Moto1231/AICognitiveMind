@@ -61,8 +61,13 @@ class ContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored, mind)
         self.assertEqual(first.response_text, "A considered: Remember how we began.")
         self.assertEqual(second.response_text, "B considered: Who is thinking now?")
+        experience_entries = [
+            entry
+            for entry in entries
+            if entry.experience.get("checkpoint_type") != "current_state_ledger"
+        ]
         self.assertEqual(
-            [entry.kind for entry in entries],
+            [entry.kind for entry in experience_entries],
             [JournalKind.INITIALIZATION, JournalKind.INTERACTION, JournalKind.INTERACTION],
         )
         self.assertNotIn("engine-a", str([entry.model_dump() for entry in entries]))
