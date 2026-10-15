@@ -3,6 +3,7 @@
 # of this file is prohibited without prior written permission from the
 # copyright holder.
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -42,7 +43,12 @@ from aicognitive_mind.body import (
 )
 from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
-from aicognitive_mind.body_sessions import BodyQueue, body_session
+from aicognitive_mind.body_sessions import (
+    BodyQueue,
+    body_session,
+    subscribe_body_output,
+    unsubscribe_body_output,
+)
 from aicognitive_mind.config import (
     body_allow_standalone_fallback_enabled,
     body_allow_standalone_fallback_override,
@@ -664,7 +670,7 @@ def _body_presence_scope(request: Request) -> tuple[str, str]:
 @app.middleware("http")
 async def select_body_session(request: Request, call_next: Any) -> Response:
     import re
-    session = request.headers.get("x-body-session", "legacy")
+    session = request.headers.get("x-body-session") or request.query_params.get("session_id", "legacy")
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session):
         return Response("Invalid Body session", status_code=400)
     token = body_session.set(session)
@@ -1222,6 +1228,48 @@ async def next_mouth_intent(request: Request, response: Response) -> ExpressionI
     if receipt:
         response.headers["X-Body-Delivery"] = receipt
     return intent
+
+
+@app.get("/v1/body/mouth/events")
+async def mouth_output_events(request: Request) -> StreamingResponse:
+    """Push a readiness event when queued voice is available to the active Live Body."""
+    session_id = body_session.get()
+    if session_id == "legacy":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A named live Body session is required",
+        )
+
+    subscriber = subscribe_body_output(session_id, "mouth")
+
+    async def stream() -> AsyncIterator[str]:
+        token = body_session.set(session_id)
+        mouth = cast(BrowserVoiceOutput, request.app.state.browser_mouth)
+        try:
+            # Subscribe before checking the durable queue to close the enqueue/connect race.
+            while not await request.is_disconnected():
+                intent, _ = await mouth.deliver()
+                if intent is not None:
+                    yield "event: voice-ready\\ndata: {}\\n\\n"
+                    # The browser drains all queued intents and acknowledges each delivery.
+                    try:
+                        await asyncio.wait_for(subscriber.get(), timeout=0.01)
+                    except TimeoutError:
+                        pass
+                    continue
+                try:
+                    await asyncio.wait_for(subscriber.get(), timeout=15)
+                except TimeoutError:
+                    yield ": keep-alive\\n\\n"
+        finally:
+            unsubscribe_body_output(session_id, "mouth", subscriber)
+            body_session.reset(token)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/v1/body/{modality}/ack")
