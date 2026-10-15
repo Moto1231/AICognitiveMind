@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -28,6 +29,33 @@ from aicognitive_mind.prompts import (
 from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.host_runtime import RuntimeRecords
+
+_SENSORY_DATA_URL = re.compile(
+    r'data:[^,\\s"\\']+;base64,[A-Za-z0-9+/=\\r\\n]+',
+    re.IGNORECASE,
+)
+_SENSORY_PAYLOAD_KEYS = {"payload_base64", "image_data", "audio_data"}
+
+
+def _journal_safe_value(value: Any, *, key: str | None = None) -> Any:
+    """Redact encoded media from the journal while leaving reasoning inputs untouched."""
+    if isinstance(value, dict):
+        return {
+            str(child_key): _journal_safe_value(child_value, key=str(child_key).lower())
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_journal_safe_value(item) for item in value]
+    if not isinstance(value, str):
+        return value
+    if key in _SENSORY_PAYLOAD_KEYS:
+        return "[encoded sensory payload omitted from journal; see preserved evidence reference]"
+    return _SENSORY_DATA_URL.sub(
+        "[encoded sensory payload omitted from journal; see preserved evidence reference]",
+        value,
+    )
+
+
 from aicognitive_mind.task_behaviors import (
     TaskBehaviorRegistry,
     TaskExecutionContext,
@@ -238,7 +266,7 @@ class CognitiveMcpService:
         journal_entry = await self._journal.append(
             JournalEntry(
                 kind=JournalKind.INTERACTION,
-                experience={
+                experience=_journal_safe_value({
                     "input": {
                         "source": "human",
                         "content": user_message,
@@ -251,7 +279,7 @@ class CognitiveMcpService:
                     "reasoning_runtime": {
                         "source": "connected_mcp_host",
                     },
-                },
+                }),
             ),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
