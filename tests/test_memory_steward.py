@@ -138,7 +138,9 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(engine.request)
         request = cast(ReasoningRequest, engine.request)
-        self.assertEqual(request.system_prompt, CONSCIOUS_WORKSPACE_SYSTEM_PROMPT)
+        self.assertTrue(request.system_prompt.startswith(CONSCIOUS_WORKSPACE_SYSTEM_PROMPT))
+        self.assertIn("PERSISTED CURRENT STATE LEDGER (read before reasoning):", request.system_prompt)
+        self.assertIn('"self_name": "Genesis"', request.system_prompt)
         self.assertIn("memory_steward", request.system_prompt)
         memories = await core.read_memory()
         self.assertEqual(len(memories), 1)
