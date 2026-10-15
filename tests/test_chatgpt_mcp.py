@@ -124,7 +124,8 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["pending_sensory_interpretations"], 2)
         self.assertEqual(summary["pending_other_requests"], 0)
         self.assertIn("body_work snapshot", HOST_INSTRUCTIONS)
-        self.assertIn("Commit the current direct human response first", HOST_INSTRUCTIONS)
+        self.assertIn("commit the current direct", HOST_INSTRUCTIONS)
+        self.assertIn("human response with complete_interaction", HOST_INSTRUCTIONS)
         self.assertIn("claim at most one queued", HOST_INSTRUCTIONS)
         self.assertIn("Do not mark work complete", HOST_INSTRUCTIONS)
         self.assertIn("Never self-dispatch a sensory prompt", HOST_INSTRUCTIONS)
@@ -141,7 +142,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("begin_interaction", HOST_INSTRUCTIONS)
         self.assertIn("complete_interaction", HOST_INSTRUCTIONS)
         self.assertIn("open_live_body", HOST_INSTRUCTIONS)
-        self.assertIn("At the start of every incoming ChatGPT turn", HOST_INSTRUCTIONS)
+        self.assertIn("Every begin_interaction result includes a body_work snapshot", HOST_INSTRUCTIONS)
         self.assertIn("Human text interactions must be selected ahead", HOST_INSTRUCTIONS)
 
     async def test_deployed_surface_registers_github_tools(self):
