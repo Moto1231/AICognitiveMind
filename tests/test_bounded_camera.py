@@ -62,3 +62,35 @@ def test_live_body_shows_independent_vision_and_audio_statuses():
     assert 'Evidence saved; interpretation failed:' in source
     assert 'placeholder="Message"' in source
     assert 'placeholder="Message the Mind..."' not in source
+
+
+def test_live_body_has_independent_vision_hearing_and_voice_controls():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    assert 'id="visionToggle"' in source
+    assert 'id="hearingToggle"' in source
+    assert 'id="voiceToggle"' in source
+    assert 'function toggleVision()' in source
+    assert 'function toggleHearing()' in source
+    assert 'function toggleVoice()' in source
+    assert 'localStorage.setItem("aicognitive_mind.vision"' in source
+    assert 'localStorage.setItem("aicognitive_mind.hearing"' in source
+    assert 'localStorage.setItem("aicognitive_mind.voice"' in source
+    assert "sensesEnabled" not in source
+
+
+def test_live_body_does_not_poll_or_capture_camera_when_vision_is_off():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    function_start = source.index("async function checkForHostCameraRequest()")
+    function_end = source.index("let pageSourceSnapshot", function_start)
+    camera_function = source[function_start:function_end]
+    assert "if (!visionEnabled || hostCameraRequestBusy" in camera_function
+    assert camera_function.index("if (!visionEnabled || hostCameraRequestBusy") < camera_function.index('bodyFetch("/v1/body/camera/request"')
+    assert "if (!visionEnabled) return;" in camera_function
+    assert 'setSenseStatus("vision", "Vision is off. No camera polling or capture will run."' in source
+
+
+def test_live_body_voice_off_blocks_spoken_output_and_mouth_polling():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    assert 'if (!voiceEnabled || !intent?.text) return;' in source
+    assert 'if (!voiceEnabled || mouthPollBusy) return false;' in source
+    assert 'if (!voiceEnabled || sensoryRequestInFlight' in source
