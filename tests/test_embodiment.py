@@ -448,7 +448,8 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("responseErrorMessage", markup)
         self.assertIn("/v1/body/mouth/next", markup)
         self.assertIn("await speakIntent(mouthIntent)", markup)
-        self.assertIn("return true;", markup)
+        self.assertIn("return consumed;", markup)
+        self.assertIn("/v1/body/mouth/events", markup)
         self.assertIn("const expressionSpoken = await consumeExpressionOutputs()", markup)
         self.assertIn("!expressionSpoken", markup)
 
