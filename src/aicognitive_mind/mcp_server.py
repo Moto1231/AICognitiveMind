@@ -66,6 +66,42 @@ async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
 
 mcp = MCPServer("Axiom", lifespan=lifespan)
 
+def body_request_tool_result(request: dict[str, Any] | None) -> CallToolResult:
+    """Serialize a claimed Body request, preserving any attached media as native MCP content."""
+    import json
+    if request is None:
+        return CallToolResult(content=[])
+    payload_data = dict(request)
+    media_data_url = payload_data.pop("media_data_url", None)
+    if not isinstance(media_data_url, str) or not media_data_url.startswith("data:") or "," not in media_data_url:
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(payload_data, ensure_ascii=False, default=str))],
+            structured_content=payload_data,
+        )
+    header, encoded = media_data_url.split(",", 1)
+    if not header.endswith(";base64"):
+        raise ValueError("Live sensory media is not base64 encoded")
+    media_type = header[5:].removesuffix(";base64").split(";", 1)[0].lower()
+    try:
+        payload = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Live sensory media contains invalid base64 data") from exc
+    if not payload:
+        raise ValueError("Live sensory media is empty")
+    encoded_payload = base64.b64encode(payload).decode("ascii")
+    if media_type.startswith("audio/"):
+        media = AudioContent(type="audio", data=encoded_payload, mime_type=media_type)
+    elif media_type.startswith("image/"):
+        media = ImageContent(type="image", data=encoded_payload, mime_type=media_type)
+    else:
+        raise ValueError("Unsupported live sensory media type")
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(payload_data, ensure_ascii=False, default=str)), media],
+        structured_content=payload_data,
+    )
+
+
+
 @mcp.tool()
 async def initialize_mind(
     self_name: str,
@@ -417,39 +453,9 @@ async def renew_reasoning_host(lease_token: str, ctx: Context[AppState], detach:
 
 @mcp.tool()
 async def next_body_interaction(lease_token: str, ctx: Context[AppState]) -> CallToolResult:
-    """Claim the next Body request, returning live audio as native MCP audio content when present."""
-    import json
+    """Claim the next Body request and preserve attached media as native MCP content."""
     state = ctx.request_context.lifespan_context
-    request = await state.hosts.next_request(lease_token)
-    if request is None:
-        return CallToolResult(content=[])
-    media_data_url = request.pop("media_data_url", None)
-    if not isinstance(media_data_url, str) or not media_data_url.startswith("data:") or "," not in media_data_url:
-        return CallToolResult(
-            content=[TextContent(type="text", text=json.dumps(request, ensure_ascii=False, default=str))],
-            structured_content=request,
-        )
-    header, encoded = media_data_url.split(",", 1)
-    if not header.endswith(";base64"):
-        raise ValueError("Live sensory media is not base64 encoded")
-    media_type = header[5:].removesuffix(";base64").split(";", 1)[0].lower()
-    try:
-        payload = base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise ValueError("Live sensory media contains invalid base64 data") from exc
-    if not payload:
-        raise ValueError("Live sensory media is empty")
-    encoded_payload = base64.b64encode(payload).decode("ascii")
-    if media_type.startswith("audio/"):
-        media = AudioContent(type="audio", data=encoded_payload, mime_type=media_type)
-    elif media_type.startswith("image/"):
-        media = ImageContent(type="image", data=encoded_payload, mime_type=media_type)
-    else:
-        raise ValueError("Unsupported live sensory media type")
-    return CallToolResult(
-        content=[TextContent(type="text", text=json.dumps(request, ensure_ascii=False, default=str)), media],
-        structured_content=request,
-    )
+    return body_request_tool_result(await state.hosts.next_request(lease_token))
 
 @mcp.tool()
 async def complete_body_interaction(lease_token: str, request_id: str, response_text: str,
