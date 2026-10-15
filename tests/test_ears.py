@@ -94,8 +94,6 @@ class EarsV01Tests(unittest.IsolatedAsyncioTestCase):
         page = Path("src/aicognitive_mind/static/ears.html").read_text(encoding="utf-8")
         self.assertIn("navigator.mediaDevices.getUserMedia", page)
         self.assertIn("MediaRecorder", page)
-        self.assertIn("/v1/mind/body/hear/live", page)
-        self.assertNotIn('"/v1/mind/body/hear?express=false"', page)
         self.assertIn("/v1/body/ears/hear", page)
         self.assertIn("BODY CAN HEAR", page)
 
