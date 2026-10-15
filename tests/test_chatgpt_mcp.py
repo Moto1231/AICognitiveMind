@@ -114,9 +114,12 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 {"priority": 10, "message": "Interpret this vision percept."},
                 {"priority": 0, "message": "Please tell me what happened."},
                 {"message": "Interpret this audio percept."},
+                {"claim": "host-token-hash", "claim_until": None, "priority": 10,
+                 "message": "Interpret this already-claimed percept."},
             ]
         )
         self.assertEqual(summary["pending_requests"], 3)
+        self.assertEqual(summary["in_progress_requests"], 1)
         self.assertEqual(summary["pending_human_messages"], 1)
         self.assertEqual(summary["pending_sensory_interpretations"], 2)
         self.assertEqual(summary["pending_other_requests"], 0)
