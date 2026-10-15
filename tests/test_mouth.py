@@ -1,8 +1,14 @@
+import asyncio
 import unittest
 from pathlib import Path
 
 from aicognitive_mind.api import app
 from aicognitive_mind.body.runtime import configured_voice_intent
+from aicognitive_mind.body_sessions import (
+    notify_body_output,
+    subscribe_body_output,
+    unsubscribe_body_output,
+)
 from aicognitive_mind.body import (
     BodyRuntime,
     BrowserVoiceOutput,
@@ -148,6 +154,18 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(status.available)
         self.assertIn("browser speech", status.detail or "")
 
+    async def test_voice_output_push_notifies_only_matching_session_and_modality(self) -> None:
+        subscriber = subscribe_body_output("live-session", "mouth")
+        try:
+            notify_body_output("other-session", "mouth")
+            notify_body_output("live-session", "face")
+            self.assertTrue(subscriber.empty())
+            notify_body_output("live-session", "mouth")
+            await asyncio.wait_for(subscriber.get(), timeout=0.1)
+            self.assertTrue(subscriber.empty())
+        finally:
+            unsubscribe_body_output("live-session", "mouth", subscriber)
+
     def test_live_body_uses_event_driven_voice_delivery_without_polling(self) -> None:
         live_markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
@@ -165,6 +183,7 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("/v1/body/mouth/speak", paths)
         self.assertIn("/v1/body/mouth/status", paths)
         self.assertIn("/v1/body/mouth/next", paths)
+        self.assertIn("/v1/body/mouth/events", paths)
         self.assertIn("/v1/body/session/active", paths)
         live_markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
