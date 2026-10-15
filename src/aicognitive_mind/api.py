@@ -861,6 +861,44 @@ async def mind_hear(
         ) from exc
 
 
+@app.post("/v1/mind/body/hear/live", response_model=EmbodiedInteractionResult)
+async def mind_hear_live(
+    body: BrowserAudioObservationRequest,
+    request: Request,
+) -> EmbodiedInteractionResult:
+    """Process live speech immediately, bypassing the durable Body FIFO queue."""
+    try:
+        percept = BrowserAudioIngress().accept(
+            audio_data_url=body.audio_data_url,
+            duration_ms=body.duration_ms,
+            source=body.source,
+        )
+        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        return await bridge.perceive(
+            percept,
+            express=True,
+            presence_scope=_body_presence_scope(request),
+        )
+    except (MindNotInitializedError, RuntimeError, ValueError) as exc:
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if isinstance(exc, MindNotInitializedError)
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(status_code=code, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception(
+            "REASONING_DIAG live audio interaction failed exception=%s status=%s detail=%s",
+            exc.__class__.__name__,
+            getattr(exc, "status_code", None) or getattr(exc, "code", None),
+            str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=_reasoning_backend_error_detail(exc),
+        ) from exc
+
+
 @app.get("/v1/portal/evidence")
 async def portal_sensory_evidence(request: Request) -> dict[str, Any]:
     require_admin(request)
