@@ -409,6 +409,8 @@ class HostRuntime:
         }
         if not await self.records.replace("active_host", host, revised):
             raise CommitConflict("Host lease changed")
+        if detach:
+            await self._record_connection_state({"reasoning_host": "disconnected"})
         return {"expires": revised["expires"]}
 
     async def submit(self, message: str, *, priority: int = 0) -> dict:
