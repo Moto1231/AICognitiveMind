@@ -132,6 +132,7 @@ def _searchable_text(value: Any) -> str:
 def _journal_search_text(entry: JournalEntry) -> str:
     experience = entry.experience
     values = [
+        experience.get("checkpoint_type", ""),
         experience.get("input", {}).get("content", ""),
         experience.get("expression", {}).get("content", ""),
         experience.get("before", {}).get("content", ""),
