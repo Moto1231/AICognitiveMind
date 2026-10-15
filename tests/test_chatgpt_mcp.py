@@ -6,7 +6,11 @@ from pydantic import AnyUrl
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 
-from aicognitive_mind.chatgpt_mcp import HOST_INSTRUCTIONS, build_chatgpt_mcp
+from aicognitive_mind.chatgpt_mcp import (
+    HOST_INSTRUCTIONS,
+    _summarize_body_work,
+    build_chatgpt_mcp,
+)
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 
 
@@ -104,6 +108,24 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
+    def test_begin_interaction_surfaces_queue_and_preserves_human_priority(self):
+        summary = _summarize_body_work(
+            [
+                {"priority": 10, "message": "Interpret this vision percept."},
+                {"priority": 0, "message": "Please tell me what happened."},
+                {"message": "Interpret this audio percept."},
+            ]
+        )
+        self.assertEqual(summary["pending_requests"], 3)
+        self.assertEqual(summary["pending_human_messages"], 1)
+        self.assertEqual(summary["pending_sensory_interpretations"], 2)
+        self.assertEqual(summary["pending_other_requests"], 0)
+        self.assertIn("body_work snapshot", HOST_INSTRUCTIONS)
+        self.assertIn("Commit the current direct human response first", HOST_INSTRUCTIONS)
+        self.assertIn("claim at most one queued", HOST_INSTRUCTIONS)
+        self.assertIn("Do not mark work complete", HOST_INSTRUCTIONS)
+        self.assertIn("Never self-dispatch a sensory prompt", HOST_INSTRUCTIONS)
+
     def test_server_identifies_host_boundary(self):
         provider = AxiomAuthorizationServerProvider(
             "https://axiom.example",
