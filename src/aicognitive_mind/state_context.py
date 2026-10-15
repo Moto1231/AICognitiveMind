@@ -10,7 +10,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
-from aicognitive_mind.domain import utc_now
+from aicognitive_mind.domain import CognitiveActor, JournalEntry, JournalKind, utc_now
 
 
 AnswerStatus = Literal["current", "unknown", "disputed", "stale"]
@@ -148,3 +148,34 @@ class CurrentStateLedger(BaseModel):
 
     def as_context(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
+
+
+
+async def apply_current_state_event(
+    journal: Any,
+    event: str,
+    updates: dict[str, Any] | None = None,
+    *,
+    source: str = "state_event",
+) -> CurrentStateLedger:
+    """Apply and persist a state event for components that receive events outside MCP."""
+    ledger = CurrentStateLedger.empty()
+    for entry in reversed(await journal.read()):
+        if entry.kind == JournalKind.CHECKPOINT and entry.experience.get("checkpoint_type") == "current_state_ledger":
+            try:
+                ledger = CurrentStateLedger.model_validate(entry.experience["state_ledger"])
+                break
+            except Exception:
+                continue
+    updated = ledger.apply_event(event, updates, source=source)
+    await journal.append(
+        JournalEntry(
+            kind=JournalKind.CHECKPOINT,
+            experience={
+                "checkpoint_type": "current_state_ledger",
+                "state_ledger": updated.as_context(),
+            },
+        ),
+        recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+    )
+    return updated
