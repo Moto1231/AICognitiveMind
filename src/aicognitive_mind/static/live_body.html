@@ -620,6 +620,7 @@
     let pageSourceSnapshot = null;
     let pageRefreshPending = false;
     let mouthPollBusy = false;
+    let mouthEvents = null;
     let pageRefreshProbeBusy = false;
 
     function setStatus(message) {
@@ -983,27 +984,40 @@
     async function consumeExpressionOutputs() {
       if (!voiceEnabled || mouthPollBusy) return false;
       mouthPollBusy = true;
+      let consumed = false;
       try {
-        const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
-        if (!mouthResponse.ok) return false;
-        const mouthIntent = await mouthResponse.json();
-        if (!mouthIntent) return false;
-        // Dispatch this expression before considering the direct response.
-        // This prevents both paths from starting speech for the same interaction.
-        await speakIntent(mouthIntent);
-        return true;
+        // A single server event wakes this drain. Fetch only while durable queued
+        // intents remain; there is no timer or repeated empty-queue request.
+        while (voiceEnabled) {
+          const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
+          if (!mouthResponse.ok) break;
+          const mouthIntent = await mouthResponse.json();
+          if (!mouthIntent) break;
+          await speakIntent(mouthIntent);
+          consumed = true;
+        }
+        return consumed;
       } finally {
         mouthPollBusy = false;
       }
     }
 
-    async function pollBodyMouth() {
-      if (!voiceEnabled || sensoryRequestInFlight || sendInteractionButton.disabled || mouthPollBusy || talkSpeaking || window.speechSynthesis?.speaking) return;
-      try {
-        await consumeExpressionOutputs();
-      } catch (_) {
-        // Speech polling must not interrupt active Body sensing or conversation.
+    function connectMouthEvents() {
+      if (!voiceEnabled) {
+        mouthEvents?.close();
+        mouthEvents = null;
+        return;
       }
+      if (mouthEvents) return;
+      mouthEvents = new EventSource(
+        "/v1/body/mouth/events?session_id=" + encodeURIComponent(bodySessionId)
+      );
+      mouthEvents.addEventListener("voice-ready", () => {
+        if (!voiceEnabled) return;
+        consumeExpressionOutputs().catch(() => {
+          // EventSource reconnects automatically; pending voice remains in the durable queue.
+        });
+      });
     }
 
     async function registerActiveBodySession() {
@@ -1624,6 +1638,7 @@
       localStorage.setItem("aicognitive_mind.voice", voiceEnabled ? "on" : "off");
       refreshToggleUi();
       if (!voiceEnabled) {
+        connectMouthEvents();
         window.speechSynthesis?.cancel();
         if (activeSpeechAudio) {
           activeSpeechAudio.pause();
@@ -1635,6 +1650,7 @@
         if (realtimeAudio) realtimeAudio.muted = true;
         setStatus("VOICE OFF\nSpoken output is disabled; vision and hearing are unchanged.");
       } else {
+        connectMouthEvents();
         if (realtimeAudio) realtimeAudio.muted = false;
         refreshSharedVoiceSettings();
         setStatus("VOICE ON\nSpoken output is enabled.");
@@ -1683,7 +1699,7 @@
     refreshSharedVoiceSettings();
     refreshConnectedHostStatus();
     window.setInterval(registerActiveBodySession, 10_000);
-    window.setInterval(pollBodyMouth, 1_000);
+    connectMouthEvents();
     window.setInterval(refreshSharedVoiceSettings, 10_000);
     window.setInterval(refreshConnectedHostStatus, 5_000);
     checkForHostCameraRequest();
