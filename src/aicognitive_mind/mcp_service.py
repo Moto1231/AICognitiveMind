@@ -29,6 +29,7 @@ from aicognitive_mind.prompts import (
 from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.state_context import CurrentStateLedger
 
 from aicognitive_mind.task_behaviors import (
     TaskBehaviorRegistry,
@@ -167,8 +168,12 @@ class CognitiveMcpService:
             },
         }
 
-    async def begin_interaction(self, user_message: str) -> dict[str, Any]:
-        """Return the Mind context the connected host must use before reasoning."""
+    async def begin_interaction(
+        self,
+        user_message: str,
+        host_working_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Restore identity, recalled knowledge, and the persistent current-state ledger."""
         mind = await self._require_mind()
         steward = MemoryStewardTool(
             mind=mind,
@@ -182,12 +187,21 @@ class CognitiveMcpService:
                 "focus": user_message,
             }
         )
+        reasoning_contract = await self._compose_reasoning_contract()
+        current_state = await self._refresh_current_state(
+            mind=mind,
+            recalled_context=recalled["context"],
+            user_message=user_message,
+            host_working_context=host_working_context or {},
+            reasoning_contract=reasoning_contract,
+        )
         return {
             "status": "ready_to_reason",
             "idempotency_key": uuid4().hex,
             "mind": mind.model_dump(mode="json"),
             "recalled_context": recalled["context"],
-            "conscious_workspace_contract": await self._compose_reasoning_contract(),
+            "current_state": current_state.as_context(),
+            "conscious_workspace_contract": reasoning_contract,
             "next_step": (
                 "Reason as this Mind using the recalled context. If unresolved evidence includes "
                 "investigation guidance, pursue the material questions that can change or clarify "
@@ -296,6 +310,179 @@ class CognitiveMcpService:
             "belief_reframe_decisions": reframe_decisions,
             "memory_steward_contract": CONSCIOUS_MEMORY_STEWARD_SYSTEM_PROMPT,
         }
+
+    async def read_current_state(self) -> dict[str, Any]:
+        """Read the latest persisted current-state ledger without reconstructing it from memory."""
+        ledger = await self._load_current_state()
+        return ledger.as_context()
+
+    @atomic
+    async def update_current_state(
+        self,
+        event: str,
+        updates: dict[str, Any] | None = None,
+        source: str = "explicit_state_event",
+    ) -> dict[str, Any]:
+        """Apply a typed state event, invalidating only affected fields, and persist the revision."""
+        ledger = await self._load_current_state()
+        updated = ledger.apply_event(event, updates, source=source)
+        await self._persist_current_state(updated)
+        return updated.as_context()
+
+    async def _load_current_state(self) -> CurrentStateLedger:
+        entries = await self._journal.read()
+        for entry in reversed(entries):
+            if entry.kind == JournalKind.CHECKPOINT:
+                state = entry.experience.get("state_ledger")
+                if isinstance(state, dict):
+                    try:
+                        return CurrentStateLedger.model_validate(state)
+                    except Exception:
+                        continue
+        return CurrentStateLedger.empty()
+
+    async def _persist_current_state(self, ledger: CurrentStateLedger) -> None:
+        await self._journal.append(
+            JournalEntry(
+                kind=JournalKind.CHECKPOINT,
+                experience={
+                    "checkpoint_type": "current_state_ledger",
+                    "state_ledger": ledger.as_context(),
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+
+    async def _refresh_current_state(
+        self,
+        *,
+        mind: CognitiveMind,
+        recalled_context: dict[str, Any],
+        user_message: str,
+        host_working_context: dict[str, Any],
+        reasoning_contract: str,
+    ) -> CurrentStateLedger:
+        ledger = await self._load_current_state()
+        ledger = ledger.model_copy(deep=True)
+        ledger.answer(
+            "identity",
+            {
+                "self_name": mind.identity.self_name,
+                "pronouns": mind.identity.pronouns,
+                "developmental_state": mind.developmental_state,
+            },
+            source="persistent_mind_identity",
+        )
+        ledger.answer(
+            "foundations",
+            {
+                "foundational_values": list(mind.identity.foundational_values),
+                "commitments": list(mind.identity.commitments),
+                "relationships": list(mind.identity.relationships),
+            },
+            source="persistent_mind_identity",
+        )
+        ledger.answer(
+            "behaviors",
+            {
+                "source": "composed_code_and_configured_behavior_contract",
+                "available": bool(reasoning_contract),
+            },
+            source="runtime_behavior_assembler",
+        )
+        memories = recalled_context.get("durable_memory", [])
+        ledger.answer(
+            "skills",
+            [
+                {
+                    "memory_class": item.get("memory_class"),
+                    "content": item.get("content"),
+                    "associations": item.get("associations", []),
+                }
+                for item in memories
+                if item.get("memory_class") == MemoryClass.PROCEDURAL.value
+            ][:12],
+            source="memory_steward_recall",
+        )
+        ledger.answer(
+            "active_topic",
+            host_working_context.get("summary") or user_message,
+            source=(
+                "host_working_context"
+                if host_working_context.get("summary")
+                else "current_human_input"
+            ),
+        )
+        participants = host_working_context.get("participants", [])
+        if participants:
+            ledger.answer(
+                "interlocutor",
+                {
+                    "participants": participants,
+                    "active_speaker": host_working_context.get("active_speaker"),
+                    "addressee": host_working_context.get("addressee"),
+                },
+                source="validated_host_working_context",
+            )
+            ledger.answer(
+                "presence",
+                [
+                    {
+                        "participant_id": item.get("participant_id"),
+                        "name": item.get("name"),
+                        "identity_status": item.get("identity_status", "unresolved"),
+                        "presence_status": item.get("presence_status", "unknown"),
+                        "grounding": item.get("grounding", []),
+                    }
+                    for item in participants
+                ],
+                source="validated_host_working_context",
+            )
+        else:
+            ledger.invalidate(
+                "interlocutor",
+                event="no_grounded_participant_context",
+                note="No participant was supplied in the current host working context.",
+            )
+            ledger.invalidate(
+                "presence",
+                event="no_grounded_presence_context",
+                note="No current presence evidence was supplied.",
+            )
+        ledger.answer(
+            "decisions_and_open_questions",
+            {
+                "working_summary": host_working_context.get("summary", ""),
+                "unresolved_references": host_working_context.get("unresolved_references", []),
+            },
+            source="host_working_context",
+        )
+        ledger.answer("active_task", "reasoning", source="active_mcp_interaction")
+        ledger.answer(
+            "connection_status",
+            {"mind_service": "available_for_current_interaction"},
+            source="successful_begin_interaction",
+        )
+        ledger.answer(
+            "capabilities",
+            ["read_current_state", "update_current_state", "begin_interaction", "complete_interaction"],
+            source="registered_mind_service_operations",
+        )
+        ledger.answer(
+            "pending_work",
+            host_working_context.get("unresolved_references", []),
+            source="host_working_context",
+        )
+        if ledger.fields.get("locality") is None:
+            ledger.invalidate("locality", event="locality_not_grounded")
+        if ledger.fields.get("current_scene") is None:
+            ledger.invalidate("current_scene", event="scene_not_grounded")
+        ledger.revision += 1
+        from aicognitive_mind.domain import utc_now
+        ledger.updated_at = utc_now()
+        ledger.last_event = "interaction_started"
+        await self._persist_current_state(ledger)
+        return ledger
 
     async def _require_mind(self) -> CognitiveMind:
         mind = await self._mind.load()
