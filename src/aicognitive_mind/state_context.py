@@ -6,7 +6,7 @@ The journal remains append-only; each ledger revision is recorded as a checkpoin
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
@@ -33,7 +33,7 @@ class CurrentStateLedger(BaseModel):
     fields: dict[str, StateAnswer] = Field(default_factory=dict)
     last_event: str = "initialized"
 
-    FUNDAMENTAL_FIELDS = (
+    FUNDAMENTAL_FIELDS: ClassVar[tuple[str, ...]] = (
         "identity",
         "foundations",
         "behaviors",
