@@ -148,17 +148,16 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(status.available)
         self.assertIn("browser speech", status.detail or "")
 
-    def test_mouth_polling_continues_while_microphone_is_recording(self) -> None:
+    def test_live_body_uses_event_driven_voice_delivery_without_polling(self) -> None:
         live_markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
             encoding="utf-8"
         )
-        start = live_markup.index("    async function pollBodyMouth()")
-        end = live_markup.index("\n    async function registerActiveBodySession()", start)
-        poller = live_markup[start:end]
-        self.assertIn("sensoryRequestInFlight", poller)
-        self.assertIn("sendInteractionButton.disabled", poller)
-        self.assertNotIn("bodyIsBusy()", poller)
-        self.assertNotIn('recorder?.state === "recording"', poller)
+        self.assertIn('new EventSource(', live_markup)
+        self.assertIn('/v1/body/mouth/events?session_id=', live_markup)
+        self.assertIn('addEventListener("voice-ready"', live_markup)
+        self.assertIn("while (voiceEnabled)", live_markup)
+        self.assertNotIn("pollBodyMouth", live_markup)
+        self.assertNotIn("window.setInterval(pollBodyMouth", live_markup)
 
     def test_mouth_routes_and_browser_speech_surface_exist(self) -> None:
         paths = {route.path for route in app.routes}
