@@ -166,13 +166,22 @@ class CurrentStateLedgerRepository:
         source: str = "state_event",
     ) -> CurrentStateLedger:
         ledger = CurrentStateLedger.empty()
-        for entry in reversed(await self._journal.read()):
-            if entry.kind == JournalKind.CHECKPOINT and entry.experience.get("checkpoint_type") == "current_state_ledger":
-                try:
-                    ledger = CurrentStateLedger.model_validate(entry.experience["state_ledger"])
-                    break
-                except Exception:
-                    continue
+        # Use the journal's bounded, database-side query instead of reading and
+        # deep-copying the entire append-only history for every state event.
+        page, _ = await self._journal.query_page(
+            offset=0,
+            limit=1,
+            newest_first=True,
+            kind=JournalKind.CHECKPOINT.value,
+            search="current_state_ledger",
+        )
+        for entry in page:
+            if entry.experience.get("checkpoint_type") != "current_state_ledger":
+                continue
+            try:
+                ledger = CurrentStateLedger.model_validate(entry.experience["state_ledger"])
+            except Exception:
+                continue
         updated = ledger.apply_event(event, updates, source=source)
         await self._journal.append(
             JournalEntry(
