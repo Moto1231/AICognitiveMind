@@ -378,6 +378,37 @@ class CognitiveMcpService:
             key: answer.model_dump(mode="json")
             for key, answer in ledger.fields.items()
         }
+        # Host-owned session context is the source of truth for participant/topic changes.
+        # Detect transitions before refreshing fields so dependent answers are invalidated.
+        old_topic = ledger.fields.get("active_topic")
+        new_topic = host_working_context.get("summary")
+        if (
+            new_topic
+            and old_topic is not None
+            and old_topic.status == "current"
+            and old_topic.value is not None
+            and old_topic.value != new_topic
+        ):
+            ledger = ledger.apply_event(
+                "topic_changed",
+                source="host_working_context",
+            )
+        old_interlocutor = ledger.fields.get("interlocutor")
+        old_speaker = (
+            old_interlocutor.value.get("active_speaker")
+            if old_interlocutor is not None and isinstance(old_interlocutor.value, dict)
+            else None
+        )
+        new_speaker = host_working_context.get("active_speaker")
+        if (
+            new_speaker is not None
+            and old_speaker is not None
+            and new_speaker != old_speaker
+        ):
+            ledger = ledger.apply_event(
+                "speaker_changed",
+                source="validated_host_working_context",
+            )
         ledger.answer(
             "identity",
             {
