@@ -416,9 +416,37 @@ async def renew_reasoning_host(lease_token: str, ctx: Context[AppState], detach:
     return await ctx.request_context.lifespan_context.hosts.renew(lease_token, detach)
 
 @mcp.tool()
-async def next_body_interaction(lease_token: str, ctx: Context[AppState]) -> dict[str, Any] | None:
-    """Claim a Body request and receive its identity/memory context; poll while attached."""
-    return await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
+async def next_body_interaction(lease_token: str, ctx: Context[AppState]) -> CallToolResult | dict[str, Any] | None:
+    """Claim the next Body request, returning live audio as native MCP audio content when present."""
+    import json
+    state = ctx.request_context.lifespan_context
+    request = await state.hosts.next_request(lease_token)
+    if request is None:
+        return None
+    media_data_url = request.pop("media_data_url", None)
+    if not isinstance(media_data_url, str) or not media_data_url.startswith("data:") or "," not in media_data_url:
+        return request
+    header, encoded = media_data_url.split(",", 1)
+    if not header.endswith(";base64"):
+        raise ValueError("Live sensory media is not base64 encoded")
+    media_type = header[5:].removesuffix(";base64").split(";", 1)[0].lower()
+    try:
+        payload = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Live sensory media contains invalid base64 data") from exc
+    if not payload:
+        raise ValueError("Live sensory media is empty")
+    encoded_payload = base64.b64encode(payload).decode("ascii")
+    if media_type.startswith("audio/"):
+        media = AudioContent(type="audio", data=encoded_payload, mime_type=media_type)
+    elif media_type.startswith("image/"):
+        media = ImageContent(type="image", data=encoded_payload, mime_type=media_type)
+    else:
+        raise ValueError("Unsupported live sensory media type")
+    return CallToolResult(
+        content=[TextContent(type="text", text=json.dumps(request, ensure_ascii=False, default=str)), media],
+        structured_content=request,
+    )
 
 @mcp.tool()
 async def complete_body_interaction(lease_token: str, request_id: str, response_text: str,
