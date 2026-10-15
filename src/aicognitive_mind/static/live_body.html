@@ -1364,8 +1364,8 @@
       sensoryRequestInFlight = true;
       let evidenceAccepted = false;
       try {
-        setSenseStatus("audio", "Speech detected; saving audio evidence…", "working");
-        const ingress = await bodyFetch("/v1/body/ears/observe", {
+        setSenseStatus("audio", "Speech detected; interpreting live audio…", "working");
+        const response = await bodyFetch("/v1/mind/body/hear/live", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1374,19 +1374,11 @@
             source: "browser-microphone"
           })
         });
-        if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
-        evidenceAccepted = true;
-        setSenseStatus("audio", "Audio saved; requesting interpretation…", "warning");
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
-
-        const response = await bodyFetch(
-          "/v1/mind/body/hear?express=false",
-          { method: "POST" }
-        );
         if (!response.ok) throw new Error(await responseErrorMessage(response));
+        evidenceAccepted = true;
         if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
 
-        await showMindResult(await response.json(), { modality: "audio", consumeOutputs: false });
+        await showMindResult(await response.json(), { modality: "audio" });
       } catch (error) {
         if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
         throw error;
