@@ -117,6 +117,18 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
             interaction.experience["input"]["context"]["interface"],
             "body:live:text",
         )
+        state_entry = next(
+            entry for entry in entries
+            if entry.experience.get("checkpoint_type") == "current_state_ledger"
+        )
+        self.assertEqual(
+            state_entry.experience["state_ledger"]["fields"]["identity"]["value"]["self_name"],
+            "AICognitiveMind",
+        )
+        self.assertEqual(
+            state_entry.experience["state_ledger"]["fields"]["active_topic"]["value"]["content"],
+            "Hello from Live Body.",
+        )
 
     async def test_typed_interaction_can_skip_browser_expression_for_desktop_body(self) -> None:
         core, journal = await self._core()
