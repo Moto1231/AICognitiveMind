@@ -781,7 +781,7 @@
         const audio = new Audio(audioUrl);
         activeSpeechAudio = audio;
         await applyBodyAudioOutput(audio);
-        if (!voiceEnabled) { audio.pause(); activeSpeechAudio = null; return; }
+        if (!voiceEnabled) { audio.pause(); URL.revokeObjectURL(audioUrl); activeSpeechAudio = null; return; }
         audio.volume = 1;
         talkSpeaking = true;
         audio.addEventListener("ended", () => {
@@ -1509,7 +1509,7 @@
       }
       visionToggle.disabled = true;
       try {
-        setStatus("VISION ON\\nRequesting camera access…");
+        setStatus("VISION ON\nRequesting camera access…");
         cameraStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("videoInput"));
         video.srcObject = cameraStream;
         liveScene.srcObject = cameraStream;
@@ -1520,7 +1520,7 @@
         localStorage.setItem("aicognitive_mind.vision", "on");
         refreshToggleUi();
         setSenseStatus("vision", "Vision is active.", "success");
-        setStatus("VISION ON\\nCamera ready.");
+        setStatus("VISION ON\nCamera ready.");
         startSensoryLoop();
       } catch (error) {
         cameraStream?.getTracks().forEach((track) => track.stop());
@@ -1561,7 +1561,7 @@
       }
       hearingToggle.disabled = true;
       try {
-        setStatus("HEARING ON\\nRequesting microphone access…");
+        setStatus("HEARING ON\nRequesting microphone access…");
         microphoneStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
         await startAudioMeter(microphoneStream);
         hearingEnabled = true;
@@ -1569,7 +1569,7 @@
         audioMeter.style.display = "block";
         refreshToggleUi();
         setSenseStatus("audio", "Hearing is active.", "success");
-        setStatus("HEARING ON\\nMicrophone ready.");
+        setStatus("HEARING ON\nMicrophone ready.");
         startSensoryLoop();
       } catch (error) {
         microphoneStream?.getTracks().forEach((track) => track.stop());
@@ -1604,7 +1604,7 @@
     function toggleVision() {
       if (visionEnabled) {
         disableVision();
-        setStatus("VISION OFF\\nCamera released; hearing and voice are unchanged.");
+        setStatus("VISION OFF\nCamera released; hearing and voice are unchanged.");
       } else {
         enableVision();
       }
@@ -1613,7 +1613,7 @@
     function toggleHearing() {
       if (hearingEnabled) {
         disableHearing();
-        setStatus("HEARING OFF\\nMicrophone released; vision and voice are unchanged.");
+        setStatus("HEARING OFF\nMicrophone released; vision and voice are unchanged.");
       } else {
         enableHearing();
       }
@@ -1628,14 +1628,15 @@
         if (activeSpeechAudio) {
           activeSpeechAudio.pause();
           activeSpeechAudio.currentTime = 0;
+          if (activeSpeechAudio.src.startsWith("blob:")) URL.revokeObjectURL(activeSpeechAudio.src);
           activeSpeechAudio = null;
         }
         talkSpeaking = false;
         if (realtimeAudio) realtimeAudio.muted = true;
-        setStatus("VOICE OFF\\nSpoken output is disabled; vision and hearing are unchanged.");
+        setStatus("VOICE OFF\nSpoken output is disabled; vision and hearing are unchanged.");
       } else {
         if (realtimeAudio) realtimeAudio.muted = false;
-        setStatus("VOICE ON\\nSpoken output is enabled.");
+        setStatus("VOICE ON\nSpoken output is enabled.");
       }
     }
 
