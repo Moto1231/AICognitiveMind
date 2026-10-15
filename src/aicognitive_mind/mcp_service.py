@@ -339,15 +339,27 @@ class CognitiveMcpService:
         return updated.as_context()
 
     async def _load_current_state(self) -> CurrentStateLedger:
-        entries = await self._journal.read()
-        for entry in reversed(entries):
-            if entry.kind == JournalKind.CHECKPOINT:
-                state = entry.experience.get("state_ledger")
-                if isinstance(state, dict):
-                    try:
-                        return CurrentStateLedger.model_validate(state)
-                    except Exception:
-                        continue
+        # State is a single latest checkpoint. Ask storage for that matching row
+        # directly; never fetch and deep-copy the full journal during begin_interaction.
+        if hasattr(self._journal, "latest_checkpoint"):
+            entries = await self._journal.latest_checkpoint("current_state_ledger")
+        else:
+            entries, _ = await self._journal.query_page(
+                offset=0,
+                limit=1,
+                newest_first=True,
+                kind=JournalKind.CHECKPOINT.value,
+                search="current_state_ledger",
+            )
+        for entry in entries:
+            if entry.experience.get("checkpoint_type") != "current_state_ledger":
+                continue
+            state = entry.experience.get("state_ledger")
+            if isinstance(state, dict):
+                try:
+                    return CurrentStateLedger.model_validate(state)
+                except Exception:
+                    continue
         return CurrentStateLedger.empty()
 
     async def _persist_current_state(self, ledger: CurrentStateLedger) -> None:
