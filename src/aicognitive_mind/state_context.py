@@ -71,6 +71,8 @@ class CurrentStateLedger(BaseModel):
     ) -> None:
         if key not in self.FUNDAMENTAL_FIELDS:
             raise ValueError(f"Unsupported current-state field: {key}")
+        if key == "identity" and (value is None or value == {} or value == ""):
+            raise ValueError("Identity cannot be blanked; revise through governance.")
         current = self.fields.get(key)
         if current is not None and (
             current.value == value
