@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261016-portal-refinement">
+  <link rel="stylesheet" href="/static/portal.css?v=20261016-consistency-v2">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -15,7 +15,7 @@
         <img class="brand-logo" src="/static/axiom-logo.png" alt="" width="88" height="66">
       </div>
       <nav class="top-actions" aria-label="Main navigation">
-        <a href="/" id="portalReturnButton" class="secondary-button portal-return">Return</a>
+        
         <div class="portal-menu">
         <div class="mode-switch" role="group" aria-label="Portal mode">
           <button id="mindTab" class="mode-button active" type="button">Main</button>
@@ -26,7 +26,7 @@
           <span class="status-dot"></span>
           <span id="connectionLabel">Connecting…</span>
         </div>
-        <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
+        <a href="/" id="portalReturnButton" class="secondary-button portal-return">Return</a>
         <button id="logoutButton" class="secondary-button" type="button">Log Out</button>
         </div>
       </nav>
@@ -148,9 +148,7 @@
       </section>
 
       <section id="adminView" class="view hidden">
-        <div class="hero admin-toolbar">
-          <button id="adminRefreshButton" class="secondary-button" type="button">Refresh</button>
-        </div>
+        
 
         <nav class="admin-section-nav" aria-label="Administration sections">
           <button class="admin-section-button active" type="button" data-admin-section="overview"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-overview.svg" alt="" width="48" height="52"></span><span>System Overview</span></button>
@@ -161,6 +159,7 @@
           <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon admin-section-icon-mcp" aria-hidden="true"><img src="/static/admin-mcp.svg" alt="" width="48" height="49"></span><span>Endpoints, Servers &amp; Tools</span></button>
           <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-memories.svg" alt="" width="48" height="52"></span><span>Memories</span></button>
           <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-journals.svg" alt="" width="48" height="52"></span><span>Journals</span></button>
+          <button id="adminRefreshButton" class="secondary-button" type="button" aria-label="Refresh" title="Refresh">Refresh</button>
         </nav>
 
         <div class="admin-grid">
@@ -206,18 +205,19 @@
                   </label>
                   <div class="task-fallbacks-editor">
                     <div class="panel-heading"><h4>Fallback endpoints</h4><button id="taskProfileAddFallback" class="secondary-button" type="button">Add fallback</button></div>
-                    <p class="muted-copy">Fallback endpoints are attempted in order using each endpoint's saved model.</p>
+                    <p class="muted-copy">Endpoints are attempted in order.</p>
                     <div id="taskProfileFallbackList" class="task-fallback-list"></div>
                   </div>
                 </div>
               </section>
               <section class="task-profile-section">
-                <div class="panel-heading task-profile-behavior-heading"><h4>Behaviors</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
-                <p>Choose behaviors from the Behaviors form. Protected Reasoning behaviors are always applied.</p>
-                <div id="taskProfileBehaviorSelection" class="task-behavior-selection"></div>
                 <label class="host-behavior-field">Immutable foundation (code-owned)
                   <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
                 </label>
+                 <div class="panel-heading task-profile-behavior-heading"><h4>Behaviors</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
+                <p>Choose behaviors to use on this Task</p>
+                <div id="taskProfileBehaviorSelection" class="task-behavior-selection"></div>
+                
                 <label class="host-behavior-field hidden">Behavior name
                   <input id="taskProfileBehaviorName" type="text" maxlength="120" placeholder="Task behavior name">
                 </label>
@@ -301,17 +301,8 @@
                 <label class="host-behavior-enabled"><input id="mcpServerEnabled" type="checkbox" checked disabled> Enable this server</label>
               </div>
               <section class="integration-subsection" aria-labelledby="mcpToolsHeading">
-              <div class="panel-heading"><div><h5 id="mcpToolsHeading">Tools</h5><p class="muted-copy">Choose Edit to enable or disable this server's tools.</p></div><button id="mcpDiscoverTools" class="secondary-button" type="button" disabled>Discover Tools</button></div>
-              <div id="mcpToolList" class="record-list"><p class="record-empty">Select a server to view its tools.</p></div>
-              </section>
-              <p id="mcpServerStatus" class="muted-copy" role="status">Choose Add to configure an MCP server.</p>
-              <div class="editor-actions">
-                <button id="mcpEditServer" class="secondary-button" type="button" disabled>Edit</button>
-                <button id="mcpDeleteServer" class="secondary-button" type="button" disabled>Remove</button>
-                <button id="mcpCancelEdit" class="secondary-button" type="button" disabled>Cancel</button>
-                <button id="saveMcpServers" class="primary-button" type="button" disabled>Save</button>
-              </div>
-            <section class="integration-subsection">
+              <div class="panel-heading"><div><h4 id="mcpToolsHeading">Tools</h4><p class="muted-copy">Choose Edit to enable or disable this server's tools.</p></div><button id="mcpDiscoverTools" class="secondary-button" type="button" disabled>Discover Tools</button></div>
+              <section class="integration-subsection">
               <h5>Test a Tool</h5>
               <div class="task-model-fields">
                 <label class="host-behavior-field">Enabled tool
@@ -324,6 +315,16 @@
               <button id="mcpRunTool" class="secondary-button" type="button" disabled>Run Tool</button>
               <pre id="mcpToolOutput" class="mcp-tool-output" aria-live="polite">Tool results will appear here.</pre>
             </section>
+               <div id="mcpToolList" class="record-list"><p class="record-empty">Select a server to view its tools.</p></div>
+              </section>
+              <p id="mcpServerStatus" class="muted-copy" role="status">Choose Add to configure an MCP server.</p>
+              <div class="editor-actions">
+                <button id="mcpEditServer" class="secondary-button" type="button" disabled>Edit</button>
+                <button id="mcpDeleteServer" class="secondary-button" type="button" disabled>Remove</button>
+                <button id="mcpCancelEdit" class="secondary-button" type="button" disabled>Cancel</button>
+                <button id="saveMcpServers" class="primary-button" type="button" disabled>Save</button>
+              </div>
+            
             </section>
           </article>
 
@@ -493,6 +494,16 @@
 
           <article id="overviewSection" class="panel admin-summary">
             <div class="panel-heading"><div><p class="eyebrow">CURRENT STATE</p><h3>System Overview</h3></div></div>
+            <div class="admin-runtime-setting">
+              <div class="panel-heading"><div><p class="field-label">CURRENT STATE CONTEXT</p><h4>State Ledger</h4></div><button id="refreshDiagnostics" class="secondary-button" type="button">Refresh</button></div>
+              <pre id="currentStateDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load state.</pre>
+              <p class="muted-copy">Read-only persistent state for the current Mind.</p>
+            </div>
+            <div class="admin-runtime-setting">
+              <p class="field-label">PERFORMANCE LOGGING</p><h4>Recent Request Timings</h4>
+              <pre id="performanceDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load timings.</pre>
+              <p class="muted-copy">Up to 200 requests in the current process. Resets on restart. No request bodies.</p>
+            </div>
             <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
             <div class="summary-row"><span>Created</span><strong id="adminCreatedAt">—</strong></div>
             <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
@@ -638,6 +649,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261016-endpoint-task-config"></script>
+  <script src="/static/portal.js?v=20261016-consistency-v2"></script>
 </body>
 </html>

@@ -171,8 +171,7 @@ async def _portal_login_page(_request: Request):
 <h1>Sign in to Axiom</h1><p id="error" style="color:#fca5a5"></p>
 <form id="login"><label>Username<input id="username" autocomplete="username" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
 <label>Password<input id="password" type="password" autocomplete="current-password" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
-<button type="submit">Sign in</button></form>
-<p><button id="show-signup" type="button">Create a new Axiom account</button></p>
+<div class="signin-actions"><button type="submit">Sign in</button><button id="show-signup" type="button">Create a new Axiom account</button></div></form>
 <form id="signup" hidden><label>New username<input id="new-username" autocomplete="username" minlength="3" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
 <label>New password<input id="new-password" type="password" autocomplete="new-password" minlength="8" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
 <button type="submit">Create account</button></form>
