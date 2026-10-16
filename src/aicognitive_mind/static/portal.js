@@ -36,6 +36,8 @@ const state = {
   deviceInventory: [],
   voiceSettingsRevision: 0,
   taskProfileSnapshot: "",
+  previousAdminSection: "overview",
+  currentAdminSection: "overview",
   hostBehaviorSnapshot: "",
 };
 
@@ -1983,10 +1985,10 @@ el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
 el.logoutButton.addEventListener("click", logout);
 if (el.refreshButton) el.refreshButton.addEventListener("click", refresh);
-el.adminMemoryRefreshButton.addEventListener("click", () => showAdminSection("overview"));
+el.adminMemoryRefreshButton.addEventListener("click", () => showAdminSection(state.previousAdminSection === "memories" ? "overview" : state.previousAdminSection, false));
 el.adminRefreshButton.addEventListener("click", refreshAdminAllFromButton);
 if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.addEventListener("click", saveBodyFallbackSettings);
-el.journalRefreshButton.addEventListener("click", () => showAdminSection("overview"));
+el.journalRefreshButton.addEventListener("click", () => showAdminSection(state.previousAdminSection === "journals" ? "overview" : state.previousAdminSection, false));
 el.loadMoreJournals.addEventListener("click", () => refreshJournal(false));
 el.journalPageSize.addEventListener("change", () => {
   state.journalPageSize = Number(el.journalPageSize.value) || 25;
@@ -2501,7 +2503,9 @@ async function refreshIntegrations() {
   catch (error) { toast(`Could not refresh integrations: ${error.message}`, true); }
 }
 
-function showAdminSection(sectionName) {
+function showAdminSection(sectionName, remember = true) {
+  if (remember && sectionName !== state.currentAdminSection) state.previousAdminSection = state.currentAdminSection;
+  state.currentAdminSection = sectionName;
   for (const [name, id] of Object.entries(adminSectionIds)) {
     const panel = document.getElementById(id);
     if (panel) panel.classList.toggle("hidden", name !== sectionName);
