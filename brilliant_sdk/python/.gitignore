@@ -1,4 +1,0 @@
-.venv/
-dist/
-imu_diag_*.csv
-mag_calibration.json
