@@ -4,20 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom — Ears V0.1</title>
-  <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
-    main { max-width: 900px; margin: 0 auto; padding: 1.25rem; }
-    h1 { margin-bottom: .25rem; }
-    p { color: #b9bcc4; }
-    .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
-    button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
-    button:disabled { cursor: not-allowed; opacity: .5; }
-    audio { width: 100%; margin: 1rem 0; }
-    #status { white-space: pre-wrap; background: #181a20; padding: .85rem 1rem; border-radius: 10px; }
-  </style>
+  <link rel="stylesheet" href="/static/body.css">
 </head>
-<body>
+<body class="body-ears">
   <script>
     const bodySessionId = crypto.randomUUID();
     async function bodyFetch(url, options = {}) {
