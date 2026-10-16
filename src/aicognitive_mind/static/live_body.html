@@ -1493,12 +1493,12 @@
     }
 
     async function runHearingLoop(generation) {
-      while (visionEnabled && generation === sensoryLoopGeneration) {
+      while (hearingEnabled && generation === sensoryLoopGeneration) {
         if (!document.hidden && !sendInteractionButton.disabled) {
           try {
             await perceiveAudio(generation);
           } catch (error) {
-            if (visionEnabled && generation === sensoryLoopGeneration) {
+            if (hearingEnabled && generation === sensoryLoopGeneration) {
               reportSenseFailure("audio", error);
             }
           }

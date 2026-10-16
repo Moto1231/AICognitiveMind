@@ -120,3 +120,13 @@ def test_live_body_triggers_camera_uploads_only_for_meaningful_motion_with_coold
     assert "lastFrameSignature = signature;" in source
     assert "lastSuccessfulFrame" not in source
     assert "luminance[pixel] = Math.round(" in source
+
+def test_live_body_hearing_loop_is_independent_of_vision():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    function_start = source.index("async function runHearingLoop(generation)")
+    function_end = source.index("function startSensoryLoop()", function_start)
+    hearing_loop = source[function_start:function_end]
+    assert "while (hearingEnabled && generation === sensoryLoopGeneration)" in hearing_loop
+    assert 'if (hearingEnabled && generation === sensoryLoopGeneration)' in hearing_loop
+    assert "while (visionEnabled" not in hearing_loop
+    assert 'reportSenseFailure("audio", error)' in hearing_loop
