@@ -1,0 +1,417 @@
+/* Shared stylesheet for Axiom Body pages. Rules are scoped by each page's body class. */
+
+/* live_body.html */
+body.body-live { color-scheme: dark; font-size: calc(100% - 1px); }
+
+html:has(body.body-live),
+body.body-live { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+
+body.body-live { font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
+
+body.body-live main {
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
+      box-sizing: border-box;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1rem 1.25rem;
+      display: grid;
+      grid-template-rows: auto auto minmax(150px, 34vh) auto minmax(0, auto) minmax(110px, 1fr);
+      gap: .7rem;
+      overflow: hidden;
+      min-height: 0;
+    }
+
+body.body-live .page-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: 0;
+    }
+
+body.body-live .page-links { display: flex; gap: .6rem; flex-wrap: wrap; }
+
+body.body-live .page-links a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.35rem;
+      padding: .5rem .72rem;
+      border: 1px solid #373a44;
+      border-radius: 9px;
+      background: #181a20;
+      color: #d7d9df;
+      text-decoration: none;
+      font-size: .92rem;
+    }
+
+body.body-live .page-links a:hover { border-color: #687388; }
+
+body.body-live #stage {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      background: #181a20;
+      border-radius: 14px;
+      overflow: hidden;
+      position: relative;
+    }
+
+body.body-live #liveScene {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #0b0c0f;
+      transform: scaleX(-1);
+      display: none;
+    }
+
+body.body-live .audio-meter {
+      position: relative;
+      left: auto;
+      right: auto;
+      bottom: auto;
+      margin: 0;
+      padding: .65rem .8rem;
+      border: 1px solid #373a44;
+      border-radius: 10px;
+      background: rgba(16,17,20,.88);
+      display: none;
+    }
+
+body.body-live .audio-meter-label { display: flex; justify-content: space-between; gap: .5rem; color: #c8ccd5; font-size: .8rem; margin-bottom: .35rem; }
+
+body.body-live .audio-meter-track { height: .55rem; border-radius: 999px; background: #2a2d36; overflow: hidden; }
+
+body.body-live #audioMeterFill { height: 100%; width: 0%; background: #65d39b; border-radius: inherit; transition: width .08s linear; }
+
+body.body-live button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
+
+body.body-live button:disabled { cursor: not-allowed; opacity: .5; }
+
+body.body-live #status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+body.body-live .sense-status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin: 0; max-height: 7.5rem; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+
+body.body-live .sense-status { min-width: 0; padding: .75rem .85rem; border: 1px solid #373a44; border-radius: 10px; background: #181a20; }
+
+body.body-live .sense-status strong { display: block; margin-bottom: .3rem; font-size: .86rem; }
+
+body.body-live .sense-status span { display: block; color: #c8ccd5; font-size: .82rem; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+body.body-live .sense-status[data-state="success"] { border-color: #38795d; }
+
+body.body-live .sense-status[data-state="error"] { border-color: #a34a55; }
+
+body.body-live .sense-status[data-state="warning"] { border-color: #8a7040; }
+
+body.body-live .host-status {
+      max-width: min(58vw, 620px);
+      color: #c8ccd5;
+      text-align: right;
+      overflow-wrap: anywhere;
+      font-size: .8rem;
+      line-height: 1.35;
+    }
+
+body.body-live .host-status[data-state="connected"] { color: #9be0bc; }
+
+body.body-live .host-status[data-state="disconnected"] { color: #e4c17b; }
+
+body.body-live .host-status[data-state="unavailable"] { color: #e7a0a8; }
+
+@media (max-width: 600px) {
+body.body-live .host-status { max-width: 64vw; }
+
+body.body-live main { padding: .65rem; gap: .5rem; grid-template-rows: auto auto minmax(120px, 27vh) auto minmax(0, auto) minmax(100px, 1fr); }
+
+body.body-live .page-bar { margin: 0; }
+
+body.body-live .sense-status-grid { grid-template-columns: minmax(0, 1fr); max-height: 5.5rem; }
+
+body.body-live .sense-status { padding: .45rem .65rem; }
+
+body.body-live .sense-panel { padding: .55rem .75rem; }
+
+body.body-live .interaction-form { gap: .4rem; padding: .55rem; }
+
+body.body-live .interaction-actions { gap: .35rem; }
+
+body.body-live .interaction-actions button { padding: .6rem .7rem; }
+}
+
+body.body-live .interaction-panel {
+      margin: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: #181a20;
+      border: 1px solid #242731;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+body.body-live #interactionHistory {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: .75rem;
+    }
+
+body.body-live .chat-empty {
+      margin: auto;
+      color: #858a96;
+      text-align: center;
+      font-size: calc(.95rem - 1px);
+    }
+
+body.body-live .chat-message {
+      max-width: 82%;
+      padding: .72rem .9rem;
+      border-radius: 14px;
+      white-space: pre-wrap;
+      line-height: 1.4;
+    }
+
+body.body-live .chat-message.user {
+      align-self: flex-end;
+      background: #2b5f91;
+      color: #fff;
+      border-bottom-right-radius: 5px;
+    }
+
+body.body-live .chat-message.mind {
+      align-self: flex-start;
+      background: #242731;
+      color: #eceef3;
+      border-bottom-left-radius: 5px;
+    }
+
+body.body-live .chat-message.error {
+      align-self: flex-start;
+      background: #3a2528;
+      color: #ffd7da;
+    }
+
+body.body-live .interaction-form {
+      display: flex;
+      gap: .65rem;
+      align-items: flex-end;
+      padding: .8rem;
+      border-top: 1px solid #2a2d36;
+      background: #14161b;
+    }
+
+body.body-live .interaction-form textarea {
+      flex: 1;
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 2.8rem;
+      max-height: 9rem;
+      resize: none;
+      padding: .72rem .82rem;
+      border: 1px solid #373a44;
+      border-radius: 12px;
+      background: #101114;
+      color: #f2f2f2;
+      font: inherit;
+      line-height: 1.35;
+    }
+
+body.body-live .interaction-form textarea:focus {
+      outline: none;
+      border-color: #687388;
+      box-shadow: 0 0 0 2px rgba(104, 115, 136, .2);
+    }
+
+body.body-live .interaction-actions {
+      display: flex;
+      gap: .5rem;
+      align-items: center;
+    }
+
+body.body-live .interaction-actions button { margin: 0; }
+
+body.body-live #clearInteraction {
+      background: transparent;
+      color: #b6bbc7;
+      border: 1px solid #373a44;
+    }
+
+body.body-live #sendInteraction {
+      border: 1px solid #4777a7;
+      background: #315f8d;
+      color: #fff;
+    }
+
+body.body-live .sense-panel {
+      flex-wrap: wrap;
+      margin-top: 0;
+      padding: .8rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      background: #181a20;
+      border-radius: 14px;
+    }
+
+body.body-live .sense-label {
+      color: #c8ccd5;
+      font-weight: 650;
+    }
+
+body.body-live .senses-toggle {
+      min-width: 118px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: .55rem;
+      border: 1px solid #454954;
+      border-radius: 999px;
+      background: #242731;
+      color: #c8ccd5;
+    }
+
+body.body-live .senses-toggle::before {
+      content: "";
+      width: .72rem;
+      height: .72rem;
+      border-radius: 50%;
+      background: #676d78;
+      box-shadow: 0 0 0 3px rgba(103, 109, 120, .12);
+    }
+
+body.body-live .senses-toggle.on {
+      border-color: #38795d;
+      background: #1d382d;
+      color: #d9f6e8;
+    }
+
+body.body-live .senses-toggle.on::before {
+      background: #65d39b;
+      box-shadow: 0 0 0 3px rgba(101, 211, 155, .14);
+    }
+
+@media (max-width: 600px) {
+body.body-live .sense-panel { padding: .55rem .75rem; }
+
+body.body-live .interaction-form { gap: .4rem; padding: .55rem; }
+
+body.body-live .interaction-actions { gap: .35rem; }
+
+body.body-live .interaction-actions button { padding: .6rem .7rem; }
+}
+
+@media (max-height: 680px) {
+body.body-live main { padding-top: .5rem; padding-bottom: .5rem; gap: .45rem; }
+
+body.body-live #stage { min-height: 110px; }
+
+body.body-live .sense-status-grid { max-height: 5rem; }
+
+body.body-live .sense-status { padding: .4rem .6rem; }
+
+body.body-live .sense-panel { padding-top: .45rem; padding-bottom: .45rem; }
+}
+
+/* eyes.html */
+body.body-eyes { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #111; color: #eee; }
+
+body.body-eyes h1 { margin-bottom: .25rem; }
+
+body.body-eyes p { color: #bbb; }
+
+body.body-eyes video,
+body.body-eyes canvas { width: 100%; max-width: 720px; border-radius: 12px; background: #222; }
+
+body.body-eyes canvas { display: none; margin-top: 1rem; }
+
+body.body-eyes .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
+
+body.body-eyes button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
+
+body.body-eyes #status { white-space: pre-wrap; padding: 1rem; background: #1d1d1d; border-radius: 8px; }
+
+/* ears.html */
+body.body-ears { color-scheme: dark; }
+
+body.body-ears { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
+
+body.body-ears main { max-width: 900px; margin: 0 auto; padding: 1.25rem; }
+
+body.body-ears h1 { margin-bottom: .25rem; }
+
+body.body-ears p { color: #b9bcc4; }
+
+body.body-ears .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
+
+body.body-ears button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
+
+body.body-ears button:disabled { cursor: not-allowed; opacity: .5; }
+
+body.body-ears audio { width: 100%; margin: 1rem 0; }
+
+body.body-ears #status { white-space: pre-wrap; background: #181a20; padding: .85rem 1rem; border-radius: 10px; }
+
+/* face.html */
+body.body-face { color-scheme: dark; }
+
+body.body-face { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
+
+body.body-face main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
+
+body.body-face h1 { margin-bottom: .25rem; }
+
+body.body-face p { color: #b9bcc4; }
+
+body.body-face #stage { width: 100%; height: min(72vh, 760px); min-height: 460px; background: #181a20; border-radius: 14px; overflow: hidden; }
+
+body.body-face #stage canvas { display: block; width: 100%; height: 100%; }
+
+body.body-face .controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin: 1rem 0; }
+
+body.body-face button,
+body.body-face input::file-selector-button { padding: .65rem .9rem; font: inherit; cursor: pointer; }
+
+body.body-face button:disabled { cursor: not-allowed; opacity: .5; }
+
+body.body-face #status { white-space: pre-wrap; background: #181a20; padding: .85rem 1rem; border-radius: 10px; }
+
+/* mouth.html */
+body.body-mouth { color-scheme: dark; }
+
+body.body-mouth { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
+
+body.body-mouth main { max-width: 900px; margin: 0 auto; padding: 1.25rem; }
+
+body.body-mouth h1 { margin-bottom: .25rem; }
+
+body.body-mouth p,
+body.body-mouth label { color: #b9bcc4; }
+
+body.body-mouth textarea,
+body.body-mouth select,
+body.body-mouth input { font: inherit; }
+
+body.body-mouth textarea { width: 100%; min-height: 8rem; padding: .75rem; box-sizing: border-box; }
+
+body.body-mouth .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; margin: 1rem 0; }
+
+body.body-mouth .field { display: flex; flex-direction: column; gap: .35rem; }
+
+body.body-mouth .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
+
+body.body-mouth button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
+
+body.body-mouth #status { white-space: pre-wrap; background: #181a20; padding: .85rem 1rem; border-radius: 10px; }
+
+@media (max-width: 700px) {
+body.body-mouth .row { grid-template-columns: 1fr; }
+}

@@ -4,23 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom — Mouth V0.1</title>
-  <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
-    main { max-width: 900px; margin: 0 auto; padding: 1.25rem; }
-    h1 { margin-bottom: .25rem; }
-    p, label { color: #b9bcc4; }
-    textarea, select, input { font: inherit; }
-    textarea { width: 100%; min-height: 8rem; padding: .75rem; box-sizing: border-box; }
-    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; margin: 1rem 0; }
-    .field { display: flex; flex-direction: column; gap: .35rem; }
-    .controls { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
-    button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
-    #status { white-space: pre-wrap; background: #181a20; padding: .85rem 1rem; border-radius: 10px; }
-    @media (max-width: 700px) { .row { grid-template-columns: 1fr; } }
-  </style>
+  <link rel="stylesheet" href="/static/body.css">
 </head>
-<body>
+<body class="body-mouth">
   <script>
     const bodySessionId = crypto.randomUUID();
     async function bodyFetch(url, options = {}) {
