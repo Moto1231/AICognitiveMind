@@ -186,7 +186,7 @@
             <div id="taskProfileList" class="task-profile-grid"></div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
               <div class="panel-heading task-profile-editor-heading">
-                <div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileRevision" class="muted-copy task-profile-revision">Revision: 1</p></div>
+                <div class="task-profile-detail-identity"><span id="taskProfileDetailIcon" class="task-detail-icon" aria-hidden="true">◆</span><div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileRevision" class="muted-copy task-profile-revision">Revision: 1</p></div></div>
                 <button id="taskProfileBack" class="secondary-button" type="button">Return</button>
               </div>
               <section id="taskProfileAssignmentSection" class="task-profile-section">
@@ -210,10 +210,13 @@
                   </div>
                 </div>
               </section>
-              <section class="task-profile-section">
-                <label class="host-behavior-field">Immutable foundation (code-owned)
+              <section class="task-profile-section task-profile-foundation-section">
+                <h4>Immutable Foundation</h4>
+                <label class="host-behavior-field">Code-owned instructions
                   <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
                 </label>
+              </section>
+              <section class="task-profile-section task-profile-behaviors-section">
                  <div class="panel-heading task-profile-behavior-heading"><h4>Behaviors</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
                 <p>Choose behaviors to use on this Task</p>
                 <div id="taskProfileBehaviorSelection" class="task-behavior-selection"></div>
