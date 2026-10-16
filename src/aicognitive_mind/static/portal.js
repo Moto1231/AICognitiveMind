@@ -253,6 +253,18 @@ async function api(path, options = {}, admin = false) {
   return payload;
 }
 
+function formatBrowserDateTime(value) {
+  if (value == null || value === "") return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "medium",
+    timeZone,
+  }).format(date);
+}
+
 function displayLabel(value) {
   return String(value || "")
     .replaceAll("_", " ")
@@ -924,7 +936,7 @@ function renderStatus(status) {
   el.continuityLabel.textContent = "Persistent";
   el.selfName.textContent = mind.identity.self_name;
   el.developmentState.textContent = displayLabel(mind.developmental_state);
-  el.createdAt.textContent = new Date(mind.created_at).toLocaleString();
+  el.createdAt.textContent = formatBrowserDateTime(mind.created_at);
   el.memoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.journalCount.textContent = Number(status.journal_experience_count).toLocaleString();
 
@@ -940,7 +952,7 @@ function renderStatus(status) {
   if (el.identityOwner) el.identityOwner.textContent = integration.identity_owner;
   if (el.memoryOwner) el.memoryOwner.textContent = integration.memory_owner;
   el.adminMindName.textContent = mind.identity.self_name;
-  el.adminCreatedAt.textContent = new Date(mind.created_at).toLocaleString();
+  el.adminCreatedAt.textContent = formatBrowserDateTime(mind.created_at);
   el.adminMemoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.adminJournalCount.textContent = Number(status.journal_experience_count).toLocaleString();
 
@@ -1084,7 +1096,7 @@ function openMemoryInspector(memory, sourceMode) {
   state.activeMemory = JSON.parse(JSON.stringify(memory));
   el.inspectorContent.textContent = memory.content;
   el.inspectorClass.textContent = displayLabel(memory.memory_class);
-  el.inspectorFormedAt.textContent = new Date(memory.formed_at).toLocaleString();
+  el.inspectorFormedAt.textContent = formatBrowserDateTime(memory.formed_at);
   renderRecordValues(el.inspectorGrounding, memory.grounding);
   renderRecordValues(el.inspectorAssociations, memory.associations);
   renderMemoryArtifacts(memory.artifacts);
@@ -1232,7 +1244,7 @@ function renderMemoryList(config, sourceMode) {
     const klass = document.createElement("span");
     klass.textContent = displayLabel(memory.memory_class);
     const formed = document.createElement("span");
-    formed.textContent = new Date(memory.formed_at).toLocaleString();
+    formed.textContent = formatBrowserDateTime(memory.formed_at);
     meta.append(klass, formed);
 
     const content = document.createElement("div");
@@ -1321,7 +1333,7 @@ function renderJournalList() {
     const kind = document.createElement("span");
     kind.textContent = displayLabel(entry.kind);
     const occurred = document.createElement("span");
-    occurred.textContent = new Date(entry.occurred_at).toLocaleString();
+    occurred.textContent = formatBrowserDateTime(entry.occurred_at);
     meta.append(kind, occurred);
 
     const title = document.createElement("div");
@@ -1522,7 +1534,7 @@ async function openJournalInspector(summary) {
     });
     state.activeJournal = entry;
     el.journalInspectorKind.textContent = displayLabel(entry.kind);
-    el.journalInspectorOccurredAt.textContent = new Date(entry.occurred_at).toLocaleString();
+    el.journalInspectorOccurredAt.textContent = formatBrowserDateTime(entry.occurred_at);
     renderJournalDetail(entry);
     await renderJournalEvidence(entry);
     el.journalInspectorRaw.textContent = JSON.stringify(entry, null, 2);
@@ -1568,7 +1580,7 @@ async function renderJournalEvidence(entry) {
     const kind = document.createElement("span");
     kind.textContent = `${artifact.modality} · ${artifact.source}`;
     const captured = document.createElement("span");
-    captured.textContent = new Date(artifact.captured_at).toLocaleString();
+    captured.textContent = formatBrowserDateTime(artifact.captured_at);
     meta.append(kind, captured);
     const title = document.createElement("div");
     title.className = "journal-entry-title";
@@ -1884,7 +1896,7 @@ async function refreshEvidence() {
       const kind = document.createElement("span");
       kind.textContent = `${artifact.modality || "sensory"} · ${artifact.source || "unknown source"}`;
       const captured = document.createElement("span");
-      captured.textContent = new Date(artifact.captured_at).toLocaleString();
+      captured.textContent = formatBrowserDateTime(artifact.captured_at);
       meta.append(kind, captured);
       const title = document.createElement("div");
       title.className = "journal-entry-title";
