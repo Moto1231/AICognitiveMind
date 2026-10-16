@@ -105,3 +105,18 @@ def test_live_body_voice_off_stops_current_audio_playback():
     assert "activeSpeechAudio.currentTime = 0" in voice_toggle
     assert "window.speechSynthesis?.cancel()" in voice_toggle
     assert "if (!voiceEnabled) return;" in source[source.index("async function speakIntent"):source.index("function resumeTalking")]
+
+
+
+def test_live_body_triggers_camera_uploads_only_for_meaningful_motion_with_cooldown():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    assert "const VISION_INTERVAL_MS = 250;" in source
+    assert "const MOTION_PIXEL_DELTA = 22;" in source
+    assert "const MOTION_PIXEL_RATIO = 0.07;" in source
+    assert "const MOTION_CAPTURE_COOLDOWN_MS = 2_500;" in source
+    assert "Motion detection active; waiting for movement." in source
+    assert "if (changedPixels / signature.length < MOTION_PIXEL_RATIO) return;" in source
+    assert "if (performance.now() - lastMotionCaptureAt < MOTION_CAPTURE_COOLDOWN_MS) return;" in source
+    assert "lastFrameSignature = signature;" in source
+    assert "lastSuccessfulFrame" not in source
+    assert "luminance[pixel] = Math.round(" in source
