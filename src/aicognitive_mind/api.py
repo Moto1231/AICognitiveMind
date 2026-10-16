@@ -12,6 +12,7 @@ import logging
 import os
 import secrets
 import time as time_module
+from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time
@@ -611,6 +612,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+performance_samples = deque(maxlen=200)
+
+@app.middleware("http")
+async def record_request_performance(request: Request, call_next: Any) -> Response:
+    started = time_module.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        route = getattr(request.scope.get("route"), "path", None) or request.url.path
+        if not route.startswith("/static/") and route != "/v1/admin/diagnostics":
+            # Use only static route templates to avoid disclosing path identifiers.
+            safe_route = route if "{" not in route and route.count("/") <= 3 else "[parameterized]"
+            performance_samples.appendleft({
+                "time": datetime.now(UTC).isoformat(),
+                "route": safe_route,
+                "method": request.method,
+                "status": status_code,
+                "duration_ms": round((time_module.perf_counter()-started)*1000,2),
+            })
+
 
 
 def _portal_session_record_key(token: str) -> str:
@@ -1613,6 +1637,20 @@ async def admin_status(request: Request) -> dict[str, bool]:
     require_admin(request)
     return {"authorized": True, "memory_editing": True}
 
+
+@app.get("/v1/admin/diagnostics")
+async def admin_diagnostics(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    tenant = getattr(request.state, "tenant_storage", None)
+    service = (CognitiveMcpService(mind=tenant.mind, journal=tenant.journal, memory=tenant.memory)
+               if tenant is not None else cast(CognitiveMcpService, request.app.state.mcp_service))
+    return {
+        "current_state": await service.read_current_state(),
+        "performance": {
+            "scope": "Current process, last 200 HTTP requests, not persisted",
+            "samples": list(performance_samples),
+        },
+    }
 
 @app.get("/v1/admin/body/fallback")
 async def admin_body_fallback_settings(request: Request) -> dict[str, Any]:
