@@ -438,9 +438,7 @@
       });
       if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
 
-      const response = await bodyFetch("/v1/mind/body/see?express=false", { method: "POST" });
-      if (!response.ok) throw new Error(await responseErrorMessage(response));
-      return await response.json();
+      return await ingress.json();
     }
 
     const BODY_DEVICE_STORAGE_KEYS = {
@@ -1194,19 +1192,13 @@
         });
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
         evidenceAccepted = true;
-        setSenseStatus("vision", "Frame saved; requesting interpretation…", "warning");
+        setSenseStatus("vision", "Frame saved and interpreted.", "success");
         lastSuccessfulFrame = signature;
         if (!visionEnabled || generation !== sensoryLoopGeneration) return;
 
-        const response = await bodyFetch(
-          "/v1/mind/body/see?express=false",
-          { method: "POST" }
-        );
-        if (!response.ok) throw new Error(await responseErrorMessage(response));
+        const interpreted = await ingress.json();
         if (!visionEnabled || generation !== sensoryLoopGeneration) return;
-
-        lastSuccessfulFrame = signature;
-        await showMindResult(await response.json(), { modality: "vision", consumeOutputs: false });
+        await showMindResult(interpreted, { modality: "vision", consumeOutputs: false });
       } catch (error) {
         if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
         throw error;
@@ -1447,17 +1439,12 @@
         });
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
         evidenceAccepted = true;
-        setSenseStatus("audio", "Audio saved; requesting interpretation…", "warning");
+        setSenseStatus("audio", "Audio saved and interpreted.", "success");
         if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
 
-        const response = await bodyFetch(
-          "/v1/mind/body/hear?express=false",
-          { method: "POST" }
-        );
-        if (!response.ok) throw new Error(await responseErrorMessage(response));
+        const interpreted = await ingress.json();
         if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
-
-        await showMindResult(await response.json(), { modality: "audio", consumeOutputs: false });
+        await showMindResult(interpreted, { modality: "audio", consumeOutputs: false });
       } catch (error) {
         if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
         throw error;
