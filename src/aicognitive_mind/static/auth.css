@@ -26,3 +26,6 @@
 .auth-page a[data-icon-button]:focus-visible { outline: 2px solid #83dffe; outline-offset: 3px; }
 .auth-page button:disabled { opacity: .5; cursor: not-allowed; }
 .auth-page .axiom-button-icon { width: 26px; height: 26px; color: #e3f4ff; }
+
+.signin-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:12px; }
+.signin-actions button { flex:1 1 auto; }
