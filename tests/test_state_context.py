@@ -45,6 +45,32 @@ class CurrentStateLedgerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ledger.apply_event("invented_event")
 
+    def test_each_event_invalidates_only_its_declared_answers(self) -> None:
+        expected = {
+            "session_started": {"interlocutor", "presence", "active_topic", "active_task"},
+            "location_changed": {"locality", "current_scene"},
+            "speaker_changed": {"interlocutor", "presence"},
+            "topic_changed": {"active_topic", "decisions_and_open_questions"},
+            "task_changed": {"active_task", "pending_work"},
+            "connection_changed": {"connection_status", "capabilities", "pending_work"},
+            "scene_changed": {"current_scene", "presence"},
+            "evidence_conflict": set(),
+            "state_refreshed": set(),
+        }
+        original = CurrentStateLedger.empty()
+        for key in original.FUNDAMENTAL_FIELDS:
+            original.answer(key, f"grounded {key}", source="grounded observation")
+        for event, affected in expected.items():
+            with self.subTest(event=event):
+                updated = original.apply_event(event)
+                self.assertEqual(updated.revision, original.revision + 1)
+                for key in original.FUNDAMENTAL_FIELDS:
+                    if key in affected:
+                        self.assertEqual(updated.fields[key].status, "unknown")
+                        self.assertIsNone(updated.fields[key].value)
+                    else:
+                        self.assertEqual(updated.fields[key], original.fields[key])
+
     def test_evidence_conflict_marks_only_named_field_unknown_or_disputed(self) -> None:
         ledger = CurrentStateLedger.empty()
         ledger.answer("presence", [{"name": "Candidate"}], source="camera")

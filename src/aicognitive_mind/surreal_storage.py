@@ -253,6 +253,23 @@ class SurrealJournalStore:
         )
 
 
+    async def latest_checkpoint(self, checkpoint_type: str) -> list[JournalEntry]:
+        # Retrieve only the latest exact checkpoint without transferring or
+        # counting the append-only journal's historical entries.
+        records = _records(
+            await self._database.query(
+                "SELECT * FROM journal WHERE mind_id = $mind_id "
+                "AND kind = $kind AND experience.checkpoint_type = $checkpoint_type "
+                "ORDER BY occurred_at DESC, id ASC LIMIT 1;",
+                {
+                    "mind_id": self.mind_id,
+                    "kind": "checkpoint",
+                    "checkpoint_type": checkpoint_type,
+                },
+            )
+        )
+        return [JournalEntry.model_validate(_document(record)) for record in records]
+
     async def find_exact(
         self,
         *,

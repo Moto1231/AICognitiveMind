@@ -315,6 +315,17 @@ class PersistentRestartTests(unittest.IsolatedAsyncioTestCase):
                 await service.complete_interaction(
                     "Continue", "Still Axiom", idempotency_key="second-host"
                 )
+                persisted_journal = await service._journal.read()
+                self.assertEqual(
+                    [entry.kind.value for entry in persisted_journal].count("interaction"), 2
+                )
+                self.assertEqual(
+                    sum(
+                        entry.experience.get("checkpoint_type") == "current_state_ledger"
+                        for entry in persisted_journal
+                    ),
+                    1,
+                )
                 self.assertEqual((await service.status())["journal_experience_count"], 3)
             finally:
                 await runtime.close()

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from aicognitive_mind.commit import atomic
 from aicognitive_mind.domain import CognitiveActor, JournalEntry, JournalKind, utc_now
+from aicognitive_mind.journal_payload import journal_safe_value
 
 
 AnswerStatus = Literal["current", "unknown", "disputed", "stale"]
@@ -158,6 +159,20 @@ class CurrentStateLedgerRepository:
     def __init__(self, journal: Any) -> None:
         self._journal = journal
 
+    async def load(self) -> CurrentStateLedger:
+        """Load only the latest checkpoint of the exact ledger type."""
+        entries = await self._journal.latest_checkpoint("current_state_ledger")
+        for entry in entries:
+            if entry.experience.get("checkpoint_type") != "current_state_ledger":
+                continue
+            state = entry.experience.get("state_ledger")
+            if isinstance(state, dict):
+                try:
+                    return CurrentStateLedger.model_validate(state)
+                except ValueError:
+                    continue
+        return CurrentStateLedger.empty()
+
     @atomic
     async def apply_event(
         self,
@@ -165,33 +180,14 @@ class CurrentStateLedgerRepository:
         updates: dict[str, Any] | None = None,
         source: str = "state_event",
     ) -> CurrentStateLedger:
-        ledger = CurrentStateLedger.empty()
-        # Use the journal's bounded, database-side query instead of reading and
-        # deep-copying the entire append-only history for every state event.
-        if hasattr(self._journal, "latest_checkpoint"):
-            page = await self._journal.latest_checkpoint("current_state_ledger")
-        else:
-            page, _ = await self._journal.query_page(
-                offset=0,
-                limit=1,
-                newest_first=True,
-                kind=JournalKind.CHECKPOINT.value,
-                search="current_state_ledger",
-            )
-        for entry in page:
-            if entry.experience.get("checkpoint_type") != "current_state_ledger":
-                continue
-            try:
-                ledger = CurrentStateLedger.model_validate(entry.experience["state_ledger"])
-            except Exception:
-                continue
+        ledger = await self.load()
         updated = ledger.apply_event(event, updates, source=source)
         await self._journal.append(
             JournalEntry(
                 kind=JournalKind.CHECKPOINT,
                 experience={
                     "checkpoint_type": "current_state_ledger",
-                    "state_ledger": updated.as_context(),
+                    "state_ledger": journal_safe_value(updated.as_context()),
                 },
             ),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,

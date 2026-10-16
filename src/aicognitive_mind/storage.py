@@ -58,6 +58,8 @@ class JournalStore(Protocol):
         occurred_to: datetime | None = None,
     ) -> tuple[list[JournalEntry], int]: ...
 
+    async def latest_checkpoint(self, checkpoint_type: str) -> list[JournalEntry]: ...
+
     async def find_exact(
         self,
         *,
@@ -132,6 +134,7 @@ def _searchable_text(value: Any) -> str:
 def _journal_search_text(entry: JournalEntry) -> str:
     experience = entry.experience
     values = [
+        experience.get("checkpoint_type", ""),
         experience.get("input", {}).get("content", ""),
         experience.get("expression", {}).get("content", ""),
         experience.get("before", {}).get("content", ""),
@@ -300,6 +303,19 @@ class InMemoryJournalStore:
         ]
         matching.sort(key=lambda entry: entry.occurred_at, reverse=newest_first)
         return deepcopy(matching[offset : offset + limit]), len(matching)
+
+    async def latest_checkpoint(self, checkpoint_type: str) -> list[JournalEntry]:
+        entry = max(
+            (
+                entry
+                for entry in self._entries
+                if entry.kind.value == "checkpoint"
+                and entry.experience.get("checkpoint_type") == checkpoint_type
+            ),
+            key=lambda entry: entry.occurred_at,
+            default=None,
+        )
+        return [deepcopy(entry)] if entry is not None else []
 
     async def find_exact(
         self,

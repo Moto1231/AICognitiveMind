@@ -59,28 +59,62 @@ async def surreal_page(
     ] if counts else 0
 
 
-async def count(store: Any) -> int:
+def _included_in_count(value: Any, exclude_checkpoint_type: str | None) -> bool:
+    return not (
+        exclude_checkpoint_type is not None
+        and getattr(value, "kind", None) == "checkpoint"
+        and value.experience.get("checkpoint_type") == exclude_checkpoint_type
+    )
+
+
+async def count(store: Any, *, exclude_checkpoint_type: str | None = None) -> int:
+    from aicognitive_mind.commit import StagedStore
+
+    if isinstance(store, StagedStore):
+        total = await count(store.base, exclude_checkpoint_type=exclude_checkpoint_type)
+        for table, operation, before, after in store.operations:
+            if table != store.table:
+                continue
+            if operation == "replace":
+                total -= int(_included_in_count(before, exclude_checkpoint_type))
+            total += int(_included_in_count(after, exclude_checkpoint_type))
+        return total
     if hasattr(store, "_collection"):
         query = (
             {"mind_id": store.mind_id}
             if getattr(store, "mind_id", None) is not None
             else {}
         )
+        if exclude_checkpoint_type is not None:
+            query["$nor"] = [
+                {"kind": "checkpoint", "experience.checkpoint_type": exclude_checkpoint_type}
+            ]
         return await store._collection.count_documents(query)
     if hasattr(store, "_database"):
         table = "journal" if "Journal" in type(store).__name__ else "memory"
+        clauses, variables = [], {}
         if getattr(store, "mind_id", None) is not None:
-            result = await store._database.query(
-                f"SELECT count() AS total FROM {table} "
-                "WHERE mind_id = $mind_id GROUP ALL;",
-                {"mind_id": store.mind_id},
+            clauses.append("mind_id = $mind_id")
+            variables["mind_id"] = store.mind_id
+        if exclude_checkpoint_type is not None:
+            clauses.append(
+                "(kind != $checkpoint_kind OR experience.checkpoint_type = NONE "
+                "OR experience.checkpoint_type != $checkpoint_type)"
             )
-        else:
-            result = await store._database.query(
-                f"SELECT count() AS total FROM {table} GROUP ALL;"
-            )
+            variables.update(checkpoint_kind="checkpoint", checkpoint_type=exclude_checkpoint_type)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        result = await store._database.query(
+            f"SELECT count() AS total FROM {table}{where} GROUP ALL;",
+            variables,
+        )
         return result[0]["total"] if result else 0
-    return len(await store.read())
+    if hasattr(store, "_entries"):
+        if exclude_checkpoint_type is None:
+            return len(store._entries)
+        return sum(_included_in_count(entry, exclude_checkpoint_type) for entry in store._entries)
+    if hasattr(store, "_memories"):
+        return len(store._memories)
+    return sum(_included_in_count(value, exclude_checkpoint_type) for value in await store.read())
 
 
 async def candidates(store: Any, tokens: set[str], limit: int = 256) -> list:

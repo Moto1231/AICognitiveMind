@@ -47,8 +47,10 @@ def test_live_body_host_status_poll_does_not_overlap_and_backs_off():
     assert "refreshConnectedHostStatus.inFlight = false;" in function_source
     assert 'response.status === 429' in function_source
     assert 'response.headers.get("Retry-After")' in function_source
-    assert "refreshConnectedHostStatus.pollDelayMs * 2" in function_source
-    assert "refreshConnectedHostStatus.nextPollAt" in function_source
+    assert "Math.max(5_000, (refreshConnectedHostStatus.pollDelayMs || 5_000) * 2)" in function_source
+    assert "30_000" in function_source
+    assert "retryAfterSeconds * 1_000" in function_source
+    assert "refreshConnectedHostStatus.nextPollAt = Date.now() + refreshConnectedHostStatus.pollDelayMs" in function_source
 
 
 def test_live_body_shows_independent_vision_and_audio_statuses():
@@ -89,11 +91,22 @@ def test_live_body_does_not_poll_or_capture_camera_when_vision_is_off():
     assert 'setSenseStatus("vision", "Vision is off. No camera polling or capture will run."' in source
 
 
-def test_live_body_voice_off_blocks_spoken_output_and_mouth_polling():
+def test_live_body_voice_off_blocks_spoken_output_and_mouth_event_delivery():
     source = LIVE_BODY.read_text(encoding="utf-8")
     assert 'if (!voiceEnabled || !intent?.text) return;' in source
-    assert 'if (!voiceEnabled || mouthPollBusy) return false;' in source
-    assert 'if (!voiceEnabled || sensoryRequestInFlight' in source
+    drain_start = source.index("async function consumeExpressionOutputs()")
+    events_start = source.index("function connectMouthEvents()", drain_start)
+    events_end = source.index("async function registerActiveBodySession()", events_start)
+    drain_source = source[drain_start:events_start]
+    events_source = source[events_start:events_end]
+    assert 'if (!voiceEnabled || mouthPollBusy) return false;' in drain_source
+    assert 'while (voiceEnabled)' in drain_source
+    assert events_source.index('if (!voiceEnabled) {') < events_source.index('new EventSource(')
+    assert 'mouthEvents?.close();' in events_source
+    assert 'mouthEvents = null;' in events_source
+    listener_source = events_source[events_source.index('addEventListener("voice-ready"'):]
+    assert listener_source.index('if (!voiceEnabled) return;') < listener_source.index('consumeExpressionOutputs()')
+    assert 'setInterval(consumeExpressionOutputs' not in source
 
 
 def test_live_body_voice_off_stops_current_audio_playback():

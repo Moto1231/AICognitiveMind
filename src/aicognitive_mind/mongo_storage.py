@@ -387,6 +387,18 @@ class MongoJournalStore:
         total = await self._collection.count_documents(query)
         return entries, total
 
+    async def latest_checkpoint(self, checkpoint_type: str) -> list[JournalEntry]:
+        document = await self._collection.find_one(
+            {
+                "mind_id": self.mind_id,
+                "kind": "checkpoint",
+                "experience.checkpoint_type": checkpoint_type,
+            },
+            {"_id": 0, "mind_id": 0},
+            sort=[("occurred_at", DESCENDING)],
+        )
+        return [JournalEntry.model_validate(document)] if document is not None else []
+
     async def find_exact(
         self,
         *,

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from aicognitive_mind.commit import atomic
+from aicognitive_mind.journal_payload import journal_safe_value
 
 from aicognitive_mind.domain import (
     CognitiveActor,
@@ -29,39 +29,13 @@ from aicognitive_mind.prompts import (
 from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.host_runtime import RuntimeRecords
-from aicognitive_mind.state_context import CurrentStateLedger
+from aicognitive_mind.state_context import CurrentStateLedger, CurrentStateLedgerRepository
 
 from aicognitive_mind.task_behaviors import (
     TaskBehaviorRegistry,
     TaskExecutionContext,
     TaskPromptAssembler,
 )
-
-_SENSORY_DATA_URL = re.compile(
-    r"data:[^,\s\"']+;base64,[A-Za-z0-9+/=\r\n]+",
-    re.IGNORECASE,
-)
-_SENSORY_PAYLOAD_KEYS = {"payload_base64", "image_data", "audio_data"}
-
-
-def _journal_safe_value(value: Any, *, key: str | None = None) -> Any:
-    """Redact encoded media from the journal while leaving reasoning inputs untouched."""
-    if isinstance(value, dict):
-        return {
-            str(child_key): _journal_safe_value(child_value, key=str(child_key).lower())
-            for child_key, child_value in value.items()
-        }
-    if isinstance(value, (list, tuple)):
-        return [_journal_safe_value(item) for item in value]
-    if not isinstance(value, str):
-        return value
-    if key in _SENSORY_PAYLOAD_KEYS:
-        return "[encoded sensory payload omitted from journal; see preserved evidence reference]"
-    return _SENSORY_DATA_URL.sub(
-        "[encoded sensory payload omitted from journal; see preserved evidence reference]",
-        value,
-    )
-
 
 
 class MemoryProposal(BaseModel):
@@ -145,7 +119,7 @@ class CognitiveMcpService:
         mind = await self._require_mind()
         from aicognitive_mind.retrieval import count
         memory_count = await count(self._memory)
-        journal_count = await count(self._journal)
+        journal_count = await count(self._journal, exclude_checkpoint_type="current_state_ledger")
         return {
             "mind": mind.model_dump(mode="json"),
             "durable_memory_count": memory_count,
@@ -168,6 +142,7 @@ class CognitiveMcpService:
             },
         }
 
+    @atomic
     async def begin_interaction(
         self, user_message: str, host_working_context: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -276,7 +251,7 @@ class CognitiveMcpService:
         journal_entry = await self._journal.append(
             JournalEntry(
                 kind=JournalKind.INTERACTION,
-                experience=_journal_safe_value({
+                experience=journal_safe_value({
                     "input": {
                         "source": "human",
                         "content": user_message,
@@ -321,27 +296,13 @@ class CognitiveMcpService:
         return updated.as_context()
 
     async def _load_current_state(self) -> CurrentStateLedger:
-        if hasattr(self._journal, "latest_checkpoint"):
-            entries = await self._journal.latest_checkpoint("current_state_ledger")
-        else:
-            entries, _ = await self._journal.query_page(
-                offset=0, limit=1, newest_first=True,
-                kind=JournalKind.CHECKPOINT.value, search="current_state_ledger",
-            )
-        for entry in entries:
-            state = entry.experience.get("state_ledger")
-            if entry.experience.get("checkpoint_type") == "current_state_ledger" and isinstance(state, dict):
-                try:
-                    return CurrentStateLedger.model_validate(state)
-                except Exception:
-                    pass
-        return CurrentStateLedger.empty()
+        return await CurrentStateLedgerRepository(self._journal).load()
 
     async def _persist_current_state(self, ledger: CurrentStateLedger) -> None:
         await self._journal.append(
             JournalEntry(kind=JournalKind.CHECKPOINT, experience={
                 "checkpoint_type": "current_state_ledger",
-                "state_ledger": ledger.as_context(),
+                "state_ledger": journal_safe_value(ledger.as_context()),
             }),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
@@ -382,7 +343,10 @@ class CognitiveMcpService:
             source="validated_host_working_context" if participants else "current_human_input")
         if participants:
             ledger.answer("presence", participants, source="validated_host_working_context")
-        elif ledger.fields["presence"].status == "unknown":
+        elif (
+            ledger.fields["presence"].status == "unknown"
+            or ledger.fields["presence"].source == "validated_host_working_context"
+        ):
             ledger.answer("presence", {"interaction_presence": "human input received",
                 "physical_presence": "unknown"}, source="current_human_input")
         if summary or working.get("unresolved_references"):

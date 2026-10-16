@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
 from pydantic import AnyUrl
@@ -12,6 +14,7 @@ from aicognitive_mind.chatgpt_mcp import (
     build_chatgpt_mcp,
 )
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
+from aicognitive_mind.host_context import HostWorkingContext
 
 
 class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
@@ -108,6 +111,12 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.base = "https://axiom.example"
+        self.provider = AxiomAuthorizationServerProvider(
+            self.base, username="mind", password="secret",
+        )
+
     def test_begin_interaction_surfaces_queue_and_preserves_human_priority(self):
         summary = _summarize_body_work(
             [
@@ -238,6 +247,61 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         completion_schema = tools["complete_interaction"].input_schema
         self.assertIn("idempotency_key", completion_schema["required"])
         self.assertIn("proposed_memories", completion_schema["required"])
+
+    async def test_deployed_surface_registers_current_state_tools(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        tools = {tool.name: tool for tool in await server.list_tools()}
+        self.assertIn("read_current_state", tools)
+        update = tools["update_current_state"]
+        self.assertIn("event", update.input_schema["required"])
+        self.assertIn("scene_changed", update.input_schema["properties"]["event"]["enum"])
+        self.assertTrue(tools["read_current_state"].annotations.read_only_hint)
+        self.assertFalse(update.annotations.read_only_hint)
+        self.assertFalse(tools["begin_interaction"].annotations.read_only_hint)
+
+    async def test_deployed_begin_passes_validated_context_to_state_ledger(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        service = SimpleNamespace(begin_interaction=AsyncMock(return_value={
+            "status": "ready_to_reason", "idempotency_key": "context-turn",
+        }))
+        storage = SimpleNamespace(mind=object(), diagnostics=SimpleNamespace(record=AsyncMock()))
+        ctx = SimpleNamespace(request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(mind_service=service, storage=storage)
+        ))
+        working = HostWorkingContext(summary="Restore ledger", unresolved_references=("Validate",))
+        hosts = SimpleNamespace(
+            records=SimpleNamespace(pending=AsyncMock(return_value=[])),
+            active=AsyncMock(return_value=None),
+        )
+        with patch("aicognitive_mind.chatgpt_mcp.HostRuntime", return_value=hosts):
+            result = await server._tool_manager.get_tool("begin_interaction").fn(
+                user_message="Continue.", ctx=ctx, host_working_context=working,
+            )
+        service.begin_interaction.assert_awaited_once_with(
+            "Continue.", working.model_dump(mode="json")
+        )
+        self.assertEqual(result["host_working_context"], working.model_dump(mode="json"))
+
+    async def test_deployed_state_tools_delegate_events_and_reads(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        expected = {"revision": 4, "fields": {"locality": {"value": "Lab A"}}}
+        service = SimpleNamespace(
+            read_current_state=AsyncMock(return_value=expected),
+            update_current_state=AsyncMock(return_value=expected),
+        )
+        ctx = SimpleNamespace(request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(mind_service=service)
+        ))
+        read = server._tool_manager.get_tool("read_current_state").fn
+        update = server._tool_manager.get_tool("update_current_state").fn
+        self.assertEqual(await read(ctx=ctx), expected)
+        values = {"values": {"locality": "Lab A"}}
+        self.assertEqual(await update(
+            event="location_changed", ctx=ctx, updates=values, source="direct user statement",
+        ), expected)
+        service.update_current_state.assert_awaited_once_with(
+            event="location_changed", updates=values, source="direct user statement",
+        )
 
     async def test_deployed_surface_registers_body_host_handoff_tools(self):
         provider = AxiomAuthorizationServerProvider(

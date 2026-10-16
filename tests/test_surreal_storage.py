@@ -136,6 +136,68 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(MindAlreadyInitializedError):
             await store.initialize(revised)
 
+    async def test_latest_checkpoint_is_exact_ordered_and_isolated_per_mind(self) -> None:
+        alpha = SurrealJournalStore(self.runtime.database, "alpha")
+        beta = SurrealJournalStore(self.runtime.database, "beta")
+        base = datetime(2026, 10, 16, tzinfo=UTC)
+        expected = JournalEntry(
+            kind=JournalKind.CHECKPOINT,
+            occurred_at=base + timedelta(minutes=2),
+            experience={"checkpoint_type": "current_state_ledger", "revision": 2},
+        )
+        for entry in (
+            expected,
+            JournalEntry(
+                kind=JournalKind.CHECKPOINT,
+                occurred_at=base,
+                experience={"checkpoint_type": "current_state_ledger", "revision": 1},
+            ),
+            JournalEntry(
+                kind=JournalKind.CHECKPOINT,
+                occurred_at=base + timedelta(minutes=3),
+                experience={"checkpoint_type": "current_state_ledger_backup"},
+            ),
+            JournalEntry(
+                kind=JournalKind.INTERACTION,
+                occurred_at=base + timedelta(minutes=4),
+                experience={"checkpoint_type": "current_state_ledger"},
+            ),
+            JournalEntry(
+                kind=JournalKind.CHECKPOINT,
+                occurred_at=base + timedelta(minutes=5),
+                experience={"description": "current_state_ledger"},
+            ),
+        ):
+            await alpha.append(entry, recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE)
+        beta_checkpoint = JournalEntry(
+            kind=JournalKind.CHECKPOINT,
+            occurred_at=base + timedelta(minutes=6),
+            experience={"checkpoint_type": "current_state_ledger", "revision": 99},
+        )
+        await beta.append(beta_checkpoint, recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE)
+
+        self.assertEqual(await alpha.latest_checkpoint("current_state_ledger"), [expected])
+        self.assertEqual(await beta.latest_checkpoint("current_state_ledger"), [beta_checkpoint])
+        self.assertEqual(await alpha.latest_checkpoint("missing"), [])
+
+    async def test_checkpoint_type_is_searchable_without_ledger_payload(self) -> None:
+        journal = SurrealJournalStore(self.runtime.database)
+        entry = JournalEntry(
+            kind=JournalKind.CHECKPOINT,
+            experience={"checkpoint_type": "current_state_ledger"},
+        )
+        await journal.append(entry, recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE)
+
+        page, total = await journal.query_page(
+            offset=0,
+            limit=1,
+            newest_first=True,
+            kind=JournalKind.CHECKPOINT.value,
+            search="CURRENT_STATE_LEDGER",
+        )
+
+        self.assertEqual((page, total), ([entry], 1))
+
     async def test_journal_searches_full_collection_before_paging(self) -> None:
         store = SurrealJournalStore(self.runtime.database)
         base = datetime(2026, 9, 18, 12, tzinfo=UTC)
