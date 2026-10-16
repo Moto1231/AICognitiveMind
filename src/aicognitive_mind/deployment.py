@@ -106,12 +106,12 @@ async def _oauth_signup_post(request: Request):
 async def _public_entry(_request: Request):
     return HTMLResponse("""<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Axiom</title></head>
+<title>Axiom</title><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
 <body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0">
 <main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">
 <h1>Axiom</h1><p>Connect to an existing Axiom account or create a new Genesis mind.</p>
-<a href="/signup" style="display:block;text-align:center;padding:12px;margin-top:18px;border-radius:8px;background:#2563eb;color:white;text-decoration:none">Create new account</a>
-<a href="/portal" style="display:block;text-align:center;padding:12px;margin-top:12px;border-radius:8px;background:#374151;color:white;text-decoration:none">Existing Axiom</a>
+<a href="/signup" data-icon-button style="display:block;text-align:center;padding:12px;margin-top:18px;border-radius:8px;background:#2563eb;color:white;text-decoration:none">Create new account</a>
+<a href="/portal" data-icon-button style="display:block;text-align:center;padding:12px;margin-top:12px;border-radius:8px;background:#374151;color:white;text-decoration:none">Existing Axiom</a>
 </main></body></html>""")
 
 
@@ -165,7 +165,7 @@ class _AuthDiagnosticMiddleware:
 
 async def _portal_login_page(_request: Request):
     return HTMLResponse("""<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Axiom Login</title></head>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Axiom Login</title><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
 <body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0">
 <main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">
 <h1>Sign in to Axiom</h1><p id="error" style="color:#fca5a5"></p>
