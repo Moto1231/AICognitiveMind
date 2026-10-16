@@ -47,6 +47,16 @@ class FailingInterpreter:
         raise RuntimeError("interpretation failed")
 
 
+class AutomaticFixedInterpreter:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.percepts = []
+
+    async def interpret_automatically(self, percept, *, focus=None):
+        self.percepts.append((percept, focus))
+        return self.text
+
+
 class FakeResponses:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -201,6 +211,34 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("content_ref", str(input_document))
         self.assertNotIn("data:image", str(input_document))
+
+    async def test_automatic_perception_interprets_and_journals_without_host_interaction(self) -> None:
+        core, journal = await self._core()
+        eyes = BrowserVisionIngress()
+        evidence = InMemoryEvidenceStore()
+        interpreter = AutomaticFixedInterpreter("Visual perception: A red mug.")
+        bridge = MindBodyBridge(
+            core=core,
+            body=BodyRuntime(vision=eyes),
+            interpreter=interpreter,
+            evidence=evidence,
+            journal=journal,
+        )
+        percept = eyes.accept(
+            image_data_url=data_url("image/jpeg", b"automatic-jpeg"),
+            width=320,
+            height=240,
+        )
+
+        result = await bridge.perceive(percept, express=False, automatic=True)
+
+        self.assertEqual(result.interpretation, "Visual perception: A red mug.")
+        self.assertEqual(len(interpreter.percepts), 1)
+        self.assertEqual(interpreter.percepts[0][1], None)
+        entries = await journal.read()
+        self.assertEqual(entries[-1].experience["status"], "interpreted")
+        self.assertEqual(entries[-1].experience["interpretation"], result.interpretation)
+        self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
 
     async def test_passive_visual_perception_admits_without_conscious_interaction(self) -> None:
         core, journal = await self._core()
