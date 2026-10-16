@@ -319,6 +319,9 @@ class CognitiveMcpService:
         *, source: str = "human", input_context: dict[str, Any] | None = None,
     ) -> CurrentStateLedger:
         ledger = await self._load_current_state()
+        # A missing mood field marks a ledger that has not received begin_context.
+        # This also upgrades existing persisted ledgers without resetting identity.
+        first_context = "mood" not in ledger.fields
         before = {k: v.model_dump(mode="json") for k, v in ledger.fields.items()}
         ledger.answer("identity", mind.identity.model_dump(mode="json") | {
             "developmental_state": mind.developmental_state,
@@ -336,12 +339,20 @@ class CognitiveMcpService:
             for m in recalled.get("durable_memory", [])
             if m.get("memory_class") == MemoryClass.PROCEDURAL.value
         ][:12], source="memory_steward_recall")
+        if first_context:
+            ledger.answer("mood", None, status="unknown",
+                          source="memory_steward_no_grounded_mood",
+                          note="Mood has not been assessed from evidence.")
         summary = working.get("summary")
         if summary:
             ledger.answer("active_topic", summary, source="host_working_context")
+            ledger.answer("current_context", summary, source="host_working_context")
         elif ledger.fields["active_topic"].status == "unknown":
             ledger.answer("active_topic", message,
                           source="current_human_input" if source == "human" else source)
+        if first_context and not summary:
+            ledger.answer("current_context", message, source="current_human_input"
+                          if source == "human" else source)
         participants = working.get("participants", [])
         if participants:
             ledger.answer("interlocutor", {
@@ -350,7 +361,16 @@ class CognitiveMcpService:
                 "addressee": working.get("addressee"),
             }, source="validated_host_working_context")
             ledger.answer("presence", participants, source="validated_host_working_context")
+            ledger.answer("who_is_present", participants, source="validated_host_working_context")
+            speaker = next((p for p in participants if
+                            p.get("participant_id") == working.get("active_speaker")), None)
+            if speaker:
+                ledger.answer("who_is_speaking", speaker,
+                              source="validated_host_working_context")
+            else:
+                ledger.invalidate("who_is_speaking", event="speaker_not_grounded")
         elif source == "human":
+            ledger.invalidate("who_is_speaking", event="speaker_not_grounded")
             ledger.answer("interlocutor", {
                 "type": "current human interlocutor", "identity_status": "unresolved",
             }, source="current_human_input")
@@ -361,11 +381,13 @@ class CognitiveMcpService:
                 ledger.answer("presence", {"interaction_presence": "human input received",
                     "physical_presence": "unknown"}, source="current_human_input")
         else:
+            ledger.invalidate("who_is_speaking", event="nonhuman_input")
             ledger.invalidate("interlocutor", event="nonhuman_input",
                               note="Sensory input does not establish a current human speaker.")
             observed_presence = (input_context or {}).get("presence")
             if isinstance(observed_presence, dict) and observed_presence:
                 ledger.answer("presence", observed_presence, source=source)
+                ledger.answer("who_is_present", observed_presence, source=source)
             elif (
                 ledger.fields["presence"].status == "unknown"
                 or ledger.fields["presence"].source in {
@@ -393,11 +415,22 @@ class CognitiveMcpService:
             ledger.invalidate("locality", event="locality_not_grounded")
         if ledger.fields["current_scene"].status == "unknown":
             ledger.invalidate("current_scene", event="scene_not_grounded")
+        if first_context:
+            # A connected conversation does not establish physical presence or mood.
+            # Preserve grounded evidence already in the ledger when upgrading.
+            if "who_is_present" not in ledger.fields:
+                ledger.answer("who_is_present", None, status="unknown",
+                              source="memory_steward_no_presence_evidence")
+            if "who_is_speaking" not in ledger.fields:
+                ledger.answer("who_is_speaking", None, status="unknown",
+                              source="memory_steward_no_speaker_evidence")
         after = {k: v.model_dump(mode="json") for k, v in ledger.fields.items()}
         if after != before:
             ledger.revision += 1
             from aicognitive_mind.domain import utc_now
-            ledger.updated_at, ledger.last_event = utc_now(), "interaction_started"
+            ledger.updated_at, ledger.last_event = utc_now(), (
+                "begin_context" if first_context else "interaction_started"
+            )
             await self._persist_current_state(ledger)
         return ledger
 
