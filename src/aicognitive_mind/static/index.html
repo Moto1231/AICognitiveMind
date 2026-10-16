@@ -192,55 +192,10 @@
                 <div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileRevision" class="muted-copy task-profile-revision">Revision: 1</p></div>
                 <button id="taskProfileBack" class="secondary-button" type="button">Return</button>
               </div>
-              <section id="taskProfileEndpointSection" class="task-profile-section">
-                <h4>Endpoint configuration</h4>
-                <p class="muted-copy">Choose a shared endpoint or add one here. Editing endpoint details updates that shared endpoint for every task that uses it.</p>
-                <div class="task-profile-endpoint-picker">
-                  <label class="host-behavior-field">Endpoint
-                    <select id="taskProfileEndpointSelect"><option value="">Choose an endpoint</option></select>
-                  </label>
-                  <button id="taskProfileAddEndpoint" class="secondary-button" type="button">Add Endpoint</button>
-                </div>
-                <div class="task-profile-endpoint-picker">
-                  <label class="host-behavior-field">Common endpoint preset
-                    <select id="taskProfileEndpointPreset">
-                      <option value="">Choose a preset to add</option>
-                      <option value="openai">OpenAI</option>
-                      <option value="openrouter">OpenRouter</option>
-                      <option value="google-gemini">Google Gemini (OpenAI-compatible)</option>
-                      <option value="groq">Groq</option>
-                      <option value="together">Together AI</option>
-                      <option value="fireworks">Fireworks AI</option>
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="mistral">Mistral AI</option>
-                      <option value="cerebras">Cerebras</option>
-                      <option value="ollama">Ollama (local)</option>
-                      <option value="lm-studio">LM Studio (local)</option>
-                      <option value="vllm">vLLM (local/self-hosted)</option>
-                      <option value="localai">LocalAI (local/self-hosted)</option>
-                    </select>
-                  </label>
-                  <button id="taskProfileAddPreset" class="secondary-button" type="button">Add Preset</button>
-                </div>
-                <p class="muted-copy">Presets fill the endpoint name and base URL only. Add your own API key where required. Local URLs must be reachable from the Axiom server, not just your browser.</p>
-                <div class="task-model-fields">
-                  <label class="host-behavior-field">Endpoint name
-                    <input id="taskProfileEndpointName" type="text" maxlength="120" placeholder="Provider name">
-                  </label>
-                  <label class="host-behavior-field">Base URL
-                    <input id="taskProfileBaseUrl" type="url" maxlength="1000" placeholder="https://provider.example/v1">
-                  </label>
-                  <label class="host-behavior-field task-model-notes">API key
-                    <input id="taskProfileApiKey" type="password" autocomplete="off" maxlength="4096" placeholder="Provider API key">
-                  </label>
-                </div>
-                <div class="task-profile-inline-actions">
-                  <button id="taskProfileDiscover" class="secondary-button" type="button">Discover Models</button>
-                  <span class="muted-copy">Discovered IDs are suggestions, not a restriction.</span>
-                </div>
-              </section>
               <section id="taskProfileAssignmentSection" class="task-profile-section">
                 <h4>Model assignment</h4>
+                <label class="host-behavior-field">Primary endpoint<select id="taskProviderSelect"></select></label>
+                <p class="muted-copy">Configure shared endpoints in MCP Servers &amp; Tools.</p>
                 <div class="task-model-fields">
                   <label id="taskProfileStandardModelField" class="host-behavior-field">Model ID
                     <select id="taskProfileModel" aria-label="Model ID"><option value="">Discover models or choose a model</option></select>
@@ -283,6 +238,32 @@
               <div><p class="eyebrow">EXTERNAL INTEGRATIONS</p><h3>MCP Servers &amp; Tools</h3></div>
               <button id="refreshMcpServers" class="secondary-button" type="button">Refresh</button>
             </div>
+            <section id="taskProfileEndpointSection" class="task-profile-section">
+              <h4>Endpoint configuration</h4>
+              <p class="muted-copy">Configure endpoints here, including the built-in providers. Tasks use these shared settings for both primary and fallback models.</p>
+              <div class="task-profile-endpoint-picker">
+                <label class="host-behavior-field">Endpoint
+                  <select id="taskProfileEndpointSelect"><option value="">Choose an endpoint</option></select>
+                </label>
+                <button id="taskProfileAddEndpoint" class="secondary-button" type="button">Add Endpoint</button>
+              </div>
+              <div class="task-model-fields">
+                <label class="host-behavior-field">Endpoint name
+                  <input id="taskProfileEndpointName" type="text" maxlength="120" placeholder="Provider name">
+                </label>
+                <label class="host-behavior-field">Base URL
+                  <input id="taskProfileBaseUrl" type="url" maxlength="1000" placeholder="https://provider.example/v1">
+                </label>
+                <label class="host-behavior-field task-model-notes">API key
+                  <input id="taskProfileApiKey" type="password" autocomplete="off" maxlength="4096" placeholder="Provider API key">
+                </label>
+              </div>
+              <div class="task-profile-inline-actions">
+                <button id="taskProfileDiscover" class="secondary-button" type="button">Discover Models</button>
+                <span class="muted-copy">Discovered models are available for primary and fallback assignments.</span>
+              </div>
+              <button id="saveProviderEndpoints" class="primary-button" type="button">Save endpoints</button>
+            </section>
             <p class="muted-copy">Connect to Streamable HTTP MCP servers, discover their tools, and enable only the tools you intend to use. Credentials are stored in Axiom's runtime registry and are returned only to authenticated administrators.</p>
             <div class="task-profile-section">
               <div class="task-profile-endpoint-picker">
