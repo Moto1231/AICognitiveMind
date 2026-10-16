@@ -398,7 +398,10 @@
     const AUDIO_SILENCE_MS = 900;
     const AUDIO_SPEECH_THRESHOLD = 0.012;
     const SENSE_PAUSE_MS = 15_000;
-    const VISION_INTERVAL_MS = 3_000;
+    const VISION_INTERVAL_MS = 250;
+    const MOTION_PIXEL_DELTA = 22;
+    const MOTION_PIXEL_RATIO = 0.07;
+    const MOTION_CAPTURE_COOLDOWN_MS = 2_500;
     const DEFAULT_LOOK_SECONDS = 5;
     const MAX_LOOK_SECONDS = 30;
     let boundedLookActive = false;
@@ -1169,12 +1172,25 @@
       canvas.height = Math.max(1, Math.round(liveScene.videoHeight * scale));
       canvas.getContext("2d").drawImage(liveScene, 0, 0, canvas.width, canvas.height);
 
+      // Compare a tiny grayscale sample locally. Only frames with meaningful
+      // movement are uploaded; unchanged frames never leave the browser.
       const signature = frameSignature();
-      if (lastSuccessfulFrame) {
-        let difference = 0;
-        for (let i = 0; i < signature.length; i++) difference += Math.abs(signature[i] - lastSuccessfulFrame[i]);
-        if (difference / signature.length / 255 < 0.045) return;
+      if (lastFrameSignature) {
+        let changedPixels = 0;
+        for (let i = 0; i < signature.length; i++) {
+          if (Math.abs(signature[i] - lastFrameSignature[i]) >= MOTION_PIXEL_DELTA) changedPixels++;
+        }
+        lastFrameSignature = signature;
+        if (changedPixels / signature.length < MOTION_PIXEL_RATIO) return;
+        if (performance.now() - lastMotionCaptureAt < MOTION_CAPTURE_COOLDOWN_MS) return;
+      } else {
+        lastFrameSignature = signature;
+        setSenseStatus("vision", "Motion detection active; waiting for movement.", "success");
+        return;
       }
+      // Start the cooldown before the request so a slow or failed endpoint
+      // cannot cause repeated uploads while the same movement continues.
+      lastMotionCaptureAt = performance.now();
       sensoryRequestInFlight = true;
       let evidenceAccepted = false;
       try {
@@ -1193,7 +1209,6 @@
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
         evidenceAccepted = true;
         setSenseStatus("vision", "Frame saved and interpreted.", "success");
-        lastSuccessfulFrame = signature;
         if (!visionEnabled || generation !== sensoryLoopGeneration) return;
 
         const interpreted = await ingress.json();
@@ -1326,13 +1341,23 @@
         return Math.sqrt(sum / Math.max(samples.length, 1)) >= 0.008 && peak >= 0.06;
       } finally { await context.close(); }
     }
-    let lastSuccessfulFrame = null;
+    let lastFrameSignature = null;
+    let lastMotionCaptureAt = Number.NEGATIVE_INFINITY;
     function frameSignature() {
       const scratch = document.createElement("canvas");
-      scratch.width = 12; scratch.height = 8;
-      const context = scratch.getContext("2d");
-      context.drawImage(canvas, 0, 0, 12, 8);
-      return context.getImageData(0, 0, 12, 8).data;
+      scratch.width = 24;
+      scratch.height = 16;
+      const context = scratch.getContext("2d", { willReadFrequently: true });
+      context.drawImage(canvas, 0, 0, scratch.width, scratch.height);
+      const rgba = context.getImageData(0, 0, scratch.width, scratch.height).data;
+      const luminance = new Uint8Array(scratch.width * scratch.height);
+      for (let pixel = 0; pixel < luminance.length; pixel++) {
+        const offset = pixel * 4;
+        luminance[pixel] = Math.round(
+          rgba[offset] * 0.299 + rgba[offset + 1] * 0.587 + rgba[offset + 2] * 0.114
+        );
+      }
+      return luminance;
     }
 
     backToPortal?.addEventListener("click", (event) => {
