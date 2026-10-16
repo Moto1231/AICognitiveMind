@@ -759,8 +759,7 @@ function updateEndpointEditorState() {
   el.endpointCancelButton.disabled = !editing || busy;
   el.taskProfileDiscover.disabled = !editing || busy || !state.endpointDraft?.name
     || !/^https?:\/\/\S+$/i.test(state.endpointDraft?.base_url || "");
-  el.saveProviderEndpoints.disabled = !editing || busy || !endpointFormIsValid(state.endpointDraft)
-    || JSON.stringify(state.endpointDraft) === state.endpointEditBaseline;
+  el.saveProviderEndpoints.disabled = !editing || busy;
 }
 
 function editEndpoint() {
@@ -865,6 +864,7 @@ async function saveProviderEndpoints() {
   syncEndpointDraft();
   if (el.saveProviderEndpoints.disabled) return;
   const endpoint = state.endpointDraft;
+  if (!endpointFormIsValid(endpoint)) { toast("Enter endpoint name, provider name, valid URL, and model ID before saving", true); return; }
   const previousName = selectedEndpoint()?.name;
   state.integrationSaving = true;
   updateEndpointEditorState();
@@ -2236,7 +2236,7 @@ function updateMcpEditorState() {
   const server = state.mcpServerDraft;
   const valid = !!(server?.name && /^https?:\/\/\S+$/i.test(server?.url || ""));
   el.mcpDiscoverTools.disabled = !editing || busy || !valid;
-  el.saveMcpServers.disabled = !editing || busy || !valid || JSON.stringify(server) === state.mcpEditBaseline;
+  el.saveMcpServers.disabled = !editing || busy;
   el.mcpRunTool.disabled = editing || busy || !saved;
 }
 
@@ -2405,6 +2405,7 @@ async function saveMcpServers() {
   syncMcpServerForm();
   if (el.saveMcpServers.disabled) return;
   const server = state.mcpServerDraft;
+  if (!server?.name?.trim() || !/^https?:\/\/\S+$/i.test(server.url || "")) { toast("Enter server name and valid URL before saving", true); return; }
   state.integrationSaving = true;
   updateMcpEditorState();
   try {
