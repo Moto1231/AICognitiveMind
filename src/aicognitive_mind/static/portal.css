@@ -1050,3 +1050,10 @@ body {
 /* Skills icon: match the blue, light-outline treatment of the other admin artwork. */
 .admin-section-icon .skills-line-icon, .admin-form-icon .skills-line-icon { color:#60a5fa; stroke:#60a5fa; width:100%; height:auto; max-height:48px; }
 #skillsValidate { min-width:52px; padding-inline:10px; }
+
+/* Keep lower administration menu and content visible. */
+#adminView {padding-bottom:96px;}
+.admin-section-nav {align-content:start;overflow:visible;padding-bottom:12px;}
+#adminView .admin-grid {padding-bottom:36px;}
+.admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:#8cdfe9!important;color:#8cdfe9!important;stroke-width:1.1;}
+#clearMemoryFilters,#adminClearMemoryFilters {justify-self:end;align-self:end;margin-left:auto;}
