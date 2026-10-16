@@ -804,7 +804,7 @@ function openTaskProfile(task) {
     if (icon) detailIcon.appendChild(icon.cloneNode(true));
     else detailIcon.textContent = "◆";
   }
-  el.taskProfileRevision.textContent = "Revision: " + (behavior.revision || 1);
+  if (el.taskProfileRevision) el.taskProfileRevision.textContent = "";
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
