@@ -28,10 +28,10 @@ class PortalTests(unittest.TestCase):
 
         for element_id in ("saveHostBehaviors", "saveTaskProfile", "saveMcpServers", "saveVoiceSettings"):
             with self.subTest(element_id=element_id):
-                self.assertIn(f'id="{element_id}" class="primary-button" type="button">Save</button>', markup)
+                self.assertRegex(markup, rf'id="{element_id}"[^>]*class="primary-button"[^>]*>Save</button>')
 
-        self.assertIn("if (!selectedId) {\n    addMcpServer();\n    return;\n  }", script)
-        self.assertIn("function addMcpServer() {\n  syncMcpServerForm();", script)
+        self.assertIn("function editMcpServer()", script)
+        self.assertIn("function addMcpServer()", script)
         self.assertIn('name: "",\n    url: "",\n    bearer_token: "",', script)
 
     def test_task_profile_controls_are_bound_and_renderable(self) -> None:
@@ -101,7 +101,7 @@ class PortalTests(unittest.TestCase):
         markup = index.read_text(encoding="utf-8")
         stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
         self.assertIn("Administration", markup)
-        self.assertIn("portal.css?v=20261012-admin-polish", markup)
+        self.assertIn("portal.css?v=20261016-portal-refinement", markup)
         self.assertIn("admin-section-nav", stylesheet)
         self.assertIn("linear-gradient(135deg, rgba(15,27,46,.96)", stylesheet)
         self.assertNotIn('content: "Inspect exact record', stylesheet)

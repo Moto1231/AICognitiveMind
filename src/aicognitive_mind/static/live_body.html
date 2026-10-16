@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom — Live Body</title>
-  <link rel="stylesheet" href="/static/body.css">
+  <link rel="stylesheet" href="/static/body.css?v=20261016-sensory-icons">
 
   <script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script>
 </head>
@@ -29,7 +29,7 @@
   <main>
     <nav class="page-bar" aria-label="Body navigation">
       <div class="page-links">
-        <a href="/portal" id="backToPortal" aria-label="Back to portal">← Portal</a>
+        <a href="/portal" id="backToPortal" aria-label="Return to portal">Return</a>
       </div>
       <div class="page-links">
         <div id="connectedHostStatus" class="host-status" data-state="loading" aria-live="polite">Checking connected hosts…</div>
@@ -37,7 +37,6 @@
     </nav>
 
     <section class="sense-panel" aria-label="Body controls">
-      <span class="sense-label">Controls</span>
       <button id="visionToggle" class="senses-toggle" type="button" aria-pressed="false">Vision Off</button>
       <button id="hearingToggle" class="senses-toggle" type="button" aria-pressed="false">Hearing Off</button>
       <button id="voiceToggle" class="senses-toggle" type="button" aria-pressed="true">Voice On</button>
@@ -54,10 +53,10 @@
 
     <section class="sense-status-grid" aria-label="Sensory status">
       <div id="visionSenseStatus" class="sense-status" data-state="idle">
-        <strong>Vision</strong><span id="visionSenseStatusText">Waiting for senses to start.</span>
+        <svg class="sense-status-icon" viewBox="0 0 40 40" role="img" aria-label="Vision"><title>Vision</title><path d="M4 20q16-20 32 0-16 20-32 0z M26 20a6 6 0 1 1-12 0 6 6 0 0 1 12 0"/></svg><span id="visionSenseStatusText">Waiting for senses to start.</span>
       </div>
       <div id="audioSenseStatus" class="sense-status" data-state="idle">
-        <strong>Audio</strong><span id="audioSenseStatusText">Waiting for senses to start.</span>
+        <svg class="sense-status-icon" viewBox="0 0 40 40" role="img" aria-label="Audio"><title>Audio</title><path d="M15 12a5 5 0 0 1 10 0v9a5 5 0 0 1-10 0z M10 18a10 10 0 0 0 20 0 M20 28v6 M13 34h14"/></svg><span id="audioSenseStatusText">Waiting for senses to start.</span>
       </div>
     </section>
 

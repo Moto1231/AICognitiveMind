@@ -1,0 +1,28 @@
+/* Compact actions shared by the portal, account, and OAuth login forms. */
+.auth-page { box-sizing: border-box; margin: 0; padding: 20px; }
+.auth-page main { box-sizing: border-box; max-width: 100%; }
+.auth-page button,
+.auth-page a[data-icon-button] {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: 16px 8px 0 0;
+  padding: 8px;
+  border: 1px solid #478af0;
+  border-radius: 9px;
+  background: #1e5aca;
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+}
+.auth-page button:hover,
+.auth-page a[data-icon-button]:hover { background: #2569e0; border-color: #83b7ff; }
+.auth-page button:focus-visible,
+.auth-page a[data-icon-button]:focus-visible { outline: 2px solid #83dffe; outline-offset: 3px; }
+.auth-page button:disabled { opacity: .5; cursor: not-allowed; }
+.auth-page .axiom-button-icon { width: 26px; height: 26px; color: #e3f4ff; }

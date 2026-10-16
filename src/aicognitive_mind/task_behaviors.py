@@ -13,6 +13,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel, Field, field_validator
 
 from aicognitive_mind.task_model_assignments import TASK_LABELS
+from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 
 TaskBehaviorKind = Literal[
     "vision", "audio", "audio_voice", "coding", "image_generation", "summarization",
@@ -23,7 +24,7 @@ TaskBehaviorKind = Literal[
 # This mapping is code-owned. It is never loaded from records or accepted from an API.
 TASK_FOUNDATIONS: dict[TaskBehaviorKind, str] = {
     "reasoning": (
-        "You are Axiom's reasoning task, running under the connected host's reasoning engine. "
+        "You are Axiom's reasoning task. "
         "Use the supplied Mind identity, recalled context, evidence, and interaction contract. "
         "Keep identity and durable-memory ownership with Axiom; distinguish established context "
         "from inference and follow the host's tool and completion protocol."
@@ -174,11 +175,12 @@ class TaskPromptAssembler:
             "IMMUTABLE AXIOM TASK FOUNDATION (code-owned):",
             TASK_FOUNDATIONS[context.task],
         ]
-        if profile.enabled and profile.instructions:
+        selected = await HostBehaviorRegistry(self.registry.records).selected(context.task)
+        if selected:
             layers.extend([
                 "",
                 f"CONFIGURABLE TASK BEHAVIOR ({profile.name}, revision {profile.revision}):",
-                profile.instructions,
+                *[f"- [{item.id}] {item.instruction}" for item in selected],
             ])
         layers.extend([
             "",

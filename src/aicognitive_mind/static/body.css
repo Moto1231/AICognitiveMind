@@ -33,6 +33,14 @@ body.body-live .page-bar {
 
 body.body-live .page-links { display: flex; gap: .6rem; flex-wrap: wrap; }
 
+/* Explicit rows keep the conversation filling the page when the audio meter is hidden. */
+body.body-live .page-bar { grid-row: 1; }
+body.body-live .sense-panel { grid-row: 2; }
+body.body-live #stage { grid-row: 3; }
+body.body-live .audio-meter { grid-row: 4; }
+body.body-live .sense-status-grid { grid-row: 5; }
+body.body-live .interaction-panel { grid-row: 6; }
+
 body.body-live .page-links a {
       display: inline-flex;
       align-items: center;
@@ -96,7 +104,7 @@ body.body-live .sense-status-grid { display: grid; grid-template-columns: repeat
 
 body.body-live .sense-status { min-width: 0; padding: .75rem .85rem; border: 1px solid #373a44; border-radius: 10px; background: #181a20; }
 
-body.body-live .sense-status strong { display: block; margin-bottom: .3rem; font-size: .86rem; }
+body.body-live .sense-status-icon { display: block; width: 30px; height: 30px; margin-bottom: .3rem; fill: none; stroke: #83dffe; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 3px rgba(70,182,255,.35)); }
 
 body.body-live .sense-status span { display: block; color: #c8ccd5; font-size: .82rem; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
 
@@ -128,7 +136,7 @@ body.body-live main { padding: .65rem; gap: .5rem; grid-template-rows: auto auto
 
 body.body-live .page-bar { margin: 0; }
 
-body.body-live .sense-status-grid { grid-template-columns: minmax(0, 1fr); max-height: 5.5rem; }
+body.body-live .sense-status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 5.5rem; }
 
 body.body-live .sense-status { padding: .45rem .65rem; }
 
@@ -256,7 +264,7 @@ body.body-live .sense-panel {
       padding: .8rem 1rem;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: center;
       gap: 1rem;
       background: #181a20;
       border-radius: 14px;
@@ -268,7 +276,10 @@ body.body-live .sense-label {
     }
 
 body.body-live .senses-toggle {
-      min-width: 118px;
+      min-width: 76px;
+      width: 76px;
+      height: 48px;
+      padding: 8px;
       display: inline-flex;
       align-items: center;
       justify-content: center;

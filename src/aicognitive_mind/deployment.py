@@ -106,12 +106,12 @@ async def _oauth_signup_post(request: Request):
 async def _public_entry(_request: Request):
     return HTMLResponse("""<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Axiom</title><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
-<body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0">
+<title>Axiom</title><link rel="stylesheet" href="/static/auth.css?v=20261016-compact-actions"><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
+<body class="auth-page" style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0">
 <main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">
 <h1>Axiom</h1><p>Connect to an existing Axiom account or create a new Genesis mind.</p>
-<a href="/signup" data-icon-button style="display:block;text-align:center;padding:12px;margin-top:18px;border-radius:8px;background:#2563eb;color:white;text-decoration:none">Create new account</a>
-<a href="/portal" data-icon-button style="display:block;text-align:center;padding:12px;margin-top:12px;border-radius:8px;background:#374151;color:white;text-decoration:none">Existing Axiom</a>
+<a href="/signup" data-icon-button>Create new account</a>
+<a href="/portal" data-icon-button>Existing Axiom</a>
 </main></body></html>""")
 
 
@@ -165,17 +165,17 @@ class _AuthDiagnosticMiddleware:
 
 async def _portal_login_page(_request: Request):
     return HTMLResponse("""<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Axiom Login</title><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
-<body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0">
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Axiom Login</title><link rel="stylesheet" href="/static/auth.css?v=20261016-compact-actions"><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
+<body class="auth-page" style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh;margin:0">
 <main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">
 <h1>Sign in to Axiom</h1><p id="error" style="color:#fca5a5"></p>
 <form id="login"><label>Username<input id="username" autocomplete="username" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
 <label>Password<input id="password" type="password" autocomplete="current-password" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
-<button style="width:100%;padding:12px;margin-top:18px" type="submit">Sign in</button></form>
-<p><button id="show-signup" type="button" style="width:100%;padding:12px;margin-top:12px">Create a new Axiom account</button></p>
+<button type="submit">Sign in</button></form>
+<p><button id="show-signup" type="button">Create a new Axiom account</button></p>
 <form id="signup" hidden><label>New username<input id="new-username" autocomplete="username" minlength="3" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
 <label>New password<input id="new-password" type="password" autocomplete="new-password" minlength="8" required style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0"></label>
-<button style="width:100%;padding:12px;margin-top:18px" type="submit">Create account</button></form>
+<button type="submit">Create account</button></form>
 <p id="signup-status" style="color:#93c5fd"></p>
 <script>
 document.getElementById('show-signup').addEventListener('click', () => {
