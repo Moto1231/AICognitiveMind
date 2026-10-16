@@ -2058,6 +2058,31 @@ async function refreshDiagnostics() {
   try {
     const result = await api("/v1/admin/diagnostics", {}, true);
     context.textContent = JSON.stringify(result.current_state, null, 2);
+    const cognitive = document.getElementById("cognitiveStateSummary");
+    if (cognitive) {
+      cognitive.replaceChildren();
+      const fields = result.current_state?.fields || {};
+      const questions = [
+        ["Who Am I?", "identity"], ["What Is My Mood?", "mood"],
+        ["Where Am I?", "locality"], ["Who Is Present?", "who_is_present"],
+        ["Who Is Speaking?", "who_is_speaking"],
+        ["What Is the Current Context?", "current_context"],
+      ];
+      for (const [label, key] of questions) {
+        const item = fields[key] || {};
+        const row = document.createElement("div");
+        row.className = "summary-row";
+        const title = document.createElement("span");
+        title.textContent = label;
+        const detail = document.createElement("strong");
+        const value = item.value;
+        detail.textContent = value == null ? "Unknown" :
+          typeof value === "string" ? value : JSON.stringify(value);
+        detail.title = [item.status, item.source, item.observed_at].filter(Boolean).join(" | ");
+        row.append(title, detail);
+        cognitive.append(row);
+      }
+    }
     const samples = result.performance?.samples || [];
     performance.textContent = samples.length ? samples.map(x =>
       formatBrowserDateTime(x.time) + " | " + x.duration_ms + " ms | " + x.status + " | " + x.method + " " + x.route
