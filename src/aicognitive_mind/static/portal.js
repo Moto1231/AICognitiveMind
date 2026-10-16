@@ -716,7 +716,7 @@ function renderEndpointModelStatus(endpoint) {
   const source = endpoint.model_capability_sources?.[model] || "";
   el.endpointModelStatus.textContent = model
     ? `${model}${capabilities.length ? " · " + capabilities.join(" · ") : " · No capability metadata reported"}`
-    : `${endpoint.models?.length || 0} discovered model(s). Select or enter the model saved with this endpoint.`;
+    : `${endpoint.models?.length || 0} discovered models`;
   if (source === "provider_metadata") {
     el.endpointModelStatus.append(document.createTextNode(" · Provider metadata"));
   } else if (/^https:\/\/developers\.openai\.com\/api\/docs\/models\//.test(source)) {
