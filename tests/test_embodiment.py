@@ -480,7 +480,7 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Typed interaction enters", markup)
         self.assertNotIn("Modify Genesis", markup)
         self.assertIn('id="interactionMessage"', markup)
-        self.assertIn('href="/portal" id="backToPortal"', markup)
+        self.assertIn('href="/static/index.html" id="backToPortal"', markup)
         self.assertNotIn('empty.textContent = "Talk to the Mind."', markup)
         self.assertNotIn('id="evidenceArtifact"', markup)
         self.assertNotIn('id="talkToggle"', markup)

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom — Live Body</title>
-  <link rel="stylesheet" href="/static/body.css?v=20261016-sensory-icons">
+  <link rel="stylesheet" href="/static/body.css?v=20261016-return-control">
 
   <script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script>
 </head>
@@ -29,7 +29,7 @@
   <main>
     <nav class="page-bar" aria-label="Body navigation">
       <div class="page-links">
-        <a href="/portal" id="backToPortal" aria-label="Return to portal">Return</a>
+        
       </div>
       <div class="page-links">
         <div id="connectedHostStatus" class="host-status" data-state="loading" aria-live="polite">Checking connected hosts…</div>
@@ -37,6 +37,7 @@
     </nav>
 
     <section class="sense-panel" aria-label="Body controls">
+      <a href="/static/index.html" id="backToPortal" class="senses-toggle body-return-control" aria-label="Return to Axiom portal">Return</a>
       <button id="visionToggle" class="senses-toggle" type="button" aria-pressed="false">Vision Off</button>
       <button id="hearingToggle" class="senses-toggle" type="button" aria-pressed="false">Hearing Off</button>
       <button id="voiceToggle" class="senses-toggle" type="button" aria-pressed="true">Voice On</button>

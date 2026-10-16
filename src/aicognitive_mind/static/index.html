@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261016-separated-sections">
+  <link rel="stylesheet" href="/static/portal.css?v=20261016-header-polish">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -157,7 +157,7 @@
           <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-speech.svg" alt="" width="48" height="52"></span><span>Speech Settings</span></button>
           <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-task-profiles.svg" alt="" width="48" height="52"></span><span>Task Profiles</span></button>
           <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon admin-section-icon-mcp" aria-hidden="true"><img src="/static/admin-mcp.svg" alt="" width="48" height="49"></span><span>Endpoints, Servers &amp; Tools</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true">🧩</span><span>Skills</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2.8"><path d="M18 5h12v9a6 6 0 1 1 8 8h5v12H33a6 6 0 1 1-8 8H13V30a6 6 0 1 1-8-8V14h13z"/></svg></span><span>Skills</span></button>
           <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-memories.svg" alt="" width="48" height="52"></span><span>Memories</span></button>
           <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-journals.svg" alt="" width="48" height="52"></span><span>Journals</span></button>
           <button id="adminRefreshButton" class="secondary-button" type="button" aria-label="Refresh" title="Refresh">Refresh</button>
@@ -165,7 +165,7 @@
 
         <div class="admin-grid">
           <article id="skillsSection" class="panel hidden">
-            <div class="panel-heading"><div><h3>Skills</h3><p class="muted-copy">GitHub-managed skill drafts. Preparing a release downloads SKILL.md; installing in ChatGPT is a separate step.</p></div><button type="button" class="secondary-button" id="skillsRefresh">Refresh</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3><p class="muted-copy">GitHub-managed skill drafts. Preparing a release downloads SKILL.md; installing in ChatGPT is a separate step.</p></div><button type="button" class="secondary-button" id="skillsRefresh">Refresh</button></div>
             <section class="overview-group">
               <h4>Skill Drafts</h4>
               <label class="host-behavior-field">Existing drafts<select id="skillsList"><option value="">New skill</option></select></label>
@@ -254,7 +254,7 @@
 
           <article id="mcpSection" class="panel admin-behavior-panel hidden">
             <div class="panel-heading">
-              <div><h3>Endpoints, Servers &amp; Tools</h3></div>
+              <div><p class="eyebrow">EXTERNAL INTEGRATION</p><h3>Endpoints, Servers &amp; Tools</h3></div>
               <button id="refreshMcpServers" class="secondary-button" type="button">Refresh</button>
             </div>
             <section id="taskProfileEndpointSection" class="task-profile-section integration-editor" aria-labelledby="endpointsHeading">
@@ -352,7 +352,7 @@
             <div class="panel-heading">
               <div>
                 
-                <h3>Durable Memory</h3>
+                <p class="eyebrow">MEMORY</p><h3>Durable Memory</h3>
               </div>
               <button id="adminMemoryRefreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
@@ -419,7 +419,7 @@
           <article id="journalsSection" class="panel admin-journal-panel hidden">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">HISTORY</p>
+                <p class="eyebrow">MEMORY</p>
                 <h3>History</h3>
               </div>
               <button id="journalRefreshButton" class="secondary-button" type="button">Refresh</button>

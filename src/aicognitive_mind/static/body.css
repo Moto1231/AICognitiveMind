@@ -426,3 +426,6 @@ body.body-mouth #status { white-space: pre-wrap; background: #181a20; padding: .
 @media (max-width: 700px) {
 body.body-mouth .row { grid-template-columns: 1fr; }
 }
+
+/* Portal return lives beside sensory controls without altering session state. */
+.sense-panel .body-return-control { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; white-space:nowrap; }
