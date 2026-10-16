@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261016-admin-compact">
+  <link rel="stylesheet" href="/static/portal.css?v=20261016-clarity">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -175,7 +175,6 @@
             </section>
             <section class="overview-group">
               <h4>Prepare ChatGPT Release</h4>
-              <p class="muted-copy">Export the validated SKILL.md for manual installation or update in ChatGPT. This does not change ChatGPT's installed skills.</p>
               <button id="skillsPrepare" type="button" class="secondary-button">Prepare Release</button>
               <p id="skillsStatus" role="status" aria-live="polite"></p>
             </section>
@@ -209,7 +208,6 @@
               <section id="taskProfileAssignmentSection" class="task-profile-section">
                 <h4>Endpoints</h4>
                 <label class="host-behavior-field">Primary endpoint<select id="taskProviderSelect"></select></label>
-                <p class="muted-copy">Each endpoint includes its saved model. Configure them in Endpoints, Servers &amp; Tools.</p>
                 <div class="task-model-fields">
                   <label id="taskProfileStandardModelField" class="host-behavior-field hidden">Model ID
                     <select id="taskProfileModel" aria-label="Model ID"><option value="">Discover models or choose a model</option></select>
@@ -222,20 +220,16 @@
                   </label>
                   <div class="task-fallbacks-editor">
                     <div class="panel-heading"><h4>Fallback endpoints</h4><button id="taskProfileAddFallback" class="secondary-button" type="button">Add fallback</button></div>
-                    <p class="muted-copy">Endpoints are attempted in order.</p>
                     <div id="taskProfileFallbackList" class="task-fallback-list"></div>
                   </div>
                 </div>
               </section>
               <section class="task-profile-section task-profile-foundation-section">
                 <h4>Immutable Foundation</h4>
-                <label class="host-behavior-field">Code-owned instructions
-                  <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
-                </label>
+                <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
               </section>
               <section class="task-profile-section task-profile-behaviors-section">
                  <div class="panel-heading task-profile-behavior-heading"><h4>Behaviors</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
-                <p>Choose behaviors to use on this Task</p>
                 <div id="taskProfileBehaviorSelection" class="task-behavior-selection"></div>
                 
                 <label class="host-behavior-field hidden">Behavior name
@@ -259,7 +253,6 @@
             </div>
             <section id="taskProfileEndpointSection" class="task-profile-section integration-editor" aria-labelledby="endpointsHeading">
               <h4 id="endpointsHeading">Endpoints</h4>
-              <p class="muted-copy">Save each endpoint with its provider, connection details, and one model. Tasks select the endpoint for primary and fallback use.</p>
               <div class="task-profile-endpoint-picker">
                 <label class="host-behavior-field">Endpoint
                   <select id="taskProfileEndpointSelect"><option value="">Choose an endpoint</option></select>
@@ -301,7 +294,6 @@
             </section>
             <section class="task-profile-section integration-editor" aria-labelledby="mcpServersHeading">
               <h4 id="mcpServersHeading">MCP Servers</h4>
-              <p class="muted-copy">Connect a Streamable HTTP MCP server, then discover and select its tools.</p>
               <div class="task-profile-endpoint-picker">
                 <label class="host-behavior-field">Configured server
                   <select id="mcpServerSelect"><option value="">Choose an MCP server</option></select>
