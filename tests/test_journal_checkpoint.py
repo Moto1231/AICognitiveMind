@@ -9,6 +9,26 @@ from aicognitive_mind.surreal_storage import SurrealJournalStore
 
 
 class InMemoryJournalCheckpointTests(unittest.IsolatedAsyncioTestCase):
+    async def test_latest_checkpoint_uses_last_append_when_event_times_tie(self) -> None:
+        store = InMemoryJournalStore()
+        timestamp = datetime(2026, 10, 16, tzinfo=UTC)
+        for revision in (1, 2):
+            await store.append(
+                JournalEntry(
+                    kind=JournalKind.CHECKPOINT,
+                    occurred_at=timestamp,
+                    experience={
+                        "checkpoint_type": "current_state_ledger",
+                        "state_ledger": {"revision": revision},
+                    },
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+
+        latest = await store.latest_checkpoint("current_state_ledger")
+
+        self.assertEqual(latest[0].experience["state_ledger"]["revision"], 2)
+
     async def test_latest_checkpoint_matches_exact_kind_and_type_and_uses_event_time(self) -> None:
         store = InMemoryJournalStore()
         base = datetime(2026, 10, 16, tzinfo=UTC)

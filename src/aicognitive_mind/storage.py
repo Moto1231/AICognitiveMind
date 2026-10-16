@@ -305,10 +305,12 @@ class InMemoryJournalStore:
         return deepcopy(matching[offset : offset + limit]), len(matching)
 
     async def latest_checkpoint(self, checkpoint_type: str) -> list[JournalEntry]:
+        # Equal event timestamps can occur within one clock tick. Prefer the
+        # last appended checkpoint while still selecting the latest event time.
         entry = max(
             (
                 entry
-                for entry in self._entries
+                for entry in reversed(self._entries)
                 if entry.kind.value == "checkpoint"
                 and entry.experience.get("checkpoint_type") == checkpoint_type
             ),
