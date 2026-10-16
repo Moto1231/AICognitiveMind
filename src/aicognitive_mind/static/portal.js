@@ -796,6 +796,14 @@ function openTaskProfile(task) {
   el.taskProfileVoiceModelField.classList.add("hidden");
   el.taskProfileVoiceReferenceField.classList.toggle("hidden", task !== "audio_voice");
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
+  const detailIcon = document.getElementById?.("taskProfileDetailIcon");
+  if (detailIcon) {
+    const listCard = [...el.taskProfileList.querySelectorAll(".task-profile-card")].find(card => card.querySelector("strong")?.textContent === el.taskProfileTitle.textContent);
+    const icon = listCard?.querySelector(".axiom-button-icon");
+    detailIcon.replaceChildren();
+    if (icon) detailIcon.appendChild(icon.cloneNode(true));
+    else detailIcon.textContent = "◆";
+  }
   el.taskProfileRevision.textContent = "Revision: " + (behavior.revision || 1);
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
   el.taskProfileInstructions.value = behavior.instructions || "";
@@ -2078,7 +2086,7 @@ function decorateAdminFormTitles() {
     const section = document.getElementById(id);
     if (!source || !section) continue;
     const headings = [section.querySelector(".panel-heading")];
-    if (name === "tasks") headings.push(section.querySelector(".task-profile-editor-heading"));
+    // Individual task forms render their own task-specific icon instead of the menu icon.
     for (const heading of headings.filter(Boolean)) {
       if (heading.querySelector(":scope > .admin-form-icon")) continue;
       const icon = source.cloneNode(true);

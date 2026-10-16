@@ -1019,3 +1019,14 @@ body {
 .task-profile-card.axiom-icon-button > strong { color:#60a5fa; font-size:13px; }
 .voice-slider-field input[type="range"] { margin-top:12px; }
 .task-profile-section > p, .integration-editor > p, .integration-subsection .muted-copy, #voiceSection > p.muted-copy, .task-fallbacks-editor > p, .task-profile-card > span, .task-profile-card > small { font-size:8px; line-height:1.5; }
+
+/* Distinct task detail sections and appropriately sized list icons */
+.task-profile-card.axiom-icon-button > .axiom-button-icon { width:28px; height:28px; }
+.task-profile-card.axiom-icon-button { min-height:100px; gap:8px; padding:12px; }
+.task-profile-detail-identity { display:flex; align-items:center; gap:16px; min-width:0; }
+.task-detail-icon { width:68px; height:68px; flex:0 0 68px; display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:48px; }
+.task-detail-icon > .axiom-button-icon { width:60px; height:60px; }
+#taskProfileEditor > .task-profile-section { margin-top:16px; padding:22px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+#taskProfileEditor > .task-profile-section > h4 { font-size:15px; color:var(--text); }
+#taskProfileEditor > .task-profile-section + .task-profile-section { margin-top:18px; }
+@media(max-width:560px) { #taskProfileEditor > .task-profile-section {padding:14px;} .task-detail-icon {width:48px;height:48px;flex-basis:48px;} .task-detail-icon > .axiom-button-icon {width:44px;height:44px;} }
