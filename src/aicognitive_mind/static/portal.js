@@ -2073,6 +2073,7 @@ const adminSectionIds = {
   mcp: "mcpSection",
   tasks: "tasksSection",
   behaviors: "behaviorsSection",
+  skills: "skillsSection",
   memories: "memoriesSection",
   journals: "journalsSection",
   overview: "overviewSection",
@@ -2496,6 +2497,7 @@ function showAdminSection(sectionName) {
   if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
   if (sectionName === "tasks") renderTaskProfiles();
   if (sectionName === "devices") refreshDeviceInventory();
+  if (sectionName === "skills") refreshSkillDrafts();
   if (sectionName === "overview") refreshDiagnostics();
   if (sectionName === "mcp" && state.adminAuthorized) refreshIntegrations();
 }
@@ -2691,3 +2693,63 @@ if (navigator.mediaDevices?.addEventListener) {
 // even if an admin configuration request fails or is slow.
 renderTaskProfiles();
 refresh();
+
+let skillDraftSha = null;
+async function refreshSkillDrafts() {
+  const list = document.getElementById("skillsList");
+  try {
+    const data = await api("/v1/admin/skills", {}, true);
+    list.replaceChildren(new Option("New skill", ""));
+    for (const item of data.items) list.add(new Option(item.slug, item.slug));
+    document.getElementById("skillsStatus").textContent = "Drafts loaded from GitHub.";
+  } catch (error) { document.getElementById("skillsStatus").textContent = error.message; }
+}
+document.getElementById("skillsRefresh")?.addEventListener("click", refreshSkillDrafts);
+document.getElementById("skillsList")?.addEventListener("change", async event => {
+  const slug = event.target.value;
+  skillDraftSha = null;
+  document.getElementById("skillsSlug").value = slug;
+  document.getElementById("skillsContent").value = "";
+  if (!slug) return;
+  try {
+    const item = await api("/v1/admin/skills/" + encodeURIComponent(slug), {}, true);
+    skillDraftSha = item.sha;
+    document.getElementById("skillsContent").value = item.content;
+  } catch (error) { document.getElementById("skillsStatus").textContent = error.message; }
+});
+function skillPayload() {
+  return { slug: document.getElementById("skillsSlug").value.trim(), content: document.getElementById("skillsContent").value, sha: skillDraftSha };
+}
+document.getElementById("skillsValidate")?.addEventListener("click", async () => {
+  const status = document.getElementById("skillsStatus");
+  try {
+    const result = await api("/v1/admin/skills/validate", {method:"POST",body:JSON.stringify(skillPayload())}, true);
+    status.textContent = result.valid ? "SKILL.md validation passed." : result.errors.join("; ");
+  } catch (error) { status.textContent = error.message; }
+});
+document.getElementById("skillsSave")?.addEventListener("click", async () => {
+  const status = document.getElementById("skillsStatus");
+  try {
+    const payload = skillPayload();
+    const result = await api("/v1/admin/skills/" + encodeURIComponent(payload.slug), {method:"PUT",body:JSON.stringify(payload)}, true);
+    skillDraftSha = result.sha;
+    status.textContent = "Saved draft to GitHub commit " + result.commit.slice(0,8) + ". Not published to ChatGPT.";
+    await refreshSkillDrafts();
+    document.getElementById("skillsList").value = payload.slug;
+  } catch (error) { status.textContent = error.message; }
+});
+document.getElementById("skillsPrepare")?.addEventListener("click", async () => {
+  const status = document.getElementById("skillsStatus");
+  try {
+    const payload = skillPayload();
+    const check = await api("/v1/admin/skills/validate", {method:"POST",body:JSON.stringify(payload)}, true);
+    if (!check.valid) { status.textContent = check.errors.join("; "); return; }
+    const markdown = payload.content;
+    const blob = new Blob([markdown], {type:"text/markdown"});
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = payload.slug + "-SKILL.md";
+    anchor.click(); URL.revokeObjectURL(url);
+    status.textContent = "Release file prepared. Install or update it in ChatGPT manually.";
+  } catch (error) { status.textContent = error.message; }
+});

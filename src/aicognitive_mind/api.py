@@ -11,6 +11,10 @@ import hmac
 import logging
 import os
 import secrets
+import json
+import re
+import urllib.request
+import urllib.error
 import time as time_module
 from collections import deque
 from collections.abc import AsyncIterator
@@ -1630,6 +1634,115 @@ async def admin_backup(request: Request) -> Response:
             "Cache-Control": "private, no-store",
         },
     )
+
+
+
+class SkillDraftPayload(BaseModel):
+    slug: str = Field(min_length=1, max_length=64)
+    content: str = Field(min_length=1, max_length=200000)
+    sha: str | None = None
+
+
+def _skill_github_call(path: str, method: str = "GET", payload: dict[str, Any] | None = None) -> dict[str, Any] | list[Any]:
+    token = os.environ.get("AXIOM_GITHUB_TOKEN")
+    repository = os.environ.get("AXIOM_GITHUB_REPOSITORY", "Moto1231/AICognitiveMind")
+    if not token or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+        raise HTTPException(status_code=503, detail="GitHub Skills integration requires AXIOM_GITHUB_TOKEN and a valid repository")
+    url = "https://api.github.com/repos/" + repository + "/" + path
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(url, data=data, method=method, headers={
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json",
+        "User-Agent": "Axiom-Skills-Admin",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise HTTPException(status_code=404, detail="Skill not found") from exc
+        if exc.code in (409, 422):
+            raise HTTPException(status_code=409, detail="GitHub revision conflict or invalid update") from exc
+        raise HTTPException(status_code=502, detail="GitHub Skills request failed") from exc
+    except (TimeoutError, urllib.error.URLError) as exc:
+        raise HTTPException(status_code=502, detail="GitHub Skills connection failed") from exc
+
+
+def _validate_skill_content(content: str) -> list[str]:
+    errors = []
+    if not content.startswith("---\n"):
+        errors.append("SKILL.md must begin with YAML frontmatter (---)")
+    else:
+        parts = content.split("---", 2)
+        header = parts[1] if len(parts) > 2 else ""
+        if not re.search(r"(?m)^name:\s*\S+", header):
+            errors.append("Frontmatter requires name")
+        if not re.search(r"(?m)^description:\s*\S+", header):
+            errors.append("Frontmatter requires description")
+    if len(content.encode("utf-8")) > 200000:
+        errors.append("Skill exceeds 200 KB")
+    return errors
+
+
+@app.get("/v1/admin/skills")
+async def list_admin_skills(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    try:
+        result = await asyncio.to_thread(_skill_github_call, "contents/skills/drafts")
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return {"items": []}
+        raise
+    return {"items": [{"slug": item["name"], "path": item["path"]} for item in result
+            if isinstance(item, dict) and item.get("type") == "dir"]}
+
+
+@app.get("/v1/admin/skills/{slug}")
+async def get_admin_skill(slug: str, request: Request) -> dict[str, Any]:
+    require_admin(request)
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
+        raise HTTPException(status_code=400, detail="Invalid skill slug")
+    result = await asyncio.to_thread(_skill_github_call, f"contents/skills/drafts/{slug}/SKILL.md")
+    return {"slug": slug, "sha": result["sha"], "content": base64.b64decode(result["content"]).decode("utf-8")}
+
+
+@app.post("/v1/admin/skills/validate")
+async def validate_admin_skill(payload: SkillDraftPayload, request: Request) -> dict[str, Any]:
+    require_admin(request)
+    return {"valid": not (errors := _validate_skill_content(payload.content)), "errors": errors}
+
+
+@app.put("/v1/admin/skills/{slug}")
+async def save_admin_skill(slug: str, payload: SkillDraftPayload, request: Request) -> dict[str, Any]:
+    require_admin(request)
+    if slug != payload.slug or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
+        raise HTTPException(status_code=400, detail="Invalid skill slug")
+    errors = _validate_skill_content(payload.content)
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+    body: dict[str, Any] = {
+        "message": "Update Axiom skill draft: " + slug,
+        "content": base64.b64encode(payload.content.encode("utf-8")).decode("ascii"),
+    }
+    if payload.sha:
+        body["sha"] = payload.sha
+    result = await asyncio.to_thread(_skill_github_call, f"contents/skills/drafts/{slug}/SKILL.md", "PUT", body)
+    return {"slug": slug, "sha": result["content"]["sha"], "commit": result["commit"]["sha"], "status": "draft"}
+
+
+@app.post("/v1/admin/skills/{slug}/prepare")
+async def prepare_admin_skill(slug: str, request: Request) -> Response:
+    require_admin(request)
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
+        raise HTTPException(status_code=400, detail="Invalid skill slug")
+    result = await asyncio.to_thread(_skill_github_call, f"contents/skills/drafts/{slug}/SKILL.md")
+    content = base64.b64decode(result["content"])
+    errors = _validate_skill_content(content.decode("utf-8"))
+    if errors:
+        raise HTTPException(status_code=422, detail=errors)
+    return Response(content=content, media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{slug}-SKILL.md"', "Cache-Control": "no-store"})
 
 
 @app.get("/v1/admin/status")
