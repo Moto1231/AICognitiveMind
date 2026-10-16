@@ -1046,3 +1046,7 @@ body {
 #skillsSection .admin-form-icon {color:var(--accent);font-size:38px;}
 #skillsSection .admin-form-icon svg {width:65px;height:65px;}
 #skillsSection .panel-heading .eyebrow,#mcpSection .panel-heading .eyebrow,#memoriesSection .panel-heading .eyebrow,#journalsSection .panel-heading .eyebrow {color:var(--accent);}
+
+/* Skills icon: match the blue, light-outline treatment of the other admin artwork. */
+.admin-section-icon .skills-line-icon, .admin-form-icon .skills-line-icon { color:#60a5fa; stroke:#60a5fa; width:100%; height:auto; max-height:48px; }
+#skillsValidate { min-width:52px; padding-inline:10px; }
