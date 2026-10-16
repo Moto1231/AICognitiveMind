@@ -796,7 +796,7 @@ function openTaskProfile(task) {
   el.taskProfileVoiceModelField.classList.add("hidden");
   el.taskProfileVoiceReferenceField.classList.toggle("hidden", task !== "audio_voice");
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
-  const detailIcon = document.getElementById("taskProfileDetailIcon");
+  const detailIcon = document.getElementById?.("taskProfileDetailIcon");
   if (detailIcon) {
     const listCard = [...el.taskProfileList.querySelectorAll(".task-profile-card")].find(card => card.querySelector("strong")?.textContent === el.taskProfileTitle.textContent);
     const icon = listCard?.querySelector(".axiom-button-icon");
