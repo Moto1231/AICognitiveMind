@@ -1019,3 +1019,9 @@ body {
 .task-profile-card.axiom-icon-button > strong { color:#60a5fa; font-size:13px; }
 .voice-slider-field input[type="range"] { margin-top:12px; }
 .task-profile-section > p, .integration-editor > p, .integration-subsection .muted-copy, #voiceSection > p.muted-copy, .task-fallbacks-editor > p, .task-profile-card > span, .task-profile-card > small { font-size:8px; line-height:1.5; }
+
+/* Admin hierarchy / form-specific icons */
+.diagnostics-divider { height:1px; background:var(--line); margin:28px 0 24px; }
+#overviewSection > .admin-runtime-setting { margin-top:18px; }
+.task-profile-card.axiom-icon-button > .axiom-button-icon { width:34px; height:34px; }
+#taskProfileFormIcon { display:inline-flex; vertical-align:middle; font-size:56px; line-height:1; color:#60a5fa; padding:12px 0; }
