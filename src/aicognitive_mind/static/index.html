@@ -186,7 +186,7 @@
             <div id="taskProfileList" class="task-profile-grid"></div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
               <div class="panel-heading task-profile-editor-heading">
-                <div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileRevision" class="muted-copy task-profile-revision">Revision: 1</p></div>
+                <div><p class="eyebrow">TASK PROFILE</p><span id="taskProfileFormIcon" aria-hidden="true">◆</span><h3 id="taskProfileTitle">Task</h3><p id="taskProfileRevision" class="muted-copy task-profile-revision">Revision: 1</p></div>
                 <button id="taskProfileBack" class="secondary-button" type="button">Return</button>
               </div>
               <section id="taskProfileAssignmentSection" class="task-profile-section">
@@ -334,7 +334,7 @@
                 
                 <h3>Durable Memory</h3>
               </div>
-              <button id="adminMemoryRefreshButton" class="secondary-button" type="button">Refresh</button>
+              <button id="adminMemoryRefreshButton" class="secondary-button" type="button">Return</button>
             </div>
             <div class="filter-area">
             <div class="memory-search">
@@ -402,7 +402,7 @@
                 <p class="eyebrow">HISTORY</p>
                 <h3>History</h3>
               </div>
-              <button id="journalRefreshButton" class="secondary-button" type="button">Refresh</button>
+              <button id="journalRefreshButton" class="secondary-button" type="button">Return</button>
             </div>
             <div class="filter-area">
             <div class="journal-search">
@@ -494,6 +494,11 @@
 
           <article id="overviewSection" class="panel admin-summary">
             <div class="panel-heading"><div><p class="eyebrow">CURRENT STATE</p><h3>System Overview</h3></div></div>
+            <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
+            <div class="summary-row"><span>Created</span><strong id="adminCreatedAt">—</strong></div>
+            <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
+            <div class="summary-row"><span>Journal Experiences</span><strong id="adminJournalCount">—</strong></div>
+            <div class="diagnostics-divider"></div>
             <div class="admin-runtime-setting">
               <div class="panel-heading"><div><p class="field-label">CURRENT STATE CONTEXT</p><h4>State Ledger</h4></div><button id="refreshDiagnostics" class="secondary-button" type="button">Refresh</button></div>
               <pre id="currentStateDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load state.</pre>
@@ -504,25 +509,7 @@
               <pre id="performanceDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load timings.</pre>
               <p class="muted-copy">Up to 200 requests in the current process. Resets on restart. No request bodies.</p>
             </div>
-            <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
-            <div class="summary-row"><span>Created</span><strong id="adminCreatedAt">—</strong></div>
-            <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
-            <div class="summary-row"><span>Journal Experiences</span><strong id="adminJournalCount">—</strong></div>
-            <div class="admin-runtime-setting">
-              <div>
-                <p class="field-label">BODY REASONING FALLBACK</p>
-                <p class="muted-copy">Allow Body to use its configured standalone reasoning provider when no connected reasoning host is available.</p>
-                <p id="bodyFallbackSource" class="muted-copy" aria-live="polite">Loading setting…</p>
-              </div>
-              <label class="admin-setting-toggle" for="bodyFallbackEnabled">
-                <input id="bodyFallbackEnabled" type="checkbox">
-                <span>Enabled</span>
-              </label>
-              <div class="edit-actions">
-                <button id="saveBodyFallbackSetting" class="primary-button" type="button">Save fallback setting</button>
-              </div>
-              <p class="muted-copy">Admin changes apply immediately to this running instance. After a restart, the Render deployment setting is used again.</p>
-            </div>
+
           </article>
         </div>
       </section>
