@@ -490,7 +490,7 @@
         for (let i = 0; i < sampleCount; i++) {
           if (i > 0) await delay((seconds * 1000) / sampleCount);
           const result = await captureVisualFrame(stream);
-          if (result?.response_text) observations.push(result.response_text);
+          if (result?.interpretation) observations.push(result.interpretation);
         }
         const remaining = seconds * 1000 - ((sampleCount - 1) * (seconds * 1000) / sampleCount);
         if (remaining > 0) await delay(remaining);
