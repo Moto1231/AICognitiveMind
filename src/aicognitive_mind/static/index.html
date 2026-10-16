@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261016-header-polish">
+  <link rel="stylesheet" href="/static/portal.css?v=20261016-admin-compact">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -157,7 +157,7 @@
           <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-speech.svg" alt="" width="48" height="52"></span><span>Speech Settings</span></button>
           <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-task-profiles.svg" alt="" width="48" height="52"></span><span>Task Profiles</span></button>
           <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon admin-section-icon-mcp" aria-hidden="true"><img src="/static/admin-mcp.svg" alt="" width="48" height="49"></span><span>Endpoints, Servers &amp; Tools</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="2.8"><path d="M18 5h12v9a6 6 0 1 1 8 8h5v12H33a6 6 0 1 1-8 8H13V30a6 6 0 1 1-8-8V14h13z"/></svg></span><span>Skills</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="skills-line-icon" viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="#60a5fa" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5h12v9a6 6 0 1 1 8 8h5v12H33a6 6 0 1 1-8 8H13V30a6 6 0 1 1-8-8V14h13z"/></svg></span><span>Skills</span></button>
           <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-memories.svg" alt="" width="48" height="52"></span><span>Memories</span></button>
           <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-journals.svg" alt="" width="48" height="52"></span><span>Journals</span></button>
           <button id="adminRefreshButton" class="secondary-button" type="button" aria-label="Refresh" title="Refresh">Refresh</button>
@@ -165,13 +165,13 @@
 
         <div class="admin-grid">
           <article id="skillsSection" class="panel hidden">
-            <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3><p class="muted-copy">GitHub-managed skill drafts. Preparing a release downloads SKILL.md; installing in ChatGPT is a separate step.</p></div><button type="button" class="secondary-button" id="skillsRefresh">Refresh</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" id="skillsRefresh">Refresh</button></div>
             <section class="overview-group">
               <h4>Skill Drafts</h4>
               <label class="host-behavior-field">Existing drafts<select id="skillsList"><option value="">New skill</option></select></label>
               <label class="host-behavior-field">Skill ID<input id="skillsSlug" placeholder="my-skill" pattern="[a-z0-9-]+" maxlength="64"></label>
               <label class="host-behavior-field">SKILL.md<textarea id="skillsContent" rows="18" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What the skill does&#10;---&#10;&#10;# Instructions"></textarea></label>
-              <div class="edit-actions"><button id="skillsValidate" type="button" class="secondary-button">Validate</button><button id="skillsSave" type="button" class="primary-button">Save Draft to GitHub</button></div>
+              <div class="edit-actions"><button id="skillsValidate" type="button" class="secondary-button" aria-label="Validate skill" title="Validate skill">Check</button><button id="skillsSave" type="button" class="primary-button">Save Draft to GitHub</button></div>
             </section>
             <section class="overview-group">
               <h4>Prepare ChatGPT Release</h4>
@@ -185,7 +185,7 @@
               <div><p class="eyebrow">BEHAVIOR LIBRARY</p><h3>Behaviors</h3></div>
               <button id="addHostBehavior" class="secondary-button" type="button">Add Behavior</button>
             </div>
-            <p>Add and edit reusable behaviors here, then select them on Task Profiles. Interaction behaviors belong to the Reasoning task.</p>
+            
             <div id="hostBehaviorList" class="record-list"></div>
             <div class="edit-actions">
               <button id="saveHostBehaviors" class="primary-button" type="button">Save</button>
@@ -198,7 +198,7 @@
                 <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
                 <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh</button>
               </div>
-              <p>Select a task to choose its primary endpoint, fallback endpoints, and behaviors.</p>
+              
             </div>
             <div id="taskProfileList" class="task-profile-grid"></div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
@@ -483,7 +483,7 @@
               <div><p class="eyebrow">VOICE OUTPUT</p><h3>Speech Settings</h3></div>
               <button id="refreshVoiceSettings" class="secondary-button" type="button">Refresh</button>
             </div>
-            <p class="muted-copy">Speech rate, browser voice pitch, volume, and browser voice selection live here. Configure Fish Audio endpoint credentials, model, and voice reference in the Audio / Voice task profile.</p>
+            
             <div class="task-model-fields">
               <label class="host-behavior-field voice-slider-field">Speech rate <output id="voiceRateValue" for="voiceRate">1.00</output>
                 <input id="voiceRate" type="range" min="0.5" max="1.75" step="0.05" value="1">
@@ -506,7 +506,7 @@
               <div><p class="eyebrow">CURRENT ENVIRONMENT</p><h3>Device Inventory</h3></div>
               <button id="refreshDevicesButton" class="secondary-button" type="button">Query Devices</button>
             </div>
-            <p class="muted-copy">Query the devices available to this browser, then choose which camera, microphone, and speaker the Body should use. Selection is saved in this browser. Device labels may remain hidden until permission is granted; querying devices does not turn on the camera or microphone.</p>
+            
             <div id="devicePermissionStatus" class="search-summary" aria-live="polite">Device inventory has not been queried.</div>
             <div class="device-selection-summary" id="deviceSelectionSummary">Body device preferences have not been loaded.</div>
             <div id="deviceInventoryList" class="record-list"></div>
