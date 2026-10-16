@@ -645,6 +645,10 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   box-shadow: 0 10px 28px rgba(0,0,0,.12);
 }
 .admin-section-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-height: 42px;
   padding: 10px 14px;
   border: 1px solid transparent;
@@ -656,6 +660,20 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   letter-spacing: .005em;
   transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
+/* The supplied tiles include captions; show the artwork above their baked-in text. */
+.admin-section-icon {
+  display: block;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 42px;
+  overflow: hidden;
+}
+.admin-section-icon img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.admin-section-icon-mcp { height: 40px; }
 .admin-section-button:hover {
   border-color: rgba(161,190,226,.22);
   background: rgba(255,255,255,.035);
