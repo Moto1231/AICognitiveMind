@@ -272,7 +272,9 @@ async function api(path, options = {}, admin = false) {
 
 function formatBrowserDateTime(value) {
   if (value == null || value === "") return "—";
-  const date = value instanceof Date ? value : new Date(value);
+  const raw = String(value).trim();
+  const normalized = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(raw) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw.replace(" ", "T") + "Z" : raw;
+  const date = value instanceof Date ? value : new Date(normalized);
   if (Number.isNaN(date.getTime())) return String(value);
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return new Intl.DateTimeFormat(undefined, {
@@ -1978,14 +1980,9 @@ function bindFilterEvents(config) {
 el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
 el.logoutButton.addEventListener("click", logout);
-el.refreshButton.addEventListener("click", refresh);
+if (el.refreshButton) el.refreshButton.addEventListener("click", refresh);
 el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));
-el.adminRefreshButton.addEventListener("click", () => Promise.all([
-  refreshStatus(),
-  refreshMemory(filters.admin, true),
-  refreshJournal(true),
-  refreshBodyFallbackSettings(),
-]));
+el.adminRefreshButton.addEventListener("click", refresh);
 if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.addEventListener("click", saveBodyFallbackSettings);
 el.journalRefreshButton.addEventListener("click", () => refreshJournal(true));
 el.loadMoreJournals.addEventListener("click", () => refreshJournal(false));
