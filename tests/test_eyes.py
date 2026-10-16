@@ -83,7 +83,7 @@ class EyesV01Tests(unittest.IsolatedAsyncioTestCase):
         page = Path("src/aicognitive_mind/static/eyes.html").read_text(encoding="utf-8")
         self.assertIn("navigator.mediaDevices.getUserMedia", page)
         self.assertIn("/v1/body/eyes/observe", page)
-        self.assertIn("/v1/body/eyes/see", page)
+        self.assertIn("result.interpretation", page)
         self.assertIn("BODY CAN SEE", page)
 
 

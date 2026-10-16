@@ -539,6 +539,25 @@ class HostAwareInterpreter:
             if getattr(fallback, "records", None) is not None else None
         )
 
+    async def interpret_automatically(self, percept: Any, *, focus: str | None = None) -> str:
+        """Interpret a newly arrived percept using its configured specialist, never a host queue."""
+        modality = getattr(getattr(percept, "modality", None), "value", "unknown")
+        if self.task_dispatcher is None:
+            raise RuntimeError(
+                f"Automatic {modality} interpretation requires a configured specialist task endpoint."
+            )
+        try:
+            result = await self.task_dispatcher.interpret_percept(percept, focus=focus)
+        except TaskDispatchError as exc:
+            raise RuntimeError(
+                f"Automatic {modality} interpretation failed through its configured task endpoint: {exc}"
+            ) from exc
+        if not isinstance(result, str) or not result.strip():
+            raise RuntimeError(
+                f"No configured specialist task endpoint is available for automatic {modality} interpretation."
+            )
+        return result.strip()
+
     async def interpret(self, percept: Any, *, focus: str | None = None) -> str:
         task_dispatch_failed = False
         if self.task_dispatcher is not None:

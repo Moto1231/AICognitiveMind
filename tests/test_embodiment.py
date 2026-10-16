@@ -47,6 +47,16 @@ class FailingInterpreter:
         raise RuntimeError("interpretation failed")
 
 
+class AutomaticFixedInterpreter:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.percepts = []
+
+    async def interpret_automatically(self, percept, *, focus=None):
+        self.percepts.append((percept, focus))
+        return self.text
+
+
 class FakeResponses:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
@@ -202,6 +212,34 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("content_ref", str(input_document))
         self.assertNotIn("data:image", str(input_document))
 
+    async def test_automatic_perception_interprets_and_journals_without_host_interaction(self) -> None:
+        core, journal = await self._core()
+        eyes = BrowserVisionIngress()
+        evidence = InMemoryEvidenceStore()
+        interpreter = AutomaticFixedInterpreter("Visual perception: A red mug.")
+        bridge = MindBodyBridge(
+            core=core,
+            body=BodyRuntime(vision=eyes),
+            interpreter=interpreter,
+            evidence=evidence,
+            journal=journal,
+        )
+        percept = eyes.accept(
+            image_data_url=data_url("image/jpeg", b"automatic-jpeg"),
+            width=320,
+            height=240,
+        )
+
+        result = await bridge.perceive(percept, express=False, automatic=True)
+
+        self.assertEqual(result.interpretation, "Visual perception: A red mug.")
+        self.assertEqual(len(interpreter.percepts), 1)
+        self.assertEqual(interpreter.percepts[0][1], None)
+        entries = await journal.read()
+        self.assertEqual(entries[-1].experience["status"], "interpreted")
+        self.assertEqual(entries[-1].experience["interpretation"], result.interpretation)
+        self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
+
     async def test_passive_visual_perception_admits_without_conscious_interaction(self) -> None:
         core, journal = await self._core()
         eyes = BrowserVisionIngress()
@@ -234,11 +272,12 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(face.consume())
         entries = await journal.read()
         self.assertEqual(entries[-1].kind.value, "sensory_evidence")
-        self.assertEqual(entries[-1].experience["status"], "admitted")
-        # Initialization is journaled before the passive observation; passive
-        # sensing must not create a conscious interaction entry.
-        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[-1].experience["status"], "interpreted")
+        # Admission and interpretation are journaled separately; passive sensing
+        # must not create a conscious interaction entry.
+        self.assertEqual(len(entries), 3)
         self.assertEqual(entries[0].kind.value, "initialization")
+        self.assertEqual(entries[1].experience["status"], "admitted")
         self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
 
     async def test_audio_percept_crosses_same_mind_body_bridge(self) -> None:
@@ -300,10 +339,12 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(face.consume())
         entries = await journal.read()
         self.assertEqual(entries[-1].kind.value, "sensory_evidence")
-        # Initialization is journaled before the passive observation; passive
-        # sensing must not create a conscious interaction entry.
-        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[-1].experience["status"], "interpreted")
+        # Admission and interpretation are journaled separately; passive sensing
+        # must not create a conscious interaction entry.
+        self.assertEqual(len(entries), 3)
         self.assertEqual(entries[0].kind.value, "initialization")
+        self.assertEqual(entries[1].experience["status"], "admitted")
         self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
 
     async def test_evidence_survives_even_when_interpretation_fails(self) -> None:
@@ -417,9 +458,11 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('id="liveScene"', markup)
         self.assertIn('id="audioMeter"', markup)
         self.assertIn("/v1/body/eyes/observe", markup)
-        self.assertIn("/v1/mind/body/see?express=false", markup)
+        self.assertNotIn("/v1/mind/body/see?express=false", markup)
         self.assertIn("/v1/body/ears/observe", markup)
-        self.assertIn("/v1/mind/body/hear?express=false", markup)
+        self.assertNotIn("/v1/mind/body/hear?express=false", markup)
+        self.assertIn("Frame saved and interpreted.", markup)
+        self.assertIn("Audio saved and interpreted.", markup)
         self.assertIn('modality: "audio", consumeOutputs: false', markup)
         self.assertIn('id="connectedHostStatus"', markup)
         self.assertIn("refreshConnectedHostStatus", markup)

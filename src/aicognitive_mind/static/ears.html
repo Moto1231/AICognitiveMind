@@ -115,23 +115,15 @@
         return;
       }
 
-      const hearResponse = await bodyFetch("/v1/body/ears/hear");
-      if (!hearResponse.ok) {
-        setStatus("Audio arrived, but BodyRuntime.hear() failed: " + await hearResponse.text());
-        return;
-      }
-
-      const percept = await hearResponse.json();
-      playback.src = percept.content_ref;
-      playback.hidden = false;
+      const result = await ingressResponse.json();
+      playback.hidden = true;
 
       setStatus(
         "BODY CAN HEAR\n" +
-        "source: " + percept.source + "\n" +
-        "media: " + percept.metadata.media_type + "\n" +
-        "duration: " + percept.metadata.duration_ms + " ms\n" +
-        "bytes: " + percept.metadata.byte_length + "\n" +
-        "storage: transient only"
+        "source: " + result.sensory_source + "\n" +
+        "observed_at: " + result.occurred_at + "\n" +
+        "interpretation: " + result.interpretation + "\n" +
+        "evidence SHA-256: " + result.evidence.sha256
       );
     }
 

@@ -424,6 +424,7 @@ class MindBodyBridge:
         percept: Percept,
         *,
         express: bool = True,
+        automatic: bool = False,
         presence_scope: tuple[str, str] = ("legacy", "legacy"),
     ) -> EmbodiedInteractionResult:
         artifact = await self._preserve_evidence(percept)
@@ -441,7 +442,27 @@ class MindBodyBridge:
             ),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
-        interpretation = await self._interpreter.interpret(percept)
+        automatic_interpreter = getattr(self._interpreter, "interpret_automatically", None)
+        if automatic:
+            if automatic_interpreter is None:
+                raise RuntimeError("Automatic sensory interpretation is not supported by the configured interpreter.")
+            interpretation = await automatic_interpreter(percept)
+        else:
+            interpretation = await self._interpreter.interpret(percept)
+        await self._journal.append(
+            JournalEntry(
+                kind=JournalKind.SENSORY_EVIDENCE,
+                occurred_at=percept.observed_at,
+                experience={
+                    "status": "interpreted",
+                    "source": f"body:{percept.modality.value}",
+                    "evidence": reference.model_dump(mode="python"),
+                    "interpretation": interpretation,
+                    "metadata": self._journal_safe_metadata(percept.metadata),
+                },
+            ),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
         self._admit_presence_observation(
             percept=percept,
             evidence=reference,
