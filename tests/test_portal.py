@@ -99,7 +99,13 @@ class PortalTests(unittest.TestCase):
         self.assertTrue(script.is_file())
 
         markup = index.read_text(encoding="utf-8")
+        stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
         self.assertIn("Administration", markup)
+        self.assertIn("portal.css?v=20261012-admin-polish", markup)
+        self.assertIn("admin-section-nav", stylesheet)
+        self.assertIn("linear-gradient(135deg, rgba(15,27,46,.96)", stylesheet)
+        self.assertNotIn('content: "Inspect exact record', stylesheet)
+        self.assertIn("outline: 2px solid var(--accent)", stylesheet)
         self.assertIn("MCP", markup)
         self.assertIn("MEMORY INSPECTOR", markup)
         self.assertIn("Raw Record Returned by the Mind", markup)
