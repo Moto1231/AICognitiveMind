@@ -28,8 +28,15 @@ const state = {
   activeTaskProfile: null,
   activeEndpointId: null,
   activeEndpointOriginalName: "",
+  endpointDraft: null,
+  endpointEditBaseline: "",
+  mcpServerDraft: null,
+  mcpEditBaseline: "",
+  integrationSaving: false,
   deviceInventory: [],
   voiceSettingsRevision: 0,
+  taskProfileSnapshot: "",
+  hostBehaviorSnapshot: "",
 };
 
 const el = {
@@ -116,6 +123,8 @@ const el = {
   mcpAddServer: document.getElementById("mcpAddServer"),
   mcpDiscoverTools: document.getElementById("mcpDiscoverTools"),
   mcpDeleteServer: document.getElementById("mcpDeleteServer"),
+  mcpEditServer: document.getElementById("mcpEditServer"),
+  mcpCancelEdit: document.getElementById("mcpCancelEdit"),
   mcpServerStatus: document.getElementById("mcpServerStatus"),
   mcpToolList: document.getElementById("mcpToolList"),
   mcpToolRunnerSelect: document.getElementById("mcpToolRunnerSelect"),
@@ -163,6 +172,13 @@ const el = {
   taskProfileEndpointSelect: document.getElementById("taskProfileEndpointSelect"),
   taskProfileAddEndpoint: document.getElementById("taskProfileAddEndpoint"),
   taskProfileEndpointName: document.getElementById("taskProfileEndpointName"),
+  taskProfileProviderName: document.getElementById("taskProfileProviderName"),
+  endpointModelSelect: document.getElementById("endpointModelSelect"),
+  endpointModelId: document.getElementById("endpointModelId"),
+  endpointModelStatus: document.getElementById("endpointModelStatus"),
+  endpointEditButton: document.getElementById("endpointEditButton"),
+  endpointRemoveButton: document.getElementById("endpointRemoveButton"),
+  endpointCancelButton: document.getElementById("endpointCancelButton"),
   taskProfileBaseUrl: document.getElementById("taskProfileBaseUrl"),
   taskProfileApiKey: document.getElementById("taskProfileApiKey"),
   taskProfileDiscover: document.getElementById("taskProfileDiscover"),
@@ -188,6 +204,7 @@ const el = {
   saveVoiceSettings: document.getElementById("saveVoiceSettings"),
   refreshVoiceSettings: document.getElementById("refreshVoiceSettings"),
   taskProfileFoundation: document.getElementById("taskProfileFoundation"),
+  taskProfileBehaviorSelection: document.getElementById("taskProfileBehaviorSelection"),
   taskProfileBehaviorName: document.getElementById("taskProfileBehaviorName"),
   taskProfileInstructions: document.getElementById("taskProfileInstructions"),
   taskProfileEnabled: document.getElementById("taskProfileEnabled"),
@@ -285,6 +302,7 @@ function toast(message, error = false) {
 }
 
 function setMode(mode) {
+  if (mode === "mind" && state.activeTaskProfile) closeTaskProfile();
   state.mode = mode;
   const admin = mode === "admin";
   el.mindView.classList.toggle("hidden", admin);
@@ -336,7 +354,7 @@ function renderHostBehaviors() {
     title.maxLength = 120;
     title.readOnly = behavior.protected;
     title.setAttribute("aria-label", "Behavior name");
-    title.addEventListener("input", () => { behavior.name = title.value; });
+    title.addEventListener("input", () => { behavior.name = title.value; updateBehaviorSaveState(); });
     nameField.append(title);
     const instructionField = document.createElement("label");
     instructionField.className = "host-behavior-field host-behavior-instruction";
@@ -347,7 +365,7 @@ function renderHostBehaviors() {
     instruction.value = behavior.instruction;
     instruction.readOnly = behavior.protected;
     instruction.setAttribute("aria-label", "Instruction");
-    instruction.addEventListener("input", () => { behavior.instruction = instruction.value; });
+    instruction.addEventListener("input", () => { behavior.instruction = instruction.value; updateBehaviorSaveState(); });
     instructionField.append(instruction);
     const priorityField = document.createElement("label");
     priorityField.className = "host-behavior-field host-behavior-priority";
@@ -358,7 +376,7 @@ function renderHostBehaviors() {
     priority.max = "10000";
     priority.value = behavior.priority;
     priority.setAttribute("aria-label", "Priority");
-    priority.addEventListener("change", () => { behavior.priority = Number(priority.value); });
+    priority.addEventListener("change", () => { behavior.priority = Number(priority.value); updateBehaviorSaveState(); });
     priorityField.append(priority);
     fields.append(nameField, priorityField, instructionField);
     const enabled = document.createElement("input");
@@ -366,7 +384,7 @@ function renderHostBehaviors() {
     enabled.checked = behavior.enabled;
     enabled.disabled = behavior.protected;
     enabled.setAttribute("aria-label", "Enable behavior");
-    enabled.addEventListener("change", () => { behavior.enabled = enabled.checked; });
+    enabled.addEventListener("change", () => { behavior.enabled = enabled.checked; updateBehaviorSaveState(); });
     const label = document.createElement("label");
     label.className = "host-behavior-enabled";
     label.append(enabled, document.createTextNode(behavior.protected ? " Enabled · Protected" : " Enabled"));
@@ -385,11 +403,19 @@ function renderHostBehaviors() {
     row.append(fields, controls);
     el.hostBehaviorList.append(row);
   }
+  updateBehaviorSaveState();
+}
+
+function updateBehaviorSaveState() {
+  if (el.saveHostBehaviors) el.saveHostBehaviors.disabled =
+    JSON.stringify(state.hostBehaviors) === state.hostBehaviorSnapshot ||
+    state.hostBehaviors.some(item => !item.name.trim() || !item.instruction.trim());
 }
 
 async function refreshHostBehaviors() {
   const payload = await api("/v1/admin/host-behaviors", {}, true);
   state.hostBehaviors = payload.items;
+  state.hostBehaviorSnapshot = JSON.stringify(state.hostBehaviors);
   renderHostBehaviors();
 }
 
@@ -398,7 +424,7 @@ function addHostBehavior() {
   state.hostBehaviors.push({
     id,
     name: "New Behavior",
-    instruction: "Describe the host behavior.",
+    instruction: "Describe the behavior.",
     enabled: true,
     priority: 100,
     protected: false,
@@ -413,8 +439,10 @@ async function saveHostBehaviors() {
       body: JSON.stringify({ items: state.hostBehaviors }),
     }, true);
     state.hostBehaviors = payload.items;
+    state.hostBehaviorSnapshot = JSON.stringify(state.hostBehaviors);
     renderHostBehaviors();
-    toast("Host behaviors saved");
+    await refreshTaskModelAssignments();
+    toast("Behaviors saved");
   } catch (error) {
     toast(error.message, true);
   }
@@ -462,20 +490,15 @@ function renderTaskProfiles() {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "task-profile-card";
+    card.dataset.keepLabel = "true";
     const title = document.createElement("strong");
     title.textContent = taskModelLabels[task] || displayLabel(task);
     const detail = document.createElement("span");
-    detail.textContent = endpoint
-      ? [endpoint.name || "Unnamed endpoint", assignment.model || "No model selected"].join(" · ")
-      : (assignment.provider || assignment.model)
-        ? [assignment.provider || "No endpoint", assignment.model || "No model selected"].join(" · ")
-        : "Endpoint and model not configured";
+    detail.textContent = endpoint?.name || (assignment.provider === "connected-host"
+      ? "Connected reasoning host" : assignment.provider || "No endpoint selected");
     const behaviorStatus = document.createElement("small");
-    behaviorStatus.textContent = behavior.enabled === false
-      ? "Behavior layer disabled"
-      : behavior.instructions
-        ? "Behavior configured"
-        : "Behavior instructions not configured";
+    const ids = selectedTaskBehaviorIds(task, assignment);
+    behaviorStatus.textContent = `${ids.length} behavior${ids.length === 1 ? "" : "s"} selected`;
     card.append(title, detail, behaviorStatus);
     card.addEventListener("click", () => openTaskProfile(task));
     el.taskProfileList.append(card);
@@ -498,10 +521,14 @@ function renderTaskProfileEndpointOptions() {
   blank.value = "";
   blank.textContent = "Choose an endpoint";
   select.append(blank);
-  for (const endpoint of state.providerEndpoints) {
+  const endpoints = [...state.providerEndpoints];
+  if (state.endpointDraft && !endpoints.some(item => item.id === state.endpointDraft.id)) endpoints.push(state.endpointDraft);
+  for (const endpoint of endpoints) {
     const option = document.createElement("option");
     option.value = endpoint.id;
     option.textContent = endpoint.name || endpoint.base_url || "Unnamed endpoint";
+    option.classList.toggle("credential-loaded", !!(endpoint.has_api_key || endpoint.api_key));
+    if (endpoint.has_api_key || endpoint.api_key) option.textContent += " · Key loaded";
     select.append(option);
   }
   for (const preset of COMMON_ENDPOINT_PRESETS) {
@@ -512,11 +539,13 @@ function renderTaskProfileEndpointOptions() {
     select.append(option);
   }
   select.value = state.activeEndpointId || "";
+  const selected = state.endpointDraft || selectedEndpoint();
+  select.classList.toggle("credential-loaded", !!(selected?.has_api_key || selected?.api_key));
 }
 
 function modelCapabilityLabel(model, capabilityMap) {
   const capabilities = capabilityMap?.[model];
-  return capabilities?.length ? `${model} · ${capabilities.join(" · ")}` : `${model} · Capabilities unknown`;
+  return capabilities?.length ? `${model} · ${capabilities.join(" · ")}` : `${model} · Provider did not report capabilities`;
 }
 
 function fillSelect(select, values, selected, placeholder, capabilityMap = null) {
@@ -540,6 +569,83 @@ function fillSelect(select, values, selected, placeholder, capabilityMap = null)
   select.value = selected || "";
 }
 
+function taskEndpointOptions(select, selected, task = state.activeTaskProfile) {
+  select.replaceChildren(new Option("Choose endpoint", ""));
+  if (task === "reasoning") select.append(new Option("Connected reasoning host", "connected-host"));
+  for (const endpoint of state.providerEndpoints) {
+    const option = new Option(endpoint.name || "Unnamed endpoint", endpoint.id);
+    option.dataset.hasKey = endpoint.has_api_key || Boolean(endpoint.api_key) ? "true" : "false";
+    if (option.dataset.hasKey === "true") option.style.color = "var(--success)";
+    select.append(option);
+  }
+  const endpoint = state.providerEndpoints.find(item => item.id === selected || item.name === selected);
+  if (selected && !endpoint && selected !== "connected-host") select.append(new Option(selected + " (saved)", selected));
+  select.value = endpoint?.id || selected || "";
+  select.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
+}
+
+function selectedTaskBehaviorIds(task, assignment) {
+  if (Array.isArray(assignment?.behavior_ids)) return [...assignment.behavior_ids];
+  const catalog = taskBehaviorCatalog();
+  return task === "reasoning" ? catalog.filter(item => !item.id.startsWith("task-") || item.id === "task-reasoning-legacy").map(item => item.id)
+    : catalog.filter(item => item.id === `task-${task}-legacy`).map(item => item.id);
+}
+
+function taskBehaviorCatalog() {
+  return state.hostBehaviorSnapshot ? JSON.parse(state.hostBehaviorSnapshot) : state.hostBehaviors;
+}
+
+function taskProfileConfiguration() {
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  return JSON.stringify(assignment || {});
+}
+
+function updateTaskSaveState() {
+  if (!el.saveTaskProfile) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const endpoint = state.providerEndpoints.find(item => item.id === assignment?.provider || item.name === assignment?.provider);
+  const invalidPrimary = assignment?.provider && assignment.provider !== "connected-host"
+    && !endpoint?.model && !assignment.model;
+  const invalidFallback = assignment?.fallbacks?.some(item => !item.provider || !item.model);
+  el.saveTaskProfile.disabled = state.taskProfileSaving || !assignment || invalidPrimary || invalidFallback
+    || taskProfileConfiguration() === state.taskProfileSnapshot;
+}
+
+function renderTaskBehaviorSelection() {
+  const container = el.taskProfileBehaviorSelection;
+  if (!container) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const selected = new Set(selectedTaskBehaviorIds(state.activeTaskProfile, assignment));
+  const catalog = taskBehaviorCatalog();
+  if (state.activeTaskProfile === "reasoning") {
+    catalog.filter(item => item.protected).forEach(item => selected.add(item.id));
+  }
+  container.replaceChildren();
+  if (!catalog.length) container.textContent = "Add and save behaviors on the Behaviors form first.";
+  for (const behavior of catalog) {
+    const label = document.createElement("label");
+    label.className = "task-behavior-option";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    const required = state.activeTaskProfile === "reasoning" && behavior.protected;
+    checkbox.checked = required || selected.has(behavior.id);
+    checkbox.disabled = required;
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) selected.add(behavior.id); else selected.delete(behavior.id);
+      assignment.behavior_ids = [...selected];
+      updateTaskSaveState();
+    });
+    const text = document.createElement("span");
+    const title = document.createElement("strong");
+    title.textContent = behavior.name + (required ? " · Protected" : "") + (!behavior.enabled ? " · Disabled in library" : "");
+    const instruction = document.createElement("small");
+    instruction.textContent = behavior.instruction;
+    text.append(title, instruction);
+    label.append(checkbox, text);
+    container.append(label);
+  }
+}
+
 function renderFallbackSelectors() {
   if (!el.taskProfileFallbackList) return;
   const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
@@ -553,32 +659,23 @@ function renderFallbackSelectors() {
   }
   fallbacks.forEach((fallback, index) => {
     const row = document.createElement("div");
-    row.className = "task-fallback-row task-model-fields";
-    const providerLabel = document.createElement("label");
-    providerLabel.className = "host-behavior-field";
-    providerLabel.textContent = "Fallback " + (index + 1) + " provider";
-    const provider = document.createElement("select");
-    provider.setAttribute("aria-label", "Fallback " + (index + 1) + " provider");
-    fillSelect(provider, state.providerEndpoints.map(item => item.name), fallback.provider, "Choose endpoint");
-    provider.addEventListener("change", () => {
-      fallback.provider = provider.value;
-      fallback.model = "";
-      renderFallbackSelectors();
+    row.className = "task-fallback-row";
+    const label = document.createElement("label");
+    label.className = "host-behavior-field";
+    label.textContent = "Fallback endpoint " + (index + 1);
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", label.textContent);
+    taskEndpointOptions(select, fallback.provider, "fallback");
+    select.addEventListener("change", () => {
+      const endpoint = state.providerEndpoints.find(item => item.id === select.value);
+      const sameEndpoint = endpoint && (fallback.provider === endpoint.id || fallback.provider === endpoint.name);
+      fallback.provider = endpoint?.id || select.value;
+      fallback.model = endpoint?.model || (sameEndpoint ? fallback.model : "");
+      if (endpoint && !fallback.model) toast("Save a model for this endpoint in Endpoints, Servers & Tools first", true);
+      select.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
+      updateTaskSaveState();
     });
-    providerLabel.append(provider);
-    const modelLabel = document.createElement("label");
-    modelLabel.className = "host-behavior-field";
-    modelLabel.textContent = "Fallback " + (index + 1) + " model";
-    const endpoint = state.providerEndpoints.find(item => item.name === fallback.provider || item.id === fallback.provider);
-    const model = document.createElement(state.activeTaskProfile === "audio_voice" ? "input" : "select");
-    if (model.tagName === "INPUT") model.type = "text";
-    else fillSelect(model, endpoint?.models || [], fallback.model, "Choose a model", endpoint?.model_capabilities || {});
-    model.maxLength = 160;
-    model.placeholder = "Model ID";
-    model.value = fallback.model || "";
-    model.setAttribute("aria-label", "Fallback " + (index + 1) + " model");
-    model.addEventListener("input", () => { fallback.model = model.value.trim(); });
-    modelLabel.append(model);
+    label.append(select);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "secondary-button";
@@ -587,66 +684,132 @@ function renderFallbackSelectors() {
     remove.addEventListener("click", () => {
       assignment.fallbacks.splice(index, 1);
       renderFallbackSelectors();
+      updateTaskSaveState();
     });
-    row.append(providerLabel, modelLabel, remove);
+    row.append(label, remove);
     el.taskProfileFallbackList.append(row);
   });
 }
 
 function loadEndpointIntoForm() {
-  const { endpoint } = activeProfileRecords();
+  const endpoint = state.endpointDraft || selectedEndpoint();
   el.taskProfileEndpointName.value = endpoint?.name || "";
+  el.taskProfileProviderName.value = endpoint?.provider_name || "";
   el.taskProfileBaseUrl.value = endpoint?.base_url || "";
   el.taskProfileApiKey.value = endpoint?.api_key || "";
+  el.endpointModelId.value = endpoint?.model || "";
+  fillSelect(el.endpointModelSelect, endpoint?.models || [], endpoint?.model || "", "Choose a discovered model", endpoint?.model_capabilities || {});
+  renderEndpointModelStatus(endpoint);
+  updateEndpointEditorState();
+}
+
+function renderEndpointModelStatus(endpoint) {
+  el.endpointModelStatus.replaceChildren();
+  if (!endpoint) {
+    el.endpointModelStatus.textContent = "Select an endpoint, then Edit to configure its model.";
+    return;
+  }
+  const model = endpoint.model || "";
+  const capabilities = endpoint.model_capabilities?.[model] || [];
+  const source = endpoint.model_capability_sources?.[model] || "";
+  el.endpointModelStatus.textContent = model
+    ? `${model}${capabilities.length ? " · " + capabilities.join(" · ") : " · No capability metadata reported"}`
+    : `${endpoint.models?.length || 0} discovered model(s). Select or enter the model saved with this endpoint.`;
+  if (source === "provider_metadata") {
+    el.endpointModelStatus.append(document.createTextNode(" · Provider metadata"));
+  } else if (/^https:\/\/developers\.openai\.com\/api\/docs\/models\//.test(source)) {
+    const link = document.createElement("a");
+    link.href = source;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = "Documented capabilities (not tested)";
+    el.endpointModelStatus.append(document.createTextNode(" · "), link);
+  }
+}
+
+function endpointFormIsValid(endpoint) {
+  return !!(endpoint?.name?.trim() && endpoint?.provider_name?.trim() && endpoint?.model?.trim()
+    && /^https?:\/\/\S+$/i.test(endpoint?.base_url || ""));
+}
+
+function syncEndpointDraft() {
+  const endpoint = state.endpointDraft;
+  if (!endpoint) return;
+  endpoint.name = el.taskProfileEndpointName.value.trim();
+  endpoint.provider_name = el.taskProfileProviderName.value.trim();
+  endpoint.base_url = el.taskProfileBaseUrl.value.trim();
+  endpoint.api_key = el.taskProfileApiKey.value;
+  endpoint.model = el.endpointModelId.value.trim();
+  updateEndpointEditorState();
+  renderEndpointModelStatus(endpoint);
+}
+
+function updateEndpointEditorState() {
+  const editing = !!state.endpointDraft;
+  const saved = selectedEndpoint();
+  const busy = state.integrationSaving;
+  [el.taskProfileEndpointName, el.taskProfileProviderName, el.taskProfileBaseUrl, el.taskProfileApiKey,
+    el.endpointModelSelect, el.endpointModelId].forEach(input => { input.disabled = !editing || busy; });
+  el.taskProfileEndpointSelect.disabled = editing || busy;
+  el.taskProfileAddEndpoint.disabled = editing || busy;
+  el.endpointEditButton.disabled = !saved || editing || busy;
+  el.endpointRemoveButton.disabled = !saved || editing || busy;
+  el.endpointCancelButton.disabled = !editing || busy;
+  el.taskProfileDiscover.disabled = !editing || busy || !state.endpointDraft?.name
+    || !/^https?:\/\/\S+$/i.test(state.endpointDraft?.base_url || "");
+  el.saveProviderEndpoints.disabled = !editing || busy || !endpointFormIsValid(state.endpointDraft)
+    || JSON.stringify(state.endpointDraft) === state.endpointEditBaseline;
+}
+
+function editEndpoint() {
+  const endpoint = selectedEndpoint();
+  if (!endpoint) return;
+  state.endpointDraft = JSON.parse(JSON.stringify(endpoint));
+  state.endpointEditBaseline = JSON.stringify(state.endpointDraft);
+  state.activeEndpointOriginalName = endpoint.name;
+  loadEndpointIntoForm();
+  el.taskProfileEndpointName.focus();
+}
+
+function cancelEndpointEdit() {
+  state.endpointDraft = null;
+  state.endpointEditBaseline = "";
+  if (!selectedEndpoint()) state.activeEndpointId = state.providerEndpoints[0]?.id || null;
+  renderTaskProfileEndpointOptions();
+  loadEndpointIntoForm();
 }
 
 function openTaskProfile(task) {
+  if (state.activeTaskProfile && state.activeTaskProfile !== task) discardTaskProfileChanges();
   state.activeTaskProfile = task;
-  let assignment = task === "reasoning" ? null : state.taskModelAssignments.find(item => item.task === task);
-  if (!assignment && task !== "reasoning") {
-    assignment = { task, provider: "", model: "", fallbacks: [], voice_reference_id: "", notes: "" };
+  let assignment = state.taskModelAssignments.find(item => item.task === task);
+  if (!assignment) {
+    assignment = { task, provider: "", model: "", fallbacks: [], behavior_ids: null, voice_reference_id: "", notes: "" };
     state.taskModelAssignments.push(assignment);
   }
-  let behavior = state.taskBehaviors.find(item => item.task === task);
-  if (!behavior) {
-    behavior = { task, instructions: "", enabled: true, revision: 1 };
-    state.taskBehaviors.push(behavior);
-  }
-  const endpoint = assignment && state.providerEndpoints.find(item =>
-    item.name === assignment.provider || item.id === assignment.provider
-  );
-  fillSelect(el.taskProviderSelect, state.providerEndpoints.map(item => item.name), assignment?.provider, "Choose endpoint");
-  el.taskProfileAssignmentSection.classList.toggle("hidden", task === "reasoning");
-  const isAudioVoice = task === "audio_voice";
-  el.taskProfileStandardModelField.classList.toggle("hidden", isAudioVoice);
-  el.taskProfileVoiceModelField.classList.toggle("hidden", !isAudioVoice);
-  el.taskProfileVoiceReferenceField.classList.toggle("hidden", !isAudioVoice);
+  const behavior = state.taskBehaviors.find(item => item.task === task) || {};
+  taskEndpointOptions(el.taskProviderSelect, assignment.provider, task);
+  el.taskProfileAssignmentSection.classList.remove("hidden");
+  el.taskProfileStandardModelField.classList.add("hidden");
+  el.taskProfileVoiceModelField.classList.add("hidden");
+  el.taskProfileVoiceReferenceField.classList.toggle("hidden", task !== "audio_voice");
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
   el.taskProfileRevision.textContent = "Revision: " + (behavior.revision || 1);
-  // Populate the editor from the selected task's own behavior profile.
-  // Without this, switching tasks leaves the previous task's instructions in
-  // the form and saving can copy those instructions into another task.
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
-  el.taskProfileBehaviorName.value = behavior.name || (taskModelLabels[task] || displayLabel(task));
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
-  renderTaskProfileEndpointOptions();
-  fillSelect(
-    el.taskProfileModel,
-    endpoint?.models || [],
-    isAudioVoice ? "" : (assignment?.model || ""),
-    "Discover models or choose a model",
-    endpoint?.model_capabilities || {},
-  );
-  el.taskProfileVoiceModel.value = assignment?.model || "s2.1-pro-free";
-  el.taskProfileVoiceReferenceId.value = assignment?.voice_reference_id || "";
+  el.taskProfileVoiceReferenceId.value = assignment.voice_reference_id || "";
+  renderTaskBehaviorSelection();
   renderFallbackSelectors();
+  state.taskProfileSnapshot = taskProfileConfiguration();
+  updateTaskSaveState();
   el.taskProfileOverview.classList.add("hidden");
   el.taskProfileList.classList.add("hidden");
   el.taskProfileEditor.classList.remove("hidden");
 }
 
 function closeTaskProfile() {
+  discardTaskProfileChanges();
   state.activeTaskProfile = null;
   el.taskProfileEditor.classList.add("hidden");
   el.taskProfileOverview.classList.remove("hidden");
@@ -654,13 +817,22 @@ function closeTaskProfile() {
   renderTaskProfiles();
 }
 
+function discardTaskProfileChanges() {
+  if (!state.activeTaskProfile || !state.taskProfileSnapshot) return;
+  const index = state.taskModelAssignments.findIndex(item => item.task === state.activeTaskProfile);
+  if (index >= 0) state.taskModelAssignments[index] = JSON.parse(state.taskProfileSnapshot);
+  state.taskProfileSnapshot = "";
+}
+
 function selectedEndpoint() {
   return state.providerEndpoints.find(item => item.id === state.activeEndpointId) || null;
 }
 
 async function refreshProviderEndpoints() {
+  if (state.endpointDraft) return;
   const payload = await api("/v1/admin/provider-endpoints", {}, true);
   state.providerEndpoints = payload.items || [];
+  if (!selectedEndpoint()) state.activeEndpointId = state.providerEndpoints[0]?.id || null;
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   renderTaskProfiles();
@@ -680,92 +852,107 @@ async function refreshTaskBehaviors() {
 }
 
 async function saveProviderEndpoints() {
+  syncEndpointDraft();
+  if (el.saveProviderEndpoints.disabled) return;
+  const endpoint = state.endpointDraft;
+  const previousName = selectedEndpoint()?.name;
+  state.integrationSaving = true;
+  updateEndpointEditorState();
   try {
-    const endpoint = selectedEndpoint();
-    if (endpoint) {
-      const previousName = state.activeEndpointOriginalName || endpoint.name;
-      const nextName = el.taskProfileEndpointName.value.trim();
-      endpoint.name = nextName;
-      endpoint.base_url = el.taskProfileBaseUrl.value.trim();
-      endpoint.api_key = el.taskProfileApiKey.value;
-      if (!endpoint.name || !endpoint.base_url) {
-        toast("Endpoint name and base URL are required", true);
-        return;
-      }
-      if (previousName && previousName !== nextName) {
-        for (const item of state.taskModelAssignments) {
-          if (item.provider === previousName) item.provider = nextName;
-          for (const fallback of (item.fallbacks || [])) {
-            if (fallback.provider === previousName) fallback.provider = nextName;
-          }
-        }
-      }
-      state.activeEndpointOriginalName = nextName;
-    }
-
+    const items = state.providerEndpoints.filter(item => item.id !== endpoint.id).concat(endpoint);
     const payload = await api("/v1/admin/provider-endpoints", {
-      method: "PUT", body: JSON.stringify({ items: state.providerEndpoints }),
+      method: "PUT", body: JSON.stringify({ items }),
     }, true);
     state.providerEndpoints = payload.items || [];
+    for (const item of state.taskModelAssignments) {
+      if (item.provider === endpoint.id || (previousName && item.provider === previousName)) {
+        item.provider = endpoint.id;
+        item.model = endpoint.model;
+      }
+      for (const fallback of (item.fallbacks || [])) {
+        if (fallback.provider === endpoint.id || (previousName && fallback.provider === previousName)) {
+          fallback.provider = endpoint.id;
+          fallback.model = endpoint.model;
+        }
+      }
+    }
     const assignments = await api("/v1/admin/task-model-assignments", {
       method: "PUT", body: JSON.stringify({ items: state.taskModelAssignments }),
     }, true);
     state.taskModelAssignments = assignments.items || [];
+    state.endpointDraft = null;
+    state.endpointEditBaseline = "";
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
     renderTaskProfiles();
-    toast("Saved shared endpoints");
+    toast("Saved endpoint and model");
   } catch (error) { toast(error.message, true); }
+  finally {
+    state.integrationSaving = false;
+    updateEndpointEditorState();
+  }
+}
+
+async function removeEndpoint() {
+  const endpoint = selectedEndpoint();
+  if (!endpoint || state.endpointDraft || state.integrationSaving) return;
+  state.integrationSaving = true;
+  updateEndpointEditorState();
+  try {
+    const payload = await api("/v1/admin/provider-endpoints", {
+      method: "PUT",
+      body: JSON.stringify({ items: state.providerEndpoints.filter(item => item.id !== endpoint.id) }),
+    }, true);
+    state.providerEndpoints = payload.items || [];
+    const matches = provider => provider === endpoint.id || provider === endpoint.name;
+    const items = state.taskModelAssignments.map(item => ({
+      ...item,
+      ...(matches(item.provider) ? { provider: "", model: "" } : {}),
+      fallbacks: (item.fallbacks || []).filter(fallback => !matches(fallback.provider)),
+    }));
+    const assignments = await api("/v1/admin/task-model-assignments", {
+      method: "PUT", body: JSON.stringify({ items }),
+    }, true);
+    state.taskModelAssignments = assignments.items || [];
+    state.activeEndpointId = state.providerEndpoints[0]?.id || null;
+    renderTaskProfileEndpointOptions();
+    loadEndpointIntoForm();
+    renderTaskProfiles();
+    toast("Removed endpoint");
+  } catch (error) { toast(error.message, true); }
+  finally {
+    state.integrationSaving = false;
+    updateEndpointEditorState();
+  }
 }
 
 async function saveTaskProfile() {
   const task = state.activeTaskProfile;
-  if (!task) return;
+  if (!task || el.saveTaskProfile.disabled) return;
+  state.taskProfileSaving = true;
+  el.saveTaskProfile.disabled = true;
   try {
-    const endpoint = state.providerEndpoints.find(item => item.name === el.taskProviderSelect.value || item.id === el.taskProviderSelect.value);
     const assignment = state.taskModelAssignments.find(item => item.task === task);
-    if (task !== "reasoning" && assignment) {
-      assignment.provider = endpoint?.name || el.taskProviderSelect.value;
-      assignment.model = task === "audio_voice" ? el.taskProfileVoiceModel.value.trim() : el.taskProfileModel.value.trim();
-      assignment.fallbacks = (assignment.fallbacks || []).filter(item => item.provider && item.model);
-      assignment.voice_reference_id = task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : (assignment.voice_reference_id || "");
-    }
-
-    const behavior = state.taskBehaviors.find(item => item.task === task);
-    behavior.name = el.taskProfileBehaviorName.value.trim() || (taskModelLabels[task] || displayLabel(task));
-    behavior.instructions = el.taskProfileInstructions.value;
-    behavior.enabled = el.taskProfileEnabled.checked;
-
-    if (task !== "reasoning") {
-      const assignmentPayload = await api("/v1/admin/task-model-assignments", {
-        method: "PUT",
-        body: JSON.stringify({ items: state.taskModelAssignments }),
-      }, true);
-      state.taskModelAssignments = assignmentPayload.items || [];
-    }
-    const behaviorPayload = await api("/v1/admin/task-behaviors", {
-      method: "PUT",
-      body: JSON.stringify({ items: state.taskBehaviors }),
+    assignment.voice_reference_id = task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : assignment.voice_reference_id || "";
+    const payload = await api("/v1/admin/task-model-assignments", {
+      method: "PUT", body: JSON.stringify({ items: state.taskModelAssignments }),
     }, true);
-    state.taskBehaviors = behaviorPayload.items || [];
-    state.taskFoundations = behaviorPayload.foundations || state.taskFoundations;
+    state.taskModelAssignments = payload.items || [];
     toast(`Saved ${taskModelLabels[task] || displayLabel(task)} task profile`);
     renderTaskProfiles();
     openTaskProfile(task);
-  } catch (error) {
-    toast(error.message, true);
-  }
+  } catch (error) { toast(error.message, true); }
+  finally { state.taskProfileSaving = false; updateTaskSaveState(); }
 }
 
 async function discoverTaskProfileModels() {
-  const endpoint = selectedEndpoint();
+  syncEndpointDraft();
+  const endpoint = state.endpointDraft;
   if (!endpoint) {
     toast("Choose or add an endpoint first", true);
     return;
   }
-  endpoint.name = el.taskProfileEndpointName.value.trim();
-  endpoint.base_url = el.taskProfileBaseUrl.value.trim();
-  endpoint.api_key = el.taskProfileApiKey.value;
+  el.taskProfileDiscover.disabled = true;
   try {
     const payload = await api("/v1/admin/provider-endpoints/discover", {
       method: "POST",
@@ -773,12 +960,15 @@ async function discoverTaskProfileModels() {
     }, true);
     endpoint.models = payload.models || [];
     endpoint.model_capabilities = payload.model_capabilities || {};
+    endpoint.model_capability_sources = payload.model_capability_sources || {};
+    if (!endpoint.model && endpoint.models.length === 1) endpoint.model = endpoint.models[0];
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
     toast(`Discovered ${endpoint.models.length} model(s)`);
   } catch (error) {
     toast(error.message, true);
   }
+  finally { updateEndpointEditorState(); }
 }
 
 const COMMON_ENDPOINT_PRESETS = [
@@ -805,12 +995,16 @@ function addTaskProfileEndpointFromPreset(presetId) {
   const endpoint = {
     id: crypto.randomUUID(),
     name: preset.name,
+    provider_name: preset.name,
     base_url: preset.base_url,
     api_key: "",
+    model: "",
     models: [],
     model_capabilities: {},
+    model_capability_sources: {},
   };
-  state.providerEndpoints.push(endpoint);
+  state.endpointDraft = endpoint;
+  state.endpointEditBaseline = "";
   state.activeEndpointId = endpoint.id;
   state.activeEndpointOriginalName = "";
   renderTaskProfileEndpointOptions();
@@ -824,12 +1018,16 @@ function addTaskProfileEndpoint() {
   const endpoint = {
     id: crypto.randomUUID(),
     name: "",
+    provider_name: "",
     base_url: "",
     api_key: "",
+    model: "",
     models: [],
     model_capabilities: {},
+    model_capability_sources: {},
   };
-  state.providerEndpoints.push(endpoint);
+  state.endpointDraft = endpoint;
+  state.endpointEditBaseline = "";
   state.activeEndpointId = endpoint.id;
   state.activeEndpointOriginalName = "";
   renderTaskProfileEndpointOptions();
@@ -1859,6 +2057,28 @@ const adminSectionIds = {
   voice: "voiceSection",
 };
 
+function decorateAdminFormTitles() {
+  for (const [name, id] of Object.entries(adminSectionIds)) {
+    const source = document.querySelector(`[data-admin-section="${name}"] .admin-section-icon`);
+    const section = document.getElementById(id);
+    if (!source || !section) continue;
+    const headings = [section.querySelector(".panel-heading")];
+    if (name === "tasks") headings.push(section.querySelector(".task-profile-editor-heading"));
+    for (const heading of headings.filter(Boolean)) {
+      if (heading.querySelector(":scope > .admin-form-icon")) continue;
+      const icon = source.cloneNode(true);
+      icon.classList.add("admin-form-icon");
+      heading.prepend(icon);
+    }
+  }
+}
+decorateAdminFormTitles();
+
+document.getElementById("portalReturnButton")?.addEventListener("click", event => {
+  if (history.length > 1) { event.preventDefault(); history.back(); }
+});
+document.getElementById("continuityRefreshButton")?.addEventListener("click", refresh);
+
 async function refreshTaskProfilesFromButton() {
   const button = el.refreshTaskProfiles;
   if (!button || button.disabled) return;
@@ -1963,26 +2183,65 @@ function evidenceMediaUrl(artifact) {
 }
 
 function selectedMcpServer() {
-  return state.mcpServers.find(server => server.id === state.activeMcpServerId) || null;
+  return state.mcpServerDraft || state.mcpServers.find(server => server.id === state.activeMcpServerId) || null;
 }
 
 function syncMcpServerForm() {
-  const server = selectedMcpServer();
-  if (!server) return null;
+  const server = state.mcpServerDraft;
+  if (!server) return selectedMcpServer();
   server.name = el.mcpServerName.value.trim();
   server.url = el.mcpServerUrl.value.trim();
   server.bearer_token = el.mcpServerToken.value;
   server.enabled = el.mcpServerEnabled.checked;
+  updateMcpEditorState();
   return server;
+}
+
+function updateMcpEditorState() {
+  const editing = !!state.mcpServerDraft;
+  const saved = state.mcpServers.some(server => server.id === state.activeMcpServerId);
+  const busy = state.integrationSaving;
+  [el.mcpServerName, el.mcpServerUrl, el.mcpServerToken, el.mcpServerEnabled].forEach(input => {
+    input.disabled = !editing || busy;
+  });
+  el.mcpServerSelect.disabled = editing || busy;
+  el.mcpAddServer.disabled = editing || busy;
+  el.mcpEditServer.disabled = !saved || editing || busy;
+  el.mcpDeleteServer.disabled = !saved || editing || busy;
+  el.mcpCancelEdit.disabled = !editing || busy;
+  const server = state.mcpServerDraft;
+  const valid = !!(server?.name && /^https?:\/\/\S+$/i.test(server?.url || ""));
+  el.mcpDiscoverTools.disabled = !editing || busy || !valid;
+  el.saveMcpServers.disabled = !editing || busy || !valid || JSON.stringify(server) === state.mcpEditBaseline;
+  el.mcpRunTool.disabled = editing || busy || !saved;
+}
+
+function editMcpServer() {
+  const server = selectedMcpServer();
+  if (!server) return;
+  state.mcpServerDraft = JSON.parse(JSON.stringify(server));
+  state.mcpEditBaseline = JSON.stringify(state.mcpServerDraft);
+  loadMcpServerIntoForm();
+  el.mcpServerName.focus();
+}
+
+function cancelMcpEdit() {
+  state.mcpServerDraft = null;
+  state.mcpEditBaseline = "";
+  if (!selectedMcpServer()) state.activeMcpServerId = state.mcpServers[0]?.id || null;
+  renderMcpServerOptions();
+  loadMcpServerIntoForm();
 }
 
 function renderMcpServerOptions() {
   el.mcpServerSelect.replaceChildren();
   const blank = document.createElement("option");
   blank.value = "";
-  blank.textContent = "Add a new server";
+  blank.textContent = "Choose an MCP server";
   el.mcpServerSelect.append(blank);
-  for (const server of state.mcpServers) {
+  const servers = [...state.mcpServers];
+  if (state.mcpServerDraft && !servers.some(item => item.id === state.mcpServerDraft.id)) servers.push(state.mcpServerDraft);
+  for (const server of servers) {
     const option = document.createElement("option");
     option.value = server.id;
     option.textContent = server.name || server.url || (server.id === state.activeMcpServerId ? "New MCP server" : "Unnamed MCP server");
@@ -1998,9 +2257,10 @@ function loadMcpServerIntoForm() {
   el.mcpServerToken.value = server?.bearer_token || "";
   el.mcpServerEnabled.checked = server ? server.enabled !== false : true;
   el.mcpServerStatus.textContent = server
-    ? `${server.tools?.length || 0} discovered tool(s). Save after changing server or tool settings.`
-    : "Add a server URL, then discover its tools.";
+    ? `${server.tools?.length || 0} discovered tool(s). ${state.mcpServerDraft ? "Save to apply server and tool changes." : "Choose Edit to change this server or its tools."}`
+    : "Choose Add to configure an MCP server.";
   renderMcpTools();
+  updateMcpEditorState();
 }
 
 function renderMcpTools() {
@@ -2036,9 +2296,11 @@ function renderMcpTools() {
     const toggle = document.createElement("input");
     toggle.type = "checkbox";
     toggle.checked = tool.enabled !== false;
+    toggle.disabled = !state.mcpServerDraft || state.integrationSaving;
     toggle.addEventListener("change", () => {
       tool.enabled = toggle.checked;
       renderMcpTools();
+      updateMcpEditorState();
     });
     toggleLabel.append(toggle, document.createTextNode(" Enabled"));
     row.append(details, toggleLabel);
@@ -2053,6 +2315,7 @@ function renderMcpTools() {
 }
 
 async function refreshMcpServers() {
+  if (state.mcpServerDraft) return;
   try {
     const payload = await api("/v1/admin/mcp/servers", {}, true);
     state.mcpServers = payload.items || [];
@@ -2067,7 +2330,6 @@ async function refreshMcpServers() {
 }
 
 function addMcpServer() {
-  syncMcpServerForm();
   const server = {
     id: crypto.randomUUID(),
     name: "",
@@ -2076,7 +2338,8 @@ function addMcpServer() {
     enabled: true,
     tools: [],
   };
-  state.mcpServers.push(server);
+  state.mcpServerDraft = server;
+  state.mcpEditBaseline = "";
   state.activeMcpServerId = server.id;
   renderMcpServerOptions();
   loadMcpServerIntoForm();
@@ -2084,6 +2347,7 @@ function addMcpServer() {
 }
 
 async function discoverMcpTools() {
+  if (!state.mcpServerDraft) return;
   const server = syncMcpServerForm();
   if (!server) {
     addMcpServer();
@@ -2095,6 +2359,7 @@ async function discoverMcpTools() {
     return;
   }
   el.mcpServerStatus.textContent = "Connecting and discovering tools…";
+  el.mcpDiscoverTools.disabled = true;
   try {
     const payload = await api("/v1/admin/mcp/servers/discover", {
       method: "POST",
@@ -2109,31 +2374,54 @@ async function discoverMcpTools() {
     el.mcpServerStatus.textContent = `Connection failed: ${error.message}`;
     toast(error.message, true);
   }
+  finally { updateMcpEditorState(); }
 }
 
 async function saveMcpServers() {
   syncMcpServerForm();
+  if (el.saveMcpServers.disabled) return;
+  const server = state.mcpServerDraft;
+  state.integrationSaving = true;
+  updateMcpEditorState();
   try {
     const payload = await api("/v1/admin/mcp/servers", {
       method: "PUT",
-      body: JSON.stringify({ items: state.mcpServers }),
+      body: JSON.stringify({ items: state.mcpServers.filter(item => item.id !== server.id).concat(server) }),
     }, true);
     state.mcpServers = payload.items || [];
+    state.mcpServerDraft = null;
+    state.mcpEditBaseline = "";
     renderMcpServerOptions();
     loadMcpServerIntoForm();
     toast("MCP server and tool configuration saved");
   } catch (error) {
     toast(`Could not save MCP configuration: ${error.message}`, true);
   }
+  finally {
+    state.integrationSaving = false;
+    updateMcpEditorState();
+  }
 }
 
 async function removeMcpServer() {
-  if (!state.activeMcpServerId) return;
-  state.mcpServers = state.mcpServers.filter(server => server.id !== state.activeMcpServerId);
-  state.activeMcpServerId = state.mcpServers[0]?.id || null;
-  renderMcpServerOptions();
-  loadMcpServerIntoForm();
-  await saveMcpServers();
+  if (!state.activeMcpServerId || state.mcpServerDraft || state.integrationSaving) return;
+  state.integrationSaving = true;
+  updateMcpEditorState();
+  try {
+    const payload = await api("/v1/admin/mcp/servers", {
+      method: "PUT",
+      body: JSON.stringify({ items: state.mcpServers.filter(server => server.id !== state.activeMcpServerId) }),
+    }, true);
+    state.mcpServers = payload.items || [];
+    state.activeMcpServerId = state.mcpServers[0]?.id || null;
+    renderMcpServerOptions();
+    loadMcpServerIntoForm();
+    toast("Removed MCP server");
+  } catch (error) { toast(error.message, true); }
+  finally {
+    state.integrationSaving = false;
+    updateMcpEditorState();
+  }
 }
 
 async function runMcpTool() {
@@ -2167,6 +2455,11 @@ async function runMcpTool() {
   }
 }
 
+async function refreshIntegrations() {
+  try { await Promise.all([refreshProviderEndpoints(), refreshMcpServers()]); }
+  catch (error) { toast(`Could not refresh integrations: ${error.message}`, true); }
+}
+
 function showAdminSection(sectionName) {
   for (const [name, id] of Object.entries(adminSectionIds)) {
     const panel = document.getElementById(id);
@@ -2180,24 +2473,25 @@ function showAdminSection(sectionName) {
   if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
   if (sectionName === "tasks") renderTaskProfiles();
   if (sectionName === "devices") refreshDeviceInventory();
-  if (sectionName === "mcp" && state.adminAuthorized) refreshMcpServers();
+  if (sectionName === "mcp" && state.adminAuthorized) refreshIntegrations();
 }
 
 document.querySelectorAll("[data-admin-section]").forEach(button => {
   button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
 });
 if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", refreshTaskProfilesFromButton);
-if (el.refreshMcpServers) el.refreshMcpServers.addEventListener("click", refreshMcpServers);
+if (el.refreshMcpServers) el.refreshMcpServers.addEventListener("click", refreshIntegrations);
 if (el.mcpAddServer) el.mcpAddServer.addEventListener("click", addMcpServer);
 if (el.mcpServerSelect) el.mcpServerSelect.addEventListener("change", () => {
   const selectedId = el.mcpServerSelect.value;
-  if (!selectedId) {
-    addMcpServer();
-    return;
-  }
-  syncMcpServerForm();
-  state.activeMcpServerId = selectedId;
+  if (state.mcpServerDraft) return;
+  state.activeMcpServerId = selectedId || null;
   loadMcpServerIntoForm();
+});
+if (el.mcpEditServer) el.mcpEditServer.addEventListener("click", editMcpServer);
+if (el.mcpCancelEdit) el.mcpCancelEdit.addEventListener("click", cancelMcpEdit);
+[el.mcpServerName, el.mcpServerUrl, el.mcpServerToken, el.mcpServerEnabled].forEach(input => {
+  if (input) input.addEventListener("input", syncMcpServerForm);
 });
 if (el.mcpDiscoverTools) el.mcpDiscoverTools.addEventListener("click", discoverMcpTools);
 if (el.mcpDeleteServer) el.mcpDeleteServer.addEventListener("click", removeMcpServer);
@@ -2205,6 +2499,7 @@ if (el.saveMcpServers) el.saveMcpServers.addEventListener("click", saveMcpServer
 if (el.mcpRunTool) el.mcpRunTool.addEventListener("click", runMcpTool);
 if (el.refreshDevicesButton) el.refreshDevicesButton.addEventListener("click", refreshDeviceInventory);
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
+  if (state.endpointDraft) return;
   const value = el.taskProfileEndpointSelect.value;
   if (value.startsWith("preset:")) { addTaskProfileEndpointFromPreset(value.slice(7)); return; }
   state.activeEndpointId = value || null;
@@ -2212,15 +2507,31 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
   loadEndpointIntoForm();
 });
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
+if (el.endpointEditButton) el.endpointEditButton.addEventListener("click", editEndpoint);
+if (el.endpointRemoveButton) el.endpointRemoveButton.addEventListener("click", removeEndpoint);
+if (el.endpointCancelButton) el.endpointCancelButton.addEventListener("click", cancelEndpointEdit);
+[el.taskProfileEndpointName, el.taskProfileProviderName, el.taskProfileBaseUrl, el.taskProfileApiKey, el.endpointModelId].forEach(input => {
+  if (input) input.addEventListener("input", () => {
+    syncEndpointDraft();
+    if (input === el.endpointModelId) el.endpointModelSelect.value = input.value;
+  });
+});
+if (el.endpointModelSelect) el.endpointModelSelect.addEventListener("change", () => {
+  el.endpointModelId.value = el.endpointModelSelect.value;
+  syncEndpointDraft();
+});
 el.saveProviderEndpoints.addEventListener("click", saveProviderEndpoints);
 el.taskProviderSelect.addEventListener("change", () => {
   const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
   if (!assignment) return;
-  assignment.provider = el.taskProviderSelect.value;
-  assignment.model = "";
-  const endpoint = state.providerEndpoints.find(item => item.name === assignment.provider);
-  fillSelect(el.taskProfileModel, endpoint?.models || [], "", "Choose a model", endpoint?.model_capabilities || {});
-  el.taskProfileVoiceModel.value = "";
+  const endpoint = state.providerEndpoints.find(item => item.id === el.taskProviderSelect.value);
+  const sameEndpoint = endpoint && (assignment.provider === endpoint.id || assignment.provider === endpoint.name);
+  assignment.provider = endpoint?.id || el.taskProviderSelect.value;
+  assignment.model = endpoint?.model || (sameEndpoint ? assignment.model : "")
+    || (assignment.provider === "connected-host" ? "host-selected" : "");
+  if (endpoint && !assignment.model) toast("Save a model for this endpoint in Endpoints, Servers & Tools first", true);
+  el.taskProviderSelect.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
+  updateTaskSaveState();
 });
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
@@ -2230,11 +2541,15 @@ if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click
   assignment.fallbacks = assignment.fallbacks || [];
   assignment.fallbacks.push({ provider: "", model: "" });
   renderFallbackSelectors();
+  updateTaskSaveState();
 });
 if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click", () => {
-  el.taskProfileEnabled.checked = true;
-  el.taskProfileBehaviorName.focus();
-  toast("Behavior editor ready. Save the task profile to keep your changes.");
+  el.taskProfileBehaviorSelection?.querySelector("input:not(:disabled)")?.focus();
+});
+if (el.taskProfileVoiceReferenceId) el.taskProfileVoiceReferenceId.addEventListener("input", () => {
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (assignment) assignment.voice_reference_id = el.taskProfileVoiceReferenceId.value;
+  updateTaskSaveState();
 });
 if (el.refreshVoiceSettings) el.refreshVoiceSettings.addEventListener("click", loadVoiceSettings);
 if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);

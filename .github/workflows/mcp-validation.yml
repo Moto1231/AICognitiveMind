@@ -34,6 +34,14 @@ jobs:
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
+      - name: Set up Node.js for portal behavior checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify portal editing and task configuration
+        run: node --test tests/portal_editors.test.cjs
+
       - name: Validate MCP server import
         run: python -c "import aicognitive_mind.mcp_server; print('MCP server import OK')"
 

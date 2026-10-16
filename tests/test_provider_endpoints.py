@@ -8,6 +8,7 @@ from aicognitive_mind.provider_endpoints import (
     ProviderEndpoint,
     ProviderEndpointRegistry,
     _reported_capabilities,
+    _documented_capabilities,
     discover_endpoint_model_details,
 )
 
@@ -35,8 +36,10 @@ class ProviderEndpointTests(unittest.IsolatedAsyncioTestCase):
         endpoint = ProviderEndpoint(
             id="local",
             name="Local model server",
+            provider_name=" Example Provider ",
             base_url="http://localhost:8000/v1/",
             api_key="admin-visible-key",
+            model=" vision-model ",
             models=["vision-model", "audio-model", "vision-model"],
         )
 
@@ -46,6 +49,8 @@ class ProviderEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved, loaded)
         self.assertEqual(loaded[0].base_url, "http://localhost:8000/v1")
         self.assertEqual(loaded[0].api_key, "admin-visible-key")
+        self.assertEqual(loaded[0].provider_name, "Example Provider")
+        self.assertEqual(loaded[0].model, "vision-model")
         self.assertEqual(loaded[0].models, ["vision-model", "audio-model"])
 
     def test_capability_labels_use_only_explicit_provider_metadata(self):
@@ -54,6 +59,22 @@ class ProviderEndpointTests(unittest.IsolatedAsyncioTestCase):
             ["Text", "Vision"],
         )
         self.assertEqual(_reported_capabilities({"id": "model-b"}), [])
+
+    def test_gateway_flags_and_output_modalities_are_read_without_false_flags(self):
+        self.assertEqual(_reported_capabilities({
+            "capabilities": {"vision": True, "audio": False},
+            "architecture": {"output_modalities": ["text"]},
+            "model_info": {"supports_function_calling": True, "supports_audio_output": False},
+        }), ["Vision", "Text", "Tools"])
+
+    def test_documented_modalities_are_scoped_to_actual_openai_endpoint(self):
+        official = ProviderEndpoint(id="openai", name="OpenAI", base_url="https://api.openai.com/v1")
+        labels, source = _documented_capabilities(official, "gpt-5.5-2026-04-23")
+        self.assertEqual(labels, ["Text", "Vision"])
+        self.assertEqual(source, "https://developers.openai.com/api/docs/models/gpt-5.5")
+        custom = official.model_copy(update={"base_url": "https://compatible.example/v1"})
+        self.assertEqual(_documented_capabilities(custom, "gpt-5.5"), ([], ""))
+        self.assertEqual(_documented_capabilities(official, "gpt-future-unknown"), ([], ""))
 
 
     async def test_model_discovery_uses_exact_configured_base_url_without_v1_fallback(self):

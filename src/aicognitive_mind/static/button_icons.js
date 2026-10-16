@@ -178,6 +178,7 @@
       state.generatedLabel = null;
     }
     for (const node of nodes) {
+      if (control.dataset.keepLabel === 'true' && node.parentElement.closest('strong')) continue;
       if (!node.nodeValue.trim() || node.parentElement.classList.contains('axiom-button-label')) continue;
       const span = document.createElement('span');
       span.className = 'axiom-button-label';

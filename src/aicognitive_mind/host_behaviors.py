@@ -47,12 +47,43 @@ class HostBehaviorRegistry:
 
     async def list(self) -> list[HostBehavior]:
         record = await self.records.get(self.RECORD_KEY)
-        if not record:
-            return list(DEFAULT_HOST_BEHAVIORS)
-        return [HostBehavior.model_validate(item) for item in record.get("items", [])]
+        items = (
+            [HostBehavior.model_validate(item) for item in record.get("items", [])]
+            if record else list(DEFAULT_HOST_BEHAVIORS)
+        )
+        if record and record.get("task_profiles_migrated"):
+            return items
+        # Promote the former inline task instructions into the shared catalog
+        # without mutating storage on a read. The next catalog save persists them.
+        # Once a task has explicit memberships, removing the legacy catalog item
+        # must not cause it to reappear from its old profile.
+        profiles = await self.records.get("task_behaviors")
+        assignments = await self.records.get("task_model_assignments")
+        assigned = {
+            value.get("task"): value.get("behavior_ids")
+            for value in (assignments or {}).get("items", [])
+        }
+        ids = {item.id for item in items}
+        for profile in (profiles or {}).get("items", []):
+            task = profile.get("task")
+            instruction = str(profile.get("instructions", "")).strip()
+            behavior_id = f"task-{task}-legacy"
+            if not instruction or assigned.get(task) is not None or behavior_id in ids:
+                continue
+            items.append(HostBehavior(
+                id=behavior_id,
+                name=str(profile.get("name") or task),
+                instruction=instruction,
+                enabled=bool(profile.get("enabled", True)),
+                priority=200,
+            ))
+            ids.add(behavior_id)
+        return items
 
     async def replace(self, behaviors: list[HostBehavior]) -> list[HostBehavior]:
         current = await self.list()
+        if len({item.id for item in behaviors}) != len(behaviors):
+            raise ValueError("Behavior IDs must be unique")
         protected = {item.id: item for item in current if item.protected}
         incoming = {item.id: item for item in behaviors}
         for behavior_id, original in protected.items():
@@ -62,7 +93,10 @@ class HostBehaviorRegistry:
             if not candidate.protected:
                 raise ValueError(f"Protected host behavior cannot be unprotected: {behavior_id}")
         ordered = sorted(behaviors, key=lambda item: (item.priority, item.id))
-        after = {"items": [item.model_dump(mode="json") for item in ordered]}
+        after = {
+            "items": [item.model_dump(mode="json") for item in ordered],
+            "task_profiles_migrated": True,
+        }
         before = await self.records.get(self.RECORD_KEY)
         if before is None:
             await self.records.create(self.RECORD_KEY, after)
@@ -70,8 +104,26 @@ class HostBehaviorRegistry:
             raise RuntimeError("Host behavior registry changed concurrently; refresh and retry")
         return ordered
 
-    async def compose(self, core_contract: str) -> str:
-        enabled = [item for item in await self.list() if item.enabled]
+    async def selected(self, task: str) -> list[HostBehavior]:
+        assignments = await self.records.get("task_model_assignments")
+        saved = next((item for item in (assignments or {}).get("items", [])
+                      if item.get("task") == task), {})
+        membership = saved.get("behavior_ids")
+        catalog = await self.list()
+        if membership is None:
+            selected = (
+                {item.id for item in catalog if not item.id.startswith("task-")}
+                if task == "reasoning" else set()
+            )
+            selected.add(f"task-{task}-legacy")
+        else:
+            selected = set(membership)
+        return [item for item in catalog if item.enabled and (
+            item.id in selected or (task == "reasoning" and item.protected)
+        )]
+
+    async def compose(self, core_contract: str, *, task: str = "reasoning") -> str:
+        enabled = await self.selected(task)
         if not enabled:
             return core_contract
         lines = ["", "Configured host behaviors:"]

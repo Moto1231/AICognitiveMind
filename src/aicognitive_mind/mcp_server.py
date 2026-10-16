@@ -160,7 +160,7 @@ async def execute_task(
     # reasoning host. This makes the live host the default route instead of leaving
     # every unconfigured task stranded at "not connected".
     has_specialist = bool(
-        (assignment.provider and assignment.model)
+        (assignment.provider and assignment.provider != "connected-host" and assignment.model)
         or any(item.provider and item.model for item in assignment.fallbacks)
     )
     if not has_specialist:

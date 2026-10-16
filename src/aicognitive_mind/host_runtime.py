@@ -528,6 +528,41 @@ class HostAwareCore:
             raise RuntimeError(
                 "No external reasoning host is attached. Body standalone fallback is disabled."
             )
+        dispatcher = TaskModelDispatcher(self.hosts.records)
+        assignment = await dispatcher.assignment("reasoning")
+        if assignment.provider not in {"", "connected-host"} or assignment.fallbacks:
+            import json
+
+            from aicognitive_mind.domain import InteractionResult
+            from aicognitive_mind.task_behaviors import TaskExecutionContext
+
+            recalled = await self.hosts.service.begin_interaction(
+                message, source=source, input_context=input_context,
+            )
+            response_text = await dispatcher.complete_chat(
+                "reasoning",
+                [{"role": "system", "content": recalled.get("conscious_workspace_contract", "")},
+                 {"role": "user", "content": message}],
+                context=TaskExecutionContext(
+                    task="reasoning",
+                    working_context=json.dumps({
+                        "mind": recalled.get("mind"),
+                        "recalled_context": recalled.get("recalled_context"),
+                        "current_state": recalled.get("current_state"),
+                        "body_context": input_context,
+                    }, default=str),
+                ),
+            )
+            committed = await self.hosts.service.complete_interaction(
+                message, response_text, idempotency_key=recalled["idempotency_key"],
+                source=source, input_context=input_context,
+                runtime_source="configured_reasoning_endpoint",
+            )
+            if committed.get("status") != "interaction_committed":
+                raise RuntimeError("Configured reasoning endpoint did not commit the Body interaction")
+            return InteractionResult(
+                response_text=response_text, occurred_at=committed["occurred_at"],
+            )
         return await self.core.interact(message, source=source, input_context=input_context)
 
 

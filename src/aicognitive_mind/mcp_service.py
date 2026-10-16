@@ -77,13 +77,12 @@ class CognitiveMcpService:
         self._task_prompt_assembler = TaskPromptAssembler(TaskBehaviorRegistry(records))
 
     async def _compose_reasoning_contract(self) -> str:
-        host_contract = await self._host_behaviors.compose(CONSCIOUS_WORKSPACE_SYSTEM_PROMPT)
         task_layers = await self._task_prompt_assembler.system_prompt(TaskExecutionContext(
             task="reasoning",
             provider="connected-host",
             model="host-selected",
         ))
-        return host_contract + "\n\n" + task_layers
+        return CONSCIOUS_WORKSPACE_SYSTEM_PROMPT + "\n\n" + task_layers
 
     @atomic
     async def initialize(
@@ -144,7 +143,8 @@ class CognitiveMcpService:
 
     @atomic
     async def begin_interaction(
-        self, user_message: str, host_working_context: dict[str, Any] | None = None
+        self, user_message: str, host_working_context: dict[str, Any] | None = None,
+        *, source: str = "human", input_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return recalled knowledge plus Axiom's persisted current-state ledger."""
         mind = await self._require_mind()
@@ -161,10 +161,11 @@ class CognitiveMcpService:
             }
         )
         contract = await self._compose_reasoning_contract()
-        behaviors = await self._host_behaviors.list()
+        behaviors = await self._host_behaviors.selected("reasoning")
         current_state = await self._refresh_current_state(
             mind, recalled["context"], user_message, host_working_context or {}, contract,
             [item.model_dump(mode="json") for item in behaviors],
+            source=source, input_context=input_context,
         )
         return {
             "status": "ready_to_reason",
@@ -198,6 +199,10 @@ class CognitiveMcpService:
         belief_transitions: tuple[BeliefTransitionProposal, ...] = (),
         belief_reframes: tuple[BeliefReframeProposal, ...] = (),
         idempotency_key: str | None = None,
+        *,
+        source: str = "human",
+        input_context: dict[str, Any] | None = None,
+        runtime_source: str = "connected_mcp_host",
     ) -> dict[str, Any]:
         """Let the Steward review proposed learning, commit accepted memory, and journal the experience."""
         mind = await self._require_mind()
@@ -253,8 +258,9 @@ class CognitiveMcpService:
                 kind=JournalKind.INTERACTION,
                 experience=journal_safe_value({
                     "input": {
-                        "source": "human",
+                        "source": source,
                         "content": user_message,
+                        **({"context": input_context} if input_context else {}),
                     },
                     "memory_steward": trace.model_dump(mode="python"),
                     "expression": {
@@ -262,7 +268,7 @@ class CognitiveMcpService:
                         "content": response_text,
                     },
                     "reasoning_runtime": {
-                        "source": "connected_mcp_host",
+                        "source": runtime_source,
                     },
                 }),
             ),
@@ -310,6 +316,7 @@ class CognitiveMcpService:
     async def _refresh_current_state(
         self, mind: CognitiveMind, recalled: dict[str, Any], message: str,
         working: dict[str, Any], contract: str, behaviors: list[dict[str, Any]],
+        *, source: str = "human", input_context: dict[str, Any] | None = None,
     ) -> CurrentStateLedger:
         ledger = await self._load_current_state()
         before = {k: v.model_dump(mode="json") for k, v in ledger.fields.items()}
@@ -333,28 +340,47 @@ class CognitiveMcpService:
         if summary:
             ledger.answer("active_topic", summary, source="host_working_context")
         elif ledger.fields["active_topic"].status == "unknown":
-            ledger.answer("active_topic", message, source="current_human_input")
+            ledger.answer("active_topic", message,
+                          source="current_human_input" if source == "human" else source)
         participants = working.get("participants", [])
-        ledger.answer("interlocutor", {
-            "participants": participants,
-            "active_speaker": working.get("active_speaker"),
-            "addressee": working.get("addressee"),
-        } if participants else {"type": "current human interlocutor", "identity_status": "unresolved"},
-            source="validated_host_working_context" if participants else "current_human_input")
         if participants:
+            ledger.answer("interlocutor", {
+                "participants": participants,
+                "active_speaker": working.get("active_speaker"),
+                "addressee": working.get("addressee"),
+            }, source="validated_host_working_context")
             ledger.answer("presence", participants, source="validated_host_working_context")
-        elif (
-            ledger.fields["presence"].status == "unknown"
-            or ledger.fields["presence"].source == "validated_host_working_context"
-        ):
-            ledger.answer("presence", {"interaction_presence": "human input received",
-                "physical_presence": "unknown"}, source="current_human_input")
+        elif source == "human":
+            ledger.answer("interlocutor", {
+                "type": "current human interlocutor", "identity_status": "unresolved",
+            }, source="current_human_input")
+            if (
+                ledger.fields["presence"].status == "unknown"
+                or ledger.fields["presence"].source == "validated_host_working_context"
+            ):
+                ledger.answer("presence", {"interaction_presence": "human input received",
+                    "physical_presence": "unknown"}, source="current_human_input")
+        else:
+            ledger.invalidate("interlocutor", event="nonhuman_input",
+                              note="Sensory input does not establish a current human speaker.")
+            observed_presence = (input_context or {}).get("presence")
+            if isinstance(observed_presence, dict) and observed_presence:
+                ledger.answer("presence", observed_presence, source=source)
+            elif (
+                ledger.fields["presence"].status == "unknown"
+                or ledger.fields["presence"].source in {
+                    "current_human_input", "validated_host_working_context",
+                }
+            ):
+                ledger.invalidate("presence", event="nonhuman_input",
+                                  note="Sensory input does not establish participant presence.")
         if summary or working.get("unresolved_references"):
             ledger.answer("decisions_and_open_questions", {
                 "working_summary": summary or "",
                 "unresolved_references": working.get("unresolved_references", []),
             }, source="host_working_context")
-        ledger.answer("active_task", "reasoning", source="active_mcp_interaction")
+        ledger.answer("active_task", "reasoning",
+                      source="active_mcp_interaction" if source == "human" else source)
         ledger.answer("connection_status", {"mind_service": "available_for_current_interaction"},
                       source="successful_begin_interaction")
         ledger.answer("capabilities", ["read_current_state", "update_current_state",

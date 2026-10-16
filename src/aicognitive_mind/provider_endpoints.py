@@ -10,12 +10,15 @@ from pydantic import BaseModel, Field, field_validator
 class ProviderEndpoint(BaseModel):
     id: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=120)
+    provider_name: str = Field(default="", max_length=120)
     base_url: str = Field(min_length=8, max_length=1000)
     api_key: str = Field(default="", max_length=4096)
+    model: str = Field(default="", max_length=160)
     models: list[str] = Field(default_factory=list, max_length=2000)
     model_capabilities: dict[str, list[str]] = Field(default_factory=dict, max_length=2000)
+    model_capability_sources: dict[str, str] = Field(default_factory=dict, max_length=2000)
 
-    @field_validator("id", "name", "base_url", "api_key")
+    @field_validator("id", "name", "provider_name", "base_url", "api_key", "model")
     @classmethod
     def strip_values(cls, value: str) -> str:
         return value.strip()
@@ -69,14 +72,31 @@ def _reported_capabilities(entry: dict[str, Any]) -> list[str]:
             values.extend(value.strip().lower() for value in raw if isinstance(value, str) and value.strip())
         elif isinstance(raw, str) and raw.strip():
             values.append(raw.strip().lower())
+        elif isinstance(raw, dict):
+            values.extend(str(name).lower() for name, enabled in raw.items() if enabled is True)
     architecture = entry.get("architecture")
     if isinstance(architecture, dict):
-        raw = architecture.get("input_modalities")
-        if isinstance(raw, list):
-            values.extend(value.strip().lower() for value in raw if isinstance(value, str) and value.strip())
+        for key in ("input_modalities", "output_modalities"):
+            raw = architecture.get(key)
+            if isinstance(raw, list):
+                values.extend(value.strip().lower() for value in raw if isinstance(value, str) and value.strip())
+    # LiteLLM and other compatible gateways expose feature flags rather than a
+    # modalities array. A false flag must never be presented as a capability.
+    for container in (entry, entry.get("model_info"), entry.get("metadata")):
+        if not isinstance(container, dict):
+            continue
+        for key, label in {
+            "supports_vision": "vision", "supports_audio_input": "audio",
+            "supports_audio_output": "audio", "supports_function_calling": "tools",
+            "supports_tool_calling": "tools", "supports_response_schema": "structured_outputs",
+        }.items():
+            if container.get(key) is True:
+                values.append(label)
     aliases = {
         "image": "Vision", "vision": "Vision", "video": "Video",
         "audio": "Audio", "text": "Text", "embedding": "Embeddings",
+        "embeddings": "Embeddings", "function_calling": "Tools", "tools": "Tools",
+        "completion": "Text", "chat": "Text",
     }
     labels = []
     for value in values:
@@ -84,6 +104,35 @@ def _reported_capabilities(entry: dict[str, Any]) -> list[str]:
         if label not in labels:
             labels.append(label)
     return labels
+
+
+# OpenAI's /models response contains identity/ownership, not modalities:
+# https://developers.openai.com/api/reference/resources/models/methods/retrieve
+# This deliberately finite catalog supplements that response with documented
+# modalities (checked 2026-10-16). It is not a live capability or key-access test.
+# Never infer a third-party compatible server's features from a model-like name.
+_OPENAI_DOCUMENTED_MODELS = {
+    model_id: (["Text", "Vision"], f"https://developers.openai.com/api/docs/models/{model_id}")
+    for model_id in (
+        "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna",
+        "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5",
+    )
+}
+
+
+def _documented_capabilities(endpoint: ProviderEndpoint, model_id: str) -> tuple[list[str], str]:
+    hostname = urlparse(endpoint.base_url).hostname or ""
+    if hostname != "api.openai.com" and not hostname.endswith(".api.openai.com"):
+        return [], ""
+    documented = _OPENAI_DOCUMENTED_MODELS.get(model_id)
+    if documented is None:
+        # Only strip a conventional dated snapshot suffix, not arbitrary model
+        # suffixes such as -audio, -realtime or a provider-specific variant.
+        import re
+
+        alias = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", model_id)
+        documented = _OPENAI_DOCUMENTED_MODELS.get(alias)
+    return documented if documented else ([], "")
 
 
 async def discover_endpoint_model_details(endpoint: ProviderEndpoint) -> dict[str, Any]:
@@ -100,6 +149,7 @@ async def discover_endpoint_model_details(endpoint: ProviderEndpoint) -> dict[st
     entries = payload.get("data", payload.get("models", [])) if isinstance(payload, dict) else []
     models: list[str] = []
     capabilities: dict[str, list[str]] = {}
+    sources: dict[str, str] = {}
     if isinstance(entries, list):
         for entry in entries:
             if isinstance(entry, str):
@@ -112,11 +162,20 @@ async def discover_endpoint_model_details(endpoint: ProviderEndpoint) -> dict[st
                 model_id = model_id.strip()
                 if model_id not in models:
                     models.append(model_id)
-                if isinstance(entry, dict):
-                    reported = _reported_capabilities(entry)
-                    if reported:
-                        capabilities[model_id] = reported
-    return {"models": models, "model_capabilities": capabilities}
+                reported = _reported_capabilities(entry) if isinstance(entry, dict) else []
+                if reported:
+                    capabilities[model_id] = reported
+                    sources[model_id] = "provider_metadata"
+                else:
+                    documented, source = _documented_capabilities(endpoint, model_id)
+                    if documented:
+                        capabilities[model_id] = documented
+                        sources[model_id] = source
+    return {
+        "models": models,
+        "model_capabilities": capabilities,
+        "model_capability_sources": sources,
+    }
 
 
 async def discover_endpoint_models(endpoint: ProviderEndpoint) -> list[str]:

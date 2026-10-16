@@ -79,7 +79,20 @@ class TaskModelDispatcher:
         raise TaskDispatchError("Unsupported task runtime operation.")
 
     async def assignment(self, task: TaskKind) -> TaskModelAssignment:
-        return next(item for item in await self.assignments.list() if item.task == task)
+        saved = next(item for item in await self.assignments.list() if item.task == task)
+        endpoints = await self.endpoints.list()
+
+        def bound_model(provider: str, legacy_model: str) -> str:
+            endpoint = next((item for item in endpoints if provider.casefold() in {
+                item.id.casefold(), item.name.casefold(), item.base_url.casefold()
+            }), None)
+            return (endpoint.model or legacy_model) if endpoint else legacy_model
+
+        return saved.model_copy(update={
+            "model": bound_model(saved.provider, saved.model),
+            "fallbacks": [item.model_copy(update={"model": bound_model(item.provider, item.model)})
+                          for item in saved.fallbacks],
+        })
 
     async def is_configured(self, task: TaskKind) -> bool:
         try:
@@ -144,7 +157,7 @@ class TaskModelDispatcher:
         self, task: TaskKind, assignment_override: TaskModelAssignment | None = None
     ) -> tuple[TaskModelAssignment, ProviderEndpoint]:
         assignment = assignment_override or await self.assignment(task)
-        if not assignment.provider or not assignment.model:
+        if not assignment.provider:
             raise TaskDispatchError(
                 f"Task '{task}' has an incomplete provider/model assignment."
             )
@@ -162,6 +175,10 @@ class TaskModelDispatcher:
             raise TaskDispatchError(
                 f"Provider endpoint '{assignment.provider}' for task '{task}' is not configured."
             )
+        model = endpoint.model or assignment.model
+        if not model:
+            raise TaskDispatchError(f"Endpoint '{endpoint.name}' has no selected model for task '{task}'.")
+        assignment = assignment.model_copy(update={"model": model})
         return assignment, endpoint
 
     @staticmethod

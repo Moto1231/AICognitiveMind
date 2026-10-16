@@ -4,36 +4,37 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261012-admin-polish-admin-icons">
-  <script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script>
+  <link rel="stylesheet" href="/static/portal.css?v=20261016-portal-refinement">
+  <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
   <div class="shell">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-mark">A</div>
-        <div>
-          <h1>Axiom</h1>
-        </div>
+        <h1>Axiom</h1>
+        <img class="brand-logo" src="/static/axiom-logo.png" alt="" width="88" height="66">
       </div>
-      <div class="top-actions">
+      <nav class="top-actions" aria-label="Main navigation">
+        <a href="/" id="portalReturnButton" class="secondary-button portal-return">Return</a>
+        <div class="portal-menu">
+        <div class="mode-switch" role="group" aria-label="Portal mode">
+          <button id="mindTab" class="mode-button active" type="button">Main</button>
+          <button id="adminTab" class="mode-button" type="button">Administration</button>
+        </div>
         <a href="/body/live" class="secondary-button">Live</a>
-        <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
-        <div class="status-pill">
+        <div class="status-pill" role="status" aria-live="polite">
           <span class="status-dot"></span>
           <span id="connectionLabel">Connecting…</span>
         </div>
+        <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
         <button id="logoutButton" class="secondary-button" type="button">Log Out</button>
-        <nav class="mode-switch" aria-label="Portal mode">
-          <button id="mindTab" class="mode-button active" type="button">Main</button>
-          <button id="adminTab" class="mode-button" type="button">Administration</button>
-        </nav>
-      </div>
+        </div>
+      </nav>
     </header>
 
     <main>
       <section id="mindView" class="view">
-        <div class="hero">
+        <div class="hero mind-hero">
           <div>
             <p class="eyebrow">PERSISTENT MIND</p>
             <h2 id="mindName">Loading…</h2>
@@ -42,8 +43,8 @@
             </p>
           </div>
           <div class="hero-status">
-            <span>Continuity</span>
-            <strong id="continuityLabel">Checking…</strong>
+            <div><span>Continuity</span><strong id="continuityLabel">Checking…</strong></div>
+            <button id="continuityRefreshButton" class="secondary-button" type="button" aria-label="Refresh continuity">Refresh</button>
           </div>
         </div>
 
@@ -147,10 +148,7 @@
       </section>
 
       <section id="adminView" class="view hidden">
-        <div class="hero">
-          <div>
-            <h2>Administration</h2>
-          </div>
+        <div class="hero admin-toolbar">
           <button id="adminRefreshButton" class="secondary-button" type="button">Refresh</button>
         </div>
 
@@ -160,7 +158,7 @@
           <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-devices.svg" alt="" width="48" height="52"></span><span>Devices</span></button>
           <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-speech.svg" alt="" width="48" height="52"></span><span>Speech Settings</span></button>
           <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-task-profiles.svg" alt="" width="48" height="52"></span><span>Task Profiles</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon admin-section-icon-mcp" aria-hidden="true"><img src="/static/admin-mcp.svg" alt="" width="48" height="49"></span><span>MCP Servers &amp; Tools</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon admin-section-icon-mcp" aria-hidden="true"><img src="/static/admin-mcp.svg" alt="" width="48" height="49"></span><span>Endpoints, Servers &amp; Tools</span></button>
           <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-memories.svg" alt="" width="48" height="52"></span><span>Memories</span></button>
           <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-journals.svg" alt="" width="48" height="52"></span><span>Journals</span></button>
         </nav>
@@ -168,10 +166,10 @@
         <div class="admin-grid">
           <article id="behaviorsSection" class="panel admin-behavior-panel hidden">
             <div class="panel-heading">
-              <div><p class="eyebrow">INTERACTION CONTRACT</p><h3>Interaction Behaviors</h3></div>
+              <div><p class="eyebrow">BEHAVIOR LIBRARY</p><h3>Behaviors</h3></div>
               <button id="addHostBehavior" class="secondary-button" type="button">Add Behavior</button>
             </div>
-            <p>These instructions shape how Axiom handles interactions across connected reasoning runtimes. Add, remove, enable, disable, or reprioritize editable behaviors here.</p>
+            <p>Add and edit reusable behaviors here, then select them on Task Profiles. Interaction behaviors belong to the Reasoning task.</p>
             <div id="hostBehaviorList" class="record-list"></div>
             <div class="edit-actions">
               <button id="saveHostBehaviors" class="primary-button" type="button">Save</button>
@@ -184,7 +182,7 @@
                 <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
                 <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh</button>
               </div>
-              <p>Each task has its own configuration page. Endpoint settings, model routing, and editable behavior live together in that task's profile. Endpoint records can be reused by multiple tasks.</p>
+              <p>Select a task to choose its primary endpoint, fallback endpoints, and behaviors.</p>
             </div>
             <div id="taskProfileList" class="task-profile-grid"></div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
@@ -193,11 +191,11 @@
                 <button id="taskProfileBack" class="secondary-button" type="button">Return</button>
               </div>
               <section id="taskProfileAssignmentSection" class="task-profile-section">
-                <h4>Model assignment</h4>
+                <h4>Endpoints</h4>
                 <label class="host-behavior-field">Primary endpoint<select id="taskProviderSelect"></select></label>
-                <p class="muted-copy">Configure shared endpoints in MCP Servers &amp; Tools.</p>
+                <p class="muted-copy">Each endpoint includes its saved model. Configure them in Endpoints, Servers &amp; Tools.</p>
                 <div class="task-model-fields">
-                  <label id="taskProfileStandardModelField" class="host-behavior-field">Model ID
+                  <label id="taskProfileStandardModelField" class="host-behavior-field hidden">Model ID
                     <select id="taskProfileModel" aria-label="Model ID"><option value="">Discover models or choose a model</option></select>
                   </label>
                   <label id="taskProfileVoiceModelField" class="host-behavior-field hidden">Fish Audio model ID
@@ -208,24 +206,25 @@
                   </label>
                   <div class="task-fallbacks-editor">
                     <div class="panel-heading"><h4>Fallback endpoints</h4><button id="taskProfileAddFallback" class="secondary-button" type="button">Add fallback</button></div>
-                    <p class="muted-copy">Fallbacks are attempted in order. Add as many provider/model pairs as needed.</p>
+                    <p class="muted-copy">Fallback endpoints are attempted in order using each endpoint's saved model.</p>
                     <div id="taskProfileFallbackList" class="task-fallback-list"></div>
                   </div>
                 </div>
               </section>
               <section class="task-profile-section">
-                <div class="panel-heading task-profile-behavior-heading"><h4>Behavior for this task</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Add Behavior</button></div>
-                <p>Editable behavior is saved independently for the selected task. Switching tasks loads that task's own instructions.</p>
+                <div class="panel-heading task-profile-behavior-heading"><h4>Behaviors</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
+                <p>Choose behaviors from the Behaviors form. Protected Reasoning behaviors are always applied.</p>
+                <div id="taskProfileBehaviorSelection" class="task-behavior-selection"></div>
                 <label class="host-behavior-field">Immutable foundation (code-owned)
                   <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
                 </label>
-                <label class="host-behavior-field">Behavior name
+                <label class="host-behavior-field hidden">Behavior name
                   <input id="taskProfileBehaviorName" type="text" maxlength="120" placeholder="Task behavior name">
                 </label>
-                <label class="host-behavior-field">Editable behavior instructions
+                <label class="host-behavior-field hidden">Editable behavior instructions
                   <textarea id="taskProfileInstructions" maxlength="4000" rows="6" placeholder="Task-specific style, priorities, workflow, and preferences"></textarea>
                 </label>
-                <label class="host-behavior-enabled"><input id="taskProfileEnabled" type="checkbox"> Enable editable behavior layer</label>
+                <label class="host-behavior-enabled hidden"><input id="taskProfileEnabled" type="checkbox"> Enable editable behavior layer</label>
               </section>
               <div class="edit-actions">
                 <button id="saveTaskProfile" class="primary-button" type="button">Save</button>
@@ -235,67 +234,85 @@
 
           <article id="mcpSection" class="panel admin-behavior-panel hidden">
             <div class="panel-heading">
-              <div><p class="eyebrow">EXTERNAL INTEGRATIONS</p><h3>MCP Servers &amp; Tools</h3></div>
+              <div><h3>Endpoints, Servers &amp; Tools</h3></div>
               <button id="refreshMcpServers" class="secondary-button" type="button">Refresh</button>
             </div>
-            <section id="taskProfileEndpointSection" class="task-profile-section">
-              <h4>Endpoint configuration</h4>
-              <p class="muted-copy">Configure endpoints here, including the built-in providers. Tasks use these shared settings for both primary and fallback models.</p>
+            <section id="taskProfileEndpointSection" class="task-profile-section integration-editor" aria-labelledby="endpointsHeading">
+              <h4 id="endpointsHeading">Endpoints</h4>
+              <p class="muted-copy">Save each endpoint with its provider, connection details, and one model. Tasks select the endpoint for primary and fallback use.</p>
               <div class="task-profile-endpoint-picker">
                 <label class="host-behavior-field">Endpoint
                   <select id="taskProfileEndpointSelect"><option value="">Choose an endpoint</option></select>
                 </label>
-                <button id="taskProfileAddEndpoint" class="secondary-button" type="button">Add Endpoint</button>
+                <button id="taskProfileAddEndpoint" class="secondary-button" type="button">Add</button>
               </div>
               <div class="task-model-fields">
-                <label class="host-behavior-field">Endpoint name
-                  <input id="taskProfileEndpointName" type="text" maxlength="120" placeholder="Provider name">
+                <label class="host-behavior-field">Endpoint Name
+                  <input id="taskProfileEndpointName" type="text" maxlength="120" placeholder="OpenAI - GPT-6" disabled>
+                </label>
+                <label class="host-behavior-field">Provider Name
+                  <input id="taskProfileProviderName" type="text" maxlength="120" placeholder="OpenAI" disabled>
                 </label>
                 <label class="host-behavior-field">Base URL
-                  <input id="taskProfileBaseUrl" type="url" maxlength="1000" placeholder="https://provider.example/v1">
+                  <input id="taskProfileBaseUrl" type="url" maxlength="1000" placeholder="https://provider.example/v1" disabled>
                 </label>
-                <label class="host-behavior-field task-model-notes">API key
-                  <input id="taskProfileApiKey" type="password" autocomplete="off" maxlength="4096" placeholder="Provider API key">
+                <label class="host-behavior-field">API Key
+                  <input id="taskProfileApiKey" type="password" autocomplete="off" maxlength="4096" placeholder="Provider API key" disabled>
                 </label>
               </div>
-              <div class="task-profile-inline-actions">
-                <button id="taskProfileDiscover" class="secondary-button" type="button">Discover Models</button>
-                <span class="muted-copy">Discovered models are available for primary and fallback assignments.</span>
+              <section class="integration-subsection model-catalog" aria-labelledby="endpointModelsHeading">
+                <div class="panel-heading"><h5 id="endpointModelsHeading">Models</h5><button id="taskProfileDiscover" class="secondary-button" type="button" disabled>Discover Models</button></div>
+                <div class="task-model-fields">
+                  <label class="host-behavior-field">Discovered Model
+                    <select id="endpointModelSelect" disabled><option value="">Choose a discovered model</option></select>
+                  </label>
+                  <label class="host-behavior-field">Model ID
+                    <input id="endpointModelId" type="text" maxlength="160" placeholder="Select above or enter the provider's model ID" disabled>
+                  </label>
+                </div>
+                <p id="endpointModelStatus" class="muted-copy" role="status">Select an endpoint, then Edit to configure its model.</p>
+              </section>
+              <div class="editor-actions">
+                <button id="endpointEditButton" class="secondary-button" type="button" disabled>Edit</button>
+                <button id="endpointRemoveButton" class="secondary-button" type="button" disabled>Remove</button>
+                <button id="endpointCancelButton" class="secondary-button" type="button" disabled>Cancel</button>
+                <button id="saveProviderEndpoints" class="primary-button" type="button" disabled>Save</button>
               </div>
-              <button id="saveProviderEndpoints" class="primary-button" type="button">Save endpoints</button>
             </section>
-            <p class="muted-copy">Connect to Streamable HTTP MCP servers, discover their tools, and enable only the tools you intend to use. Credentials are stored in Axiom's runtime registry and are returned only to authenticated administrators.</p>
-            <div class="task-profile-section">
+            <section class="task-profile-section integration-editor" aria-labelledby="mcpServersHeading">
+              <h4 id="mcpServersHeading">MCP Servers</h4>
+              <p class="muted-copy">Connect a Streamable HTTP MCP server, then discover and select its tools.</p>
               <div class="task-profile-endpoint-picker">
                 <label class="host-behavior-field">Configured server
-                  <select id="mcpServerSelect"><option value="">Add a new server</option></select>
+                  <select id="mcpServerSelect"><option value="">Choose an MCP server</option></select>
                 </label>
-                <button id="mcpAddServer" class="secondary-button" type="button">Add Server</button>
+                <button id="mcpAddServer" class="secondary-button" type="button">Add</button>
               </div>
               <div class="task-model-fields">
                 <label class="host-behavior-field">Server name
-                  <input id="mcpServerName" type="text" maxlength="120" placeholder="My MCP server">
+                  <input id="mcpServerName" type="text" maxlength="120" placeholder="My MCP server" disabled>
                 </label>
                 <label class="host-behavior-field">Streamable HTTP URL
-                  <input id="mcpServerUrl" type="url" maxlength="2000" placeholder="https://example.com/mcp">
+                  <input id="mcpServerUrl" type="url" maxlength="2000" placeholder="https://example.com/mcp" disabled>
                 </label>
                 <label class="host-behavior-field task-model-notes">Bearer token (optional)
-                  <input id="mcpServerToken" type="password" autocomplete="new-password" maxlength="4096" placeholder="Paste token if required">
+                  <input id="mcpServerToken" type="password" autocomplete="new-password" maxlength="4096" placeholder="Paste token if required" disabled>
                 </label>
-                <label class="host-behavior-enabled"><input id="mcpServerEnabled" type="checkbox" checked> Enable this server</label>
+                <label class="host-behavior-enabled"><input id="mcpServerEnabled" type="checkbox" checked disabled> Enable this server</label>
               </div>
-              <div class="task-profile-inline-actions">
-                <button id="mcpDiscoverTools" class="secondary-button" type="button">Discover Tools</button>
-                <button id="mcpDeleteServer" class="secondary-button" type="button">Remove Server</button>
-                <span id="mcpServerStatus" class="muted-copy" role="status">Add a server URL, then discover its tools.</span>
-              </div>
-            </div>
-            <section class="task-profile-section">
-              <div class="panel-heading"><div><h4>Available tools</h4><p class="muted-copy">Disable any tool you do not want Axiom to call.</p></div></div>
+              <section class="integration-subsection" aria-labelledby="mcpToolsHeading">
+              <div class="panel-heading"><div><h5 id="mcpToolsHeading">Tools</h5><p class="muted-copy">Choose Edit to enable or disable this server's tools.</p></div><button id="mcpDiscoverTools" class="secondary-button" type="button" disabled>Discover Tools</button></div>
               <div id="mcpToolList" class="record-list"><p class="record-empty">Select a server to view its tools.</p></div>
-            </section>
-            <section class="task-profile-section">
-              <h4>Test a tool</h4>
+              </section>
+              <p id="mcpServerStatus" class="muted-copy" role="status">Choose Add to configure an MCP server.</p>
+              <div class="editor-actions">
+                <button id="mcpEditServer" class="secondary-button" type="button" disabled>Edit</button>
+                <button id="mcpDeleteServer" class="secondary-button" type="button" disabled>Remove</button>
+                <button id="mcpCancelEdit" class="secondary-button" type="button" disabled>Cancel</button>
+                <button id="saveMcpServers" class="primary-button" type="button" disabled>Save</button>
+              </div>
+            <section class="integration-subsection">
+              <h5>Test a Tool</h5>
               <div class="task-model-fields">
                 <label class="host-behavior-field">Enabled tool
                   <select id="mcpToolRunnerSelect"><option value="">Discover and enable a tool first</option></select>
@@ -304,10 +321,10 @@
                   <textarea id="mcpToolArguments" rows="5" spellcheck="false">{}</textarea>
                 </label>
               </div>
-              <button id="mcpRunTool" class="secondary-button" type="button">Run Tool</button>
+              <button id="mcpRunTool" class="secondary-button" type="button" disabled>Run Tool</button>
               <pre id="mcpToolOutput" class="mcp-tool-output" aria-live="polite">Tool results will appear here.</pre>
             </section>
-            <div class="edit-actions"><button id="saveMcpServers" class="primary-button" type="button">Save</button></div>
+            </section>
           </article>
 
           <article id="memoriesSection" class="panel admin-memory-panel hidden">
@@ -475,7 +492,7 @@
           </article>
 
           <article id="overviewSection" class="panel admin-summary">
-            <p class="eyebrow">CURRENT STATE</p>
+            <div class="panel-heading"><div><p class="eyebrow">CURRENT STATE</p><h3>System Overview</h3></div></div>
             <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
             <div class="summary-row"><span>Created</span><strong id="adminCreatedAt">—</strong></div>
             <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
@@ -621,6 +638,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261012-task-behavior-scope"></script>
+  <script src="/static/portal.js?v=20261016-endpoint-task-config"></script>
 </body>
 </html>

@@ -1,7 +1,8 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
-from aicognitive_mind.host_runtime import HostAwareInterpreter
+from aicognitive_mind.host_runtime import HostAwareCore, HostAwareInterpreter
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskFallbackAssignment, TaskModelAssignmentRegistry
@@ -104,6 +105,88 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("vision-arbitrary-model", kwargs["json"]["messages"][0]["content"])
         self.assertIn("image_url", str(kwargs["json"]["messages"]))
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer admin-key")
+
+    async def test_endpoint_selected_model_overrides_old_task_model_and_covers_fallback(self):
+        records = await self.configured(model="obsolete-task-model")
+        endpoint_registry = ProviderEndpointRegistry(records)
+        endpoints = await endpoint_registry.list()
+        await endpoint_registry.replace([
+            endpoints[0].model_copy(update={"model": "selected-endpoint-model"}),
+            ProviderEndpoint(id="backup", name="Backup", model="backup-bound-model",
+                             base_url="https://backup.example/v1"),
+        ])
+        registry = TaskModelAssignmentRegistry(records)
+        assignments = await registry.list()
+        await registry.replace([
+            item.model_copy(update={"fallbacks": [TaskFallbackAssignment(provider="backup")]})
+            if item.task == "vision" else item for item in assignments
+        ])
+        client = SequencedFakeClient([
+            FakeResponse({}, status_code=503, text="temporarily unavailable"),
+            FakeResponse({"choices": [{"message": {"content": "Observed."}}]}),
+        ])
+        result = await TaskModelDispatcher(records, client=client).complete_chat(
+            "vision", [{"role": "user", "content": "Describe."}],
+        )
+        self.assertEqual(result, "Observed.")
+        self.assertEqual(client.calls[0][2]["json"]["model"], "selected-endpoint-model")
+        self.assertEqual(client.calls[1][2]["json"]["model"], "backup-bound-model")
+
+    async def test_body_reasoning_endpoint_uses_recall_and_commits_after_enabled_fallback(self):
+        records = await self.configured()
+        endpoints = ProviderEndpointRegistry(records)
+        await endpoints.replace([item.model_copy(update={"model": "reasoning-bound-model"})
+                                 for item in await endpoints.list()])
+        assignments = TaskModelAssignmentRegistry(records)
+        await assignments.replace([
+            item.model_copy(update={"provider": "local", "model": ""})
+            if item.task == "reasoning" else item for item in await assignments.list()
+        ])
+        client = FakeClient(FakeResponse({"choices": [{"message": {"content": "A grounded reply."}}]}))
+        dispatcher = TaskModelDispatcher(records, client=client)
+        service = SimpleNamespace(
+            begin_interaction=AsyncMock(return_value={
+                "idempotency_key": "body-endpoint-test-key",
+                "conscious_workspace_contract": "Axiom interaction contract.",
+                "recalled_context": {"fact": "A remembered fact."},
+            }),
+            complete_interaction=AsyncMock(return_value={
+                "status": "interaction_committed", "occurred_at": "2026-10-16T12:00:00Z",
+            }),
+        )
+        hosts = SimpleNamespace(active=AsyncMock(return_value=None), records=records, service=service)
+        core = SimpleNamespace(interact=AsyncMock())
+        with patch("aicognitive_mind.host_runtime.TaskModelDispatcher", return_value=dispatcher), patch(
+            "aicognitive_mind.config.body_allow_standalone_fallback_enabled", return_value=True,
+        ):
+            result = await HostAwareCore(core, hosts).interact("Hello.")
+        self.assertEqual(result.response_text, "A grounded reply.")
+        self.assertIn("A remembered fact.", client.calls[0][2]["json"]["messages"][0]["content"])
+        self.assertEqual(client.calls[0][2]["json"]["model"], "reasoning-bound-model")
+        service.complete_interaction.assert_awaited_once_with(
+            "Hello.", "A grounded reply.", idempotency_key="body-endpoint-test-key",
+            source="human", input_context=None, runtime_source="configured_reasoning_endpoint",
+        )
+        core.interact.assert_not_awaited()
+
+    async def test_body_keeps_live_reasoning_host_priority_over_endpoint(self):
+        hosts = SimpleNamespace(
+            active=AsyncMock(return_value={"name": "Codex", "model": "host-model"}),
+            submit=AsyncMock(return_value={"response_text": "Host reply.", "occurred_at": "2026-10-16T12:00:00Z"}),
+        )
+        core = SimpleNamespace(interact=AsyncMock())
+        result = await HostAwareCore(core, hosts).interact("Hello.")
+        self.assertEqual(result.response_text, "Host reply.")
+        hosts.submit.assert_awaited_once_with("Hello.")
+        core.interact.assert_not_awaited()
+
+    async def test_body_configured_endpoint_does_not_bypass_fallback_disabled(self):
+        hosts = SimpleNamespace(active=AsyncMock(return_value=None))
+        core = SimpleNamespace(interact=AsyncMock())
+        with patch("aicognitive_mind.config.body_allow_standalone_fallback_enabled", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "fallback is disabled"):
+                await HostAwareCore(core, hosts).interact("Hello.")
+        core.interact.assert_not_awaited()
 
     async def test_runtime_contract_dispatches_compact_context_to_stateless_adapter(self):
         records = await self.configured()

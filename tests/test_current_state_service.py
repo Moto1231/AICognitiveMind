@@ -1,12 +1,16 @@
 import asyncio
 import json
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.domain import CognitiveActor, JournalEntry, JournalKind
 from aicognitive_mind.mcp_service import CognitiveMcpService
+from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
+from aicognitive_mind.host_runtime import HostAwareCore, RuntimeRecords
 from aicognitive_mind.state_context import apply_current_state_event
+from aicognitive_mind.task_model_assignments import TaskModelAssignment, TaskModelAssignmentRegistry
 from aicognitive_mind.storage import (
     InMemoryJournalStore,
     InMemoryMemoryStore,
@@ -53,6 +57,63 @@ class CurrentStateServiceTests(unittest.IsolatedAsyncioTestCase):
 
         restarted = CognitiveMcpService(self.mind, self.journal, self.memory)
         self.assertEqual(await restarted.read_current_state(), state)
+
+    async def test_active_state_rules_include_only_selected_enabled_reasoning_behaviors(self) -> None:
+        records = RuntimeRecords(self.mind)
+        assignments = TaskModelAssignmentRegistry(records)
+        await assignments.replace(await assignments.list())
+        catalog = HostBehaviorRegistry(records)
+        await catalog.replace([
+            *await catalog.list(),
+            HostBehavior(id="coding-only", name="Coding only", instruction="Coding marker rule."),
+            HostBehavior(id="disabled-rule", name="Disabled", instruction="Disabled marker rule.", enabled=False),
+        ])
+        await assignments.replace([
+            item.model_copy(update={"behavior_ids": ["coding-only"]}) if item.task == "coding" else
+            item.model_copy(update={"behavior_ids": [*item.behavior_ids, "disabled-rule"]})
+            if item.task == "reasoning" else item for item in await assignments.list()
+        ])
+        begun = await self.service.begin_interaction("Hello.")
+        rules = begun["current_state"]["fields"]["behaviors"]["value"]["rules"]
+        self.assertEqual({item["id"] for item in rules}, {
+            "ground-recalled-context", "verify-capabilities",
+        })
+        self.assertNotIn("Coding marker rule.", begun["conscious_workspace_contract"])
+        self.assertNotIn("Disabled marker rule.", begun["conscious_workspace_contract"])
+
+    async def test_body_endpoint_preserves_sensory_provenance_without_inventing_human_presence(self) -> None:
+        dispatcher = SimpleNamespace(
+            assignment=AsyncMock(return_value=TaskModelAssignment(task="reasoning", provider="endpoint")),
+            complete_chat=AsyncMock(return_value="A grounded visual response."),
+        )
+        hosts = SimpleNamespace(
+            active=AsyncMock(return_value=None), records=RuntimeRecords(self.mind), service=self.service,
+        )
+        core = SimpleNamespace(interact=AsyncMock())
+        sensory_context = {
+            "modality": "vision", "source": "browser-camera",
+            "evidence": {"sha256": "preserved-evidence-reference"},
+            "metadata": {"image_data": "c2VjcmV0"},
+        }
+        with patch("aicognitive_mind.host_runtime.TaskModelDispatcher", return_value=dispatcher), patch(
+            "aicognitive_mind.config.body_allow_standalone_fallback_enabled", return_value=True,
+        ):
+            result = await HostAwareCore(core, hosts).interact(
+                "A camera scene", source="body:vision", input_context=sensory_context,
+            )
+        self.assertEqual(result.response_text, "A grounded visual response.")
+        entries = await self.journal.read()
+        entry = next(item for item in reversed(entries) if item.kind == JournalKind.INTERACTION)
+        self.assertEqual(entry.experience["input"]["source"], "body:vision")
+        self.assertEqual(entry.experience["input"]["context"]["evidence"]["sha256"], "preserved-evidence-reference")
+        self.assertEqual(entry.experience["reasoning_runtime"]["source"], "configured_reasoning_endpoint")
+        self.assertNotIn("c2VjcmV0", json.dumps([item.model_dump(mode="json") for item in entries]))
+        state = await self.service.read_current_state()
+        self.assertEqual(state["fields"]["active_topic"]["source"], "body:vision")
+        self.assertEqual(state["fields"]["interlocutor"]["status"], "unknown")
+        self.assertEqual(state["fields"]["presence"]["status"], "unknown")
+        self.assertNotIn("human input received", json.dumps(state))
+        core.interact.assert_not_awaited()
 
     async def test_service_and_external_events_share_latest_exact_checkpoint(self) -> None:
         await self.service.begin_interaction("Start.")

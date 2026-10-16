@@ -444,6 +444,7 @@ def _login_page(request_id: str, *, error: str = "") -> HTMLResponse:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Authorize Axiom</title>
+  <link rel="stylesheet" href="/static/auth.css?v=20261016-compact-actions">
   <script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script>
   <style>
     body {{ font-family: system-ui, sans-serif; background:#111827; color:#f9fafb;
@@ -458,7 +459,7 @@ def _login_page(request_id: str, *, error: str = "") -> HTMLResponse:
     p {{ color:#d1d5db; }}
   </style>
 </head>
-<body>
+<body class="auth-page">
 <main>
   <h1>Authorize Axiom</h1>
   <p>Sign in to your Axiom account.</p>
@@ -519,11 +520,11 @@ def _account_signup_page(*, error: str = "", created: bool = False) -> HTMLRespo
 <form method="post" action="/signup">
 <label>Username<input style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0" name="username" required minlength="3"></label>
 <label>Password<input style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0" type="password" name="password" required minlength="8"></label>
-<button style="width:100%;padding:12px;margin-top:18px" type="submit">Create account</button>
+<button type="submit">Create account</button>
 </form>
 """
-    return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Create Axiom Account</title><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
-<body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh">
+    return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Create Axiom Account</title><link rel="stylesheet" href="/static/auth.css?v=20261016-compact-actions"><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
+<body class="auth-page" style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh">
 <main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">{body}</main></body></html>""")
 
 
@@ -559,14 +560,14 @@ def hostname_from_base_url(base_url: str) -> str:
 def _signup_page(request_id: str, *, error: str = "") -> HTMLResponse:
     safe_request = escape(request_id, quote=True)
     error_html = '<p style="color:#b42318">' + escape(error) + "</p>" if error else ""
-    return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Create Axiom Account</title><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
-<body style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh">
+    return HTMLResponse(f"""<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Create Axiom Account</title><link rel="stylesheet" href="/static/auth.css?v=20261016-compact-actions"><script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script></head>
+<body class="auth-page" style="font-family:system-ui;background:#111827;color:#f9fafb;display:grid;place-items:center;min-height:100vh">
 <main style="width:min(420px,calc(100vw - 40px));background:#1f2937;padding:28px;border-radius:14px">
 <h1>Create Axiom Account</h1><p>This creates one new account and one new unnamed Genesis mind.</p>{error_html}
 <form method="post" action="/oauth/signup"><input type="hidden" name="request" value="{safe_request}">
 <label>Username<input style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0" name="username" required minlength="3"></label>
 <label>Password<input style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0" type="password" name="password" required minlength="8"></label>
-<button style="width:100%;padding:12px;margin-top:18px" type="submit">Create account and connect</button></form></main></body></html>""")
+<button type="submit">Create account and connect</button></form></main></body></html>""")
 
 
 async def oauth_signup_get(request: Request, provider: AxiomAuthorizationServerProvider) -> Response:

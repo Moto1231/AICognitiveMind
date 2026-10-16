@@ -25,13 +25,32 @@ class FakeRecords:
 
 
 class TaskModelAssignmentRegistryTests(unittest.IsolatedAsyncioTestCase):
-    async def test_defaults_include_specialties_but_not_reasoning(self):
+    async def test_defaults_include_specialties_and_reasoning_with_protected_behaviors(self):
         registry = TaskModelAssignmentRegistry(FakeRecords())
         assignments = await registry.list()
 
         self.assertEqual({item.task for item in assignments}, set(TASK_LABELS))
-        self.assertNotIn("reasoning", {item.task for item in assignments})
+        reasoning = next(item for item in assignments if item.task == "reasoning")
+        self.assertIn("ground-recalled-context", reasoning.behavior_ids)
+        self.assertIn("verify-capabilities", reasoning.behavior_ids)
         self.assertTrue(all(item.provider == "" and item.model == "" for item in assignments))
+
+    async def test_reasoning_assignment_is_populated_from_registered_host(self):
+        records = FakeRecords()
+        records.values["active_host"] = {"name": "Codex", "model": "gpt-6-sol"}
+        assignments = await TaskModelAssignmentRegistry(records).list()
+        reasoning = next(item for item in assignments if item.task == "reasoning")
+        self.assertEqual(reasoning.provider, "connected-host")
+        self.assertEqual(reasoning.model, "gpt-6-sol")
+        self.assertNotIn("provider_endpoints", records.values)
+
+    async def test_protected_reasoning_behavior_cannot_be_deselected(self):
+        registry = TaskModelAssignmentRegistry(FakeRecords())
+        assignments = await registry.list()
+        assignments = [item.model_copy(update={"behavior_ids": []})
+                       if item.task == "reasoning" else item for item in assignments]
+        with self.assertRaisesRegex(ValueError, "Protected reasoning"):
+            await registry.replace(assignments)
 
     async def test_assignments_persist_and_round_trip(self):
         records = FakeRecords()
