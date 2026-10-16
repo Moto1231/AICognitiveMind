@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from aicognitive_mind.host_runtime import HostAwareInterpreter
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
-from aicognitive_mind.task_model_assignments import TaskModelAssignmentRegistry
+from aicognitive_mind.task_model_assignments import TaskFallbackAssignment, TaskModelAssignmentRegistry
 
 
 class FakeRecords:
@@ -46,6 +46,16 @@ class FakeClient:
     async def request(self, method, url, **kwargs):
         self.calls.append((method, url, kwargs))
         return self.response
+
+
+class SequencedFakeClient:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    async def request(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs))
+        return self.responses.pop(0)
 
 
 class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
@@ -119,6 +129,20 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Working-state reference: state-compact", prompt)
         self.assertIn("memory-7", prompt)
 
+
+    async def test_v3_endpoint_with_transcription_operation_suffix_is_normalized(self):
+        endpoint = ProviderEndpoint(
+            id="eden",
+            name="Eden Text-to-speech",
+            base_url="https://api.edenai.run/v3/audio/transcriptions",
+            api_key="test-key",
+        )
+
+        self.assertEqual(
+            TaskModelDispatcher._url(endpoint, "audio/transcriptions"),
+            "https://api.edenai.run/v3/audio/transcriptions",
+        )
+
     async def test_transcription_uses_assigned_model(self):
         records = await self.configured(model="my-audio-model")
         assignments = await TaskModelAssignmentRegistry(records).list()
@@ -142,15 +166,102 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("IMMUTABLE AXIOM TASK FOUNDATION", client.calls[0][2]["data"]["prompt"])
         self.assertIn("my-audio-model", client.calls[0][2]["data"]["prompt"])
 
+    async def test_v3_provider_base_url_does_not_duplicate_v1_prefix(self):
+        records = await self.configured(model="eden-audio-model")
+        endpoints = await ProviderEndpointRegistry(records).list()
+        await ProviderEndpointRegistry(records).replace([
+            endpoints[0].model_copy(update={"base_url": "https://api.edenai.run/v3"})
+        ])
+        assignments = await TaskModelAssignmentRegistry(records).list()
+        await TaskModelAssignmentRegistry(records).replace([
+            item.model_copy(update={"provider": "Local endpoint", "model": "eden-audio-model"})
+            if item.task == "audio" else item
+            for item in assignments
+        ])
+        client = FakeClient(FakeResponse({"text": "Recognized speech"}))
+        dispatcher = TaskModelDispatcher(records, client=client)
+
+        result = await dispatcher.transcribe(
+            "audio", filename="clip.webm", audio_bytes=b"audio",
+            media_type="audio/webm",
+        )
+
+        self.assertEqual(result, "Recognized speech")
+        self.assertEqual(
+            client.calls[0][1],
+            "https://api.edenai.run/v3/audio/transcriptions",
+        )
+
     async def test_provider_failure_is_reported_without_fallback(self):
         records = await self.configured()
         client = FakeClient(FakeResponse({"error": {"message": "unsupported modality"}}, 400, "unsupported modality"))
         dispatcher = TaskModelDispatcher(records, client=client)
 
-        with self.assertRaisesRegex(TaskDispatchError, "HTTP 400"):
-            await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
+        with self.assertLogs("aicognitive_mind.task_dispatcher", level="ERROR") as captured:
+            with self.assertRaisesRegex(TaskDispatchError, "HTTP 400"):
+                await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
 
         self.assertEqual(len(client.calls), 1)
+        self.assertIn("task_provider_http_error", captured.output[0])
+        self.assertIn("status=400", captured.output[0])
+
+    async def test_chat_retries_configured_task_fallback_after_primary_failure(self):
+        records = await self.configured(model="primary-model")
+        assignments = await TaskModelAssignmentRegistry(records).list()
+        await TaskModelAssignmentRegistry(records).replace([
+            item.model_copy(update={
+                "fallbacks": [
+                    TaskFallbackAssignment(provider="Local endpoint", model="backup-model"),
+                    TaskFallbackAssignment(provider="Local endpoint", model="last-resort-model"),
+                ],
+            }) if item.task == "vision" else item
+            for item in assignments
+        ])
+        client = SequencedFakeClient([
+            FakeResponse({"error": {"message": "primary unavailable"}}, 503, "primary unavailable"),
+            FakeResponse({"error": {"message": "first fallback unavailable"}}, 503, "first fallback unavailable"),
+            FakeResponse({"choices": [{"message": {"content": "Fallback result"}}]}),
+        ])
+        dispatcher = TaskModelDispatcher(records, client=client)
+
+        with self.assertLogs("aicognitive_mind.task_dispatcher", level="WARNING"):
+            result = await dispatcher.complete_chat(
+                "vision", [{"role": "user", "content": "Describe"}]
+            )
+
+        self.assertEqual(result, "Fallback result")
+        self.assertEqual(len(client.calls), 3)
+        self.assertEqual(client.calls[0][2]["json"]["model"], "primary-model")
+        self.assertEqual(client.calls[1][2]["json"]["model"], "backup-model")
+        self.assertEqual(client.calls[2][2]["json"]["model"], "last-resort-model")
+
+    async def test_transcription_retries_configured_task_fallback_after_primary_failure(self):
+        records = await self.configured(model="primary-audio")
+        assignments = await TaskModelAssignmentRegistry(records).list()
+        await TaskModelAssignmentRegistry(records).replace([
+            item.model_copy(update={
+                "provider": "Local endpoint",
+                "model": "primary-audio",
+                "fallbacks": [TaskFallbackAssignment(provider="Local endpoint", model="backup-audio")],
+            }) if item.task == "audio" else item
+            for item in assignments
+        ])
+        client = SequencedFakeClient([
+            FakeResponse({"error": {"message": "primary unavailable"}}, 503, "primary unavailable"),
+            FakeResponse({"text": "Fallback transcription"}),
+        ])
+        dispatcher = TaskModelDispatcher(records, client=client)
+
+        with self.assertLogs("aicognitive_mind.task_dispatcher", level="WARNING"):
+            result = await dispatcher.transcribe(
+                "audio", filename="clip.webm", audio_bytes=b"audio",
+                media_type="audio/webm",
+            )
+
+        self.assertEqual(result, "Fallback transcription")
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(client.calls[0][2]["data"]["model"], "primary-audio")
+        self.assertEqual(client.calls[1][2]["data"]["model"], "backup-audio")
 
     async def test_host_aware_interpreter_uses_assigned_sensory_dispatcher(self):
         class ActiveHosts:
@@ -182,6 +293,128 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(TaskDispatchError, "not configured"):
             await dispatcher.complete_chat("vision", [{"role": "user", "content": "test"}])
 
+
+
+    async def test_failed_task_providers_defer_to_connected_reasoning(self):
+        class ActiveHosts:
+            async def active(self):
+                return {"name": "ChatGPT", "model": "GPT-6"}
+
+            async def submit(self, message, *, priority=0):
+                self.message = message
+                self.priority = priority
+                return {"response_text": "The audio contains a short spoken phrase."}
+
+        class Fallback:
+            records = FakeRecords()
+
+        class FailedDispatcher:
+            async def interpret_percept(self, percept, *, focus=None):
+                raise TaskDispatchError("both configured providers failed")
+
+        hosts = ActiveHosts()
+        interpreter = HostAwareInterpreter(Fallback(), hosts)
+        interpreter.task_dispatcher = FailedDispatcher()
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="audio"),
+            observed_at="2026-10-12T12:00:00Z",
+            source="test microphone",
+            summary="incoming audio",
+            metadata={"evidence_ref": "evidence-audio-1"},
+            content_ref="data:audio/webm;base64,YXVkaW8=",
+            model_dump=lambda mode="json": {
+                "modality": "audio",
+                "observed_at": "2026-10-12T12:00:00Z",
+                "source": "test microphone",
+                "summary": "incoming audio",
+                "metadata": {"evidence_ref": "evidence-audio-1"},
+                "content_ref": "data:audio/webm;base64,YXVkaW8=",
+            },
+        )
+
+        with self.assertLogs("aicognitive_mind.auth_diagnostics", level="WARNING"):
+            result = await interpreter.interpret(percept)
+
+        self.assertEqual(result, "The audio contains a short spoken phrase.")
+        self.assertIn("Interpret this audio percept", hosts.message)
+        self.assertIn("evidence-audio-1", hosts.message)
+
+    async def test_failed_task_providers_defer_to_body_reasoning_fallback(self):
+        class InactiveHosts:
+            async def active(self):
+                return None
+
+        class Fallback:
+            records = FakeRecords()
+
+        class FailedDispatcher:
+            async def interpret_percept(self, percept, *, focus=None):
+                raise TaskDispatchError("both configured providers failed")
+
+        interpreter = HostAwareInterpreter(Fallback(), InactiveHosts())
+        interpreter.task_dispatcher = FailedDispatcher()
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="audio"),
+            content_ref="data:audio/webm;base64,YXVkaW8=",
+        )
+
+        from unittest.mock import patch
+        with patch("aicognitive_mind.config.get_settings") as settings:
+            settings.return_value.body_allow_standalone_fallback = True
+            with self.assertLogs("aicognitive_mind.auth_diagnostics", level="WARNING"):
+                result = await interpreter.interpret(percept)
+
+        self.assertIn("task primary and fallback failed", result)
+
+    async def test_unconfigured_audio_without_host_reports_task_routing_problem(self):
+        class InactiveHosts:
+            async def active(self):
+                return None
+
+        class Fallback:
+            records = FakeRecords()
+
+        interpreter = HostAwareInterpreter(Fallback(), InactiveHosts())
+        percept = SimpleNamespace(
+            modality=SimpleNamespace(value="audio"),
+            content_ref="data:audio/webm;base64,YXVkaW8=",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "Audio & Transcription task has no configured provider/model assignment",
+        ):
+            await interpreter.interpret(percept)
+
+    async def test_runtime_contract_dispatches_voice_synthesis(self):
+        from unittest.mock import AsyncMock
+        from aicognitive_mind.task_behaviors import TaskExecutionContext
+
+        records = await self.configured()
+        dispatcher = TaskModelDispatcher(records, client=FakeClient(FakeResponse({})))
+        dispatcher.synthesize_voice = AsyncMock(return_value=b"speech-audio")
+
+        result = await dispatcher.execute(
+            TaskExecutionContext(task="audio_voice"),
+            {"operation": "synthesize_voice", "text": "Hello there", "speed": 1.2, "volume": -4.0},
+        )
+
+        self.assertEqual(result, b"speech-audio")
+        dispatcher.synthesize_voice.assert_awaited_once_with(
+            "Hello there", speed=1.2, volume=-4.0
+        )
+
+    async def test_runtime_contract_rejects_voice_synthesis_on_other_task(self):
+        from aicognitive_mind.task_behaviors import TaskExecutionContext
+
+        records = await self.configured()
+        dispatcher = TaskModelDispatcher(records, client=FakeClient(FakeResponse({})))
+
+        with self.assertRaisesRegex(TaskDispatchError, "requires the audio_voice task"):
+            await dispatcher.execute(
+                TaskExecutionContext(task="audio"),
+                {"operation": "synthesize_voice", "text": "Hello there"},
+            )
 
 if __name__ == "__main__":
     unittest.main()

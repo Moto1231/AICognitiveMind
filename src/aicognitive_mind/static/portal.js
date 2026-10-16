@@ -5,6 +5,7 @@ const state = {
     admin: { items: [], total: 0, hasMore: false, nextOffset: 0 },
   },
   memoryPageSize: 25,
+  memoryPageSizes: { mind: 25, admin: 25 },
   memoryFilterTimers: { mind: null, admin: null },
   journals: [],
   journalTotal: 0,
@@ -22,6 +23,8 @@ const state = {
   taskBehaviors: [],
   taskFoundations: {},
   providerEndpoints: [],
+  mcpServers: [],
+  activeMcpServerId: null,
   activeTaskProfile: null,
   activeEndpointId: null,
   activeEndpointOriginalName: "",
@@ -54,17 +57,22 @@ const el = {
   memorySort: document.getElementById("memorySort"),
   clearMemoryFilters: document.getElementById("clearMemoryFilters"),
   memoryResultCount: document.getElementById("memoryResultCount"),
+  memoryPageSize: document.getElementById("memoryPageSize"),
   loadMoreMemories: document.getElementById("loadMoreMemories"),
   refreshButton: document.getElementById("refreshButton"),
   adminRefreshButton: document.getElementById("adminRefreshButton"),
+  adminMemoryRefreshButton: document.getElementById("adminMemoryRefreshButton"),
   protocolValue: document.getElementById("protocolValue"),
   reasoningOwner: document.getElementById("reasoningOwner"),
   identityOwner: document.getElementById("identityOwner"),
   memoryOwner: document.getElementById("memoryOwner"),
   adminMindName: document.getElementById("adminMindName"),
+  adminCreatedAt: document.getElementById("adminCreatedAt"),
   adminMemoryCount: document.getElementById("adminMemoryCount"),
   adminJournalCount: document.getElementById("adminJournalCount"),
-  adminAuthorizationState: document.getElementById("adminAuthorizationState"),
+  bodyFallbackEnabled: document.getElementById("bodyFallbackEnabled"),
+  bodyFallbackSource: document.getElementById("bodyFallbackSource"),
+  saveBodyFallbackSetting: document.getElementById("saveBodyFallbackSetting"),
   adminMemoryList: document.getElementById("adminMemoryList"),
   adminMemorySearch: document.getElementById("adminMemorySearch"),
   adminMemoryClassFilter: document.getElementById("adminMemoryClassFilter"),
@@ -75,6 +83,7 @@ const el = {
   adminMemorySort: document.getElementById("adminMemorySort"),
   adminClearMemoryFilters: document.getElementById("adminClearMemoryFilters"),
   adminMemoryResultCount: document.getElementById("adminMemoryResultCount"),
+  adminMemoryPageSize: document.getElementById("adminMemoryPageSize"),
   adminLoadMoreMemories: document.getElementById("adminLoadMoreMemories"),
   journalRefreshButton: document.getElementById("journalRefreshButton"),
   journalSearch: document.getElementById("journalSearch"),
@@ -84,6 +93,7 @@ const el = {
   journalSort: document.getElementById("journalSort"),
   clearJournalFilters: document.getElementById("clearJournalFilters"),
   journalResultCount: document.getElementById("journalResultCount"),
+  journalPageSize: document.getElementById("journalPageSize"),
   journalTimeline: document.getElementById("journalTimeline"),
   loadMoreJournals: document.getElementById("loadMoreJournals"),
   journalInspector: document.getElementById("journalInspector"),
@@ -95,6 +105,22 @@ const el = {
   journalEvidenceDetail: document.getElementById("journalEvidenceDetail"),
   journalEvidenceList: document.getElementById("journalEvidenceList"),
   taskProfileOverview: document.getElementById("taskProfileOverview"),
+  refreshMcpServers: document.getElementById("refreshMcpServers"),
+  mcpServerSelect: document.getElementById("mcpServerSelect"),
+  mcpServerName: document.getElementById("mcpServerName"),
+  mcpServerUrl: document.getElementById("mcpServerUrl"),
+  mcpServerToken: document.getElementById("mcpServerToken"),
+  mcpServerEnabled: document.getElementById("mcpServerEnabled"),
+  mcpAddServer: document.getElementById("mcpAddServer"),
+  mcpDiscoverTools: document.getElementById("mcpDiscoverTools"),
+  mcpDeleteServer: document.getElementById("mcpDeleteServer"),
+  mcpServerStatus: document.getElementById("mcpServerStatus"),
+  mcpToolList: document.getElementById("mcpToolList"),
+  mcpToolRunnerSelect: document.getElementById("mcpToolRunnerSelect"),
+  mcpToolArguments: document.getElementById("mcpToolArguments"),
+  mcpRunTool: document.getElementById("mcpRunTool"),
+  mcpToolOutput: document.getElementById("mcpToolOutput"),
+  saveMcpServers: document.getElementById("saveMcpServers"),
   refreshDevicesButton: document.getElementById("refreshDevicesButton"),
   devicePermissionStatus: document.getElementById("devicePermissionStatus"),
   deviceSelectionSummary: document.getElementById("deviceSelectionSummary"),
@@ -130,10 +156,11 @@ const el = {
   taskProfileList: document.getElementById("taskProfileList"),
   taskProfileEditor: document.getElementById("taskProfileEditor"),
   taskProfileTitle: document.getElementById("taskProfileTitle"),
-  taskProfileSummary: document.getElementById("taskProfileSummary"),
   taskProfileBack: document.getElementById("taskProfileBack"),
   taskProfileEndpointSection: document.getElementById("taskProfileEndpointSection"),
   taskProfileEndpointSelect: document.getElementById("taskProfileEndpointSelect"),
+  taskProfileEndpointPreset: document.getElementById("taskProfileEndpointPreset"),
+  taskProfileAddPreset: document.getElementById("taskProfileAddPreset"),
   taskProfileAddEndpoint: document.getElementById("taskProfileAddEndpoint"),
   taskProfileEndpointName: document.getElementById("taskProfileEndpointName"),
   taskProfileBaseUrl: document.getElementById("taskProfileBaseUrl"),
@@ -142,14 +169,20 @@ const el = {
   taskProfileAssignmentSection: document.getElementById("taskProfileAssignmentSection"),
   taskProfileModel: document.getElementById("taskProfileModel"),
   taskProfileModels: document.getElementById("taskProfileModels"),
-  taskProfileFallbackProvider: document.getElementById("taskProfileFallbackProvider"),
-  taskProfileFallbackModel: document.getElementById("taskProfileFallbackModel"),
-  addBehaviorShortcut: document.getElementById("addBehaviorShortcut"),
-  fishAudioModel: document.getElementById("fishAudioModel"),
-  fishAudioReferenceId: document.getElementById("fishAudioReferenceId"),
+  taskProfileStandardModelField: document.getElementById("taskProfileStandardModelField"),
+  taskProfileVoiceModelField: document.getElementById("taskProfileVoiceModelField"),
+  taskProfileVoiceModel: document.getElementById("taskProfileVoiceModel"),
+  taskProfileVoiceReferenceField: document.getElementById("taskProfileVoiceReferenceField"),
+  taskProfileVoiceReferenceId: document.getElementById("taskProfileVoiceReferenceId"),
+  taskProfileFallbackList: document.getElementById("taskProfileFallbackList"),
+  taskProfileAddFallback: document.getElementById("taskProfileAddFallback"),
+  taskProfileAddBehavior: document.getElementById("taskProfileAddBehavior"),
   voiceRate: document.getElementById("voiceRate"),
+  voiceRateValue: document.getElementById("voiceRateValue"),
   voicePitch: document.getElementById("voicePitch"),
+  voicePitchValue: document.getElementById("voicePitchValue"),
   voiceVolume: document.getElementById("voiceVolume"),
+  voiceVolumeValue: document.getElementById("voiceVolumeValue"),
   voiceName: document.getElementById("voiceName"),
   voiceSettingsRevision: document.getElementById("voiceSettingsRevision"),
   saveVoiceSettings: document.getElementById("saveVoiceSettings"),
@@ -176,6 +209,7 @@ const filters = {
     count: el.memoryResultCount,
     list: el.memoryList,
     loadMore: el.loadMoreMemories,
+    pageSize: el.memoryPageSize,
   },
   admin: {
     key: "admin",
@@ -189,6 +223,7 @@ const filters = {
     count: el.adminMemoryResultCount,
     list: el.adminMemoryList,
     loadMore: el.adminLoadMoreMemories,
+    pageSize: el.adminMemoryPageSize,
   },
 };
 
@@ -216,6 +251,18 @@ async function api(path, options = {}, admin = false) {
     throw error;
   }
   return payload;
+}
+
+function formatBrowserDateTime(value) {
+  if (value == null || value === "") return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "medium",
+    timeZone,
+  }).format(date);
 }
 
 function displayLabel(value) {
@@ -260,14 +307,12 @@ async function validateAdmin() {
     if (state.adminPin) {
       sessionStorage.setItem("acm_admin_pin", state.adminPin);
     }
-    el.adminAuthorizationState.textContent = pinRequired ? "Authorized" : "Local Admin";
     return true;
   } catch (error) {
     state.adminAuthorized = false;
     if (error.status === 401) {
       sessionStorage.removeItem("acm_admin_pin");
       state.adminPin = "";
-      el.adminAuthorizationState.textContent = "Authorization Required";
       toast("Administrator authorization was not accepted", true);
       return false;
     }
@@ -378,7 +423,8 @@ async function saveHostBehaviors() {
 const taskModelLabels = {
   reasoning: "Reasoning",
   vision: "Vision",
-  audio: "Audio & Transcription",
+  audio: "Audio/Transcription",
+  audio_voice: "Audio/Voice",
   coding: "Coding",
   image_generation: "Drawing & Image Generation",
   summarization: "Summarizing",
@@ -403,7 +449,7 @@ function renderTaskProfiles() {
   if (!tasks.length) {
     const empty = document.createElement("p");
     empty.className = "empty-state";
-    empty.textContent = "Task profiles are not available yet. Refresh Profiles to retry loading the configuration.";
+    empty.textContent = "Task profiles are not available yet. Refresh to retry loading the configuration.";
     el.taskProfileList.append(empty);
     return;
   }
@@ -461,7 +507,12 @@ function renderTaskProfileEndpointOptions() {
   select.value = state.activeEndpointId || "";
 }
 
-function fillSelect(select, values, selected, placeholder) {
+function modelCapabilityLabel(model, capabilityMap) {
+  const capabilities = capabilityMap?.[model];
+  return capabilities?.length ? `${model} · ${capabilities.join(" · ")}` : `${model} · Capabilities unknown`;
+}
+
+function fillSelect(select, values, selected, placeholder, capabilityMap = null) {
   select.replaceChildren();
   const blank = document.createElement("option");
   blank.value = "";
@@ -470,31 +521,67 @@ function fillSelect(select, values, selected, placeholder) {
   for (const value of [...new Set(values.filter(value => typeof value === "string" && value.trim()))]) {
     const option = document.createElement("option");
     option.value = value;
-    option.textContent = value;
+    option.textContent = capabilityMap ? modelCapabilityLabel(value, capabilityMap) : value;
     select.append(option);
   }
   if (selected && ![...select.options].some(option => option.value === selected)) {
     const option = document.createElement("option");
     option.value = selected;
-    option.textContent = selected + " (saved)";
+    option.textContent = capabilityMap ? `${modelCapabilityLabel(selected, capabilityMap)} (saved)` : selected + " (saved)";
     select.append(option);
   }
   select.value = selected || "";
 }
 
 function renderFallbackSelectors() {
-  const provider = el.taskProfileFallbackProvider.value;
-  const fallbackModel = el.taskProfileFallbackModel.value;
-  fillSelect(
-    el.taskProfileFallbackProvider,
-    state.providerEndpoints.map(item => item.name),
-    provider,
-    "No fallback provider",
-  );
-  const endpoint = state.providerEndpoints.find(item =>
-    item.name === el.taskProfileFallbackProvider.value || item.id === el.taskProfileFallbackProvider.value
-  );
-  fillSelect(el.taskProfileFallbackModel, endpoint?.models || [], fallbackModel, "No fallback model");
+  if (!el.taskProfileFallbackList) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const fallbacks = assignment?.fallbacks || [];
+  el.taskProfileFallbackList.replaceChildren();
+  if (!fallbacks.length) {
+    const empty = document.createElement("p");
+    empty.className = "record-empty";
+    empty.textContent = "No fallback endpoints configured.";
+    el.taskProfileFallbackList.append(empty);
+  }
+  fallbacks.forEach((fallback, index) => {
+    const row = document.createElement("div");
+    row.className = "task-fallback-row task-model-fields";
+    const providerLabel = document.createElement("label");
+    providerLabel.className = "host-behavior-field";
+    providerLabel.textContent = "Fallback " + (index + 1) + " provider";
+    const provider = document.createElement("select");
+    provider.setAttribute("aria-label", "Fallback " + (index + 1) + " provider");
+    fillSelect(provider, state.providerEndpoints.map(item => item.name), fallback.provider, "Choose endpoint");
+    provider.addEventListener("change", () => {
+      fallback.provider = provider.value;
+      fallback.model = "";
+      renderFallbackSelectors();
+    });
+    providerLabel.append(provider);
+    const modelLabel = document.createElement("label");
+    modelLabel.className = "host-behavior-field";
+    modelLabel.textContent = "Fallback " + (index + 1) + " model";
+    const model = document.createElement("input");
+    model.type = "text";
+    model.maxLength = 160;
+    model.placeholder = "Model ID";
+    model.value = fallback.model || "";
+    model.setAttribute("aria-label", "Fallback " + (index + 1) + " model");
+    model.addEventListener("input", () => { fallback.model = model.value.trim(); });
+    modelLabel.append(model);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "secondary-button";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", "Remove fallback " + (index + 1));
+    remove.addEventListener("click", () => {
+      assignment.fallbacks.splice(index, 1);
+      renderFallbackSelectors();
+    });
+    row.append(providerLabel, modelLabel, remove);
+    el.taskProfileFallbackList.append(row);
+  });
 }
 
 function loadEndpointIntoForm() {
@@ -503,7 +590,7 @@ function loadEndpointIntoForm() {
   el.taskProfileBaseUrl.value = endpoint?.base_url || "";
   el.taskProfileApiKey.value = endpoint?.api_key || "";
   const selectedModel = el.taskProfileModel.value;
-  fillSelect(el.taskProfileModel, endpoint?.models || [], selectedModel, "Discover models or choose a model");
+  fillSelect(el.taskProfileModel, endpoint?.models || [], selectedModel, "Discover models or choose a model", endpoint?.model_capabilities || {});
   renderFallbackSelectors();
 }
 
@@ -511,7 +598,7 @@ function openTaskProfile(task) {
   state.activeTaskProfile = task;
   let assignment = task === "reasoning" ? null : state.taskModelAssignments.find(item => item.task === task);
   if (!assignment && task !== "reasoning") {
-    assignment = { task, provider: "", model: "", fallback_provider: "", fallback_model: "", notes: "" };
+    assignment = { task, provider: "", model: "", fallbacks: [], voice_reference_id: "", notes: "" };
     state.taskModelAssignments.push(assignment);
   }
   let behavior = state.taskBehaviors.find(item => item.task === task);
@@ -530,26 +617,31 @@ function openTaskProfile(task) {
 
   el.taskProfileEndpointSection.classList.toggle("hidden", task === "reasoning");
   el.taskProfileAssignmentSection.classList.toggle("hidden", task === "reasoning");
+  const isAudioVoice = task === "audio_voice";
+  el.taskProfileStandardModelField.classList.toggle("hidden", isAudioVoice);
+  el.taskProfileVoiceModelField.classList.toggle("hidden", !isAudioVoice);
+  el.taskProfileVoiceReferenceField.classList.toggle("hidden", !isAudioVoice);
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
-  el.taskProfileSummary.textContent = task === "reasoning"
-    ? "The connected reasoning host owns model selection. Configure the reasoning behavior here."
-    : "Configure this task's endpoint, model assignment, and behavior in one place.";
+  el.taskProfileRevision.textContent = "Revision: " + (behavior.revision || 1);
+  // Populate the editor from the selected task's own behavior profile.
+  // Without this, switching tasks leaves the previous task's instructions in
+  // the form and saving can copy those instructions into another task.
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
   el.taskProfileBehaviorName.value = behavior.name || (taskModelLabels[task] || displayLabel(task));
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
-  el.taskProfileRevision.textContent = "Profile revision: " + (behavior.revision || 1);
   renderTaskProfileEndpointOptions();
   fillSelect(
     el.taskProfileModel,
     selectedEndpoint()?.models || [],
-    assignment?.model || "",
+    isAudioVoice ? "" : (assignment?.model || ""),
     "Discover models or choose a model",
   );
+  el.taskProfileVoiceModel.value = assignment?.model || "s2.1-pro-free";
+  el.taskProfileVoiceReferenceId.value = assignment?.voice_reference_id || "";
   renderFallbackSelectors();
-  el.taskProfileFallbackProvider.value = assignment?.fallback_provider || "";
-  el.taskProfileFallbackModel.value = assignment?.fallback_model || "";
   loadEndpointIntoForm();
+  renderFallbackSelectors();
   el.taskProfileOverview.classList.add("hidden");
   el.taskProfileList.classList.add("hidden");
   el.taskProfileEditor.classList.remove("hidden");
@@ -608,7 +700,9 @@ async function saveTaskProfile() {
       if (previousName && previousName !== nextName) {
         for (const item of state.taskModelAssignments) {
           if (item.provider === previousName) item.provider = nextName;
-          if (item.fallback_provider === previousName) item.fallback_provider = nextName;
+          for (const fallback of (item.fallbacks || [])) {
+            if (fallback.provider === previousName) fallback.provider = nextName;
+          }
         }
       }
       state.activeEndpointOriginalName = nextName;
@@ -617,9 +711,9 @@ async function saveTaskProfile() {
     const assignment = state.taskModelAssignments.find(item => item.task === task);
     if (task !== "reasoning" && assignment) {
       assignment.provider = endpoint?.name || "";
-      assignment.model = el.taskProfileModel.value.trim();
-      assignment.fallback_provider = el.taskProfileFallbackProvider.value.trim();
-      assignment.fallback_model = el.taskProfileFallbackModel.value.trim();
+      assignment.model = task === "audio_voice" ? el.taskProfileVoiceModel.value.trim() : el.taskProfileModel.value.trim();
+      assignment.fallbacks = (assignment.fallbacks || []).filter(item => item.provider && item.model);
+      assignment.voice_reference_id = task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : (assignment.voice_reference_id || "");
     }
 
     const behavior = state.taskBehaviors.find(item => item.task === task);
@@ -647,7 +741,7 @@ async function saveTaskProfile() {
     }, true);
     state.taskBehaviors = behaviorPayload.items || [];
     state.taskFoundations = behaviorPayload.foundations || state.taskFoundations;
-    toast("Task profile saved");
+    toast(`Saved ${taskModelLabels[task] || displayLabel(task)} task profile`);
     renderTaskProfiles();
     openTaskProfile(task);
   } catch (error) {
@@ -670,12 +764,53 @@ async function discoverTaskProfileModels() {
       body: JSON.stringify(endpoint),
     }, true);
     endpoint.models = payload.models || [];
+    endpoint.model_capabilities = payload.model_capabilities || {};
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
     toast(`Discovered ${endpoint.models.length} model(s)`);
   } catch (error) {
     toast(error.message, true);
   }
+}
+
+const COMMON_ENDPOINT_PRESETS = [
+  { id: "openai", name: "OpenAI", base_url: "https://api.openai.com/v1" },
+  { id: "openrouter", name: "OpenRouter", base_url: "https://openrouter.ai/api/v1" },
+  { id: "google-gemini", name: "Google Gemini (OpenAI-compatible)", base_url: "https://generativelanguage.googleapis.com/v1beta/openai" },
+  { id: "groq", name: "Groq", base_url: "https://api.groq.com/openai/v1" },
+  { id: "together", name: "Together AI", base_url: "https://api.together.xyz/v1" },
+  { id: "fireworks", name: "Fireworks AI", base_url: "https://api.fireworks.ai/inference/v1" },
+  { id: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com" },
+  { id: "mistral", name: "Mistral AI", base_url: "https://api.mistral.ai/v1" },
+  { id: "cerebras", name: "Cerebras", base_url: "https://api.cerebras.ai/v1" },
+  { id: "ollama", name: "Ollama (local)", base_url: "http://localhost:11434/v1" },
+  { id: "lm-studio", name: "LM Studio (local)", base_url: "http://localhost:1234/v1" },
+  { id: "vllm", name: "vLLM (local/self-hosted)", base_url: "http://localhost:8000/v1" },
+  { id: "localai", name: "LocalAI (local/self-hosted)", base_url: "http://localhost:8080/v1" },
+];
+function addTaskProfileEndpointFromPreset() {
+  const presetId = el.taskProfileEndpointPreset?.value;
+  const preset = COMMON_ENDPOINT_PRESETS.find(item => item.id === presetId);
+  if (!preset) {
+    toast("Choose an endpoint preset first", true);
+    return;
+  }
+  const endpoint = {
+    id: crypto.randomUUID(),
+    name: preset.name,
+    base_url: preset.base_url,
+    api_key: "",
+    models: [],
+    model_capabilities: {},
+  };
+  state.providerEndpoints.push(endpoint);
+  state.activeEndpointId = endpoint.id;
+  state.activeEndpointOriginalName = "";
+  renderTaskProfileEndpointOptions();
+  loadEndpointIntoForm();
+  if (el.taskProfileEndpointPreset) el.taskProfileEndpointPreset.value = "";
+  el.taskProfileApiKey.focus();
+  toast(`Added ${preset.name}. Add credentials if required, then discover models.`);
 }
 
 function addTaskProfileEndpoint() {
@@ -685,6 +820,7 @@ function addTaskProfileEndpoint() {
     base_url: "",
     api_key: "",
     models: [],
+    model_capabilities: {},
   };
   state.providerEndpoints.push(endpoint);
   state.activeEndpointId = endpoint.id;
@@ -694,17 +830,22 @@ function addTaskProfileEndpoint() {
   el.taskProfileEndpointName.focus();
 }
 
+function updateVoiceSliderReadouts() {
+  if (el.voiceRateValue) el.voiceRateValue.value = Number(el.voiceRate.value).toFixed(2);
+  if (el.voicePitchValue) el.voicePitchValue.value = Number(el.voicePitch.value).toFixed(2);
+  if (el.voiceVolumeValue) el.voiceVolumeValue.value = Number(el.voiceVolume.value).toFixed(2);
+}
+
 async function loadVoiceSettings() {
   try {
-    const settings = await api("/v1/body/voice/settings", {}, true);
+    const settings = await api("/v1/admin/body/voice/settings", {}, true);
     state.voiceSettingsRevision = Number(settings.revision || 0);
-    el.fishAudioModel.value = settings.fishAudioModel || "s2.1-pro-free";
-    el.fishAudioReferenceId.value = settings.fishAudioReferenceId || "";
     el.voiceRate.value = String(settings.rate ?? 1);
     el.voicePitch.value = String(settings.pitch ?? 1);
     el.voiceVolume.value = String(settings.volume ?? 1);
     el.voiceName.value = settings.voiceName || "";
-    el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
+    updateVoiceSliderReadouts();
+    el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
   } catch (error) {
     toast("Could not load voice settings: " + error.message, true);
   }
@@ -716,8 +857,6 @@ async function saveVoiceSettings() {
       method: "POST",
       body: JSON.stringify({
         expected_revision: state.voiceSettingsRevision,
-        fish_audio_model: el.fishAudioModel.value.trim(),
-        fish_audio_reference_id: el.fishAudioReferenceId.value.trim(),
         rate: Number(el.voiceRate.value),
         pitch: Number(el.voicePitch.value),
         volume: Number(el.voiceVolume.value),
@@ -725,10 +864,44 @@ async function saveVoiceSettings() {
       }),
     }, true);
     state.voiceSettingsRevision = Number(settings.revision || 0);
-    el.voiceSettingsRevision.textContent = "Settings revision: " + state.voiceSettingsRevision;
+    el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
     toast("Voice settings saved");
   } catch (error) {
     toast("Could not save voice settings: " + error.message, true);
+  }
+}
+
+async function refreshBodyFallbackSettings() {
+  if (!state.adminAuthorized || !el.bodyFallbackEnabled) return;
+  try {
+    const settings = await api("/v1/admin/body/fallback", {}, true);
+    el.bodyFallbackEnabled.checked = Boolean(settings.enabled);
+    el.bodyFallbackSource.textContent = settings.runtime_override === null
+      ? `Using Render deployment setting (${settings.deployment_default ? "enabled" : "disabled"}).`
+      : `Runtime override active. Deployment default is ${settings.deployment_default ? "enabled" : "disabled"}.`;
+  } catch (error) {
+    if (el.bodyFallbackSource) el.bodyFallbackSource.textContent = `Could not load setting: ${error.message}`;
+  }
+}
+
+async function saveBodyFallbackSettings() {
+  if (!el.bodyFallbackEnabled) return;
+  if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = true;
+  try {
+    const settings = await api("/v1/admin/body/fallback", {
+      method: "PUT",
+      body: JSON.stringify({ enabled: el.bodyFallbackEnabled.checked }),
+    }, true);
+    el.bodyFallbackEnabled.checked = Boolean(settings.enabled);
+    el.bodyFallbackSource.textContent = settings.runtime_override === null
+      ? `Using Render deployment setting (${settings.deployment_default ? "enabled" : "disabled"}).`
+      : `Runtime override active. Deployment default is ${settings.deployment_default ? "enabled" : "disabled"}.`;
+    toast(`Body reasoning fallback ${settings.enabled ? "enabled" : "disabled"}`);
+  } catch (error) {
+    toast(`Could not save Body fallback setting: ${error.message}`, true);
+    await refreshBodyFallbackSettings();
+  } finally {
+    if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = false;
   }
 }
 
@@ -744,7 +917,9 @@ async function enterAdminMode() {
       refreshTaskModelAssignments(),
       refreshTaskBehaviors(),
       refreshProviderEndpoints(),
+      refreshMcpServers(),
       loadVoiceSettings(),
+      refreshBodyFallbackSettings(),
     ]);
   } catch (error) {
     toast(error.message, true);
@@ -761,7 +936,7 @@ function renderStatus(status) {
   el.continuityLabel.textContent = "Persistent";
   el.selfName.textContent = mind.identity.self_name;
   el.developmentState.textContent = displayLabel(mind.developmental_state);
-  el.createdAt.textContent = new Date(mind.created_at).toLocaleString();
+  el.createdAt.textContent = formatBrowserDateTime(mind.created_at);
   el.memoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.journalCount.textContent = Number(status.journal_experience_count).toLocaleString();
 
@@ -777,14 +952,9 @@ function renderStatus(status) {
   if (el.identityOwner) el.identityOwner.textContent = integration.identity_owner;
   if (el.memoryOwner) el.memoryOwner.textContent = integration.memory_owner;
   el.adminMindName.textContent = mind.identity.self_name;
+  el.adminCreatedAt.textContent = formatBrowserDateTime(mind.created_at);
   el.adminMemoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.adminJournalCount.textContent = Number(status.journal_experience_count).toLocaleString();
-
-  if (!state.adminAuthorized) {
-    el.adminAuthorizationState.textContent = status.administration?.pin_required
-      ? "PIN Required"
-      : "Local Admin";
-  }
 
   el.foundationalValues.innerHTML = "";
   const values = mind.identity.foundational_values || [];
@@ -926,7 +1096,7 @@ function openMemoryInspector(memory, sourceMode) {
   state.activeMemory = JSON.parse(JSON.stringify(memory));
   el.inspectorContent.textContent = memory.content;
   el.inspectorClass.textContent = displayLabel(memory.memory_class);
-  el.inspectorFormedAt.textContent = new Date(memory.formed_at).toLocaleString();
+  el.inspectorFormedAt.textContent = formatBrowserDateTime(memory.formed_at);
   renderRecordValues(el.inspectorGrounding, memory.grounding);
   renderRecordValues(el.inspectorAssociations, memory.associations);
   renderMemoryArtifacts(memory.artifacts);
@@ -1018,7 +1188,7 @@ async function saveMemoryEdit(event) {
 
 function memoryQuery(config, offset = 0) {
   const params = new URLSearchParams({
-    limit: String(state.memoryPageSize),
+    limit: String(state.memoryPageSizes[config.key]),
     offset: String(offset),
     order: config.sort.value,
   });
@@ -1043,6 +1213,7 @@ function renderMemoryList(config, sourceMode) {
   config.count.textContent =
     `Showing ${page.items.length.toLocaleString()} of ${page.total.toLocaleString()} Memories`;
   config.loadMore.classList.toggle("hidden", !page.hasMore);
+  config.loadMore.textContent = "Get More";
 
   if (!page.items.length) {
     const empty = document.createElement("div");
@@ -1073,7 +1244,7 @@ function renderMemoryList(config, sourceMode) {
     const klass = document.createElement("span");
     klass.textContent = displayLabel(memory.memory_class);
     const formed = document.createElement("span");
-    formed.textContent = new Date(memory.formed_at).toLocaleString();
+    formed.textContent = formatBrowserDateTime(memory.formed_at);
     meta.append(klass, formed);
 
     const content = document.createElement("div");
@@ -1091,11 +1262,7 @@ async function refreshMemory(config, reset = true) {
     const offset = reset ? 0 : pageState.nextOffset;
     const page = await api(memoryQuery(config, offset));
 
-    if (reset) {
-      pageState.items = page.items;
-    } else {
-      pageState.items.push(...page.items);
-    }
+    pageState.items = page.items;
     pageState.total = page.total;
     pageState.hasMore = page.has_more;
     pageState.nextOffset = page.next_offset ?? pageState.items.length;
@@ -1135,6 +1302,7 @@ function renderJournalList() {
   el.journalResultCount.textContent =
     `Showing ${state.journals.length.toLocaleString()} of ${state.journalTotal.toLocaleString()} Experiences`;
   el.loadMoreJournals.classList.toggle("hidden", !state.journalHasMore);
+  el.loadMoreJournals.textContent = "Get More";
 
   if (!state.journals.length) {
     const empty = document.createElement("div");
@@ -1165,7 +1333,7 @@ function renderJournalList() {
     const kind = document.createElement("span");
     kind.textContent = displayLabel(entry.kind);
     const occurred = document.createElement("span");
-    occurred.textContent = new Date(entry.occurred_at).toLocaleString();
+    occurred.textContent = formatBrowserDateTime(entry.occurred_at);
     meta.append(kind, occurred);
 
     const title = document.createElement("div");
@@ -1366,7 +1534,7 @@ async function openJournalInspector(summary) {
     });
     state.activeJournal = entry;
     el.journalInspectorKind.textContent = displayLabel(entry.kind);
-    el.journalInspectorOccurredAt.textContent = new Date(entry.occurred_at).toLocaleString();
+    el.journalInspectorOccurredAt.textContent = formatBrowserDateTime(entry.occurred_at);
     renderJournalDetail(entry);
     await renderJournalEvidence(entry);
     el.journalInspectorRaw.textContent = JSON.stringify(entry, null, 2);
@@ -1412,7 +1580,7 @@ async function renderJournalEvidence(entry) {
     const kind = document.createElement("span");
     kind.textContent = `${artifact.modality} · ${artifact.source}`;
     const captured = document.createElement("span");
-    captured.textContent = new Date(artifact.captured_at).toLocaleString();
+    captured.textContent = formatBrowserDateTime(artifact.captured_at);
     meta.append(kind, captured);
     const title = document.createElement("div");
     title.className = "journal-entry-title";
@@ -1492,11 +1660,7 @@ async function refreshJournal(reset = true) {
     const offset = reset ? 0 : state.journalNextOffset;
     const page = await api(journalQuery(offset));
 
-    if (reset) {
-      state.journals = page.items;
-    } else {
-      state.journals.push(...page.items);
-    }
+    state.journals = page.items;
     state.journalTotal = page.total;
     state.journalHasMore = page.has_more;
     state.journalNextOffset = page.next_offset ?? state.journals.length;
@@ -1542,9 +1706,20 @@ async function refreshStatus() {
 
 async function refresh() {
   try {
+    const admin = state.mode === "admin" && state.adminAuthorized;
     await Promise.all([
       refreshStatus(),
-      refreshMemory(filters.mind, true),
+      refreshMemory(admin ? filters.admin : filters.mind, true),
+      refreshJournal(true),
+      ...(admin ? [
+        refreshBodyFallbackSettings(),
+        refreshHostBehaviors(),
+        refreshTaskModelAssignments(),
+        refreshTaskBehaviors(),
+        refreshProviderEndpoints(),
+        refreshMcpServers(),
+        loadVoiceSettings(),
+      ] : []),
     ]);
     el.initializeOverlay.classList.add("hidden");
   } catch (error) {
@@ -1598,17 +1773,21 @@ function bindFilterEvents(config) {
 el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
 el.logoutButton.addEventListener("click", logout);
-el.refreshButton.addEventListener("click", () => Promise.all([
-  refreshStatus(),
-  refreshMemory(filters.mind, true),
-]));
+el.refreshButton.addEventListener("click", refresh);
+el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));
 el.adminRefreshButton.addEventListener("click", () => Promise.all([
   refreshStatus(),
   refreshMemory(filters.admin, true),
   refreshJournal(true),
+  refreshBodyFallbackSettings(),
 ]));
+if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.addEventListener("click", saveBodyFallbackSettings);
 el.journalRefreshButton.addEventListener("click", () => refreshJournal(true));
 el.loadMoreJournals.addEventListener("click", () => refreshJournal(false));
+el.journalPageSize.addEventListener("change", () => {
+  state.journalPageSize = Number(el.journalPageSize.value) || 25;
+  refreshJournal(true);
+});
 el.initializeForm.addEventListener("submit", initializeMind);
 el.closeMemoryInspector.addEventListener("click", closeMemoryInspector);
 el.memoryInspector.addEventListener("click", event => {
@@ -1620,7 +1799,15 @@ el.memoryEditForm.addEventListener("submit", saveMemoryEdit);
 el.clearMemoryFilters.addEventListener("click", () => clearFilters(filters.mind));
 el.adminClearMemoryFilters.addEventListener("click", () => clearFilters(filters.admin));
 el.loadMoreMemories.addEventListener("click", () => refreshMemory(filters.mind, false));
+el.memoryPageSize.addEventListener("change", () => {
+  state.memoryPageSizes.mind = Number(el.memoryPageSize.value) || 25;
+  refreshMemory(filters.mind, true);
+});
 el.adminLoadMoreMemories.addEventListener("click", () => refreshMemory(filters.admin, false));
+el.adminMemoryPageSize.addEventListener("change", () => {
+  state.memoryPageSizes.admin = Number(el.adminMemoryPageSize.value) || 25;
+  refreshMemory(filters.admin, true);
+});
 el.clearJournalFilters.addEventListener("click", clearJournalFilters);
 el.journalSearch.addEventListener("input", scheduleJournalRefresh);
 for (const control of [
@@ -1655,6 +1842,7 @@ if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHos
 if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
 
 const adminSectionIds = {
+  mcp: "mcpSection",
   tasks: "tasksSection",
   behaviors: "behaviorsSection",
   memories: "memoriesSection",
@@ -1708,7 +1896,7 @@ async function refreshEvidence() {
       const kind = document.createElement("span");
       kind.textContent = `${artifact.modality || "sensory"} · ${artifact.source || "unknown source"}`;
       const captured = document.createElement("span");
-      captured.textContent = new Date(artifact.captured_at).toLocaleString();
+      captured.textContent = formatBrowserDateTime(artifact.captured_at);
       meta.append(kind, captured);
       const title = document.createElement("div");
       title.className = "journal-entry-title";
@@ -1767,6 +1955,211 @@ function evidenceMediaUrl(artifact) {
   return `/v1/evidence/${encodeURIComponent(artifact.sha256)}?${query}`;
 }
 
+function selectedMcpServer() {
+  return state.mcpServers.find(server => server.id === state.activeMcpServerId) || null;
+}
+
+function syncMcpServerForm() {
+  const server = selectedMcpServer();
+  if (!server) return null;
+  server.name = el.mcpServerName.value.trim();
+  server.url = el.mcpServerUrl.value.trim();
+  server.bearer_token = el.mcpServerToken.value;
+  server.enabled = el.mcpServerEnabled.checked;
+  return server;
+}
+
+function renderMcpServerOptions() {
+  el.mcpServerSelect.replaceChildren();
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "Add a new server";
+  el.mcpServerSelect.append(blank);
+  for (const server of state.mcpServers) {
+    const option = document.createElement("option");
+    option.value = server.id;
+    option.textContent = server.name || server.url || (server.id === state.activeMcpServerId ? "New MCP server" : "Unnamed MCP server");
+    el.mcpServerSelect.append(option);
+  }
+  el.mcpServerSelect.value = state.activeMcpServerId || "";
+}
+
+function loadMcpServerIntoForm() {
+  const server = selectedMcpServer();
+  el.mcpServerName.value = server?.name || "";
+  el.mcpServerUrl.value = server?.url || "";
+  el.mcpServerToken.value = server?.bearer_token || "";
+  el.mcpServerEnabled.checked = server ? server.enabled !== false : true;
+  el.mcpServerStatus.textContent = server
+    ? `${server.tools?.length || 0} discovered tool(s). Save after changing server or tool settings.`
+    : "Add a server URL, then discover its tools.";
+  renderMcpTools();
+}
+
+function renderMcpTools() {
+  const server = selectedMcpServer();
+  el.mcpToolList.replaceChildren();
+  el.mcpToolRunnerSelect.replaceChildren();
+  const runnerPlaceholder = document.createElement("option");
+  runnerPlaceholder.value = "";
+  runnerPlaceholder.textContent = "Choose an enabled tool";
+  el.mcpToolRunnerSelect.append(runnerPlaceholder);
+  if (!server?.tools?.length) {
+    const empty = document.createElement("p");
+    empty.className = "record-empty";
+    empty.textContent = "No tools discovered for this server yet.";
+    el.mcpToolList.append(empty);
+    return;
+  }
+  for (const tool of server.tools) {
+    const row = document.createElement("div");
+    row.className = "memory-card host-behavior-card";
+    const details = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = tool.name;
+    const description = document.createElement("p");
+    description.className = "muted-copy";
+    description.textContent = tool.description || "No description provided by server.";
+    const schema = document.createElement("code");
+    schema.className = "mcp-tool-schema";
+    schema.textContent = JSON.stringify(tool.inputSchema || {}, null, 2);
+    details.append(title, description, schema);
+    const toggleLabel = document.createElement("label");
+    toggleLabel.className = "host-behavior-enabled";
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = tool.enabled !== false;
+    toggle.addEventListener("change", () => {
+      tool.enabled = toggle.checked;
+      renderMcpTools();
+    });
+    toggleLabel.append(toggle, document.createTextNode(" Enabled"));
+    row.append(details, toggleLabel);
+    el.mcpToolList.append(row);
+    if (tool.enabled !== false) {
+      const option = document.createElement("option");
+      option.value = tool.name;
+      option.textContent = tool.name;
+      el.mcpToolRunnerSelect.append(option);
+    }
+  }
+}
+
+async function refreshMcpServers() {
+  try {
+    const payload = await api("/v1/admin/mcp/servers", {}, true);
+    state.mcpServers = payload.items || [];
+    if (!state.mcpServers.some(server => server.id === state.activeMcpServerId)) {
+      state.activeMcpServerId = state.mcpServers[0]?.id || null;
+    }
+    renderMcpServerOptions();
+    loadMcpServerIntoForm();
+  } catch (error) {
+    toast(`Could not load MCP servers: ${error.message}`, true);
+  }
+}
+
+function addMcpServer() {
+  syncMcpServerForm();
+  const server = {
+    id: crypto.randomUUID(),
+    name: "",
+    url: "",
+    bearer_token: "",
+    enabled: true,
+    tools: [],
+  };
+  state.mcpServers.push(server);
+  state.activeMcpServerId = server.id;
+  renderMcpServerOptions();
+  loadMcpServerIntoForm();
+  el.mcpServerName.focus();
+}
+
+async function discoverMcpTools() {
+  const server = syncMcpServerForm();
+  if (!server) {
+    addMcpServer();
+    toast("Enter a server URL, then discover its tools", true);
+    return;
+  }
+  if (!server.name || !server.url) {
+    toast("Server name and URL are required", true);
+    return;
+  }
+  el.mcpServerStatus.textContent = "Connecting and discovering tools…";
+  try {
+    const payload = await api("/v1/admin/mcp/servers/discover", {
+      method: "POST",
+      body: JSON.stringify(server),
+    }, true);
+    server.tools = payload.items || [];
+    renderMcpServerOptions();
+    loadMcpServerIntoForm();
+    el.mcpServerStatus.textContent = `Connected. Discovered ${server.tools.length} tool(s). Save to persist this configuration.`;
+    toast(`Discovered ${server.tools.length} MCP tool(s)`);
+  } catch (error) {
+    el.mcpServerStatus.textContent = `Connection failed: ${error.message}`;
+    toast(error.message, true);
+  }
+}
+
+async function saveMcpServers() {
+  syncMcpServerForm();
+  try {
+    const payload = await api("/v1/admin/mcp/servers", {
+      method: "PUT",
+      body: JSON.stringify({ items: state.mcpServers }),
+    }, true);
+    state.mcpServers = payload.items || [];
+    renderMcpServerOptions();
+    loadMcpServerIntoForm();
+    toast("MCP server and tool configuration saved");
+  } catch (error) {
+    toast(`Could not save MCP configuration: ${error.message}`, true);
+  }
+}
+
+async function removeMcpServer() {
+  if (!state.activeMcpServerId) return;
+  state.mcpServers = state.mcpServers.filter(server => server.id !== state.activeMcpServerId);
+  state.activeMcpServerId = state.mcpServers[0]?.id || null;
+  renderMcpServerOptions();
+  loadMcpServerIntoForm();
+  await saveMcpServers();
+}
+
+async function runMcpTool() {
+  const server = syncMcpServerForm();
+  const toolName = el.mcpToolRunnerSelect.value;
+  if (!server || !toolName) {
+    toast("Choose a server and an enabled tool", true);
+    return;
+  }
+  let argumentsValue;
+  try {
+    argumentsValue = JSON.parse(el.mcpToolArguments.value || "{}");
+    if (!argumentsValue || Array.isArray(argumentsValue) || typeof argumentsValue !== "object") {
+      throw new Error("Arguments must be a JSON object");
+    }
+  } catch (error) {
+    toast(`Invalid tool arguments: ${error.message}`, true);
+    return;
+  }
+  el.mcpToolOutput.textContent = "Running tool…";
+  try {
+    const result = await api("/v1/admin/mcp/tools/call", {
+      method: "POST",
+      body: JSON.stringify({ server_id: server.id, tool_name: toolName, arguments: argumentsValue }),
+    }, true);
+    el.mcpToolOutput.textContent = JSON.stringify(result, null, 2);
+    toast(`MCP tool ${toolName} completed`);
+  } catch (error) {
+    el.mcpToolOutput.textContent = error.message;
+    toast(error.message, true);
+  }
+}
+
 function showAdminSection(sectionName) {
   for (const [name, id] of Object.entries(adminSectionIds)) {
     const panel = document.getElementById(id);
@@ -1780,12 +2173,29 @@ function showAdminSection(sectionName) {
   if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
   if (sectionName === "tasks") renderTaskProfiles();
   if (sectionName === "devices") refreshDeviceInventory();
+  if (sectionName === "mcp" && state.adminAuthorized) refreshMcpServers();
 }
 
 document.querySelectorAll("[data-admin-section]").forEach(button => {
   button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
 });
 if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", refreshTaskProfilesFromButton);
+if (el.refreshMcpServers) el.refreshMcpServers.addEventListener("click", refreshMcpServers);
+if (el.mcpAddServer) el.mcpAddServer.addEventListener("click", addMcpServer);
+if (el.mcpServerSelect) el.mcpServerSelect.addEventListener("change", () => {
+  const selectedId = el.mcpServerSelect.value;
+  if (!selectedId) {
+    addMcpServer();
+    return;
+  }
+  syncMcpServerForm();
+  state.activeMcpServerId = selectedId;
+  loadMcpServerIntoForm();
+});
+if (el.mcpDiscoverTools) el.mcpDiscoverTools.addEventListener("click", discoverMcpTools);
+if (el.mcpDeleteServer) el.mcpDeleteServer.addEventListener("click", removeMcpServer);
+if (el.saveMcpServers) el.saveMcpServers.addEventListener("click", saveMcpServers);
+if (el.mcpRunTool) el.mcpRunTool.addEventListener("click", runMcpTool);
 if (el.refreshDevicesButton) el.refreshDevicesButton.addEventListener("click", refreshDeviceInventory);
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   state.activeEndpointId = el.taskProfileEndpointSelect.value || null;
@@ -1794,18 +2204,26 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
   loadEndpointIntoForm();
 });
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
+if (el.taskProfileAddPreset) el.taskProfileAddPreset.addEventListener("click", addTaskProfileEndpointFromPreset);
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
-if (el.taskProfileFallbackProvider) el.taskProfileFallbackProvider.addEventListener("change", () => {
-  el.taskProfileFallbackModel.value = "";
+if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", () => {
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (!assignment) return;
+  assignment.fallbacks = assignment.fallbacks || [];
+  assignment.fallbacks.push({ provider: "", model: "" });
   renderFallbackSelectors();
 });
-if (el.addBehaviorShortcut) el.addBehaviorShortcut.addEventListener("click", () => {
-  showAdminSection("behaviors");
-  addHostBehavior();
+if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click", () => {
+  el.taskProfileEnabled.checked = true;
+  el.taskProfileBehaviorName.focus();
+  toast("Behavior editor ready. Save the task profile to keep your changes.");
 });
 if (el.refreshVoiceSettings) el.refreshVoiceSettings.addEventListener("click", loadVoiceSettings);
 if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);
+[el.voiceRate, el.voicePitch, el.voiceVolume].forEach((slider) => {
+  if (slider) slider.addEventListener("input", updateVoiceSliderReadouts);
+});
 
 const BODY_DEVICE_STORAGE_KEYS = {
   videoinput: "aicognitive_mind.device.videoInput",

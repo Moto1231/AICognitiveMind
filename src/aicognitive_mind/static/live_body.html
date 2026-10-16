@@ -4,215 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom — Live Body</title>
-  <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; font-family: system-ui, sans-serif; background: #101114; color: #f2f2f2; }
-    main { max-width: 1100px; margin: 0 auto; padding: 1.25rem; }
-    .page-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: .75rem;
-      margin-bottom: .85rem;
-    }
-    .page-links { display: flex; gap: .6rem; flex-wrap: wrap; }
-    .page-links a {
-      display: inline-flex;
-      align-items: center;
-      min-height: 2.35rem;
-      padding: .5rem .72rem;
-      border: 1px solid #373a44;
-      border-radius: 9px;
-      background: #181a20;
-      color: #d7d9df;
-      text-decoration: none;
-      font-size: .92rem;
-    }
-    .page-links a:hover { border-color: #687388; }
-    #stage {
-      width: 100%;
-      height: clamp(300px, 55vh, 620px);
-      background: #181a20;
-      border-radius: 14px;
-      overflow: hidden;
-      position: relative;
-    }
-    #liveScene {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      background: #0b0c0f;
-      transform: scaleX(-1);
-      display: none;
-    }
-    .audio-meter {
-      position: relative;
-      left: auto;
-      right: auto;
-      bottom: auto;
-      margin: .65rem 0 0;
-      padding: .65rem .8rem;
-      border: 1px solid #373a44;
-      border-radius: 10px;
-      background: rgba(16,17,20,.88);
-      display: none;
-    }
-    .audio-meter-label { display: flex; justify-content: space-between; gap: .5rem; color: #c8ccd5; font-size: .8rem; margin-bottom: .35rem; }
-    .audio-meter-track { height: .55rem; border-radius: 999px; background: #2a2d36; overflow: hidden; }
-    #audioMeterFill { height: 100%; width: 0%; background: #65d39b; border-radius: inherit; transition: width .08s linear; }
-    button { padding: .7rem 1rem; font: inherit; cursor: pointer; }
-    button:disabled { cursor: not-allowed; opacity: .5; }
-    #status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-    .sense-status-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; margin-top: .75rem; }
-    .sense-status { min-width: 0; padding: .75rem .85rem; border: 1px solid #373a44; border-radius: 10px; background: #181a20; }
-    .sense-status strong { display: block; margin-bottom: .3rem; font-size: .86rem; }
-    .sense-status span { display: block; color: #c8ccd5; font-size: .82rem; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
-    .sense-status[data-state="success"] { border-color: #38795d; }
-    .sense-status[data-state="error"] { border-color: #a34a55; }
-    .sense-status[data-state="warning"] { border-color: #8a7040; }
-    @media (max-width: 600px) { .sense-status-grid { grid-template-columns: minmax(0, 1fr); } }
-    .interaction-panel {
-      margin: 1rem 0;
-      background: #181a20;
-      border: 1px solid #242731;
-      border-radius: 16px;
-      overflow: hidden;
-    }
-    #interactionHistory {
-      min-height: 8rem;
-      max-height: 34vh;
-      overflow-y: auto;
-      padding: 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: .75rem;
-    }
-    .chat-empty {
-      margin: auto;
-      color: #858a96;
-      text-align: center;
-      font-size: .95rem;
-    }
-    .chat-message {
-      max-width: 82%;
-      padding: .72rem .9rem;
-      border-radius: 14px;
-      white-space: pre-wrap;
-      line-height: 1.4;
-    }
-    .chat-message.user {
-      align-self: flex-end;
-      background: #2b5f91;
-      color: #fff;
-      border-bottom-right-radius: 5px;
-    }
-    .chat-message.mind {
-      align-self: flex-start;
-      background: #242731;
-      color: #eceef3;
-      border-bottom-left-radius: 5px;
-    }
-    .chat-message.error {
-      align-self: flex-start;
-      background: #3a2528;
-      color: #ffd7da;
-    }
-    .interaction-form {
-      display: flex;
-      gap: .65rem;
-      align-items: flex-end;
-      padding: .8rem;
-      border-top: 1px solid #2a2d36;
-      background: #14161b;
-    }
-    .interaction-form textarea {
-      flex: 1;
-      width: 100%;
-      box-sizing: border-box;
-      min-height: 2.8rem;
-      max-height: 9rem;
-      resize: none;
-      padding: .72rem .82rem;
-      border: 1px solid #373a44;
-      border-radius: 12px;
-      background: #101114;
-      color: #f2f2f2;
-      font: inherit;
-      line-height: 1.35;
-    }
-    .interaction-form textarea:focus {
-      outline: none;
-      border-color: #687388;
-      box-shadow: 0 0 0 2px rgba(104, 115, 136, .2);
-    }
-    .interaction-actions {
-      display: flex;
-      gap: .5rem;
-      align-items: center;
-    }
-    .interaction-actions button { margin: 0; }
-    #clearInteraction {
-      background: transparent;
-      color: #b6bbc7;
-      border: 1px solid #373a44;
-    }
-    #sendInteraction {
-      border: 1px solid #4777a7;
-      background: #315f8d;
-      color: #fff;
-    }
-    .sense-panel {
-      margin-top: 1rem;
-      padding: .8rem 1rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      background: #181a20;
-      border-radius: 14px;
-    }
-    .sense-label {
-      color: #c8ccd5;
-      font-weight: 650;
-    }
-    .senses-toggle {
-      min-width: 118px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: .55rem;
-      border: 1px solid #454954;
-      border-radius: 999px;
-      background: #242731;
-      color: #c8ccd5;
-    }
-    .senses-toggle::before {
-      content: "";
-      width: .72rem;
-      height: .72rem;
-      border-radius: 50%;
-      background: #676d78;
-      box-shadow: 0 0 0 3px rgba(103, 109, 120, .12);
-    }
-    .senses-toggle.on {
-      border-color: #38795d;
-      background: #1d382d;
-      color: #d9f6e8;
-    }
-    .senses-toggle.on::before {
-      background: #65d39b;
-      box-shadow: 0 0 0 3px rgba(101, 211, 155, .14);
-    }
-  </style>
+  <link rel="stylesheet" href="/static/body.css">
 
 </head>
-<body>
+<body class="body-live">
   <script>
     const bodySessionId = crypto.randomUUID();
     async function bodyFetch(url, options = {}) {
       const headers = new Headers(options.headers || {});
       headers.set("X-Body-Session", bodySessionId);
-      const response = await fetch(url, { ...options, headers, signal: options.signal || AbortSignal.timeout(130000) });
+      const response = await fetch(url, { ...options, headers, signal: options.signal });
       const receipt = response.headers.get("X-Body-Delivery");
       if (response.ok && receipt) {
         await response.clone().arrayBuffer();
@@ -230,17 +31,15 @@
         <a href="/portal" id="backToPortal" aria-label="Back to portal">← Portal</a>
       </div>
       <div class="page-links">
+        <div id="connectedHostStatus" class="host-status" data-state="loading" aria-live="polite">Checking connected hosts…</div>
       </div>
     </nav>
 
-    <section class="sense-panel" aria-label="Senses">
-      <span class="sense-label">Senses</span>
-      <button
-        id="sensesToggle"
-        class="senses-toggle"
-        type="button"
-        aria-pressed="false"
-      >Off</button>
+    <section class="sense-panel" aria-label="Body controls">
+      <span class="sense-label">Controls</span>
+      <button id="visionToggle" class="senses-toggle" type="button" aria-pressed="false">Vision Off</button>
+      <button id="hearingToggle" class="senses-toggle" type="button" aria-pressed="false">Hearing Off</button>
+      <button id="voiceToggle" class="senses-toggle" type="button" aria-pressed="true">Voice On</button>
     </section>
 
     <div id="stage">
@@ -262,7 +61,7 @@
     </section>
 
     <section class="interaction-panel" aria-label="Conversation">
-      <div id="interactionHistory" aria-live="polite">
+      <div id="interactionHistory" aria-live="polite"></div>
       <form id="interactionForm" class="interaction-form">
         <textarea
           id="interactionMessage"
@@ -297,7 +96,9 @@
     const audioMeterFill = document.getElementById("audioMeterFill");
     const audioMeterValue = document.getElementById("audioMeterValue");
     const canvas = document.getElementById("captureCanvas");
-    const sensesToggle = document.getElementById("sensesToggle");
+    const visionToggle = document.getElementById("visionToggle");
+    const hearingToggle = document.getElementById("hearingToggle");
+    const voiceToggle = document.getElementById("voiceToggle");
     const statusBox = document.getElementById("status");
     const interactionForm = document.getElementById("interactionForm");
     const interactionMessage = document.getElementById("interactionMessage");
@@ -306,6 +107,7 @@
     const interactionHistory = document.getElementById("interactionHistory");
     const chatEmpty = document.getElementById("chatEmpty");
     const backToPortal = document.getElementById("backToPortal");
+    const connectedHostStatus = document.getElementById("connectedHostStatus");
 
     let cameraStream = null;
     let microphoneStream = null;
@@ -322,6 +124,7 @@
     let realtimeEvents = null;
     let realtimeMicrophone = null;
     let realtimeAudio = null;
+    let activeSpeechAudio = null;
     let realtimeMcpPending = 0;
     let audioContext = null;
     let audioAnalyser = null;
@@ -330,12 +133,20 @@
     let audioMeterFrame = null;
     let realtimeResponseDone = false;
     let realtimeResponseUsedMcp = false;
-    let sensesEnabled = false;
+    let visionEnabled = false;
+    let hearingEnabled = false;
+    let voiceEnabled = localStorage.getItem("aicognitive_mind.voice") !== "off";
     let sensoryLoopGeneration = 0;
     let sensoryRequestInFlight = false;
-    const AUDIO_WINDOW_MS = 4_000;
+    const AUDIO_IDLE_WINDOW_MS = 4_000;
+    const AUDIO_MAX_DURATION_MS = 30_000;
+    const AUDIO_SILENCE_MS = 900;
+    const AUDIO_SPEECH_THRESHOLD = 0.012;
     const SENSE_PAUSE_MS = 15_000;
-    const VISION_INTERVAL_MS = 3_000;
+    const VISION_INTERVAL_MS = 250;
+    const MOTION_PIXEL_DELTA = 22;
+    const MOTION_PIXEL_RATIO = 0.07;
+    const MOTION_CAPTURE_COOLDOWN_MS = 2_500;
     const DEFAULT_LOOK_SECONDS = 5;
     const MAX_LOOK_SECONDS = 30;
     let boundedLookActive = false;
@@ -375,9 +186,7 @@
       });
       if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
 
-      const response = await bodyFetch("/v1/mind/body/see?express=false", { method: "POST" });
-      if (!response.ok) throw new Error(await responseErrorMessage(response));
-      return await response.json();
+      return await ingress.json();
     }
 
     const BODY_DEVICE_STORAGE_KEYS = {
@@ -414,7 +223,7 @@
     }
 
     async function performBoundedLook(seconds, spokenCommand) {
-      if (boundedLookActive) return;
+      if (!visionEnabled || boundedLookActive) return;
       boundedLookActive = true;
       let stream = cameraStream;
       let temporaryStream = false;
@@ -429,7 +238,7 @@
         for (let i = 0; i < sampleCount; i++) {
           if (i > 0) await delay((seconds * 1000) / sampleCount);
           const result = await captureVisualFrame(stream);
-          if (result?.response_text) observations.push(result.response_text);
+          if (result?.interpretation) observations.push(result.interpretation);
         }
         const remaining = seconds * 1000 - ((sampleCount - 1) * (seconds * 1000) / sampleCount);
         if (remaining > 0) await delay(remaining);
@@ -459,16 +268,34 @@
       }
     }
     let hostCameraRequestBusy = false;
+    let hostCameraNextPollAt = 0;
+    let hostCameraPollDelayMs = 2_500;
 
     async function checkForHostCameraRequest() {
-      if (hostCameraRequestBusy || boundedLookActive) return;
+      if (!visionEnabled || hostCameraRequestBusy || boundedLookActive || Date.now() < hostCameraNextPollAt) return;
+      hostCameraRequestBusy = true;
       try {
         const response = await bodyFetch("/v1/body/camera/request", { cache: "no-store" });
-        if (!response.ok) return;
+        if (response.status === 429) {
+          const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+          hostCameraPollDelayMs = Math.min(
+            30_000,
+            retryAfterSeconds > 0 ? retryAfterSeconds * 1_000 : Math.max(5_000, hostCameraPollDelayMs * 2)
+          );
+          hostCameraNextPollAt = Date.now() + hostCameraPollDelayMs;
+          return;
+        }
+        if (!response.ok) {
+          hostCameraPollDelayMs = Math.min(30_000, Math.max(2_500, hostCameraPollDelayMs * 2));
+          hostCameraNextPollAt = Date.now() + hostCameraPollDelayMs;
+          return;
+        }
+        if (!visionEnabled) return;
+        hostCameraPollDelayMs = 2_500;
+        hostCameraNextPollAt = Date.now() + hostCameraPollDelayMs;
         const command = await response.json();
         if (!command?.request_id) return;
 
-        hostCameraRequestBusy = true;
         let stream = cameraStream;
         let temporaryStream = false;
         try {
@@ -481,6 +308,7 @@
           }
 
           await delay(seconds * 1000);
+          if (!visionEnabled) return;
 
           const track = stream.getVideoTracks()[0];
           if (!track) throw new Error("Camera did not provide a video track.");
@@ -497,6 +325,7 @@
           canvas.height = Math.max(1, Math.round(liveScene.videoHeight * scale));
           canvas.getContext("2d").drawImage(liveScene, 0, 0, canvas.width, canvas.height);
           const imageDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+          if (!visionEnabled) return;
 
           const ingress = await bodyFetch("/v1/body/eyes/observe", {
             method: "POST",
@@ -524,20 +353,80 @@
           setStatus("Axiom camera observation delivered to reasoning host.");
         } finally {
           if (temporaryStream) stream?.getTracks().forEach((track) => track.stop());
-          hostCameraRequestBusy = false;
         }
       } catch (error) {
         setStatus("Host camera observation failed: " + error.message);
+        hostCameraPollDelayMs = Math.min(30_000, Math.max(2_500, hostCameraPollDelayMs * 2));
+        hostCameraNextPollAt = Date.now() + hostCameraPollDelayMs;
+      } finally {
         hostCameraRequestBusy = false;
       }
     }
 
     let pageSourceSnapshot = null;
     let pageRefreshPending = false;
+    let mouthPollBusy = false;
+    let mouthEvents = null;
     let pageRefreshProbeBusy = false;
 
     function setStatus(message) {
       statusBox.textContent = message;
+    }
+
+    async function refreshConnectedHostStatus() {
+      // This status endpoint must not overlap itself when a response is slower
+      // than the five-second refresh interval or the server starts rate limiting.
+      if (!connectedHostStatus || document.hidden || refreshConnectedHostStatus.inFlight ||
+          Date.now() < (refreshConnectedHostStatus.nextPollAt || 0)) return;
+      refreshConnectedHostStatus.inFlight = true;
+      try {
+        const response = await bodyFetch("/v1/body/hosts/status", { cache: "no-store" });
+        if (response.status === 429) {
+          const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+          refreshConnectedHostStatus.pollDelayMs = Math.min(
+            30_000,
+            retryAfterSeconds > 0
+              ? retryAfterSeconds * 1_000
+              : Math.max(5_000, (refreshConnectedHostStatus.pollDelayMs || 5_000) * 2)
+          );
+          refreshConnectedHostStatus.nextPollAt = Date.now() + refreshConnectedHostStatus.pollDelayMs;
+          throw new Error("Host status rate limited");
+        }
+        if (!response.ok) throw new Error(await responseErrorMessage(response));
+        refreshConnectedHostStatus.pollDelayMs = 5_000;
+        refreshConnectedHostStatus.nextPollAt = Date.now() + 5_000;
+        const status = await response.json();
+        const requests = status.requests || {};
+        const pending = Number(requests.pending || 0);
+        const inProgress = Number(requests.in_progress || 0);
+        if (!status.connected || !status.host) {
+          connectedHostStatus.dataset.state = "disconnected";
+          connectedHostStatus.textContent =
+            "No connected host · " + pending + " waiting / " + inProgress + " in progress";
+          return;
+        }
+        const host = status.host;
+        const model = host.model ? " · " + host.model : "";
+        const heartbeat = status.last_heartbeat_age_seconds == null
+          ? "heartbeat unknown"
+          : "heartbeat " + status.last_heartbeat_age_seconds + "s ago";
+        connectedHostStatus.dataset.state = "connected";
+        connectedHostStatus.textContent =
+          "Connected host: " + (host.name || "unnamed") + model +
+          " · " + (status.lease_remaining_seconds == null ? "persistent connection" : "lease " + status.lease_remaining_seconds + "s") + " · " + heartbeat +
+          " · " + pending + " waiting / " + inProgress + " in progress";
+      } catch (_) {
+        if (Date.now() >= (refreshConnectedHostStatus.nextPollAt || 0)) {
+          refreshConnectedHostStatus.pollDelayMs = Math.min(
+            30_000, Math.max(5_000, (refreshConnectedHostStatus.pollDelayMs || 5_000) * 2)
+          );
+          refreshConnectedHostStatus.nextPollAt = Date.now() + refreshConnectedHostStatus.pollDelayMs;
+        }
+        connectedHostStatus.dataset.state = "unavailable";
+        connectedHostStatus.textContent = "Connected-host status unavailable";
+      } finally {
+        refreshConnectedHostStatus.inFlight = false;
+      }
     }
 
     function setSenseStatus(modality, message, state = "info") {
@@ -614,10 +503,11 @@
     }
 
     async function speakIntent(intent) {
-      if (!intent?.text) return;
+      if (!voiceEnabled || !intent?.text) return;
       const metadata = intent.metadata || {};
       const requestedRate = Number(metadata.rate ?? sharedVoicePack?.rate ?? 1);
       const requestedVolume = Number(metadata.volume ?? sharedVoicePack?.volume ?? 1);
+      let audioUrl = null;
 
       try {
         const response = await bodyFetch("/v1/body/speech/fish-audio", {
@@ -630,31 +520,45 @@
           })
         });
         if (!response.ok) throw new Error(await responseErrorMessage(response));
+        if (!voiceEnabled) return;
 
         const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
+        if (!voiceEnabled) return;
+        audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        activeSpeechAudio = audio;
         await applyBodyAudioOutput(audio);
+        if (!voiceEnabled) { audio.pause(); URL.revokeObjectURL(audioUrl); activeSpeechAudio = null; return; }
         audio.volume = 1;
         talkSpeaking = true;
         audio.addEventListener("ended", () => {
           talkSpeaking = false;
-          URL.revokeObjectURL(url);
+          if (activeSpeechAudio === audio) activeSpeechAudio = null;
+          setStatus("VOICE PLAYBACK COMPLETE (Fish Audio)");
+          URL.revokeObjectURL(audioUrl);
         }, { once: true });
         audio.addEventListener("error", () => {
           talkSpeaking = false;
-          URL.revokeObjectURL(url);
+          if (activeSpeechAudio === audio) activeSpeechAudio = null;
+          setStatus("Fish Audio playback failed. Check the selected output device and browser audio permissions.");
+          URL.revokeObjectURL(audioUrl);
         }, { once: true });
         await audio.play();
+        setStatus("VOICE PLAYBACK STARTED (Fish Audio)");
         return;
       } catch (error) {
-        // Keep the Body usable when Fish is not configured during local development.
+        talkSpeaking = false;
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        // Keep the Body usable when Fish is not configured during local development,
+        // but make the fallback visible rather than implying Fish Audio played.
         if (!window.speechSynthesis) {
-          setStatus("Fish Audio speech failed: " + error.message);
+          setStatus("Fish Audio speech failed and browser speech is unavailable: " + error.message);
           return;
         }
+        setStatus("Fish Audio unavailable; falling back to browser speech: " + error.message);
       }
 
+      if (!voiceEnabled) return;
       loadVoices();
       const utterance = new SpeechSynthesisUtterance(intent.text);
       applyVoicePack(utterance, sharedVoicePack, voices);
@@ -670,6 +574,18 @@
         const requestedVoice = voices.find((item) => item.name === metadata.voice_name);
         if (requestedVoice) utterance.voice = requestedVoice;
       }
+      utterance.onstart = () => {
+        talkSpeaking = true;
+        setStatus("VOICE PLAYBACK STARTED (browser speech)");
+      };
+      utterance.onend = () => {
+        talkSpeaking = false;
+        setStatus("VOICE PLAYBACK COMPLETE (browser speech)");
+      };
+      utterance.onerror = (event) => {
+        talkSpeaking = false;
+        setStatus("Browser speech playback failed: " + (event.error || "unknown speech error"));
+      };
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(utterance);
     }
@@ -679,7 +595,7 @@
     }
 
     async function refreshSharedVoiceSettings() {
-      if (document.hidden) return;
+      if (!voiceEnabled || document.hidden) return;
       try {
         const response = await bodyFetch("/v1/body/voice/settings", { cache: "no-store" });
         if (!response.ok) return;
@@ -738,7 +654,7 @@
         setStatus("Realtime voice is unavailable in this browser.");
         return;
       }
-      if (sensesEnabled) releaseSenses();
+      
       talkEnabled = true;
       talkBusy = true;
       setStatus("Connecting Axiom voice…");
@@ -812,20 +728,55 @@
     }
 
     async function consumeExpressionOutputs() {
-      const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
-      if (!mouthResponse.ok) return false;
-      const mouthIntent = await mouthResponse.json();
-      if (!mouthIntent) return false;
-      // Dispatch this expression before considering the direct response.
-      // This prevents both paths from starting speech for the same interaction.
-      await speakIntent(mouthIntent);
-      return true;
+      if (!voiceEnabled || mouthPollBusy) return false;
+      mouthPollBusy = true;
+      let consumed = false;
+      try {
+        // A single server event wakes this drain. Fetch only while durable queued
+        // intents remain; there is no timer or repeated empty-queue request.
+        while (voiceEnabled) {
+          const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
+          if (!mouthResponse.ok) break;
+          const mouthIntent = await mouthResponse.json();
+          if (!mouthIntent) break;
+          await speakIntent(mouthIntent);
+          consumed = true;
+        }
+        return consumed;
+      } finally {
+        mouthPollBusy = false;
+      }
+    }
+
+    function connectMouthEvents() {
+      if (!voiceEnabled) {
+        mouthEvents?.close();
+        mouthEvents = null;
+        return;
+      }
+      if (mouthEvents) return;
+      mouthEvents = new EventSource(
+        "/v1/body/mouth/events?session_id=" + encodeURIComponent(bodySessionId)
+      );
+      mouthEvents.addEventListener("voice-ready", () => {
+        if (!voiceEnabled) return;
+        consumeExpressionOutputs().catch(() => {
+          // EventSource reconnects automatically; pending voice remains in the durable queue.
+        });
+      });
+    }
+
+    async function registerActiveBodySession() {
+      try {
+        await bodyFetch("/v1/body/session/active", { method: "POST" });
+      } catch (_) {
+        // Keep the Body usable when session registration is temporarily unavailable.
+      }
     }
 
     async function showMindResult(result, { modality, consumeOutputs = true } = {}) {
-      const responseLabel = result.response_text
-        ? "\n\nMessage:\n" + result.response_text
-        : "\n\nAwareness:\nAdmitted to Axiom without triggering conscious reasoning.";
+      const responseLabel = "\n\nMessage:\n" +
+        (result.response_text || "No conversational response requested for this sensory sample.");
       const evidence = result.evidence;
       if (!evidence?.sha256 || !evidence?.captured_at || !evidence?.media_type) {
         throw new Error("Sensory input was processed without a complete evidence receipt.");
@@ -839,11 +790,13 @@
         "Perception:\n" + result.interpretation +
         responseLabel
       );
+      const interpreted = Boolean(result.interpretation) &&
+        !/^Uninterpreted\b/i.test(result.interpretation);
       setSenseStatus(
         modality,
         "Evidence saved (" + evidence.media_type + ") at " + evidence.captured_at +
           "\nPerception: " + (result.interpretation || "Admitted."),
-        "success"
+        interpreted ? "success" : "warning"
       );
       if (consumeOutputs) {
         await consumeExpressionOutputs();
@@ -948,7 +901,7 @@
       // The hidden video element can report dimensions while yielding black frames
       // on some browsers, which made the saved sensory evidence unusable.
       if (
-        !sensesEnabled ||
+        !visionEnabled ||
         generation !== sensoryLoopGeneration ||
         !cameraStream ||
         liveScene.readyState < 2 ||
@@ -958,18 +911,30 @@
         return;
       }
 
+      // Compare a tiny grayscale sample directly from the video. Avoid
+      // full-resolution canvas work unless motion actually triggers a capture.
+      const signature = frameSignature();
+      if (lastFrameSignature) {
+        let changedPixels = 0;
+        for (let i = 0; i < signature.length; i++) {
+          if (Math.abs(signature[i] - lastFrameSignature[i]) >= MOTION_PIXEL_DELTA) changedPixels++;
+        }
+        lastFrameSignature = signature;
+        if (changedPixels / signature.length < MOTION_PIXEL_RATIO) return;
+        if (performance.now() - lastMotionCaptureAt < MOTION_CAPTURE_COOLDOWN_MS) return;
+      } else {
+        lastFrameSignature = signature;
+        setSenseStatus("vision", "Motion detection active; waiting for movement.", "success");
+        return;
+      }
+      // Start the cooldown before the request so a slow or failed endpoint
+      // cannot cause repeated uploads while the same movement continues.
+      lastMotionCaptureAt = performance.now();
       const maxWidth = 960;
       const scale = Math.min(1, maxWidth / liveScene.videoWidth);
       canvas.width = Math.max(1, Math.round(liveScene.videoWidth * scale));
       canvas.height = Math.max(1, Math.round(liveScene.videoHeight * scale));
       canvas.getContext("2d").drawImage(liveScene, 0, 0, canvas.width, canvas.height);
-
-      const signature = frameSignature();
-      if (lastSuccessfulFrame) {
-        let difference = 0;
-        for (let i = 0; i < signature.length; i++) difference += Math.abs(signature[i] - lastSuccessfulFrame[i]);
-        if (difference / signature.length / 255 < 0.045) return;
-      }
       sensoryRequestInFlight = true;
       let evidenceAccepted = false;
       try {
@@ -987,19 +952,12 @@
         });
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
         evidenceAccepted = true;
-        setSenseStatus("vision", "Frame saved; requesting interpretation…", "warning");
-        lastSuccessfulFrame = signature;
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
+        setSenseStatus("vision", "Frame saved and interpreted.", "success");
+        if (!visionEnabled || generation !== sensoryLoopGeneration) return;
 
-        const response = await bodyFetch(
-          "/v1/mind/body/see?express=false",
-          { method: "POST" }
-        );
-        if (!response.ok) throw new Error(await responseErrorMessage(response));
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
-
-        lastSuccessfulFrame = signature;
-        await showMindResult(await response.json(), { modality: "vision", consumeOutputs: false });
+        const interpreted = await ingress.json();
+        if (!visionEnabled || generation !== sensoryLoopGeneration) return;
+        await showMindResult(interpreted, { modality: "vision", consumeOutputs: false });
       } catch (error) {
         if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
         throw error;
@@ -1010,7 +968,7 @@
 
     function recordAudioWindow(generation) {
       if (
-        !sensesEnabled ||
+        !hearingEnabled ||
         generation !== sensoryLoopGeneration ||
         !microphoneStream ||
         !window.MediaRecorder
@@ -1025,23 +983,32 @@
           : new MediaRecorder(microphoneStream);
         const chunks = [];
         const startedAt = performance.now();
-        let stopTimer = null;
+        let monitorTimer = null;
+        let speechDetected = false;
+        let silenceStartedAt = 0;
+        const clearMonitor = () => {
+          if (monitorTimer !== null) window.clearInterval(monitorTimer);
+          monitorTimer = null;
+        };
+        const stopRecording = () => {
+          if (activeRecorder.state === "recording") activeRecorder.stop();
+        };
 
         recorder = activeRecorder;
         activeRecorder.addEventListener("dataavailable", (event) => {
           if (event.data.size > 0) chunks.push(event.data);
         });
         activeRecorder.addEventListener("error", (event) => {
-          if (stopTimer) clearTimeout(stopTimer);
+          clearMonitor();
           if (recorder === activeRecorder) recorder = null;
           reject(event.error || new Error("Microphone recording failed"));
         }, { once: true });
         activeRecorder.addEventListener("stop", () => {
-          if (stopTimer) clearTimeout(stopTimer);
+          clearMonitor();
           if (recorder === activeRecorder) recorder = null;
 
           if (
-            !sensesEnabled ||
+            !hearingEnabled ||
             generation !== sensoryLoopGeneration ||
             chunks.length === 0
           ) {
@@ -1051,7 +1018,7 @@
 
           const durationMs = Math.max(
             1,
-            Math.min(30_000, Math.round(performance.now() - startedAt))
+            Math.min(AUDIO_MAX_DURATION_MS, Math.round(performance.now() - startedAt))
           );
           resolve({
             blob: new Blob(
@@ -1063,9 +1030,48 @@
         }, { once: true });
 
         activeRecorder.start();
-        stopTimer = window.setTimeout(() => {
-          if (activeRecorder.state === "recording") activeRecorder.stop();
-        }, AUDIO_WINDOW_MS);
+        monitorTimer = window.setInterval(() => {
+          if (activeRecorder.state !== "recording") {
+            clearMonitor();
+            return;
+          }
+          const elapsedMs = performance.now() - startedAt;
+          if (elapsedMs >= AUDIO_MAX_DURATION_MS) {
+            stopRecording();
+            return;
+          }
+
+          // Follow a complete utterance instead of cutting every sample at a
+          // fixed three- or four-second boundary. Use the live mic analyser;
+          // no audio is copied into logs or persisted by this monitor.
+          let rms = 0;
+          if (audioAnalyser) {
+            const samples = new Uint8Array(audioAnalyser.fftSize);
+            audioAnalyser.getByteTimeDomainData(samples);
+            let sum = 0;
+            for (const sample of samples) {
+              const amplitude = (sample - 128) / 128;
+              sum += amplitude * amplitude;
+            }
+            rms = Math.sqrt(sum / Math.max(1, samples.length));
+          }
+
+          if (rms >= AUDIO_SPEECH_THRESHOLD) {
+            speechDetected = true;
+            silenceStartedAt = 0;
+          } else if (speechDetected) {
+            if (!silenceStartedAt) silenceStartedAt = performance.now();
+            if (
+              elapsedMs >= 1_500 &&
+              performance.now() - silenceStartedAt >= AUDIO_SILENCE_MS
+            ) {
+              stopRecording();
+            }
+          } else if (elapsedMs >= AUDIO_IDLE_WINDOW_MS) {
+            // Don't wait the full maximum when the room is quiet.
+            stopRecording();
+          }
+        }, 100);
       });
     }
 
@@ -1079,13 +1085,23 @@
         return Math.sqrt(sum / Math.max(samples.length, 1)) >= 0.008 && peak >= 0.06;
       } finally { await context.close(); }
     }
-    let lastSuccessfulFrame = null;
+    let lastFrameSignature = null;
+    let lastMotionCaptureAt = Number.NEGATIVE_INFINITY;
     function frameSignature() {
       const scratch = document.createElement("canvas");
-      scratch.width = 12; scratch.height = 8;
-      const context = scratch.getContext("2d");
-      context.drawImage(canvas, 0, 0, 12, 8);
-      return context.getImageData(0, 0, 12, 8).data;
+      scratch.width = 24;
+      scratch.height = 16;
+      const context = scratch.getContext("2d", { willReadFrequently: true });
+      context.drawImage(liveScene, 0, 0, scratch.width, scratch.height);
+      const rgba = context.getImageData(0, 0, scratch.width, scratch.height).data;
+      const luminance = new Uint8Array(scratch.width * scratch.height);
+      for (let pixel = 0; pixel < luminance.length; pixel++) {
+        const offset = pixel * 4;
+        luminance[pixel] = Math.round(
+          rgba[offset] * 0.299 + rgba[offset + 1] * 0.587 + rgba[offset + 2] * 0.114
+        );
+      }
+      return luminance;
     }
 
     backToPortal?.addEventListener("click", (event) => {
@@ -1166,8 +1182,8 @@
 
       setStatus("SENSES ON\nListening...");
       const recording = await recordAudioWindow(generation);
-      if (!recording || !sensesEnabled || generation !== sensoryLoopGeneration) {
-        if (sensesEnabled && generation === sensoryLoopGeneration) {
+      if (!recording || !hearingEnabled || generation !== sensoryLoopGeneration) {
+        if (hearingEnabled && generation === sensoryLoopGeneration) {
           setSenseStatus("audio", "No audio chunk received in this window; retrying.", "warning");
         }
         return;
@@ -1192,17 +1208,12 @@
         });
         if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
         evidenceAccepted = true;
-        setSenseStatus("audio", "Audio saved; requesting interpretation…", "warning");
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
+        setSenseStatus("audio", "Audio saved and interpreted.", "success");
+        if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
 
-        const response = await bodyFetch(
-          "/v1/mind/body/hear?express=false",
-          { method: "POST" }
-        );
-        if (!response.ok) throw new Error(await responseErrorMessage(response));
-        if (!sensesEnabled || generation !== sensoryLoopGeneration) return;
-
-        await showMindResult(await response.json(), { modality: "audio", consumeOutputs: false });
+        const interpreted = await ingress.json();
+        if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
+        await showMindResult(interpreted, { modality: "audio", consumeOutputs: false });
       } catch (error) {
         if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
         throw error;
@@ -1212,12 +1223,12 @@
     }
 
     async function runVisionLoop(generation) {
-      while (sensesEnabled && generation === sensoryLoopGeneration) {
+      while (visionEnabled && generation === sensoryLoopGeneration) {
         if (!document.hidden && !sendInteractionButton.disabled) {
           try {
             await perceiveVision(generation);
           } catch (error) {
-            if (sensesEnabled && generation === sensoryLoopGeneration) {
+            if (visionEnabled && generation === sensoryLoopGeneration) {
               reportSenseFailure("vision", error);
             }
           }
@@ -1227,12 +1238,12 @@
     }
 
     async function runHearingLoop(generation) {
-      while (sensesEnabled && generation === sensoryLoopGeneration) {
+      while (hearingEnabled && generation === sensoryLoopGeneration) {
         if (!document.hidden && !sendInteractionButton.disabled) {
           try {
             await perceiveAudio(generation);
           } catch (error) {
-            if (sensesEnabled && generation === sensoryLoopGeneration) {
+            if (hearingEnabled && generation === sensoryLoopGeneration) {
               reportSenseFailure("audio", error);
             }
           }
@@ -1244,95 +1255,162 @@
 
     function startSensoryLoop() {
       const generation = ++sensoryLoopGeneration;
-      runVisionLoop(generation);
-      runHearingLoop(generation);
+      if (visionEnabled) runVisionLoop(generation);
+      if (hearingEnabled) runHearingLoop(generation);
     }
 
-    function setSensesUi(enabled) {
-      sensesEnabled = enabled;
-      sensesToggle.classList.toggle("on", enabled);
-      sensesToggle.setAttribute("aria-pressed", String(enabled));
-      sensesToggle.textContent = enabled ? "On" : "Off";
+    function setToggleUi(button, enabled, label) {
+      button.classList.toggle("on", enabled);
+      button.setAttribute("aria-pressed", String(enabled));
+      button.textContent = label + (enabled ? " On" : " Off");
     }
 
-    async function enableSenses() {
+    function refreshToggleUi() {
+      setToggleUi(visionToggle, visionEnabled, "Vision");
+      setToggleUi(hearingToggle, hearingEnabled, "Hearing");
+      setToggleUi(voiceToggle, voiceEnabled, "Voice");
+    }
+
+    async function enableVision() {
+      if (visionEnabled) return;
       if (!navigator.mediaDevices?.getUserMedia) {
-        setStatus("This browser does not expose camera and microphone access.");
-        setSensesUi(false);
+        setStatus("This browser does not expose camera access.");
         return;
       }
-
-      sensesToggle.disabled = true;
+      visionToggle.disabled = true;
       try {
-        // Acquire each device separately. On mobile browsers, concurrent
-        // getUserMedia permission requests can race or cause one request to
-        // fail before any Body request ever reaches the server.
-        setStatus("SENSES ON\nRequesting camera access...");
+        setStatus("VISION ON\nRequesting camera access…");
         cameraStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("videoInput"));
-
-        setStatus("SENSES ON\nCamera ready. Requesting microphone access...");
-        try {
-          microphoneStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
-        } catch (error) {
-          cameraStream.getTracks().forEach((track) => track.stop());
-          cameraStream = null;
-          throw new Error("Microphone access failed after camera access succeeded: " + (error?.message || error));
-        }
         video.srcObject = cameraStream;
         liveScene.srcObject = cameraStream;
         await video.play();
         await liveScene.play();
         liveScene.style.display = "block";
-        audioMeter.style.display = "block";
-        await startAudioMeter(microphoneStream);
-
-        setSensesUi(true);
-        localStorage.setItem("aicognitive_mind.senses", "on");
-        setStatus("SENSES ON\nContinuous vision and hearing are active.");
+        visionEnabled = true;
+        localStorage.setItem("aicognitive_mind.vision", "on");
+        refreshToggleUi();
+        setSenseStatus("vision", "Vision is active.", "success");
+        setStatus("VISION ON\nCamera ready.");
         startSensoryLoop();
       } catch (error) {
-        releaseSenses();
-        setStatus("Could not turn senses on: " + error.message);
+        cameraStream?.getTracks().forEach((track) => track.stop());
+        cameraStream = null;
+        video.srcObject = null;
+        liveScene.srcObject = null;
+        liveScene.style.display = "none";
+        visionEnabled = false;
+        refreshToggleUi();
+        setSenseStatus("vision", "Could not start vision: " + error.message, "error");
+        setStatus("Could not turn vision on: " + error.message);
       } finally {
-        sensesToggle.disabled = false;
+        visionToggle.disabled = false;
       }
     }
 
-    function releaseSenses({ persist = true } = {}) {
+    function disableVision({ persist = true } = {}) {
+      visionEnabled = false;
       sensoryLoopGeneration += 1;
-      sensoryRequestInFlight = false;
-      if (recorder?.state === "recording") {
-        recorder.stop();
-      }
-      recorder = null;
-
       if (cameraStream) {
-        for (const track of cameraStream.getTracks()) track.stop();
+        cameraStream.getTracks().forEach((track) => track.stop());
         cameraStream = null;
       }
-      if (microphoneStream) {
-        for (const track of microphoneStream.getTracks()) track.stop();
-        microphoneStream = null;
-      }
-
       video.srcObject = null;
       liveScene.srcObject = null;
       liveScene.style.display = "none";
-      audioMeter.style.display = "none";
-      stopAudioMeter();
-      setSensesUi(false);
-      if (persist) {
-        localStorage.setItem("aicognitive_mind.senses", "off");
+      if (persist) localStorage.setItem("aicognitive_mind.vision", "off");
+      refreshToggleUi();
+      setSenseStatus("vision", "Vision is off. No camera polling or capture will run.", "idle");
+      startSensoryLoop();
+    }
+
+    async function enableHearing() {
+      if (hearingEnabled) return;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus("This browser does not expose microphone access.");
+        return;
+      }
+      hearingToggle.disabled = true;
+      try {
+        setStatus("HEARING ON\nRequesting microphone access…");
+        microphoneStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
+        await startAudioMeter(microphoneStream);
+        hearingEnabled = true;
+        localStorage.setItem("aicognitive_mind.hearing", "on");
+        audioMeter.style.display = "block";
+        refreshToggleUi();
+        setSenseStatus("audio", "Hearing is active.", "success");
+        setStatus("HEARING ON\nMicrophone ready.");
+        startSensoryLoop();
+      } catch (error) {
+        microphoneStream?.getTracks().forEach((track) => track.stop());
+        microphoneStream = null;
+        stopAudioMeter();
+        hearingEnabled = false;
+        refreshToggleUi();
+        setSenseStatus("audio", "Could not start hearing: " + error.message, "error");
+        setStatus("Could not turn hearing on: " + error.message);
+      } finally {
+        hearingToggle.disabled = false;
       }
     }
 
-    async function toggleSenses() {
-      if (sensesEnabled) {
-        releaseSenses();
-        setStatus("SENSES OFF\nContinuous perception stopped. Camera and microphone have been released.");
-        return;
+    function disableHearing({ persist = true } = {}) {
+      hearingEnabled = false;
+      sensoryLoopGeneration += 1;
+      if (recorder?.state === "recording") recorder.stop();
+      recorder = null;
+      if (microphoneStream) {
+        microphoneStream.getTracks().forEach((track) => track.stop());
+        microphoneStream = null;
       }
-      await enableSenses();
+      audioMeter.style.display = "none";
+      stopAudioMeter();
+      if (persist) localStorage.setItem("aicognitive_mind.hearing", "off");
+      refreshToggleUi();
+      setSenseStatus("audio", "Hearing is off. Microphone capture and processing have stopped.", "idle");
+      startSensoryLoop();
+    }
+
+    function toggleVision() {
+      if (visionEnabled) {
+        disableVision();
+        setStatus("VISION OFF\nCamera released; hearing and voice are unchanged.");
+      } else {
+        enableVision();
+      }
+    }
+
+    function toggleHearing() {
+      if (hearingEnabled) {
+        disableHearing();
+        setStatus("HEARING OFF\nMicrophone released; vision and voice are unchanged.");
+      } else {
+        enableHearing();
+      }
+    }
+
+    function toggleVoice() {
+      voiceEnabled = !voiceEnabled;
+      localStorage.setItem("aicognitive_mind.voice", voiceEnabled ? "on" : "off");
+      refreshToggleUi();
+      if (!voiceEnabled) {
+        connectMouthEvents();
+        window.speechSynthesis?.cancel();
+        if (activeSpeechAudio) {
+          activeSpeechAudio.pause();
+          activeSpeechAudio.currentTime = 0;
+          if (activeSpeechAudio.src.startsWith("blob:")) URL.revokeObjectURL(activeSpeechAudio.src);
+          activeSpeechAudio = null;
+        }
+        talkSpeaking = false;
+        if (realtimeAudio) realtimeAudio.muted = true;
+        setStatus("VOICE OFF\nSpoken output is disabled; vision and hearing are unchanged.");
+      } else {
+        connectMouthEvents();
+        if (realtimeAudio) realtimeAudio.muted = false;
+        refreshSharedVoiceSettings();
+        setStatus("VOICE ON\nSpoken output is enabled.");
+      }
     }
 
     interactionForm.addEventListener("submit", submitTextInteraction);
@@ -1350,7 +1428,9 @@
       interactionMessage.focus();
     });
 
-    sensesToggle.addEventListener("click", toggleSenses);
+    visionToggle.addEventListener("click", toggleVision);
+    hearingToggle.addEventListener("click", toggleHearing);
+    voiceToggle.addEventListener("click", toggleVoice);
 
     if (window.speechSynthesis) {
       loadVoices();
@@ -1358,27 +1438,46 @@
     }
 
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) { checkForBodyPageUpdate(); refreshSharedVoiceSettings(); }
+      if (!document.hidden) {
+        checkForBodyPageUpdate();
+        refreshSharedVoiceSettings();
+        refreshConnectedHostStatus();
+      }
     });
     window.addEventListener("beforeunload", () => {
       stopTalking();
-      releaseSenses({ persist: false });
+      disableVision({ persist: false });
+      disableHearing({ persist: false });
       window.speechSynthesis?.cancel();
     });
 
+    registerActiveBodySession();
     refreshSharedVoiceSettings();
+    refreshConnectedHostStatus();
+    window.setInterval(registerActiveBodySession, 10_000);
+    connectMouthEvents();
     window.setInterval(refreshSharedVoiceSettings, 10_000);
+    window.setInterval(refreshConnectedHostStatus, 5_000);
     checkForHostCameraRequest();
     // Keep checking after page load so a reasoning host can request a camera
     // observation whenever it attaches, not only during the page's first tick.
     window.setInterval(checkForHostCameraRequest, 1_000);
     checkForBodyPageUpdate();
     window.setInterval(checkForBodyPageUpdate, 12_000);
-    if (localStorage.getItem("aicognitive_mind.senses") === "on") {
-      enableSenses();
+    refreshToggleUi();
+    if (localStorage.getItem("aicognitive_mind.vision") === "on" ||
+        (localStorage.getItem("aicognitive_mind.vision") === null && localStorage.getItem("aicognitive_mind.senses") === "on")) {
+      enableVision();
     } else {
-      setSensesUi(false);
+      setSenseStatus("vision", "Vision is off.", "idle");
     }
+    if (localStorage.getItem("aicognitive_mind.hearing") === "on" ||
+        (localStorage.getItem("aicognitive_mind.hearing") === null && localStorage.getItem("aicognitive_mind.senses") === "on")) {
+      enableHearing();
+    } else {
+      setSenseStatus("audio", "Hearing is off.", "idle");
+    }
+    if (realtimeAudio) realtimeAudio.muted = !voiceEnabled;
   </script>
 </body>
 </html>

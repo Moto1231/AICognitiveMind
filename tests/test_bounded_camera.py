@@ -22,12 +22,34 @@ def test_realtime_session_enables_input_transcription():
     assert '"input": {"transcription": {"model": "gpt-4o-mini-transcribe"}}' in source
 
 
-def test_live_body_polls_for_host_camera_requests():
+def test_live_body_polls_for_host_camera_requests_without_overlapping_or_spamming():
     source = LIVE_BODY.read_text(encoding="utf-8")
     assert '"/v1/body/camera/request"' in source
     assert '"/v1/body/camera/complete"' in source
     assert "checkForHostCameraRequest" in source
     assert 'source: "browser-camera-mcp"' in source
+    function_start = source.index("async function checkForHostCameraRequest()")
+    request_start = source.index('bodyFetch("/v1/body/camera/request"', function_start)
+    busy_lock = source.index("hostCameraRequestBusy = true;", function_start)
+    assert busy_lock < request_start
+    assert "response.status === 429" in source[function_start:source.index("function setSenseStatus", function_start)]
+    assert 'response.headers.get("Retry-After")' in source[function_start:source.index("function setSenseStatus", function_start)]
+    assert "hostCameraPollDelayMs * 2" in source[function_start:source.index("function setSenseStatus", function_start)]
+
+def test_live_body_host_status_poll_does_not_overlap_and_backs_off():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    function_start = source.index("async function refreshConnectedHostStatus()")
+    function_end = source.index("function setSenseStatus", function_start)
+    function_source = source[function_start:function_end]
+    assert "refreshConnectedHostStatus.inFlight" in function_source
+    assert "refreshConnectedHostStatus.inFlight = true;" in function_source
+    assert "finally" in function_source
+    assert "refreshConnectedHostStatus.inFlight = false;" in function_source
+    assert 'response.status === 429' in function_source
+    assert 'response.headers.get("Retry-After")' in function_source
+    assert "refreshConnectedHostStatus.pollDelayMs * 2" in function_source
+    assert "refreshConnectedHostStatus.nextPollAt" in function_source
+
 
 def test_live_body_shows_independent_vision_and_audio_statuses():
     source = LIVE_BODY.read_text(encoding="utf-8")
@@ -40,3 +62,71 @@ def test_live_body_shows_independent_vision_and_audio_statuses():
     assert 'Evidence saved; interpretation failed:' in source
     assert 'placeholder="Message"' in source
     assert 'placeholder="Message the Mind..."' not in source
+
+
+def test_live_body_has_independent_vision_hearing_and_voice_controls():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    assert 'id="visionToggle"' in source
+    assert 'id="hearingToggle"' in source
+    assert 'id="voiceToggle"' in source
+    assert 'function toggleVision()' in source
+    assert 'function toggleHearing()' in source
+    assert 'function toggleVoice()' in source
+    assert 'localStorage.setItem("aicognitive_mind.vision"' in source
+    assert 'localStorage.setItem("aicognitive_mind.hearing"' in source
+    assert 'localStorage.setItem("aicognitive_mind.voice"' in source
+    assert "sensesEnabled" not in source
+
+
+def test_live_body_does_not_poll_or_capture_camera_when_vision_is_off():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    function_start = source.index("async function checkForHostCameraRequest()")
+    function_end = source.index("let pageSourceSnapshot", function_start)
+    camera_function = source[function_start:function_end]
+    assert "if (!visionEnabled || hostCameraRequestBusy" in camera_function
+    assert camera_function.index("if (!visionEnabled || hostCameraRequestBusy") < camera_function.index('bodyFetch("/v1/body/camera/request"')
+    assert "if (!visionEnabled) return;" in camera_function
+    assert 'setSenseStatus("vision", "Vision is off. No camera polling or capture will run."' in source
+
+
+def test_live_body_voice_off_blocks_spoken_output_and_mouth_polling():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    assert 'if (!voiceEnabled || !intent?.text) return;' in source
+    assert 'if (!voiceEnabled || mouthPollBusy) return false;' in source
+    assert 'if (!voiceEnabled || sensoryRequestInFlight' in source
+
+
+def test_live_body_voice_off_stops_current_audio_playback():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    voice_toggle_start = source.index("function toggleVoice()")
+    voice_toggle_end = source.index("interactionForm.addEventListener", voice_toggle_start)
+    voice_toggle = source[voice_toggle_start:voice_toggle_end]
+    assert "activeSpeechAudio.pause()" in voice_toggle
+    assert "activeSpeechAudio.currentTime = 0" in voice_toggle
+    assert "window.speechSynthesis?.cancel()" in voice_toggle
+    assert "if (!voiceEnabled) return;" in source[source.index("async function speakIntent"):source.index("function resumeTalking")]
+
+
+
+def test_live_body_triggers_camera_uploads_only_for_meaningful_motion_with_cooldown():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    assert "const VISION_INTERVAL_MS = 250;" in source
+    assert "const MOTION_PIXEL_DELTA = 22;" in source
+    assert "const MOTION_PIXEL_RATIO = 0.07;" in source
+    assert "const MOTION_CAPTURE_COOLDOWN_MS = 2_500;" in source
+    assert "Motion detection active; waiting for movement." in source
+    assert "if (changedPixels / signature.length < MOTION_PIXEL_RATIO) return;" in source
+    assert "if (performance.now() - lastMotionCaptureAt < MOTION_CAPTURE_COOLDOWN_MS) return;" in source
+    assert "lastFrameSignature = signature;" in source
+    assert "lastSuccessfulFrame" not in source
+    assert "luminance[pixel] = Math.round(" in source
+
+def test_live_body_hearing_loop_is_independent_of_vision():
+    source = LIVE_BODY.read_text(encoding="utf-8")
+    function_start = source.index("async function runHearingLoop(generation)")
+    function_end = source.index("function startSensoryLoop()", function_start)
+    hearing_loop = source[function_start:function_end]
+    assert "while (hearingEnabled && generation === sensoryLoopGeneration)" in hearing_loop
+    assert 'if (hearingEnabled && generation === sensoryLoopGeneration)' in hearing_loop
+    assert "while (visionEnabled" not in hearing_loop
+    assert 'reportSenseFailure("audio", error)' in hearing_loop

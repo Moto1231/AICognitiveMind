@@ -13,6 +13,7 @@ class ProviderEndpoint(BaseModel):
     base_url: str = Field(min_length=8, max_length=1000)
     api_key: str = Field(default="", max_length=4096)
     models: list[str] = Field(default_factory=list, max_length=2000)
+    model_capabilities: dict[str, list[str]] = Field(default_factory=dict, max_length=2000)
 
     @field_validator("id", "name", "base_url", "api_key")
     @classmethod
@@ -59,19 +60,46 @@ class ProviderEndpointRegistry:
         return ordered
 
 
-async def discover_endpoint_models(endpoint: ProviderEndpoint) -> list[str]:
-    """Query an OpenAI-compatible model listing endpoint and return the IDs it reports."""
+def _reported_capabilities(entry: dict[str, Any]) -> list[str]:
+    """Extract only capabilities explicitly reported by a model-listing API."""
+    values: list[str] = []
+    for key in ("capabilities", "modalities", "input_modalities", "output_modalities"):
+        raw = entry.get(key)
+        if isinstance(raw, list):
+            values.extend(value.strip().lower() for value in raw if isinstance(value, str) and value.strip())
+        elif isinstance(raw, str) and raw.strip():
+            values.append(raw.strip().lower())
+    architecture = entry.get("architecture")
+    if isinstance(architecture, dict):
+        raw = architecture.get("input_modalities")
+        if isinstance(raw, list):
+            values.extend(value.strip().lower() for value in raw if isinstance(value, str) and value.strip())
+    aliases = {
+        "image": "Vision", "vision": "Vision", "video": "Video",
+        "audio": "Audio", "text": "Text", "embedding": "Embeddings",
+    }
+    labels = []
+    for value in values:
+        label = aliases.get(value, value.replace("_", " ").title())
+        if label not in labels:
+            labels.append(label)
+    return labels
+
+
+async def discover_endpoint_model_details(endpoint: ProviderEndpoint) -> dict[str, Any]:
+    """Return model IDs and any capabilities explicitly reported by the provider."""
     url = endpoint.base_url.rstrip("/") + "/models"
     headers = {"Authorization": f"Bearer {endpoint.api_key}"} if endpoint.api_key else {}
     async with httpx.AsyncClient(timeout=20.0) as client:
+        # The configured base URL is authoritative. Do not silently rewrite it
+        # by adding /v1: providers may use /v3, custom paths, or root-level APIs.
         response = await client.get(url, headers=headers)
-        if response.status_code == 404 and not endpoint.base_url.endswith("/v1"):
-            response = await client.get(endpoint.base_url.rstrip("/") + "/v1/models", headers=headers)
         response.raise_for_status()
         payload = response.json()
 
     entries = payload.get("data", payload.get("models", [])) if isinstance(payload, dict) else []
     models: list[str] = []
+    capabilities: dict[str, list[str]] = {}
     if isinstance(entries, list):
         for entry in entries:
             if isinstance(entry, str):
@@ -81,5 +109,17 @@ async def discover_endpoint_models(endpoint: ProviderEndpoint) -> list[str]:
             else:
                 model_id = None
             if isinstance(model_id, str) and model_id.strip():
-                models.append(model_id.strip())
-    return list(dict.fromkeys(models))
+                model_id = model_id.strip()
+                if model_id not in models:
+                    models.append(model_id)
+                if isinstance(entry, dict):
+                    reported = _reported_capabilities(entry)
+                    if reported:
+                        capabilities[model_id] = reported
+    return {"models": models, "model_capabilities": capabilities}
+
+
+async def discover_endpoint_models(endpoint: ProviderEndpoint) -> list[str]:
+    """Query an OpenAI-compatible model listing endpoint and return the IDs it reports."""
+    details = await discover_endpoint_model_details(endpoint)
+    return details["models"]

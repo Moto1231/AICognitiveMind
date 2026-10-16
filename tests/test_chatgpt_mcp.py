@@ -6,7 +6,11 @@ from pydantic import AnyUrl
 from mcp.server.auth.provider import AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 
-from aicognitive_mind.chatgpt_mcp import HOST_INSTRUCTIONS, build_chatgpt_mcp
+from aicognitive_mind.chatgpt_mcp import (
+    HOST_INSTRUCTIONS,
+    _summarize_body_work,
+    build_chatgpt_mcp,
+)
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 
 
@@ -104,6 +108,28 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
+    def test_begin_interaction_surfaces_queue_and_preserves_human_priority(self):
+        summary = _summarize_body_work(
+            [
+                {"priority": 10, "message": "Interpret this vision percept."},
+                {"priority": 0, "message": "Please tell me what happened."},
+                {"message": "Interpret this audio percept."},
+                {"claim": "host-token-hash", "claim_until": None, "priority": 10,
+                 "message": "Interpret this already-claimed percept."},
+            ]
+        )
+        self.assertEqual(summary["pending_requests"], 3)
+        self.assertEqual(summary["in_progress_requests"], 1)
+        self.assertEqual(summary["pending_human_messages"], 1)
+        self.assertEqual(summary["pending_sensory_interpretations"], 2)
+        self.assertEqual(summary["pending_other_requests"], 0)
+        self.assertIn("body_work snapshot", HOST_INSTRUCTIONS)
+        self.assertIn("commit the current direct", HOST_INSTRUCTIONS)
+        self.assertIn("human response with complete_interaction", HOST_INSTRUCTIONS)
+        self.assertIn("A later begin_interaction will service more queued", HOST_INSTRUCTIONS)
+        self.assertIn("Do not mark work complete", HOST_INSTRUCTIONS)
+        self.assertIn("Never self-dispatch a sensory prompt", HOST_INSTRUCTIONS)
+
     def test_server_identifies_host_boundary(self):
         provider = AxiomAuthorizationServerProvider(
             "https://axiom.example",
@@ -115,6 +141,9 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("current reasoning faculty", HOST_INSTRUCTIONS)
         self.assertIn("begin_interaction", HOST_INSTRUCTIONS)
         self.assertIn("complete_interaction", HOST_INSTRUCTIONS)
+        self.assertIn("open_live_body", HOST_INSTRUCTIONS)
+        self.assertIn("Every begin_interaction result includes a body_work snapshot", HOST_INSTRUCTIONS)
+        self.assertIn("queue server selects human text requests ahead", HOST_INSTRUCTIONS)
 
     async def test_deployed_surface_registers_github_tools(self):
         provider = AxiomAuthorizationServerProvider(
@@ -136,6 +165,39 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
             }.issubset(names)
         )
 
+    async def test_deployed_surface_registers_execute_task(self):
+        provider = AxiomAuthorizationServerProvider(
+            "https://axiom.example",
+            username="mind",
+            password="secret",
+        )
+        server = build_chatgpt_mcp("https://axiom.example", provider)
+        tools = {tool.name: tool for tool in await server.list_tools()}
+        self.assertIn("execute_task", tools)
+        schema = tools["execute_task"].input_schema
+        self.assertIn("task", schema["properties"])
+        self.assertIn("operation", schema["properties"])
+        self.assertIn("messages", schema["properties"])
+        self.assertIn("audio_base64", schema["properties"])
+        self.assertIn("speak_body_text", tools)
+        self.assertIn("text", tools["speak_body_text"].input_schema["properties"])
+        self.assertIn("task", schema["required"])
+        self.assertIn("operation", schema["required"])
+
+    async def test_deployed_surface_registers_external_mcp_tools(self):
+        provider = AxiomAuthorizationServerProvider(
+            "https://axiom.example",
+            username="mind",
+            password="secret",
+        )
+        server = build_chatgpt_mcp("https://axiom.example", provider)
+        tools = {tool.name: tool for tool in await server.list_tools()}
+        self.assertIn("list_mcp_tools", tools)
+        self.assertIn("call_mcp_tool", tools)
+        self.assertIn("server_id", tools["call_mcp_tool"].input_schema["properties"])
+        self.assertIn("tool_name", tools["call_mcp_tool"].input_schema["properties"])
+        self.assertIn("arguments", tools["call_mcp_tool"].input_schema["properties"])
+
     async def test_deployed_surface_registers_interaction_trace_tool(self):
         provider = AxiomAuthorizationServerProvider(
             "https://axiom.example",
@@ -145,6 +207,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         server = build_chatgpt_mcp("https://axiom.example", provider)
         names = {tool.name for tool in await server.list_tools()}
         self.assertIn("interaction_trace", names)
+        self.assertIn("open_live_body", names)
 
     async def test_deployed_surface_registers_camera_tool(self):
         provider = AxiomAuthorizationServerProvider(
@@ -193,6 +256,8 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "complete_body_interaction",
             }.issubset(names)
         )
+        self.assertIn("speak_body_text", names)
+        self.assertIn("speak_body_text", HOST_INSTRUCTIONS)
 
 
 if __name__ == "__main__":

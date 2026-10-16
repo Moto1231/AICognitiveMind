@@ -3,6 +3,7 @@
 # of this file is prohibited without prior written permission from the
 # copyright holder.
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -40,9 +41,20 @@ from aicognitive_mind.body import (
     ExpressionModality,
     Percept,
 )
+from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
-from aicognitive_mind.body_sessions import BodyQueue, body_session
-from aicognitive_mind.config import get_settings
+from aicognitive_mind.body_sessions import (
+    BodyQueue,
+    body_session,
+    subscribe_body_output,
+    unsubscribe_body_output,
+)
+from aicognitive_mind.config import (
+    body_allow_standalone_fallback_enabled,
+    body_allow_standalone_fallback_override,
+    get_settings,
+    set_body_allow_standalone_fallback_override,
+)
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
 from aicognitive_mind.domain import (
@@ -63,12 +75,18 @@ from aicognitive_mind.embodiment import (
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
-from aicognitive_mind.task_behaviors import TASK_FOUNDATIONS, TaskBehavior, TaskBehaviorRegistry
-from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, discover_endpoint_models
+from aicognitive_mind.task_behaviors import (
+    TASK_FOUNDATIONS,
+    TaskBehavior,
+    TaskBehaviorRegistry,
+    TaskExecutionContext,
+)
+from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, discover_endpoint_model_details
 from aicognitive_mind.task_model_assignments import (
     TaskModelAssignment,
     TaskModelAssignmentRegistry,
 )
+from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.host_runtime import (
     HostAwareCore,
     HostAwareInterpreter,
@@ -76,6 +94,7 @@ from aicognitive_mind.host_runtime import (
     RuntimeRecords,
 )
 from aicognitive_mind.mcp_service import CognitiveMcpService
+from aicognitive_mind.mcp_registry import MCPServerRecord, MCPServerRegistry
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.presence_resolver import PresenceResolver
 from aicognitive_mind.standalone import ProviderUnavailable, StandaloneRuntime
@@ -122,12 +141,27 @@ class ProviderEndpointListRequest(BaseModel):
     items: list[ProviderEndpoint]
 
 
+class MCPServerListRequest(BaseModel):
+    items: list[MCPServerRecord]
+
+
+class MCPToolCallRequest(BaseModel):
+    server_id: str = Field(min_length=1, max_length=80)
+    tool_name: str = Field(min_length=1, max_length=160)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class BodyFallbackSettingsRequest(BaseModel):
+    enabled: bool | None = None
+
+
 class BodyVoiceSettingsUpdateRequest(BaseModel):
     expected_revision: int = Field(ge=0)
     voice_name: str | None = Field(default=None, max_length=120)
     rate: float | None = None
     pitch: float | None = None
     volume: float | None = None
+    fish_audio_api_key: str | None = Field(default=None, max_length=4096)
     fish_audio_model: str | None = Field(default=None, max_length=120)
     fish_audio_reference_id: str | None = Field(default=None, max_length=200)
 
@@ -181,9 +215,9 @@ class FishSpeechRequest(BaseModel):
 
 class MouthSpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
-    rate: float = Field(default=1.0, ge=0.1, le=10.0)
-    pitch: float = Field(default=1.0, ge=0.0, le=2.0)
-    volume: float = Field(default=1.0, ge=0.0, le=1.0)
+    rate: float | None = Field(default=None, ge=0.1, le=10.0)
+    pitch: float | None = Field(default=None, ge=0.0, le=2.0)
+    volume: float | None = Field(default=None, ge=0.0, le=1.0)
     voice_name: str | None = Field(default=None, max_length=200)
 
 
@@ -518,6 +552,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.task_model_assignments = TaskModelAssignmentRegistry(records)
     app.state.task_behaviors = TaskBehaviorRegistry(records)
     app.state.provider_endpoints = ProviderEndpointRegistry(records)
+    app.state.mcp_servers = MCPServerRegistry(records)
     app.state.accounts = AccountService(settings, records)
     from aicognitive_mind.voice_settings import VoiceSettings
 
@@ -635,7 +670,7 @@ def _body_presence_scope(request: Request) -> tuple[str, str]:
 @app.middleware("http")
 async def select_body_session(request: Request, call_next: Any) -> Response:
     import re
-    session = request.headers.get("x-body-session", "legacy")
+    session = request.headers.get("x-body-session") or request.query_params.get("session_id", "legacy")
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", session):
         return Response("Invalid Body session", status_code=400)
     token = body_session.set(session)
@@ -716,7 +751,23 @@ async def live_body_page() -> FileResponse:
 async def body_voice_settings(request: Request) -> dict[str, Any]:
     """Read non-secret voice preferences shared with Body clients."""
     values = await request.app.state.voice_settings.read()
+    values.pop("fishAudioApiKey", None)
     settings = get_settings()
+    if values.get("fishAudioModel") is None:
+        values["fishAudioModel"] = settings.fish_audio_model
+    if values.get("fishAudioReferenceId") is None:
+        values["fishAudioReferenceId"] = settings.fish_audio_reference_id
+    return values
+
+
+@app.get("/v1/admin/body/voice/settings")
+async def admin_body_voice_settings(request: Request) -> dict[str, Any]:
+    """Read voice settings, including the API key, for authenticated administrators only."""
+    require_admin(request)
+    values = await request.app.state.voice_settings.read()
+    settings = get_settings()
+    if not values.get("fishAudioApiKey"):
+        values["fishAudioApiKey"] = settings.fish_audio_api_key
     if values.get("fishAudioModel") is None:
         values["fishAudioModel"] = settings.fish_audio_model
     if values.get("fishAudioReferenceId") is None:
@@ -729,12 +780,13 @@ async def update_admin_body_voice_settings(
     payload: BodyVoiceSettingsUpdateRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Persist voice and Fish Audio parameters without exposing the API key."""
+    """Persist voice and Fish Audio parameters for an authenticated administrator."""
     require_admin(request)
     try:
         values = await request.app.state.voice_settings.update(
             expected_revision=payload.expected_revision,
             voice_name=payload.voice_name,
+            fish_audio_api_key=payload.fish_audio_api_key,
             rate=payload.rate,
             pitch=payload.pitch,
             volume=payload.volume,
@@ -746,6 +798,8 @@ async def update_admin_body_voice_settings(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     settings = get_settings()
+    if not values.get("fishAudioApiKey"):
+        values["fishAudioApiKey"] = settings.fish_audio_api_key
     if values.get("fishAudioModel") is None:
         values["fishAudioModel"] = settings.fish_audio_model
     if values.get("fishAudioReferenceId") is None:
@@ -910,22 +964,30 @@ async def eyes_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "eyes.html")
 
 
-@app.post("/v1/body/eyes/observe", response_model=Percept)
+@app.post("/v1/body/eyes/observe", response_model=EmbodiedInteractionResult)
 async def receive_browser_observation(
     body: BrowserVisionObservationRequest,
     request: Request,
-) -> Percept:
-    eyes = cast(BrowserVisionIngress, request.app.state.browser_eyes)
+) -> EmbodiedInteractionResult:
+    eyes = cast(BodyQueue, request.app.state.browser_eyes)
     try:
-        return await eyes.accept(
+        percept = type(eyes.adapter)().accept(
             image_data_url=body.image_data_url,
             width=body.width,
             height=body.height,
             source=body.source,
         )
-    except ValueError as exc:
+        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        return await bridge.perceive(
+            percept,
+            express=False,
+            automatic=True,
+            presence_scope=_body_presence_scope(request),
+        )
+    except (ValueError, RuntimeError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE if isinstance(exc, RuntimeError)
+            else status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
 
@@ -953,21 +1015,29 @@ async def ears_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "ears.html")
 
 
-@app.post("/v1/body/ears/observe", response_model=Percept)
+@app.post("/v1/body/ears/observe", response_model=EmbodiedInteractionResult)
 async def receive_browser_audio_observation(
     body: BrowserAudioObservationRequest,
     request: Request,
-) -> Percept:
-    ears = cast(BrowserAudioIngress, request.app.state.browser_ears)
+) -> EmbodiedInteractionResult:
+    ears = cast(BodyQueue, request.app.state.browser_ears)
     try:
-        return await ears.accept(
+        percept = type(ears.adapter)().accept(
             audio_data_url=body.audio_data_url,
             duration_ms=body.duration_ms,
             source=body.source,
         )
-    except ValueError as exc:
+        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        return await bridge.perceive(
+            percept,
+            express=False,
+            automatic=True,
+            presence_scope=_body_presence_scope(request),
+        )
+    except (ValueError, RuntimeError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE if isinstance(exc, RuntimeError)
+            else status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
 
@@ -1050,21 +1120,47 @@ async def mouth_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "mouth.html")
 
 
+@app.post("/v1/body/session/active")
+async def register_active_body_session(request: Request) -> dict[str, bool]:
+    """Register the browser's live Body session for reasoning-host speech delivery."""
+    session_id = body_session.get()
+    if session_id == "legacy":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A named live Body session is required",
+        )
+    records = cast(RuntimeRecords, request.app.state.runtime_records)
+    value = {"session_id": session_id, "updated_at": time_module.time()}
+    for _ in range(10):
+        before = await records.get("active_body_session")
+        if before is None:
+            try:
+                await records.create("active_body_session", value)
+                return {"registered": True}
+            except CommitConflict:
+                continue
+        if await records.replace("active_body_session", before, value):
+            return {"registered": True}
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Could not register the active Body session; retry",
+    )
+
+
 @app.post("/v1/body/mouth/speak", response_model=ExpressionIntent)
 async def speak_through_mouth(
     body: MouthSpeechRequest,
     request: Request,
 ) -> ExpressionIntent:
     runtime = cast(BodyRuntime, request.app.state.body)
-    intent = ExpressionIntent(
-        modality=ExpressionModality.VOICE,
-        text=body.text,
-        metadata={
-            "rate": body.rate,
-            "pitch": body.pitch,
-            "volume": body.volume,
-            "voice_name": body.voice_name,
-        },
+    voice_settings = await request.app.state.voice_settings.read()
+    intent = configured_voice_intent(
+        body.text,
+        voice_settings,
+        rate=body.rate,
+        pitch=body.pitch,
+        volume=body.volume,
+        voice_name=body.voice_name,
     )
     try:
         await runtime.speak_intent(intent)
@@ -1083,32 +1179,44 @@ async def fish_audio_speech(
 ) -> Response:
     """Render Axiom's spoken output through Fish Audio without exposing its API key."""
     settings = get_settings()
-    if not settings.fish_audio_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="FISH_AUDIO_API_KEY is not configured.",
-        )
-
+    voice_settings = await request.app.state.voice_settings.read()
     # Browser voice settings use a 0-1 volume scale; Fish uses dB.
     fish_volume = (body.volume - 1.0) * 20.0
-    voice_settings = await request.app.state.voice_settings.read()
-    renderer = FishAudioRenderer(
-        api_key=settings.fish_audio_api_key,
-        model=voice_settings.get("fishAudioModel") or settings.fish_audio_model,
-        reference_id=(
-            voice_settings.get("fishAudioReferenceId")
-            if voice_settings.get("fishAudioReferenceId") is not None
-            else settings.fish_audio_reference_id
-        ),
-    )
+    dispatcher = TaskModelDispatcher(request.app.state.runtime_records)
     try:
-        audio = await renderer.synthesize(
-            body.text,
-            speed=body.rate,
-            volume=fish_volume,
-        )
-    except FishAudioError as exc:
-        logger.warning("Fish Audio speech synthesis failed: %s", exc)
+        if await dispatcher.is_configured("audio_voice"):
+            audio = await dispatcher.execute(
+                TaskExecutionContext(task="audio_voice"),
+                {
+                    "operation": "synthesize_voice",
+                    "text": body.text,
+                    "speed": body.rate,
+                    "volume": fish_volume,
+                },
+            )
+        else:
+            # Keep deployment-provided/previously saved settings usable until an
+            # administrator configures the new Audio/Voice task profile.
+            fish_api_key = voice_settings.get("fishAudioApiKey") or settings.fish_audio_api_key
+            if not fish_api_key:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Audio/Voice task is not configured and FISH_AUDIO_API_KEY is absent.",
+                )
+            renderer = FishAudioRenderer(
+                api_key=fish_api_key,
+                model=voice_settings.get("fishAudioModel") or settings.fish_audio_model,
+                reference_id=(
+                    voice_settings.get("fishAudioReferenceId")
+                    if voice_settings.get("fishAudioReferenceId") is not None
+                    else settings.fish_audio_reference_id
+                ),
+            )
+            audio = await renderer.synthesize(
+                body.text, speed=body.rate, volume=fish_volume
+            )
+    except (FishAudioError, TaskDispatchError) as exc:
+        logger.warning("Audio/Voice task synthesis failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),
@@ -1138,6 +1246,51 @@ async def next_mouth_intent(request: Request, response: Response) -> ExpressionI
     return intent
 
 
+@app.get("/v1/body/mouth/events")
+async def mouth_output_events(request: Request) -> StreamingResponse:
+    """Push a readiness event when queued voice is available to the active Live Body."""
+    session_id = body_session.get()
+    if session_id == "legacy":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A named live Body session is required",
+        )
+
+    subscriber = subscribe_body_output(session_id, "mouth")
+
+    async def stream() -> AsyncIterator[str]:
+        token = body_session.set(session_id)
+        mouth = cast(BrowserVoiceOutput, request.app.state.browser_mouth)
+        try:
+            # Subscribe before checking the durable queue to close the enqueue/connect race.
+            intent, _ = await mouth.deliver()
+            if intent is not None:
+                while not subscriber.empty():
+                    subscriber.get_nowait()
+                yield "event: voice-ready\ndata: {}\n\n"
+            while not await request.is_disconnected():
+                try:
+                    await asyncio.wait_for(subscriber.get(), timeout=15)
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                intent, _ = await mouth.deliver()
+                if intent is not None:
+                    # One wake-up is enough: the browser drains the durable queue.
+                    while not subscriber.empty():
+                        subscriber.get_nowait()
+                    yield "event: voice-ready\ndata: {}\n\n"
+        finally:
+            unsubscribe_body_output(session_id, "mouth", subscriber)
+            body_session.reset(token)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/v1/body/{modality}/ack")
 async def acknowledge_body_output(modality: str, request: Request, delivery_id: str = Query(min_length=1, max_length=64)) -> dict[str, bool]:
     if modality not in {"face", "mouth"}:
@@ -1145,6 +1298,21 @@ async def acknowledge_body_output(modality: str, request: Request, delivery_id: 
     queue = getattr(request.app.state, "browser_" + modality)
     await queue.acknowledge(delivery_id)
     return {"acknowledged": True}
+
+
+@app.get("/v1/body/hosts/status")
+async def body_hosts_status(request: Request) -> dict[str, Any]:
+    """Return safe, read-only connection and Body request diagnostics."""
+    hosts = getattr(request.app.state, "hosts", None)
+    if hosts is None:
+        return {
+            "connected": False,
+            "host": None,
+            "lease_remaining_seconds": 0,
+            "last_heartbeat_age_seconds": None,
+            "requests": {"pending": 0, "in_progress": 0, "items": []},
+        }
+    return await hosts.status()
 
 
 @app.get("/v1/body/camera/request")
@@ -1446,6 +1614,32 @@ async def admin_status(request: Request) -> dict[str, bool]:
     return {"authorized": True, "memory_editing": True}
 
 
+@app.get("/v1/admin/body/fallback")
+async def admin_body_fallback_settings(request: Request) -> dict[str, Any]:
+    """Read Body fallback state for authenticated administrators."""
+    require_admin(request)
+    return {
+        "enabled": body_allow_standalone_fallback_enabled(),
+        "deployment_default": get_settings().body_allow_standalone_fallback,
+        "runtime_override": body_allow_standalone_fallback_override(),
+    }
+
+
+@app.put("/v1/admin/body/fallback")
+async def update_admin_body_fallback_settings(
+    payload: BodyFallbackSettingsRequest,
+    request: Request,
+) -> dict[str, Any]:
+    """Change the effective Body fallback setting until the service restarts."""
+    require_admin(request)
+    set_body_allow_standalone_fallback_override(payload.enabled)
+    return {
+        "enabled": body_allow_standalone_fallback_enabled(),
+        "deployment_default": get_settings().body_allow_standalone_fallback,
+        "runtime_override": body_allow_standalone_fallback_override(),
+    }
+
+
 @app.get("/v1/admin/host-behaviors")
 async def admin_host_behaviors(request: Request) -> dict[str, Any]:
     require_admin(request)
@@ -1480,11 +1674,72 @@ async def discover_admin_provider_endpoint_models(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        models = await discover_endpoint_models(payload)
+        details = await discover_endpoint_model_details(payload)
     except Exception as exc:
         logger.info("Provider model discovery failed for %s: %s", payload.name, exc)
         raise HTTPException(status_code=502, detail=f"Model discovery failed: {exc}") from exc
-    return {"models": models}
+    return details
+
+
+@app.get("/v1/admin/mcp/servers")
+async def admin_mcp_servers(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    items = await request.app.state.mcp_servers.list()
+    return {"items": [item.model_dump(mode="json", by_alias=True) for item in items]}
+
+
+@app.put("/v1/admin/mcp/servers")
+async def replace_admin_mcp_servers(
+    payload: MCPServerListRequest,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    try:
+        items = await request.app.state.mcp_servers.replace(payload.items)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"items": [item.model_dump(mode="json", by_alias=True) for item in items]}
+
+
+@app.post("/v1/admin/mcp/servers/discover")
+async def discover_admin_mcp_server(
+    payload: MCPServerRecord,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    try:
+        tools = await request.app.state.mcp_servers.discover(payload)
+    except Exception as exc:
+        logger.info("MCP tool discovery failed for %s: %s", payload.name, exc)
+        raise HTTPException(status_code=502, detail=f"MCP tool discovery failed: {exc}") from exc
+    return {
+        "items": [item.model_dump(mode="json", by_alias=True) for item in tools],
+        "server_id": payload.id,
+    }
+
+
+@app.post("/v1/admin/mcp/tools/call")
+async def call_admin_mcp_tool(
+    payload: MCPToolCallRequest,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    servers = await request.app.state.mcp_servers.list()
+    server = next((item for item in servers if item.id == payload.server_id), None)
+    if server is None:
+        raise HTTPException(status_code=404, detail="MCP server not found")
+    try:
+        result = await request.app.state.mcp_servers.call_tool(
+            server,
+            payload.tool_name,
+            payload.arguments,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.info("MCP tool call failed for %s/%s: %s", server.name, payload.tool_name, exc)
+        raise HTTPException(status_code=502, detail=f"MCP tool call failed: {exc}") from exc
+    return result
 
 
 @app.get("/v1/admin/task-behaviors")

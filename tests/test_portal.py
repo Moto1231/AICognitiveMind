@@ -22,6 +22,18 @@ from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
 class PortalTests(unittest.TestCase):
+    def test_admin_save_buttons_use_consistent_label_and_mcp_add_starts_new_record(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+
+        for element_id in ("saveHostBehaviors", "saveTaskProfile", "saveMcpServers", "saveVoiceSettings"):
+            with self.subTest(element_id=element_id):
+                self.assertIn(f'id="{element_id}" class="primary-button" type="button">Save</button>', markup)
+
+        self.assertIn("if (!selectedId) {\n    addMcpServer();\n    return;\n  }", script)
+        self.assertIn("function addMcpServer() {\n  syncMcpServerForm();", script)
+        self.assertIn('name: "",\n    url: "",\n    bearer_token: "",', script)
+
     def test_task_profile_controls_are_bound_and_renderable(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
@@ -30,7 +42,7 @@ class PortalTests(unittest.TestCase):
             "taskProfileList",
             "taskProfileEditor",
             "taskProfileTitle",
-            "taskProfileSummary",
+            "taskProfileRevision",
             "taskProfileBack",
             "taskProfileEndpointSection",
             "taskProfileEndpointSelect",
@@ -41,16 +53,19 @@ class PortalTests(unittest.TestCase):
             "taskProfileDiscover",
             "taskProfileAssignmentSection",
             "taskProfileModel",
-            "taskProfileFallbackProvider",
-            "taskProfileFallbackModel",
+            "taskProfileStandardModelField",
+            "taskProfileVoiceModelField",
+            "taskProfileVoiceModel",
+            "taskProfileVoiceReferenceField",
+            "taskProfileVoiceReferenceId",
+            "taskProfileFallbackList",
+            "taskProfileAddFallback",
             "taskProfileFoundation",
             "taskProfileBehaviorName",
             "taskProfileInstructions",
             "taskProfileEnabled",
             "taskProfileRevision",
             "saveTaskProfile",
-            "fishAudioModel",
-            "fishAudioReferenceId",
             "voiceRate",
             "voicePitch",
             "voiceVolume",
@@ -65,6 +80,14 @@ class PortalTests(unittest.TestCase):
                 )
         self.assertIn("function renderTaskProfiles()", script)
         self.assertIn("renderTaskProfiles();", script)
+        self.assertIn("el.taskProfileFoundation.value = state.taskFoundations[task] || \"\";", script)
+        self.assertIn("el.taskProfileInstructions.value = behavior.instructions || \"\";", script)
+        self.assertIn("el.taskProfileEnabled.checked = behavior.enabled !== false;", script)
+        self.assertIn('audio_voice: "Audio/Voice"', script)
+        self.assertIn("assignment.fallbacks.push({ provider: \"\", model: \"\" })", script)
+        self.assertIn('id="taskProfileFallbackList"', markup)
+        self.assertIn('id="voiceRate"', markup)
+        self.assertNotIn('id="fishAudioApiKey"', markup)
 
     def test_portal_assets_are_packaged_and_routes_are_registered(self) -> None:
         index = STATIC_DIR / "index.html"
@@ -117,7 +140,7 @@ class PortalTests(unittest.TestCase):
         self.assertIn("memoryPageSize: 25", script_text)
         self.assertIn("loadMoreMemories", script_text)
         self.assertNotIn("function memoryMatches", script_text)
-        self.assertIn("Journal Timeline", markup)
+        self.assertIn("<h3>History</h3>", markup)
         self.assertIn("JOURNAL INSPECTOR", markup)
         self.assertIn("renderJournalList", script_text)
         self.assertIn("openJournalInspector", script_text)

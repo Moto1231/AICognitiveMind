@@ -13,18 +13,18 @@
         <div class="brand-mark">A</div>
         <div>
           <h1>Axiom</h1>
-          <p>Persistent identity and memory across reasoning systems</p>
         </div>
       </div>
       <div class="top-actions">
-        <a href="/body/live" class="secondary-button">Live Body</a>
+        <a href="/body/live" class="secondary-button">Live</a>
+        <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
         <div class="status-pill">
           <span class="status-dot"></span>
           <span id="connectionLabel">Connecting…</span>
         </div>
         <button id="logoutButton" class="secondary-button" type="button">Log Out</button>
         <nav class="mode-switch" aria-label="Portal mode">
-          <button id="mindTab" class="mode-button active" type="button">Mind</button>
+          <button id="mindTab" class="mode-button active" type="button">Main</button>
           <button id="adminTab" class="mode-button" type="button">Administration</button>
         </nav>
       </div>
@@ -72,7 +72,7 @@
           </article>
 
           <article class="panel stat-panel">
-            <p class="eyebrow">COGNITIVE HISTORY</p>
+            <p class="eyebrow">HISTORY</p>
             <div id="journalCount" class="big-stat">—</div>
             <p>Journal Experiences</p>
           </article>
@@ -83,9 +83,9 @@
                 <p class="eyebrow">MEMORY</p>
                 <h3>What Do I Remember</h3>
               </div>
-              <button id="refreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
 
+            <div class="filter-area">
             <div class="memory-search">
               <div class="search-field search-wide">
                 <label for="memorySearch">Search</label>
@@ -128,12 +128,18 @@
               </div>
               <button id="clearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
             </div>
+            </div>
+            <div class="result-area">
             <div class="search-summary">
               <span id="memoryResultCount">0 Memories</span>
+              <label class="page-size-control" for="memoryPageSize">Results per page
+                <select id="memoryPageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select>
+              </label>
             </div>
             <div id="memoryList" class="memory-list"></div>
             <div class="memory-pagination">
-              <button id="loadMoreMemories" class="secondary-button hidden" type="button">Load 25 More</button>
+              <button id="loadMoreMemories" class="secondary-button hidden" type="button">Get More</button>
+            </div>
             </div>
           </article>
         </div>
@@ -142,24 +148,20 @@
       <section id="adminView" class="view hidden">
         <div class="hero">
           <div>
-            <p class="eyebrow">ADMINISTRATION</p>
             <h2>Administration</h2>
-            <p class="hero-copy">
-              Review system status, then open the task profiles, behaviors, memories, or journals you need.
-            </p>
           </div>
-          <button id="adminRefreshButton" class="secondary-button" type="button">Refresh Status</button>
+          <button id="adminRefreshButton" class="secondary-button" type="button">Refresh</button>
         </div>
 
         <nav class="admin-section-nav" aria-label="Administration sections">
           <button class="admin-section-button active" type="button" data-admin-section="overview">System Overview</button>
+          <button class="admin-section-button" type="button" data-admin-section="behaviors">Behavior</button>
+          <button class="admin-section-button" type="button" data-admin-section="devices">Devices</button>
+          <button class="admin-section-button" type="button" data-admin-section="voice">Speech Settings</button>
           <button class="admin-section-button" type="button" data-admin-section="tasks">Task Profiles</button>
-          <button class="admin-section-button" type="button" data-admin-section="behaviors">Interaction Behaviors</button>
-          <button id="addBehaviorShortcut" class="secondary-button" type="button">Add Behavior</button>
-          <button class="admin-section-button" type="button" data-admin-section="voice">Voice / Fish Audio</button>
+          <button class="admin-section-button" type="button" data-admin-section="mcp">MCP Servers &amp; Tools</button>
           <button class="admin-section-button" type="button" data-admin-section="memories">Memories</button>
           <button class="admin-section-button" type="button" data-admin-section="journals">Journals</button>
-          <button class="admin-section-button" type="button" data-admin-section="devices">Devices</button>
         </nav>
 
         <div class="admin-grid">
@@ -171,7 +173,7 @@
             <p>These instructions shape how Axiom handles interactions across connected reasoning runtimes. Add, remove, enable, disable, or reprioritize editable behaviors here.</p>
             <div id="hostBehaviorList" class="record-list"></div>
             <div class="edit-actions">
-              <button id="saveHostBehaviors" class="primary-button" type="button">Save Behaviors</button>
+              <button id="saveHostBehaviors" class="primary-button" type="button">Save</button>
             </div>
           </article>
 
@@ -179,15 +181,15 @@
             <div id="taskProfileOverview">
               <div class="panel-heading">
                 <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
-                <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh Profiles</button>
+                <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh</button>
               </div>
               <p>Each task has its own configuration page. Endpoint settings, model routing, and editable behavior live together in that task's profile. Endpoint records can be reused by multiple tasks.</p>
             </div>
             <div id="taskProfileList" class="task-profile-grid"></div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
               <div class="panel-heading task-profile-editor-heading">
-                <div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileSummary" class="muted-copy"></p></div>
-                <button id="taskProfileBack" class="secondary-button" type="button">All Tasks</button>
+                <div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileRevision" class="muted-copy task-profile-revision">Revision: 1</p></div>
+                <button id="taskProfileBack" class="secondary-button" type="button">Return</button>
               </div>
               <section id="taskProfileEndpointSection" class="task-profile-section">
                 <h4>Endpoint configuration</h4>
@@ -198,6 +200,28 @@
                   </label>
                   <button id="taskProfileAddEndpoint" class="secondary-button" type="button">Add Endpoint</button>
                 </div>
+                <div class="task-profile-endpoint-picker">
+                  <label class="host-behavior-field">Common endpoint preset
+                    <select id="taskProfileEndpointPreset">
+                      <option value="">Choose a preset to add</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="google-gemini">Google Gemini (OpenAI-compatible)</option>
+                      <option value="groq">Groq</option>
+                      <option value="together">Together AI</option>
+                      <option value="fireworks">Fireworks AI</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="mistral">Mistral AI</option>
+                      <option value="cerebras">Cerebras</option>
+                      <option value="ollama">Ollama (local)</option>
+                      <option value="lm-studio">LM Studio (local)</option>
+                      <option value="vllm">vLLM (local/self-hosted)</option>
+                      <option value="localai">LocalAI (local/self-hosted)</option>
+                    </select>
+                  </label>
+                  <button id="taskProfileAddPreset" class="secondary-button" type="button">Add Preset</button>
+                </div>
+                <p class="muted-copy">Presets fill the endpoint name and base URL only. Add your own API key where required. Local URLs must be reachable from the Axiom server, not just your browser.</p>
                 <div class="task-model-fields">
                   <label class="host-behavior-field">Endpoint name
                     <input id="taskProfileEndpointName" type="text" maxlength="120" placeholder="Provider name">
@@ -217,19 +241,25 @@
               <section id="taskProfileAssignmentSection" class="task-profile-section">
                 <h4>Model assignment</h4>
                 <div class="task-model-fields">
-                  <label class="host-behavior-field">Model ID
+                  <label id="taskProfileStandardModelField" class="host-behavior-field">Model ID
                     <select id="taskProfileModel" aria-label="Model ID"><option value="">Discover models or choose a model</option></select>
                   </label>
-                  <label class="host-behavior-field">Fallback provider
-                    <select id="taskProfileFallbackProvider" aria-label="Fallback provider"><option value="">No fallback provider</option></select>
+                  <label id="taskProfileVoiceModelField" class="host-behavior-field hidden">Fish Audio model ID
+                    <input id="taskProfileVoiceModel" type="text" maxlength="160" placeholder="s2.1-pro-free">
                   </label>
-                  <label class="host-behavior-field">Fallback model
-                    <select id="taskProfileFallbackModel" aria-label="Fallback model"><option value="">No fallback model</option></select>
+                  <label id="taskProfileVoiceReferenceField" class="host-behavior-field hidden">Fish Audio reference / voice ID
+                    <input id="taskProfileVoiceReferenceId" type="text" maxlength="200" placeholder="Optional voice reference ID">
                   </label>
+                  <div class="task-fallbacks-editor">
+                    <div class="panel-heading"><h4>Fallback endpoints</h4><button id="taskProfileAddFallback" class="secondary-button" type="button">Add fallback</button></div>
+                    <p class="muted-copy">Fallbacks are attempted in order. Add as many provider/model pairs as needed.</p>
+                    <div id="taskProfileFallbackList" class="task-fallback-list"></div>
+                  </div>
                 </div>
               </section>
               <section class="task-profile-section">
-                <h4>Behavior</h4>
+                <div class="panel-heading task-profile-behavior-heading"><h4>Behavior for this task</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Add Behavior</button></div>
+                <p>Editable behavior is saved independently for the selected task. Switching tasks loads that task's own instructions.</p>
                 <label class="host-behavior-field">Immutable foundation (code-owned)
                   <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
                 </label>
@@ -240,22 +270,73 @@
                   <textarea id="taskProfileInstructions" maxlength="4000" rows="6" placeholder="Task-specific style, priorities, workflow, and preferences"></textarea>
                 </label>
                 <label class="host-behavior-enabled"><input id="taskProfileEnabled" type="checkbox"> Enable editable behavior layer</label>
-                <p id="taskProfileRevision" class="muted-copy">Profile revision: 1</p>
               </section>
               <div class="edit-actions">
-                <button id="saveTaskProfile" class="primary-button" type="button">Save Task Profile</button>
+                <button id="saveTaskProfile" class="primary-button" type="button">Save</button>
               </div>
             </section>
+          </article>
+
+          <article id="mcpSection" class="panel admin-behavior-panel hidden">
+            <div class="panel-heading">
+              <div><p class="eyebrow">EXTERNAL INTEGRATIONS</p><h3>MCP Servers &amp; Tools</h3></div>
+              <button id="refreshMcpServers" class="secondary-button" type="button">Refresh</button>
+            </div>
+            <p class="muted-copy">Connect to Streamable HTTP MCP servers, discover their tools, and enable only the tools you intend to use. Credentials are stored in Axiom's runtime registry and are returned only to authenticated administrators.</p>
+            <div class="task-profile-section">
+              <div class="task-profile-endpoint-picker">
+                <label class="host-behavior-field">Configured server
+                  <select id="mcpServerSelect"><option value="">Add a new server</option></select>
+                </label>
+                <button id="mcpAddServer" class="secondary-button" type="button">Add Server</button>
+              </div>
+              <div class="task-model-fields">
+                <label class="host-behavior-field">Server name
+                  <input id="mcpServerName" type="text" maxlength="120" placeholder="My MCP server">
+                </label>
+                <label class="host-behavior-field">Streamable HTTP URL
+                  <input id="mcpServerUrl" type="url" maxlength="2000" placeholder="https://example.com/mcp">
+                </label>
+                <label class="host-behavior-field task-model-notes">Bearer token (optional)
+                  <input id="mcpServerToken" type="password" autocomplete="new-password" maxlength="4096" placeholder="Paste token if required">
+                </label>
+                <label class="host-behavior-enabled"><input id="mcpServerEnabled" type="checkbox" checked> Enable this server</label>
+              </div>
+              <div class="task-profile-inline-actions">
+                <button id="mcpDiscoverTools" class="secondary-button" type="button">Discover Tools</button>
+                <button id="mcpDeleteServer" class="secondary-button" type="button">Remove Server</button>
+                <span id="mcpServerStatus" class="muted-copy" role="status">Add a server URL, then discover its tools.</span>
+              </div>
+            </div>
+            <section class="task-profile-section">
+              <div class="panel-heading"><div><h4>Available tools</h4><p class="muted-copy">Disable any tool you do not want Axiom to call.</p></div></div>
+              <div id="mcpToolList" class="record-list"><p class="record-empty">Select a server to view its tools.</p></div>
+            </section>
+            <section class="task-profile-section">
+              <h4>Test a tool</h4>
+              <div class="task-model-fields">
+                <label class="host-behavior-field">Enabled tool
+                  <select id="mcpToolRunnerSelect"><option value="">Discover and enable a tool first</option></select>
+                </label>
+                <label class="host-behavior-field task-model-notes">Arguments (JSON object)
+                  <textarea id="mcpToolArguments" rows="5" spellcheck="false">{}</textarea>
+                </label>
+              </div>
+              <button id="mcpRunTool" class="secondary-button" type="button">Run Tool</button>
+              <pre id="mcpToolOutput" class="mcp-tool-output" aria-live="polite">Tool results will appear here.</pre>
+            </section>
+            <div class="edit-actions"><button id="saveMcpServers" class="primary-button" type="button">Save</button></div>
           </article>
 
           <article id="memoriesSection" class="panel admin-memory-panel hidden">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">MEMORY ADMINISTRATION</p>
-                <h3>Search & Manage Durable Memory</h3>
+                
+                <h3>Durable Memory</h3>
               </div>
-              <span id="adminAuthorizationState" class="mini-status">Checking…</span>
+              <button id="adminMemoryRefreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
+            <div class="filter-area">
             <div class="memory-search">
               <div class="search-field search-wide">
                 <label for="adminMemorySearch">Search</label>
@@ -298,13 +379,19 @@
               </div>
               <button id="adminClearMemoryFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
             </div>
+            </div>
+            <div class="result-area">
             <div class="search-summary">
               <span id="adminMemoryResultCount">0 Memories</span>
               <span>Open a memory to edit its persisted record.</span>
+              <label class="page-size-control" for="adminMemoryPageSize">Results per page
+                <select id="adminMemoryPageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select>
+              </label>
             </div>
             <div id="adminMemoryList" class="memory-list"></div>
             <div class="memory-pagination">
-              <button id="adminLoadMoreMemories" class="secondary-button hidden" type="button">Load 25 More</button>
+              <button id="adminLoadMoreMemories" class="secondary-button hidden" type="button">Get More</button>
+            </div>
             </div>
           </article>
 
@@ -312,11 +399,12 @@
           <article id="journalsSection" class="panel admin-journal-panel hidden">
             <div class="panel-heading">
               <div>
-                <p class="eyebrow">COGNITIVE HISTORY</p>
-                <h3>Journal Timeline</h3>
+                <p class="eyebrow">HISTORY</p>
+                <h3>History</h3>
               </div>
-              <button id="journalRefreshButton" class="secondary-button" type="button">Refresh Journal</button>
+              <button id="journalRefreshButton" class="secondary-button" type="button">Refresh</button>
             </div>
+            <div class="filter-area">
             <div class="journal-search">
               <div class="search-field search-wide">
                 <label for="journalSearch">Search</label>
@@ -354,44 +442,43 @@
               </div>
               <button id="clearJournalFilters" class="secondary-button filter-clear" type="button">Clear Filters</button>
             </div>
+            </div>
+            <div class="result-area">
             <div class="search-summary">
               <span id="journalResultCount">0 Experiences</span>
               <span>Journal history is read-only.</span>
+              <label class="page-size-control" for="journalPageSize">Results per page
+                <select id="journalPageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select>
+              </label>
             </div>
             <div id="journalTimeline" class="journal-timeline"></div>
             <div class="journal-pagination">
-              <button id="loadMoreJournals" class="secondary-button hidden" type="button">Load 25 More</button>
+              <button id="loadMoreJournals" class="secondary-button hidden" type="button">Get More</button>
+            </div>
             </div>
           </article>
 
           <article id="voiceSection" class="panel hidden">
             <div class="panel-heading">
-              <div><p class="eyebrow">VOICE OUTPUT</p><h3>Voice / Fish Audio</h3></div>
-              <button id="refreshVoiceSettings" class="secondary-button" type="button">Refresh Settings</button>
+              <div><p class="eyebrow">VOICE OUTPUT</p><h3>Speech Settings</h3><p id="voiceSettingsRevision" class="muted-copy">Revision: 0</p></div>
+              <button id="refreshVoiceSettings" class="secondary-button" type="button">Refresh</button>
             </div>
-            <p class="muted-copy">These settings control Body speech. The Fish Audio API key remains server-side in Render environment settings and is never displayed here.</p>
+            <p class="muted-copy">Speech rate, browser voice pitch, volume, and browser voice selection live here. Configure Fish Audio endpoint credentials, model, and voice reference in the Audio / Voice task profile.</p>
             <div class="task-model-fields">
-              <label class="host-behavior-field">Fish Audio model
-                <input id="fishAudioModel" type="text" maxlength="120" placeholder="s2.1-pro-free">
+              <label class="host-behavior-field voice-slider-field">Speech rate <output id="voiceRateValue" for="voiceRate">1.00</output>
+                <input id="voiceRate" type="range" min="0.5" max="1.75" step="0.05" value="1">
               </label>
-              <label class="host-behavior-field">Fish Audio reference / voice ID
-                <input id="fishAudioReferenceId" type="text" maxlength="200" placeholder="Optional voice reference ID">
+              <label class="host-behavior-field voice-slider-field">Pitch (browser voices) <output id="voicePitchValue" for="voicePitch">1.00</output>
+                <input id="voicePitch" type="range" min="0.5" max="1.5" step="0.05" value="1">
               </label>
-              <label class="host-behavior-field">Speech rate
-                <input id="voiceRate" type="number" min="0.5" max="1.75" step="0.05" value="1">
-              </label>
-              <label class="host-behavior-field">Pitch (browser voices)
-                <input id="voicePitch" type="number" min="0.5" max="1.5" step="0.05" value="1">
-              </label>
-              <label class="host-behavior-field">Volume
-                <input id="voiceVolume" type="number" min="0" max="1" step="0.05" value="1">
+              <label class="host-behavior-field voice-slider-field">Volume <output id="voiceVolumeValue" for="voiceVolume">1.00</output>
+                <input id="voiceVolume" type="range" min="0" max="1" step="0.05" value="1">
               </label>
               <label class="host-behavior-field">Browser voice name
                 <input id="voiceName" type="text" maxlength="120" placeholder="Blank uses browser default">
               </label>
             </div>
-            <p id="voiceSettingsRevision" class="muted-copy">Settings revision: 0</p>
-            <div class="edit-actions"><button id="saveVoiceSettings" class="primary-button" type="button">Save Voice Settings</button></div>
+            <div class="edit-actions"><button id="saveVoiceSettings" class="primary-button" type="button">Save</button></div>
           </article>
 
           <article id="devicesSection" class="panel hidden">
@@ -408,8 +495,24 @@
           <article id="overviewSection" class="panel admin-summary">
             <p class="eyebrow">CURRENT STATE</p>
             <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
+            <div class="summary-row"><span>Created</span><strong id="adminCreatedAt">—</strong></div>
             <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
             <div class="summary-row"><span>Journal Experiences</span><strong id="adminJournalCount">—</strong></div>
+            <div class="admin-runtime-setting">
+              <div>
+                <p class="field-label">BODY REASONING FALLBACK</p>
+                <p class="muted-copy">Allow Body to use its configured standalone reasoning provider when no connected reasoning host is available.</p>
+                <p id="bodyFallbackSource" class="muted-copy" aria-live="polite">Loading setting…</p>
+              </div>
+              <label class="admin-setting-toggle" for="bodyFallbackEnabled">
+                <input id="bodyFallbackEnabled" type="checkbox">
+                <span>Enabled</span>
+              </label>
+              <div class="edit-actions">
+                <button id="saveBodyFallbackSetting" class="primary-button" type="button">Save fallback setting</button>
+              </div>
+              <p class="muted-copy">Admin changes apply immediately to this running instance. After a restart, the Render deployment setting is used again.</p>
+            </div>
           </article>
         </div>
       </section>
@@ -510,7 +613,7 @@
         </div>
         <div class="edit-actions">
           <button id="cancelMemoryEdit" class="secondary-button" type="button">Cancel</button>
-          <button class="primary-button" type="submit">Save Changes</button>
+          <button class="primary-button" type="submit">Save</button>
         </div>
       </form>
 
@@ -536,6 +639,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261012-admin-voice-controls"></script>
+  <script src="/static/portal.js?v=20261012-task-behavior-scope"></script>
 </body>
 </html>

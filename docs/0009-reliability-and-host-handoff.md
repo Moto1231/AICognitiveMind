@@ -6,7 +6,7 @@ This change implements the September 21 code-review follow-up. Identity and memo
 
 Core interactions, MCP completions, initialization, governed self-name changes, and administrative memory revisions stage their cognitive writes. MongoDB commits them in one transaction; SurrealDB submits one checked transaction. A storage revision rejects concurrent cognitive commits based on stale context. A conflict means the host must begin again and reconsider the new state, rather than blindly replaying a stale proposal.
 
-MongoDB must be a replica set or Atlas deployment. Standalone MongoDB cannot provide multi-document atomicity and is no longer a supported production runtime for these operations. CI starts a disposable replica set and exercises rollback, retry receipts, and snapshots.
+SurrealDB is the configured default storage backend and is the backend exercised by the standard CI workflow. MongoDB remains an optional compatibility backend; if selected, it must be a replica set or Atlas deployment because standalone MongoDB cannot provide multi-document atomicity. The Mongo transaction test is opt-in via `MONGODB_TEST_URI` and is not part of the standard SurrealDB CI run.
 
 `begin_interaction` returns an `idempotency_key`. Pass it to `complete_interaction` and reuse it with exactly the same input on retries. A committed receipt survives server restart and returns the original result. Reusing a key with different content is rejected. Legacy clients may omit the key, but then do not have retry deduplication. Receipts and transaction revisions are operational records, not attributes of the Mind.
 
@@ -24,6 +24,8 @@ Configure the API and MCP process to use the same persistent database. Separate 
 6. Detach explicitly with `renew_reasoning_host(..., detach=true)` before another host attaches. An expired lease also permits handoff. Old tokens cannot complete requests after another host takes over.
 
 A live host takes precedence over standalone reasoning. A timed-out host request is not silently sent to a second model. The API reports actual active-host metadata separately from the configured primary architecture. Hosts must implement this polling protocol; displaying `External Host` alone does not attach a model.
+
+`begin_interaction` now includes a read-only `body_work` snapshot: whether a reasoning host is attached and counts of queued human, sensory, and other requests. The connected host should commit the current direct human response first, then claim at most one queued Body request during that turn. This bounded step makes sensory interpretation part of the normal interaction lifecycle without letting a backlog monopolize a human reply. The queue remains authoritative: `next_body_interaction` claims work, and `complete_body_interaction` marks it complete only after the host has produced a response. If the host is not attached, the snapshot reports that state but does not pretend to process the queue. This is turn-triggered processing, not autonomous between-turn awareness.
 
 MCP HTTP binds to loopback by default. Set `MCP_ACCESS_TOKEN` to use a non-loopback bind, and send `Authorization: Bearer <token>`. Use TLS at the deployment boundary for remote traffic. Stdio does not use HTTP authentication. The application password for the browser portal is a separate setting.
 

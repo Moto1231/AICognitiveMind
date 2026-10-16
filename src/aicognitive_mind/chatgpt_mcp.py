@@ -3,24 +3,33 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from typing import Any
+import time
+from typing import Any, Literal
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import AnyHttpUrl
 
-from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
+from aicognitive_mind.body import (
+    BodyRuntime,
+    BrowserVoiceOutput,
+)
+from aicognitive_mind.body.runtime import configured_voice_intent
+from aicognitive_mind.body_sessions import BodyQueue, body_session
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
+from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.config import get_settings
+from aicognitive_mind.domain import DiagnosticObservation
 from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.host_context import HostWorkingContext
-from aicognitive_mind.host_runtime import HostRuntime
-from aicognitive_mind.domain import DiagnosticObservation
-from aicognitive_mind.mcp_server import AppState, lifespan
+from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
+from aicognitive_mind.mcp_registry import MCPServerRegistry
+from aicognitive_mind.mcp_server import AppState, lifespan, execute_task as execute_configured_task
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
+from aicognitive_mind.task_model_assignments import TaskKind
 from aicognitive_mind.voice_settings import VoiceSettings
 
 async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
@@ -37,6 +46,48 @@ async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: d
         )
     )
 
+
+def _summarize_body_work(requests: list[dict[str, Any]]) -> dict[str, int]:
+    """Summarize available queue work and active claims for begin_interaction."""
+    human_messages = 0
+    sensory_interpretations = 0
+    other_requests = 0
+    in_progress = 0
+    now = time.time()
+    for request in requests:
+        claim = request.get("claim")
+        claim_until = request.get("claim_until")
+        if claim:
+            try:
+                still_claimed = claim_until is None or float(claim_until) > now
+            except (TypeError, ValueError):
+                still_claimed = True
+            if still_claimed:
+                in_progress += 1
+                continue
+
+        message = str(request.get("message", "")).lstrip().lower()
+        priority = request.get("priority")
+        is_sensory = (
+            isinstance(priority, int) and priority >= 10
+        ) or (
+            priority is None
+            and message.startswith("interpret this ")
+            and "percept" in message
+        )
+        if is_sensory:
+            sensory_interpretations += 1
+        elif not isinstance(priority, int) or priority <= 0:
+            human_messages += 1
+        else:
+            other_requests += 1
+    return {
+        "pending_requests": human_messages + sensory_interpretations + other_requests,
+        "in_progress_requests": in_progress,
+        "pending_human_messages": human_messages,
+        "pending_sensory_interpretations": sensory_interpretations,
+        "pending_other_requests": other_requests,
+    }
 
 HOST_INSTRUCTIONS = """
 Axiom is the integrated, persistent Cognitive Mind. Speak as Axiom in first person.
@@ -71,11 +122,32 @@ Identity, reasoning, memory, and governance are internal functions of the same A
 BODY HOST LIFECYCLE:
 - When the user asks to instantiate/open/use Axiom's Body, or to enable/use its live senses,
   call attach_reasoning_host immediately and retain the returned lease token as private session state.
+  Then call open_live_body and present its returned URL as the primary handoff action. Do not
+  merely describe the Body or leave the user in a chat-only workflow.
+- The MCP server cannot dismiss or navigate the ChatGPT client UI itself. Never claim that the
+  chat pane was closed or replaced. Provide the canonical Body URL and make the handoff explicit.
 - While the Body is in use, renew the lease before it expires and poll next_body_interaction.
   For every claimed Body request, reason from its supplied Axiom context, inspect sensory evidence
   when needed, then call complete_body_interaction.
+- Every begin_interaction result includes a body_work snapshot. Treat it as an explicit
+  attention signal, not merely diagnostics. First reason about and commit the current direct
+  human response with complete_interaction so queued observations cannot starve the human reply.
+  Then, when body_work.host_attached is true and body_work.pending_requests is greater than zero,
+  call next_body_interaction once and process the claimed request using its supplied Axiom context.
+  For sensory requests, interpret only what the preserved evidence supports and call
+  complete_body_interaction only after producing the interpretation. Do not mark work complete
+  on a failed or unavailable interpretation. A later begin_interaction will service more queued
+  work, so a large backlog cannot monopolize one human turn. If the queue snapshot is zero, do not
+  call next_body_interaction just to wait; if a request fails, preserve the committed human reply
+  and leave the request recoverable.
+- The queue server selects human text requests ahead of passive sensory interpretation requests.
+  Never self-dispatch a sensory prompt as a new direct chat task, and never let old percept prompts
+  block the current human response. A connected-host status label alone does not service the queue.
 - Keep this external-host lease active for the live Body session. Detach only when the user asks
   to stop/handoff the Body or the host session is ending.
+- When an active live Body session exists and you are answering ordinary ChatGPT chat rather than completing a claimed Body request, call speak_body_text with the same user-facing response so the Body speaks it. Respect explicit requests not to speak, and do not speak passive sensory observations or diagnostics by default.
+- For a claimed Body request, complete_body_interaction is the response path and the Body bridge handles expression; do not also call speak_body_text for that same response.
+- speak_body_text confirms queueing, not successful playback. If no active Body session is registered or speech delivery fails, report that honestly.
 - Never enable standalone fallback merely to compensate for a missing external-host attachment.
 """.strip()
 
@@ -203,6 +275,86 @@ def build_chatgpt_mcp(
             pitch=pitch,
             volume=volume,
         )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
+    async def speak_body_text(
+        text: str,
+        ctx: Context[AppState],
+        rate: float | None = None,
+        pitch: float | None = None,
+        volume: float | None = None,
+        voice_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Queue text for the active live Body to speak through its configured Mouth.
+
+        Use for ordinary reasoning-host replies when a live Body session is active.
+        Completing a claimed Body interaction already returns through the normal Body
+        expression path, so do not queue the same response twice.
+        """
+        speech_text = text.strip()
+        if not speech_text:
+            raise ValueError("Speech text cannot be empty")
+
+        state = ctx.request_context.lifespan_context
+        records = RuntimeRecords(state.storage.mind)
+        active = await records.get("active_body_session")
+        if not active:
+            raise RuntimeError("No active live Body session is registered")
+        try:
+            session_id = str(active["session_id"])
+            updated_at = float(active["updated_at"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Active Body session registration is invalid") from exc
+        if not session_id or time.time() - updated_at > 120:
+            raise RuntimeError("No active live Body session has checked in recently")
+
+        settings = await VoiceSettings(state.storage.mind).read()
+        intent = configured_voice_intent(
+            speech_text,
+            settings,
+            rate=rate,
+            pitch=pitch,
+            volume=volume,
+            voice_name=voice_name,
+        )
+        token = body_session.set(session_id)
+        try:
+            body = BodyRuntime(
+                voice=BodyQueue(records, "mouth", BrowserVoiceOutput())
+            )
+            await body.speak_intent(intent)
+        finally:
+            body_session.reset(token)
+
+        return {
+            "status": "queued",
+            "playback_confirmed": False,
+            "characters": len(speech_text),
+            "voice_name": intent.metadata["voice_name"],
+            "rate": intent.metadata["rate"],
+            "pitch": intent.metadata["pitch"],
+            "volume": intent.metadata["volume"],
+        }
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    def open_live_body() -> dict[str, str]:
+        """Return the canonical URL for handing off to Axiom's live Body.
+
+        Use when the user asks to open or move into the Body. This provides the
+        navigation target; the MCP server cannot control the ChatGPT client UI.
+        """
+        return {
+            "url": f"{base_url}/body/live",
+            "action": "open_in_browser",
+            "ui_control_limit": "The caller must open this URL; the MCP server cannot dismiss the current chat pane.",
+        }
 
     @server.tool(
         annotations=ToolAnnotations(
@@ -366,6 +518,49 @@ def build_chatgpt_mcp(
             open_world_hint=False,
         )
     )
+    async def execute_task(
+        task: TaskKind,
+        operation: Literal["chat", "transcribe"],
+        ctx: Context[AppState],
+        messages: list[dict[str, Any]] | None = None,
+        temperature: float | None = None,
+        filename: str | None = None,
+        audio_base64: str | None = None,
+        media_type: str | None = None,
+        session_id: str | None = None,
+        state_ref: str | None = None,
+        memory_refs: list[str] | None = None,
+        working_context: str = "",
+    ) -> dict[str, Any]:
+        """Run a configured specialist task using Axiom's saved provider/model assignment.
+
+        Use operation="chat" with messages for chat-style tasks, or operation="transcribe"
+        with base64-encoded audio, filename, and media_type. Provider, model, and behavior
+        come from Axiom's saved configuration rather than caller-supplied model names.
+        """
+        return await execute_configured_task(
+            task=task,
+            operation=operation,
+            ctx=ctx,
+            messages=messages,
+            temperature=temperature,
+            filename=filename,
+            audio_base64=audio_base64,
+            media_type=media_type,
+            session_id=session_id,
+            state_ref=state_ref,
+            memory_refs=memory_refs,
+            working_context=working_context,
+        )
+
+    @server.tool(
+        annotations=ToolAnnotations(
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
+        )
+    )
     async def run_sleep_cycle(ctx: Context[AppState]) -> dict[str, Any]:
         """Manually run Axiom's subconscious sleep-cycle consolidation now.
 
@@ -397,6 +592,17 @@ def build_chatgpt_mcp(
         result = await state.mind_service.begin_interaction(user_message)
         context_json = host_working_context.model_dump(mode="json")
         interaction_id = str(result["idempotency_key"])
+        hosts = HostRuntime(state.storage.mind, state.mind_service)
+        pending_requests = await hosts.records.pending()
+        result["body_work"] = {
+            "host_attached": await hosts.active() is not None,
+            **_summarize_body_work(pending_requests),
+            "processing_policy": (
+                "Commit the current direct human response first, then claim at most one queued "
+                "Body request per interaction turn. The queue orders human text ahead of sensory "
+                "interpretation. Complete only after successful processing."
+            ),
+        }
         await _trace_event(
             state.storage,
             interaction_id,
@@ -544,5 +750,57 @@ def build_chatgpt_mcp(
                 "integrity_verified": True,
             },
         )
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    async def list_mcp_tools(ctx: Context[AppState]) -> dict[str, Any]:
+        """List administrator-configured MCP servers and their available tool schemas.
+
+        Only enabled server/tool records are callable. Inspect this catalogue before calling
+        an external tool; the schema describes the arguments expected by the remote server.
+        """
+        storage = ctx.request_context.lifespan_context.storage
+        registry = MCPServerRegistry(RuntimeRecords(storage.mind))
+        servers = await registry.list()
+        return {
+            "servers": [
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "url": item.url,
+                    "enabled": item.enabled,
+                    "tools": [
+                        {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "inputSchema": tool.input_schema,
+                            "enabled": tool.enabled,
+                        }
+                        for tool in item.tools
+                    ],
+                }
+                for item in servers
+            ]
+        }
+
+    @server.tool(annotations=ToolAnnotations(openWorldHint=True, destructiveHint=True))
+    async def call_mcp_tool(
+        server_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        ctx: Context[AppState],
+    ) -> dict[str, Any]:
+        """Call one enabled tool from an MCP server configured by an Axiom administrator.
+
+        Call list_mcp_tools first to obtain the server ID and the exact tool name/schema.
+        Only explicitly enabled servers and tools can be called. Tool effects occur on the
+        external server and are governed by that server's own permissions.
+        """
+        storage = ctx.request_context.lifespan_context.storage
+        registry = MCPServerRegistry(RuntimeRecords(storage.mind))
+        servers = await registry.list()
+        external_server = next((item for item in servers if item.id == server_id), None)
+        if external_server is None:
+            raise ValueError("Configured MCP server not found")
+        return await registry.call_tool(external_server, tool_name, arguments)
 
     return server

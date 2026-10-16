@@ -94,7 +94,7 @@ class EarsV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("navigator.mediaDevices.getUserMedia", page)
         self.assertIn("MediaRecorder", page)
         self.assertIn("/v1/body/ears/observe", page)
-        self.assertIn("/v1/body/ears/hear", page)
+        self.assertIn("result.interpretation", page)
         self.assertIn("BODY CAN HEAR", page)
 
 
