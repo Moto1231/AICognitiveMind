@@ -37,6 +37,10 @@ class CurrentStateLedger(BaseModel):
 
     FUNDAMENTAL_FIELDS: ClassVar[tuple[str, ...]] = (
         "identity",
+        "mood",
+        "who_is_present",
+        "who_is_speaking",
+        "current_context",
         "foundations",
         "behaviors",
         "skills",
@@ -88,6 +92,8 @@ class CurrentStateLedger(BaseModel):
             raise ValueError(f"Unsupported current-state field: {key}")
         source = f"invalidated by event:{event}"
         note = note or "A state-changing event invalidated the previous answer."
+        if key == "identity":
+            raise ValueError("Identity cannot be invalidated; revise it through governance.")
         current = self.fields.get(key)
         if current is not None and current.value is None and current.status == "unknown" and current.source == source and current.note == note:
             return
@@ -108,13 +114,14 @@ class CurrentStateLedger(BaseModel):
     ) -> "CurrentStateLedger":
         """Invalidate only the answers affected by an explicit event, then apply grounded updates."""
         invalidations = {
+            "begin_context": (),
             "session_started": ("interlocutor", "presence", "active_topic", "active_task"),
             "location_changed": ("locality", "current_scene"),
-            "speaker_changed": ("interlocutor", "presence"),
-            "topic_changed": ("active_topic", "decisions_and_open_questions"),
+            "speaker_changed": ("interlocutor", "presence", "who_is_speaking"),
+            "topic_changed": ("active_topic", "current_context", "decisions_and_open_questions"),
             "task_changed": ("active_task", "pending_work"),
             "connection_changed": ("connection_status", "capabilities", "pending_work"),
-            "scene_changed": ("current_scene", "presence"),
+            "scene_changed": ("current_scene", "presence", "who_is_present"),
             "evidence_conflict": (),
             "state_refreshed": (),
         }
