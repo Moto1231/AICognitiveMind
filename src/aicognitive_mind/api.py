@@ -1676,9 +1676,9 @@ def _validate_skill_content(content: str) -> list[str]:
     else:
         parts = content.split("---", 2)
         header = parts[1] if len(parts) > 2 else ""
-        if not re.search(r"(?m)^name:\\s*\\S+", header):
+        if not re.search(r"(?m)^name:\s*\S+", header):
             errors.append("Frontmatter requires name")
-        if not re.search(r"(?m)^description:\\s*\\S+", header):
+        if not re.search(r"(?m)^description:\s*\S+", header):
             errors.append("Frontmatter requires description")
     if len(content.encode("utf-8")) > 200000:
         errors.append("Skill exceeds 200 KB")
