@@ -321,7 +321,7 @@ class CognitiveMcpService:
         ledger = await self._load_current_state()
         # A missing mood field marks a ledger that has not received begin_context.
         # This also upgrades existing persisted ledgers without resetting identity.
-        first_context = "mood" not in ledger.fields
+        first_context = ledger.revision == 0 or "mood" not in ledger.fields
         before = {k: v.model_dump(mode="json") for k, v in ledger.fields.items()}
         ledger.answer("identity", mind.identity.model_dump(mode="json") | {
             "developmental_state": mind.developmental_state,
