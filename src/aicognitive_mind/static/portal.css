@@ -1057,3 +1057,10 @@ body {
 #adminView .admin-grid {padding-bottom:36px;}
 .admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:#8cdfe9!important;color:#8cdfe9!important;stroke-width:1.1;}
 #clearMemoryFilters,#adminClearMemoryFilters {justify-self:end;align-self:end;margin-left:auto;}
+
+/* Skills navigation artwork: fine aqua outline with label directly underneath. */
+.admin-section-nav .admin-section-button[data-admin-section="skills"] {flex-direction:column;gap:3px;min-width:80px;padding:5px 10px;}
+.admin-section-nav .admin-section-button[data-admin-section="skills"] .admin-section-icon {display:grid;place-items:center;width:48px;height:48px;flex:0 0 48px;overflow:visible;}
+.admin-section-nav .admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:#8cdfe9!important;stroke-width:.8!important;width:42px;height:42px;}
+.admin-section-nav .admin-section-button[data-admin-section="skills"] > span:last-child {display:block;text-align:center;}
+#taskProfileList .task-profile-card.axiom-icon-button > strong,#taskProfileList .task-profile-card > strong {color:var(--accent)!important;}
