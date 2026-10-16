@@ -796,6 +796,8 @@ function openTaskProfile(task) {
   el.taskProfileVoiceModelField.classList.add("hidden");
   el.taskProfileVoiceReferenceField.classList.toggle("hidden", task !== "audio_voice");
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
+  const taskIcon = document.getElementById("taskProfileFormIcon");
+  if (taskIcon) { taskIcon.textContent = taskIconGlyph(task); taskIcon.setAttribute("aria-label", taskModelLabels[task] || task); }
   el.taskProfileRevision.textContent = "Revision: " + (behavior.revision || 1);
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
   el.taskProfileInstructions.value = behavior.instructions || "";
@@ -1981,10 +1983,10 @@ el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
 el.logoutButton.addEventListener("click", logout);
 if (el.refreshButton) el.refreshButton.addEventListener("click", refresh);
-el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));
-el.adminRefreshButton.addEventListener("click", refresh);
+el.adminMemoryRefreshButton.addEventListener("click", () => showAdminSection("overview"));
+el.adminRefreshButton.addEventListener("click", refreshAdminAllFromButton);
 if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.addEventListener("click", saveBodyFallbackSettings);
-el.journalRefreshButton.addEventListener("click", () => refreshJournal(true));
+el.journalRefreshButton.addEventListener("click", () => showAdminSection("overview"));
 el.loadMoreJournals.addEventListener("click", () => refreshJournal(false));
 el.journalPageSize.addEventListener("change", () => {
   state.journalPageSize = Number(el.journalPageSize.value) || 25;
@@ -2094,6 +2096,30 @@ document.getElementById("portalReturnButton")?.addEventListener("click", event =
 });
 document.getElementById("continuityRefreshButton")?.addEventListener("click", refresh);
 
+function taskIconGlyph(task) {
+  return ({reasoning:"✦", vision:"◉", audio_voice:"♫", hearing:"◌", memory:"◈", journal:"▤"})[task] || "◆";
+}
+async function refreshAdminAllFromButton() {
+  const button = el.adminRefreshButton;
+  if (!button || button.disabled) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = "Refreshing…";
+  try {
+    const results = await Promise.allSettled([
+      refreshStatus(), refreshMemory(filters.admin, true), refreshJournal(true),
+      refreshHostBehaviors(), refreshTaskModelAssignments(), refreshTaskBehaviors(),
+      refreshProviderEndpoints(), refreshMcpServers(), loadVoiceSettings(),
+      refreshDiagnostics(),
+    ]);
+    const failures = results.filter(x => x.status === "rejected");
+    if (failures.length) toast("Refresh completed with " + failures.length + " errors", true);
+    else toast("Administration refreshed");
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
 async function refreshTaskProfilesFromButton() {
   const button = el.refreshTaskProfiles;
   if (!button || button.disabled) return;
