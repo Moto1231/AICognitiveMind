@@ -157,12 +157,29 @@
           <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-speech.svg" alt="" width="48" height="52"></span><span>Speech Settings</span></button>
           <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-task-profiles.svg" alt="" width="48" height="52"></span><span>Task Profiles</span></button>
           <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon admin-section-icon-mcp" aria-hidden="true"><img src="/static/admin-mcp.svg" alt="" width="48" height="49"></span><span>Endpoints, Servers &amp; Tools</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true">🧩</span><span>Skills</span></button>
           <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-memories.svg" alt="" width="48" height="52"></span><span>Memories</span></button>
           <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-journals.svg" alt="" width="48" height="52"></span><span>Journals</span></button>
           <button id="adminRefreshButton" class="secondary-button" type="button" aria-label="Refresh" title="Refresh">Refresh</button>
         </nav>
 
         <div class="admin-grid">
+          <article id="skillsSection" class="panel hidden">
+            <div class="panel-heading"><div><h3>Skills</h3><p class="muted-copy">GitHub-managed skill drafts. Preparing a release downloads SKILL.md; installing in ChatGPT is a separate step.</p></div><button type="button" class="secondary-button" id="skillsRefresh">Refresh</button></div>
+            <section class="overview-group">
+              <h4>Skill Drafts</h4>
+              <label class="host-behavior-field">Existing drafts<select id="skillsList"><option value="">New skill</option></select></label>
+              <label class="host-behavior-field">Skill ID<input id="skillsSlug" placeholder="my-skill" pattern="[a-z0-9-]+" maxlength="64"></label>
+              <label class="host-behavior-field">SKILL.md<textarea id="skillsContent" rows="18" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What the skill does&#10;---&#10;&#10;# Instructions"></textarea></label>
+              <div class="edit-actions"><button id="skillsValidate" type="button" class="secondary-button">Validate</button><button id="skillsSave" type="button" class="primary-button">Save Draft to GitHub</button></div>
+            </section>
+            <section class="overview-group">
+              <h4>Prepare ChatGPT Release</h4>
+              <p class="muted-copy">Export the validated SKILL.md for manual installation or update in ChatGPT. This does not change ChatGPT's installed skills.</p>
+              <button id="skillsPrepare" type="button" class="secondary-button">Prepare Release</button>
+              <p id="skillsStatus" role="status" aria-live="polite"></p>
+            </section>
+          </article>
           <article id="behaviorsSection" class="panel admin-behavior-panel hidden">
             <div class="panel-heading">
               <div><p class="eyebrow">BEHAVIOR LIBRARY</p><h3>Behaviors</h3></div>
@@ -640,6 +657,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261016-consistency-v2"></script>
+  <script src="/static/portal.js?v=20261016-skills"></script>
 </body>
 </html>
