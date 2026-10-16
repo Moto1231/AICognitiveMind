@@ -1136,7 +1136,7 @@ function renderStatus(status) {
   const mind = status.mind;
   const integration = status.integration;
 
-  el.connectionLabel.textContent = `${integration.protocol} · Mind Online`;
+  el.connectionLabel.textContent = "MCP - Axiom Online";
   el.mindName.textContent = mind.identity.self_name;
   el.continuityLabel.textContent = "Persistent";
   el.selfName.textContent = mind.identity.self_name;
@@ -2046,6 +2046,24 @@ if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBeha
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
 if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
 
+async function refreshDiagnostics() {
+  const context = document.getElementById("currentStateDiagnostics");
+  const performance = document.getElementById("performanceDiagnostics");
+  if (!state.adminAuthorized || !context || !performance) return;
+  try {
+    const result = await api("/v1/admin/diagnostics", {}, true);
+    context.textContent = JSON.stringify(result.current_state, null, 2);
+    const samples = result.performance?.samples || [];
+    performance.textContent = samples.length ? samples.map(x =>
+      formatBrowserDateTime(x.time) + " | " + x.duration_ms + " ms | " + x.status + " | " + x.method + " " + x.route
+    ).join("\n") : "No samples in this running process.";
+  } catch (error) {
+    context.textContent = "Cannot load state: " + error.message;
+    performance.textContent = "Cannot load timings: " + error.message;
+  }
+}
+document.getElementById("refreshDiagnostics")?.addEventListener("click", refreshDiagnostics);
+
 const adminSectionIds = {
   mcp: "mcpSection",
   tasks: "tasksSection",
@@ -2473,6 +2491,7 @@ function showAdminSection(sectionName) {
   if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
   if (sectionName === "tasks") renderTaskProfiles();
   if (sectionName === "devices") refreshDeviceInventory();
+  if (sectionName === "overview") refreshDiagnostics();
   if (sectionName === "mcp" && state.adminAuthorized) refreshIntegrations();
 }
 
