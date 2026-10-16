@@ -1008,3 +1008,14 @@ body {
 .search-summary, .search-summary span, .search-summary label, .search-summary select { color: var(--text); }
 .filter-area .filter-clear.axiom-icon-button { width: 36px; min-inline-size: 36px; min-block-size: 36px; height: 36px; padding: 6px; align-self: end; }
 .filter-area .filter-clear > .axiom-button-icon { width: 22px; height: 22px; }
+
+/* Admin and portal consistency */
+.brand-logo { width: 144px; height: 106px; }
+@media(max-width:860px) { .brand-logo { width: 112px; height:82px; } }
+.top-actions { display:flex; justify-content:center; }
+.portal-menu { justify-content:center; flex-wrap:wrap; }
+.admin-section-nav > #adminRefreshButton { margin-left:auto; }
+.task-profile-card.axiom-icon-button > .axiom-button-icon { width:64px; height:64px; }
+.task-profile-card.axiom-icon-button > strong { color:#60a5fa; font-size:13px; }
+.voice-slider-field input[type="range"] { margin-top:12px; }
+.task-profile-section > p, .integration-editor > p, .integration-subsection .muted-copy, #voiceSection > p.muted-copy, .task-fallbacks-editor > p, .task-profile-card > span, .task-profile-card > small { font-size:8px; line-height:1.5; }
