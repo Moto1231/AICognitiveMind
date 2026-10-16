@@ -493,6 +493,16 @@
 
           <article id="overviewSection" class="panel admin-summary">
             <div class="panel-heading"><div><p class="eyebrow">CURRENT STATE</p><h3>System Overview</h3></div></div>
+            <div class="admin-runtime-setting">
+              <div class="panel-heading"><div><p class="field-label">CURRENT STATE CONTEXT</p><h4>State Ledger</h4></div><button id="refreshDiagnostics" class="secondary-button" type="button">Refresh</button></div>
+              <pre id="currentStateDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load state.</pre>
+              <p class="muted-copy">Read-only persistent state for the current Mind.</p>
+            </div>
+            <div class="admin-runtime-setting">
+              <p class="field-label">PERFORMANCE LOGGING</p><h4>Recent Request Timings</h4>
+              <pre id="performanceDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load timings.</pre>
+              <p class="muted-copy">Up to 200 requests in the current process. Resets on restart. No request bodies.</p>
+            </div>
             <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
             <div class="summary-row"><span>Created</span><strong id="adminCreatedAt">—</strong></div>
             <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
@@ -638,6 +648,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261016-endpoint-task-config"></script>
+  <script src="/static/portal.js?v=20261016-admin-diagnostics"></script>
 </body>
 </html>
