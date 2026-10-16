@@ -42,7 +42,6 @@ class PortalTests(unittest.TestCase):
             "taskProfileList",
             "taskProfileEditor",
             "taskProfileTitle",
-            "taskProfileRevision",
             "taskProfileBack",
             "taskProfileEndpointSection",
             "taskProfileEndpointSelect",
@@ -64,7 +63,6 @@ class PortalTests(unittest.TestCase):
             "taskProfileBehaviorName",
             "taskProfileInstructions",
             "taskProfileEnabled",
-            "taskProfileRevision",
             "saveTaskProfile",
             "voiceRate",
             "voicePitch",
@@ -101,7 +99,7 @@ class PortalTests(unittest.TestCase):
         markup = index.read_text(encoding="utf-8")
         stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
         self.assertIn("Administration", markup)
-        self.assertIn("portal.css?v=20261016-consistency-v2", markup)
+        self.assertIn("portal.css?v=20261016-separated-sections", markup)
         self.assertIn("admin-section-nav", stylesheet)
         self.assertIn("linear-gradient(135deg, rgba(15,27,46,.96)", stylesheet)
         self.assertNotIn('content: "Inspect exact record', stylesheet)

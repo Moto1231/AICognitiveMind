@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261016-consistency-v2">
+  <link rel="stylesheet" href="/static/portal.css?v=20261016-separated-sections">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -186,7 +186,7 @@
             <div id="taskProfileList" class="task-profile-grid"></div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
               <div class="panel-heading task-profile-editor-heading">
-                <div class="task-profile-detail-identity"><span id="taskProfileDetailIcon" class="task-detail-icon" aria-hidden="true">◆</span><div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3><p id="taskProfileRevision" class="muted-copy task-profile-revision">Revision: 1</p></div></div>
+                <div class="task-profile-detail-identity"><span id="taskProfileDetailIcon" class="task-detail-icon" aria-hidden="true">◆</span><div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3></div></div>
                 <button id="taskProfileBack" class="secondary-button" type="button">Return</button>
               </div>
               <section id="taskProfileAssignmentSection" class="task-profile-section">
@@ -463,7 +463,7 @@
 
           <article id="voiceSection" class="panel hidden">
             <div class="panel-heading">
-              <div><p class="eyebrow">VOICE OUTPUT</p><h3>Speech Settings</h3><p id="voiceSettingsRevision" class="muted-copy">Revision: 0</p></div>
+              <div><p class="eyebrow">VOICE OUTPUT</p><h3>Speech Settings</h3></div>
               <button id="refreshVoiceSettings" class="secondary-button" type="button">Refresh</button>
             </div>
             <p class="muted-copy">Speech rate, browser voice pitch, volume, and browser voice selection live here. Configure Fish Audio endpoint credentials, model, and voice reference in the Audio / Voice task profile.</p>
@@ -497,35 +497,23 @@
 
           <article id="overviewSection" class="panel admin-summary">
             <div class="panel-heading"><div><p class="eyebrow">CURRENT STATE</p><h3>System Overview</h3></div></div>
-            <div class="admin-runtime-setting">
-              <div class="panel-heading"><div><p class="field-label">CURRENT STATE CONTEXT</p><h4>State Ledger</h4></div><button id="refreshDiagnostics" class="secondary-button" type="button">Refresh</button></div>
+            <section class="overview-group">
+              <h4>Mind Details</h4>
+              <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
+              <div class="summary-row"><span>Created</span><strong id="adminCreatedAt">—</strong></div>
+              <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
+              <div class="summary-row"><span>Journal Experiences</span><strong id="adminJournalCount">—</strong></div>
+            </section>
+            <section class="overview-group">
+              <div class="panel-heading"><div><h4>Current State Context</h4></div><button id="refreshDiagnostics" class="secondary-button" type="button">Refresh</button></div>
               <pre id="currentStateDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load state.</pre>
               <p class="muted-copy">Read-only persistent state for the current Mind.</p>
-            </div>
-            <div class="admin-runtime-setting">
-              <p class="field-label">PERFORMANCE LOGGING</p><h4>Recent Request Timings</h4>
+            </section>
+            <section class="overview-group">
+              <h4>Performance Logging</h4>
               <pre id="performanceDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load timings.</pre>
-              <p class="muted-copy">Up to 200 requests in the current process. Resets on restart. No request bodies.</p>
-            </div>
-            <div class="summary-row"><span>Mind</span><strong id="adminMindName">—</strong></div>
-            <div class="summary-row"><span>Created</span><strong id="adminCreatedAt">—</strong></div>
-            <div class="summary-row"><span>Durable Memories</span><strong id="adminMemoryCount">—</strong></div>
-            <div class="summary-row"><span>Journal Experiences</span><strong id="adminJournalCount">—</strong></div>
-            <div class="admin-runtime-setting">
-              <div>
-                <p class="field-label">BODY REASONING FALLBACK</p>
-                <p class="muted-copy">Allow Body to use its configured standalone reasoning provider when no connected reasoning host is available.</p>
-                <p id="bodyFallbackSource" class="muted-copy" aria-live="polite">Loading setting…</p>
-              </div>
-              <label class="admin-setting-toggle" for="bodyFallbackEnabled">
-                <input id="bodyFallbackEnabled" type="checkbox">
-                <span>Enabled</span>
-              </label>
-              <div class="edit-actions">
-                <button id="saveBodyFallbackSetting" class="primary-button" type="button">Save fallback setting</button>
-              </div>
-              <p class="muted-copy">Admin changes apply immediately to this running instance. After a restart, the Render deployment setting is used again.</p>
-            </div>
+              <p class="muted-copy">Recent request timings from this running process.</p>
+            </section>
           </article>
         </div>
       </section>
