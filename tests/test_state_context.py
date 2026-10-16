@@ -49,11 +49,12 @@ class CurrentStateLedgerTests(unittest.TestCase):
         expected = {
             "session_started": {"interlocutor", "presence", "active_topic", "active_task"},
             "location_changed": {"locality", "current_scene"},
-            "speaker_changed": {"interlocutor", "presence"},
-            "topic_changed": {"active_topic", "decisions_and_open_questions"},
+            "speaker_changed": {"interlocutor", "presence", "who_is_speaking"},
+            "topic_changed": {"active_topic", "current_context", "decisions_and_open_questions"},
             "task_changed": {"active_task", "pending_work"},
             "connection_changed": {"connection_status", "capabilities", "pending_work"},
-            "scene_changed": {"current_scene", "presence"},
+            "scene_changed": {"current_scene", "presence", "who_is_present"},
+            "begin_context": set(),
             "evidence_conflict": set(),
             "state_refreshed": set(),
         }
