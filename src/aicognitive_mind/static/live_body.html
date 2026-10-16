@@ -1166,14 +1166,8 @@
         return;
       }
 
-      const maxWidth = 960;
-      const scale = Math.min(1, maxWidth / liveScene.videoWidth);
-      canvas.width = Math.max(1, Math.round(liveScene.videoWidth * scale));
-      canvas.height = Math.max(1, Math.round(liveScene.videoHeight * scale));
-      canvas.getContext("2d").drawImage(liveScene, 0, 0, canvas.width, canvas.height);
-
-      // Compare a tiny grayscale sample locally. Only frames with meaningful
-      // movement are uploaded; unchanged frames never leave the browser.
+      // Compare a tiny grayscale sample directly from the video. Avoid
+      // full-resolution canvas work unless motion actually triggers a capture.
       const signature = frameSignature();
       if (lastFrameSignature) {
         let changedPixels = 0;
@@ -1191,6 +1185,11 @@
       // Start the cooldown before the request so a slow or failed endpoint
       // cannot cause repeated uploads while the same movement continues.
       lastMotionCaptureAt = performance.now();
+      const maxWidth = 960;
+      const scale = Math.min(1, maxWidth / liveScene.videoWidth);
+      canvas.width = Math.max(1, Math.round(liveScene.videoWidth * scale));
+      canvas.height = Math.max(1, Math.round(liveScene.videoHeight * scale));
+      canvas.getContext("2d").drawImage(liveScene, 0, 0, canvas.width, canvas.height);
       sensoryRequestInFlight = true;
       let evidenceAccepted = false;
       try {
@@ -1348,7 +1347,7 @@
       scratch.width = 24;
       scratch.height = 16;
       const context = scratch.getContext("2d", { willReadFrequently: true });
-      context.drawImage(canvas, 0, 0, scratch.width, scratch.height);
+      context.drawImage(liveScene, 0, 0, scratch.width, scratch.height);
       const rgba = context.getImageData(0, 0, scratch.width, scratch.height).data;
       const luminance = new Uint8Array(scratch.width * scratch.height);
       for (let pixel = 0; pixel < luminance.length; pixel++) {
