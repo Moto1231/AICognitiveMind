@@ -1040,3 +1040,9 @@ body {
 @media(max-width:560px){#overviewSection .overview-group,#taskProfileEditor > .task-profile-section{padding:14px;}}
 
 #skillsSection { grid-column:1/-1; } #skillsSection .overview-group {border:1px solid var(--line);border-radius:14px;padding:20px;margin:20px 0;} #skillsContent {font-family:ui-monospace,monospace;min-height:280px;} #skillsStatus{font-size:12px;color:var(--accent);}
+
+/* Consistent admin header hierarchy and compact Task Configuration icons */
+#taskProfileList .task-profile-card.axiom-icon-button > .axiom-button-icon {width:26px!important;height:26px!important;max-width:26px;max-height:26px;}
+#skillsSection .admin-form-icon {color:var(--accent);font-size:38px;}
+#skillsSection .admin-form-icon svg {width:65px;height:65px;}
+#skillsSection .panel-heading .eyebrow,#mcpSection .panel-heading .eyebrow,#memoriesSection .panel-heading .eyebrow,#journalsSection .panel-heading .eyebrow {color:var(--accent);}
