@@ -234,11 +234,12 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(face.consume())
         entries = await journal.read()
         self.assertEqual(entries[-1].kind.value, "sensory_evidence")
-        self.assertEqual(entries[-1].experience["status"], "admitted")
-        # Initialization is journaled before the passive observation; passive
-        # sensing must not create a conscious interaction entry.
-        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[-1].experience["status"], "interpreted")
+        # Admission and interpretation are journaled separately; passive sensing
+        # must not create a conscious interaction entry.
+        self.assertEqual(len(entries), 3)
         self.assertEqual(entries[0].kind.value, "initialization")
+        self.assertEqual(entries[1].experience["status"], "admitted")
         self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
 
     async def test_audio_percept_crosses_same_mind_body_bridge(self) -> None:
@@ -300,10 +301,12 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(face.consume())
         entries = await journal.read()
         self.assertEqual(entries[-1].kind.value, "sensory_evidence")
-        # Initialization is journaled before the passive observation; passive
-        # sensing must not create a conscious interaction entry.
-        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[-1].experience["status"], "interpreted")
+        # Admission and interpretation are journaled separately; passive sensing
+        # must not create a conscious interaction entry.
+        self.assertEqual(len(entries), 3)
         self.assertEqual(entries[0].kind.value, "initialization")
+        self.assertEqual(entries[1].experience["status"], "admitted")
         self.assertFalse(any(entry.kind.value == "interaction" for entry in entries))
 
     async def test_evidence_survives_even_when_interpretation_fails(self) -> None:
