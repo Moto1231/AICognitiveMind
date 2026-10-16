@@ -94,7 +94,9 @@ def backend(stores: dict) -> tuple[str, Any]:
         return "mongo", store._collection.database
     if hasattr(store, "_database"):
         return "surreal", store._database
-    return "memory", next(iter(stores.values()))
+    # A journal-only state repository and the full Mind service must coordinate
+    # through the same object when both write that journal.
+    return "memory", stores.get("journal", store)
 
 
 def storage_mind_id(stores: dict) -> str:

@@ -574,7 +574,9 @@ def build_chatgpt_mcp(
         ).sleep()
         return report.model_dump(mode="json")
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, openWorldHint=False,
+    ))
     async def begin_interaction(
         user_message: str,
         ctx: Context[AppState],
@@ -589,8 +591,8 @@ def build_chatgpt_mcp(
         if host_working_context is None:
             host_working_context = HostWorkingContext()
         state = ctx.request_context.lifespan_context
-        result = await state.mind_service.begin_interaction(user_message)
         context_json = host_working_context.model_dump(mode="json")
+        result = await state.mind_service.begin_interaction(user_message, context_json)
         interaction_id = str(result["idempotency_key"])
         hosts = HostRuntime(state.storage.mind, state.mind_service)
         pending_requests = await hosts.records.pending()
@@ -656,6 +658,33 @@ def build_chatgpt_mcp(
         response_payload = {**result, "interaction_trace_id": idempotency_key, "host_working_context": context_json}
         await _trace_event(state.storage, idempotency_key, "complete_response", response_payload)
         return response_payload
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    async def read_current_state(ctx: Context[AppState]) -> dict[str, Any]:
+        """Read Axiom's persistent current-state ledger with grounding and explicit unknowns."""
+        return await ctx.request_context.lifespan_context.mind_service.read_current_state()
+
+    @server.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, openWorldHint=False,
+    ))
+    async def update_current_state(
+        event: Literal[
+            "session_started", "location_changed", "speaker_changed", "topic_changed",
+            "task_changed", "connection_changed", "scene_changed", "evidence_conflict",
+            "state_refreshed",
+        ],
+        ctx: Context[AppState],
+        updates: dict[str, Any] | None = None,
+        source: str = "explicit_state_event",
+    ) -> dict[str, Any]:
+        """Apply a grounded state event and persist the resulting ledger revision.
+
+        updates accepts values={field: value or {value, source, status, note}} and
+        invalidate=[field, ...]. Only event-affected answers are invalidated.
+        """
+        return await ctx.request_context.lifespan_context.mind_service.update_current_state(
+            event=event, updates=updates, source=source,
+        )
 
 
     @server.tool(
