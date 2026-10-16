@@ -964,22 +964,30 @@ async def eyes_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "eyes.html")
 
 
-@app.post("/v1/body/eyes/observe", response_model=Percept)
+@app.post("/v1/body/eyes/observe", response_model=EmbodiedInteractionResult)
 async def receive_browser_observation(
     body: BrowserVisionObservationRequest,
     request: Request,
-) -> Percept:
-    eyes = cast(BrowserVisionIngress, request.app.state.browser_eyes)
+) -> EmbodiedInteractionResult:
+    eyes = cast(BodyQueue, request.app.state.browser_eyes)
     try:
-        return await eyes.accept(
+        percept = type(eyes.adapter)().accept(
             image_data_url=body.image_data_url,
             width=body.width,
             height=body.height,
             source=body.source,
         )
-    except ValueError as exc:
+        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        return await bridge.perceive(
+            percept,
+            express=False,
+            automatic=True,
+            presence_scope=_body_presence_scope(request),
+        )
+    except (ValueError, RuntimeError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE if isinstance(exc, RuntimeError)
+            else status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
 
@@ -1007,21 +1015,29 @@ async def ears_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "ears.html")
 
 
-@app.post("/v1/body/ears/observe", response_model=Percept)
+@app.post("/v1/body/ears/observe", response_model=EmbodiedInteractionResult)
 async def receive_browser_audio_observation(
     body: BrowserAudioObservationRequest,
     request: Request,
-) -> Percept:
-    ears = cast(BrowserAudioIngress, request.app.state.browser_ears)
+) -> EmbodiedInteractionResult:
+    ears = cast(BodyQueue, request.app.state.browser_ears)
     try:
-        return await ears.accept(
+        percept = type(ears.adapter)().accept(
             audio_data_url=body.audio_data_url,
             duration_ms=body.duration_ms,
             source=body.source,
         )
-    except ValueError as exc:
+        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        return await bridge.perceive(
+            percept,
+            express=False,
+            automatic=True,
+            presence_scope=_body_presence_scope(request),
+        )
+    except (ValueError, RuntimeError) as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE if isinstance(exc, RuntimeError)
+            else status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
 
