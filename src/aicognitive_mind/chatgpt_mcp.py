@@ -395,6 +395,51 @@ def build_chatgpt_mcp(
         )
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def peek_pending_body_message(ctx: Context[AppState]) -> dict[str, Any]:
+        """Read the next unclaimed Body human message without claiming or consuming it.
+
+        This is a diagnostic preview, not an interaction or a replacement for
+        next_body_interaction / complete_body_interaction. Sensory work is not
+        surfaced here. Only the authenticated Mind's own pending queue is read.
+        """
+        state = ctx.request_context.lifespan_context
+        requests = await HostRuntime(state.storage.mind, state.mind_service).records.pending()
+        now = time.time()
+        candidates = []
+        for request in requests:
+            claim_until = request.get("claim_until")
+            if request.get("claim") and (
+                claim_until is None or float(claim_until) > now
+            ):
+                continue
+            message = str(request.get("message", ""))
+            priority = request.get("priority")
+            is_sensory = (
+                isinstance(priority, int) and priority >= 10
+            ) or (
+                priority is None
+                and message.lstrip().lower().startswith("interpret this ")
+                and "percept" in message.lower()
+            )
+            if is_sensory or (isinstance(priority, int) and priority > 0):
+                continue
+            candidates.append(request)
+        candidates.sort(key=lambda request: (float(request.get("created", 0)), str(request.get("request_id", ""))))
+        if not candidates:
+            return {"status": "empty", "pending_human_messages": 0, "message": None}
+        first = candidates[0]
+        return {
+            "status": "pending",
+            "pending_human_messages": len(candidates),
+            "message": {
+                "request_id": first.get("request_id"),
+                "text": first.get("message", ""),
+                "created": first.get("created"),
+            },
+            "claimed": False,
+        }
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def next_body_interaction(
         lease_token: str,
         ctx: Context[AppState],
