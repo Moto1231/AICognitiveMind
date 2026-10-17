@@ -82,7 +82,17 @@ class CognitiveMcpService:
             provider="connected-host",
             model="host-selected",
         ))
-        return CONSCIOUS_WORKSPACE_SYSTEM_PROMPT + "\n\n" + task_layers
+        speaker_grounding = (
+            "\n\nSPEAKER GROUNDING RULE (mandatory): If current_state.fields."
+            "who_is_speaking is unknown, do not address the current human by a "
+            "name recalled from history or account metadata. Ask 'Who am I speaking "
+            "with?' before personalized attribution. A remembered name is not "
+            "evidence of the current speaker. Explicit self-identification may "
+            "be represented as self-reported; camera/voice inference remains "
+            "provisional until validated. Unknown physical presence must remain "
+            "unknown without actual presence evidence."
+        )
+        return CONSCIOUS_WORKSPACE_SYSTEM_PROMPT + speaker_grounding + "\n\n" + task_layers
 
     @atomic
     async def initialize(
@@ -173,6 +183,10 @@ class CognitiveMcpService:
             "mind": mind.model_dump(mode="json"),
             "recalled_context": recalled["context"],
             "current_state": current_state.as_context(),
+            "speaker_identification_required": (
+                source == "human"
+                and current_state.fields["who_is_speaking"].status == "unknown"
+            ),
             "conscious_workspace_contract": contract,
             "next_step": (
                 "Reason as this Mind using the recalled context. If unresolved evidence includes "
