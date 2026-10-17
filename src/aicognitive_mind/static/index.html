@@ -165,7 +165,7 @@
 
         <div class="admin-grid">
           <article id="skillsSection" class="panel hidden">
-            <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" id="skillsRefresh">Refresh</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
             <section class="overview-group">
               <h4>Skill Drafts</h4>
               <label class="host-behavior-field">Existing drafts<select id="skillsList"><option value="">New skill</option></select></label>
@@ -183,6 +183,7 @@
             <div class="panel-heading">
               <div><p class="eyebrow">BEHAVIOR LIBRARY</p><h3>Behaviors</h3></div>
               <button id="addHostBehavior" class="secondary-button" type="button">Add Behavior</button>
+              <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             
             <div id="hostBehaviorList" class="record-list"></div>
@@ -195,7 +196,7 @@
             <div id="taskProfileOverview">
               <div class="panel-heading">
                 <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
-                <button id="refreshTaskProfiles" class="secondary-button" type="button">Refresh</button>
+                <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
               </div>
               
             </div>
@@ -250,7 +251,7 @@
           <article id="mcpSection" class="panel admin-behavior-panel hidden">
             <div class="panel-heading">
               <div><p class="eyebrow">EXTERNAL INTEGRATION</p><h3>Endpoints, Servers &amp; Tools</h3></div>
-              <button id="refreshMcpServers" class="secondary-button" type="button">Refresh</button>
+              <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             <section id="taskProfileEndpointSection" class="task-profile-section integration-editor" aria-labelledby="endpointsHeading">
               <h4 id="endpointsHeading">Endpoints</h4>
@@ -356,7 +357,7 @@
                 
                 <p class="eyebrow">MEMORY</p><h3>Durable Memory</h3>
               </div>
-              <button id="adminMemoryRefreshButton" class="secondary-button" type="button">Refresh</button>
+              <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             <div class="filter-area">
             <div class="memory-search">
@@ -424,7 +425,7 @@
                 <p class="eyebrow">MEMORY</p>
                 <h3>History</h3>
               </div>
-              <button id="journalRefreshButton" class="secondary-button" type="button">Refresh</button>
+              <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             <div class="filter-area">
             <div class="journal-search">
@@ -483,7 +484,7 @@
           <article id="voiceSection" class="panel hidden">
             <div class="panel-heading">
               <div><p class="eyebrow">VOICE OUTPUT</p><h3>Speech Settings</h3></div>
-              <button id="refreshVoiceSettings" class="secondary-button" type="button">Refresh</button>
+              <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             
             <div class="task-model-fields">
@@ -506,7 +507,7 @@
           <article id="devicesSection" class="panel hidden">
             <div class="panel-heading">
               <div><p class="eyebrow">CURRENT ENVIRONMENT</p><h3>Device Inventory</h3></div>
-              <button id="refreshDevicesButton" class="secondary-button" type="button">Query Devices</button>
+              <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             
             <div id="devicePermissionStatus" class="search-summary" aria-live="polite">Device inventory has not been queried.</div>
@@ -528,7 +529,7 @@
               <div id="cognitiveStateSummary" aria-live="polite">Refresh to load cognitive state.</div>
             </section>
             <section class="overview-group">
-              <div class="panel-heading"><div><h4>Current State Context</h4></div><button id="refreshDiagnostics" class="secondary-button" type="button">Refresh</button></div>
+              <div class="panel-heading"><div><h4>Current State Context</h4></div></div>
               <pre id="currentStateDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load state.</pre>
               <p class="muted-copy">Read-only persistent state for the current Mind.</p>
             </section>
@@ -667,6 +668,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261017-endpoint-editor"></script>
+  <script src="/static/portal.js?v=20261017-admin-back"></script>
 </body>
 </html>

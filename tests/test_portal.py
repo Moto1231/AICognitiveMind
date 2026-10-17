@@ -64,7 +64,6 @@ class PortalTests(unittest.TestCase):
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
         profile_ids = (
-            "refreshTaskProfiles",
             "taskProfileList",
             "taskProfileEditor",
             "taskProfileTitle",
