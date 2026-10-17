@@ -636,7 +636,12 @@ async def record_request_performance(request: Request, call_next: Any) -> Respon
                 "route": safe_route,
                 "method": request.method,
                 "status": status_code,
-                "duration_ms": round((time_module.perf_counter()-started)*1000,2),
+                "duration_ms": round((time_module.perf_counter()-started)*1000, 2),
+                "source": "Body" if route.startswith("/v1/body/") else "API",
+                "destination": safe_route,
+                "operation": request.method + " " + safe_route,
+                "trace_id": secrets.token_hex(8),
+                "outcome": "Error" if status_code >= 400 else "Success",
             })
 
 
