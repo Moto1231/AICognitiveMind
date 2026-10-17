@@ -1130,7 +1130,7 @@ async function loadVoiceSettings() {
     el.voiceVolume.value = String(settings.volume ?? 1);
     el.voiceName.value = settings.voiceName || "";
     updateVoiceSliderReadouts();
-    el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
+    if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
   } catch (error) {
     toast("Could not load voice settings: " + error.message, true);
   }
@@ -1149,7 +1149,7 @@ async function saveVoiceSettings() {
       }),
     }, true);
     state.voiceSettingsRevision = Number(settings.revision || 0);
-    el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
+    if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
     toast("Voice settings saved");
   } catch (error) {
     toast("Could not save voice settings: " + error.message, true);
