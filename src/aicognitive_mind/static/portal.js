@@ -69,7 +69,6 @@ const el = {
   loadMoreMemories: document.getElementById("loadMoreMemories"),
   refreshButton: document.getElementById("refreshButton"),
   adminRefreshButton: document.getElementById("adminRefreshButton"),
-  adminMemoryRefreshButton: document.getElementById("adminMemoryRefreshButton"),
   protocolValue: document.getElementById("protocolValue"),
   reasoningOwner: document.getElementById("reasoningOwner"),
   identityOwner: document.getElementById("identityOwner"),
@@ -93,7 +92,6 @@ const el = {
   adminMemoryResultCount: document.getElementById("adminMemoryResultCount"),
   adminMemoryPageSize: document.getElementById("adminMemoryPageSize"),
   adminLoadMoreMemories: document.getElementById("adminLoadMoreMemories"),
-  journalRefreshButton: document.getElementById("journalRefreshButton"),
   journalSearch: document.getElementById("journalSearch"),
   journalKindFilter: document.getElementById("journalKindFilter"),
   journalFrom: document.getElementById("journalFrom"),
@@ -115,7 +113,6 @@ const el = {
   taskProviderSelect: document.getElementById("taskProviderSelect"),
   saveProviderEndpoints: document.getElementById("saveProviderEndpoints"),
   taskProfileOverview: document.getElementById("taskProfileOverview"),
-  refreshMcpServers: document.getElementById("refreshMcpServers"),
   mcpServerSelect: document.getElementById("mcpServerSelect"),
   mcpServerName: document.getElementById("mcpServerName"),
   mcpServerUrl: document.getElementById("mcpServerUrl"),
@@ -133,7 +130,6 @@ const el = {
   mcpRunTool: document.getElementById("mcpRunTool"),
   mcpToolOutput: document.getElementById("mcpToolOutput"),
   saveMcpServers: document.getElementById("saveMcpServers"),
-  refreshDevicesButton: document.getElementById("refreshDevicesButton"),
   devicePermissionStatus: document.getElementById("devicePermissionStatus"),
   deviceSelectionSummary: document.getElementById("deviceSelectionSummary"),
   deviceInventoryList: document.getElementById("deviceInventoryList"),
@@ -164,7 +160,6 @@ const el = {
   hostBehaviorList: document.getElementById("hostBehaviorList"),
   addHostBehavior: document.getElementById("addHostBehavior"),
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
-  refreshTaskProfiles: document.getElementById("refreshTaskProfiles"),
   taskProfileList: document.getElementById("taskProfileList"),
   taskProfileEditor: document.getElementById("taskProfileEditor"),
   taskProfileTitle: document.getElementById("taskProfileTitle"),
@@ -207,7 +202,6 @@ const el = {
   voiceName: document.getElementById("voiceName"),
   voiceSettingsRevision: document.getElementById("voiceSettingsRevision"),
   saveVoiceSettings: document.getElementById("saveVoiceSettings"),
-  refreshVoiceSettings: document.getElementById("refreshVoiceSettings"),
   taskProfileFoundation: document.getElementById("taskProfileFoundation"),
   taskProfileBehaviorSelection: document.getElementById("taskProfileBehaviorSelection"),
   taskProfileBehaviorName: document.getElementById("taskProfileBehaviorName"),
@@ -2065,10 +2059,8 @@ el.mindTab.addEventListener("click", () => setMode("mind"));
 el.adminTab.addEventListener("click", enterAdminMode);
 el.logoutButton.addEventListener("click", logout);
 if (el.refreshButton) el.refreshButton.addEventListener("click", refresh);
-el.adminMemoryRefreshButton.addEventListener("click", () => refreshMemory(filters.admin, true));
-el.adminRefreshButton.addEventListener("click", refresh);
+el.adminRefreshButton.addEventListener("click", refreshAdmin);
 if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.addEventListener("click", saveBodyFallbackSettings);
-el.journalRefreshButton.addEventListener("click", () => refreshJournal(true));
 el.loadMoreJournals.addEventListener("click", () => refreshJournal(false));
 el.journalPageSize.addEventListener("change", () => {
   state.journalPageSize = Number(el.journalPageSize.value) || 25;
@@ -2187,7 +2179,6 @@ async function refreshDiagnostics() {
     performance.textContent = "Cannot load timings: " + error.message;
   }
 }
-document.getElementById("refreshDiagnostics")?.addEventListener("click", refreshDiagnostics);
 document.getElementById("apiActivityFilter")?.addEventListener("change", refreshDiagnostics);
 
 const adminSectionIds = {
@@ -2224,26 +2215,15 @@ document.getElementById("portalReturnButton")?.addEventListener("click", event =
 });
 document.getElementById("continuityRefreshButton")?.addEventListener("click", refresh);
 
-async function refreshTaskProfilesFromButton() {
-  const button = el.refreshTaskProfiles;
-  if (!button || button.disabled) return;
-  const originalLabel = button.textContent;
-  button.disabled = true;
-  button.textContent = "Refreshing…";
-  try {
-    await Promise.all([
-      refreshTaskModelAssignments(),
-      refreshTaskBehaviors(),
-      refreshProviderEndpoints(),
-    ]);
-    renderTaskProfiles();
-    toast("Task profiles refreshed");
-  } catch (error) {
-    toast(`Could not refresh task profiles: ${error.message}`, true);
-  } finally {
-    button.disabled = false;
-    button.textContent = originalLabel;
+async function refreshAdmin() {
+  const updates = [refresh(), refreshDiagnostics()];
+  if (document.getElementById("skillsSection")?.classList.contains("hidden") === false) {
+    updates.push(refreshSkillDrafts());
   }
+  if (document.getElementById("devicesSection")?.classList.contains("hidden") === false) {
+    updates.push(refreshDeviceInventory());
+  }
+  await Promise.all(updates);
 }
 
 async function refreshEvidence() {
@@ -2626,8 +2606,9 @@ function showAdminSection(sectionName) {
 document.querySelectorAll("[data-admin-section]").forEach(button => {
   button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
 });
-if (el.refreshTaskProfiles) el.refreshTaskProfiles.addEventListener("click", refreshTaskProfilesFromButton);
-if (el.refreshMcpServers) el.refreshMcpServers.addEventListener("click", refreshIntegrations);
+document.querySelectorAll("[data-admin-back]").forEach(button => {
+  button.addEventListener("click", () => showAdminSection("overview"));
+});
 if (el.mcpAddServer) el.mcpAddServer.addEventListener("click", addMcpServer);
 if (el.mcpServerSelect) el.mcpServerSelect.addEventListener("change", () => {
   const selectedId = el.mcpServerSelect.value;
@@ -2644,7 +2625,6 @@ if (el.mcpDiscoverTools) el.mcpDiscoverTools.addEventListener("click", discoverM
 if (el.mcpDeleteServer) el.mcpDeleteServer.addEventListener("click", removeMcpServer);
 if (el.saveMcpServers) el.saveMcpServers.addEventListener("click", saveMcpServers);
 if (el.mcpRunTool) el.mcpRunTool.addEventListener("click", runMcpTool);
-if (el.refreshDevicesButton) el.refreshDevicesButton.addEventListener("click", refreshDeviceInventory);
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   if (state.endpointDraft) return;
   const value = el.taskProfileEndpointSelect.value;
@@ -2701,7 +2681,6 @@ if (el.taskProfileVoiceReferenceId) el.taskProfileVoiceReferenceId.addEventListe
   if (assignment) assignment.voice_reference_id = el.taskProfileVoiceReferenceId.value;
   updateTaskSaveState();
 });
-if (el.refreshVoiceSettings) el.refreshVoiceSettings.addEventListener("click", loadVoiceSettings);
 if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);
 [el.voiceRate, el.voicePitch, el.voiceVolume].forEach((slider) => {
   if (slider) slider.addEventListener("input", updateVoiceSliderReadouts);
@@ -2828,7 +2807,6 @@ async function refreshSkillDrafts() {
     document.getElementById("skillsStatus").textContent = "Drafts loaded from GitHub.";
   } catch (error) { document.getElementById("skillsStatus").textContent = error.message; }
 }
-document.getElementById("skillsRefresh")?.addEventListener("click", refreshSkillDrafts);
 document.getElementById("skillsList")?.addEventListener("change", async event => {
   const slug = event.target.value;
   skillDraftSha = null;
