@@ -210,6 +210,7 @@ const el = {
   taskProfileEnabled: document.getElementById("taskProfileEnabled"),
   taskProfileRevision: document.getElementById("taskProfileRevision"),
   saveTaskProfile: document.getElementById("saveTaskProfile"),
+  saveTaskEndpoints: document.getElementById("saveTaskEndpoints"),
   toast: document.getElementById("toast"),
 };
 
@@ -609,8 +610,10 @@ function updateTaskSaveState() {
   const invalidPrimary = assignment?.provider && assignment.provider !== "connected-host"
     && !endpoint?.model && !assignment.model;
   const invalidFallback = assignment?.fallbacks?.some(item => !item.provider || !item.model);
-  el.saveTaskProfile.disabled = state.taskProfileSaving || !assignment || invalidPrimary || invalidFallback
+  const disabled = state.taskProfileSaving || !assignment || invalidPrimary || invalidFallback
     || taskProfileConfiguration() === state.taskProfileSnapshot;
+  el.saveTaskProfile.disabled = disabled;
+  if (el.saveTaskEndpoints) el.saveTaskEndpoints.disabled = disabled;
 }
 
 function renderTaskBehaviorSelection() {
@@ -2606,6 +2609,7 @@ el.taskProviderSelect.addEventListener("change", () => {
 });
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
+if (el.saveTaskEndpoints) el.saveTaskEndpoints.addEventListener("click", saveTaskProfile);
 if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", () => {
   const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
   if (!assignment) return;
