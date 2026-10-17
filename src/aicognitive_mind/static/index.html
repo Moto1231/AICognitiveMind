@@ -273,6 +273,9 @@
                   <input id="taskProfileApiKey" type="password" autocomplete="off" maxlength="4096" placeholder="Provider API key" disabled>
                 </label>
               </div>
+              <div class="editor-actions">
+                <button id="saveProviderEndpoints" class="primary-button" type="button" disabled>Save Endpoint</button>
+              </div>
               <section class="integration-subsection model-catalog" aria-labelledby="endpointModelsHeading">
                 <div class="panel-heading"><h5 id="endpointModelsHeading">Models</h5><button id="taskProfileDiscover" class="secondary-button" type="button" disabled>Discover Models</button></div>
                 <div class="task-model-fields">
@@ -284,12 +287,12 @@
                   </label>
                 </div>
                 <p id="endpointModelStatus" class="muted-copy" role="status">Select an endpoint, then Edit to configure its model.</p>
+                <div class="editor-actions"><button id="saveEndpointModel" class="primary-button" type="button" disabled>Save Model</button></div>
               </section>
               <div class="editor-actions">
                 <button id="endpointEditButton" class="secondary-button" type="button" disabled>Edit</button>
                 <button id="endpointRemoveButton" class="secondary-button" type="button" disabled>Remove</button>
                 <button id="endpointCancelButton" class="secondary-button" type="button" disabled>Cancel</button>
-                <button id="saveProviderEndpoints" class="primary-button" type="button" disabled>Save</button>
               </div>
             </section>
             <section class="task-profile-section integration-editor" aria-labelledby="mcpServersHeading">
