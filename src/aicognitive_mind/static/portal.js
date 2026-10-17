@@ -2084,15 +2084,35 @@ async function refreshDiagnostics() {
       }
     }
     const samples = result.performance?.samples || [];
-    performance.textContent = samples.length ? samples.map(x =>
-      formatBrowserDateTime(x.time) + " | " + x.duration_ms + " ms | " + x.status + " | " + x.method + " " + x.route
-    ).join("\n") : "No samples in this running process.";
+    const summary = document.getElementById("apiActivitySummary");
+    const list = document.getElementById("apiActivityList");
+    const filter = document.getElementById("apiActivityFilter");
+    const errors = samples.filter(x => Number(x.status) >= 400);
+    const average = samples.length ? (samples.reduce((sum, x) => sum + Number(x.duration_ms || 0), 0) / samples.length).toFixed(1) : "0";
+    if (summary) summary.textContent = samples.length + " completed | " + errors.length + " errors | " + average + " ms avg | Pending/running: not measured";
+    const show = filter?.value || "all";
+    if (list) {
+      list.replaceChildren();
+      for (const x of samples.filter(x => show === "all" || (show === "errors" ? Number(x.status) >= 400 : Number(x.status) < 400))) {
+        const detail = document.createElement("details");
+        const header = document.createElement("summary");
+        header.textContent = formatBrowserDateTime(x.time) + " | " + (x.status >= 400 ? "Error " : "Success ") + x.status + " | " + x.duration_ms + " ms | " + (x.operation || x.method + " " + x.route);
+        const extra = document.createElement("pre");
+        extra.className = "mcp-tool-output";
+        extra.textContent = JSON.stringify({ source: x.source || "API", destination: x.destination || x.route, trace_id: x.trace_id || "Unavailable", operation: x.operation || x.method + " " + x.route, http_status: x.status, duration_ms: x.duration_ms }, null, 2);
+        detail.append(header, extra);
+        list.append(detail);
+      }
+      if (!list.childElementCount) list.textContent = "No matching requests.";
+    }
+    performance.textContent = "";
   } catch (error) {
     context.textContent = "Cannot load state: " + error.message;
     performance.textContent = "Cannot load timings: " + error.message;
   }
 }
 document.getElementById("refreshDiagnostics")?.addEventListener("click", refreshDiagnostics);
+document.getElementById("apiActivityFilter")?.addEventListener("change", refreshDiagnostics);
 
 const adminSectionIds = {
   mcp: "mcpSection",
