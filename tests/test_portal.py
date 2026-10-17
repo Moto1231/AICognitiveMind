@@ -1,4 +1,5 @@
 import unittest
+from html.parser import HTMLParser
 from types import SimpleNamespace
 
 from starlette.requests import Request
@@ -22,6 +23,31 @@ from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
 class PortalTests(unittest.TestCase):
+    def test_endpoint_api_key_is_an_accessible_masked_text_input(self) -> None:
+        class Controls(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__()
+                self.by_id = {}
+
+            def handle_starttag(self, tag, attrs) -> None:
+                attributes = dict(attrs)
+                if attributes.get("id"):
+                    self.by_id[attributes["id"]] = attributes
+
+        controls = Controls()
+        controls.feed((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        field = controls.by_id["taskProfileApiKey"]
+        reveal = controls.by_id["endpointApiKeyVisibility"]
+        self.assertEqual(field["type"], "text")
+        self.assertEqual(field["autocomplete"], "off")
+        self.assertEqual(field["autocapitalize"], "off")
+        self.assertEqual(field["spellcheck"], "false")
+        self.assertIn("is-masked", field["class"].split())
+        self.assertIn(field["aria-describedby"], controls.by_id)
+        self.assertEqual(reveal["type"], "button")
+        self.assertEqual(reveal["aria-controls"], "taskProfileApiKey")
+        self.assertNotIn("aria-pressed", reveal)
+
     def test_admin_save_buttons_use_consistent_label_and_mcp_add_starts_new_record(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
@@ -99,7 +125,7 @@ class PortalTests(unittest.TestCase):
         markup = index.read_text(encoding="utf-8")
         stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
         self.assertIn("Administration", markup)
-        self.assertIn("portal.css?v=20261016-skills-icon", markup)
+        self.assertRegex(markup, r'/static/portal\.css\?v=[\w-]+')
         self.assertIn("admin-section-nav", stylesheet)
         self.assertIn("linear-gradient(135deg, rgba(15,27,46,.96)", stylesheet)
         self.assertNotIn('content: "Inspect exact record', stylesheet)

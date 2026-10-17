@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261017-foundation-sizing">
+  <link rel="stylesheet" href="/static/portal.css?v=20261017-endpoint-editor">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -260,6 +260,10 @@
                 </label>
                 <button id="taskProfileAddEndpoint" class="secondary-button" type="button">Add</button>
               </div>
+              <label id="endpointTemplateField" class="host-behavior-field hidden">Start from
+                <select id="endpointTemplateSelect"><option value="">Blank endpoint</option></select>
+                <small>Copy an existing endpoint, then choose a name and model for the new endpoint.</small>
+              </label>
               <div class="task-model-fields">
                 <label class="host-behavior-field">Endpoint Name
                   <input id="taskProfileEndpointName" type="text" maxlength="120" placeholder="OpenAI - GPT-6" disabled>
@@ -270,9 +274,14 @@
                 <label class="host-behavior-field">Base URL
                   <input id="taskProfileBaseUrl" type="url" maxlength="1000" placeholder="https://provider.example/v1" disabled>
                 </label>
-                <label class="host-behavior-field">API Key
-                  <input id="taskProfileApiKey" type="password" autocomplete="off" maxlength="4096" placeholder="Provider API key" disabled>
-                </label>
+                <div class="host-behavior-field">
+                  <label for="taskProfileApiKey">API Key</label>
+                  <div class="api-key-entry">
+                    <input id="taskProfileApiKey" class="api-key-input is-masked" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="4096" placeholder="Provider API key" aria-describedby="endpointApiKeyHelp" disabled>
+                    <button id="endpointApiKeyVisibility" class="secondary-button" type="button" aria-controls="taskProfileApiKey" disabled>Show API key</button>
+                  </div>
+                  <small id="endpointApiKeyHelp">Visually hidden. Use Show API key to read the value.</small>
+                </div>
               </div>
               <section class="integration-subsection model-catalog" aria-labelledby="endpointModelsHeading">
                 <div class="panel-heading"><h5 id="endpointModelsHeading">Models</h5><button id="taskProfileDiscover" class="secondary-button" type="button" disabled>Discover Models</button></div>
@@ -658,6 +667,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261017-task-endpoint-save"></script>
+  <script src="/static/portal.js?v=20261017-endpoint-editor"></script>
 </body>
 </html>

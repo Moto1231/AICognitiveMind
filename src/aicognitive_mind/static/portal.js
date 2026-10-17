@@ -30,6 +30,7 @@ const state = {
   activeEndpointOriginalName: "",
   endpointDraft: null,
   endpointEditBaseline: "",
+  endpointDiscovering: false,
   mcpServerDraft: null,
   mcpEditBaseline: "",
   integrationSaving: false,
@@ -171,6 +172,10 @@ const el = {
   taskProfileEndpointSection: document.getElementById("taskProfileEndpointSection"),
   taskProfileEndpointSelect: document.getElementById("taskProfileEndpointSelect"),
   taskProfileAddEndpoint: document.getElementById("taskProfileAddEndpoint"),
+  endpointTemplateField: document.getElementById("endpointTemplateField"),
+  endpointTemplateSelect: document.getElementById("endpointTemplateSelect"),
+  endpointApiKeyVisibility: document.getElementById("endpointApiKeyVisibility"),
+  endpointApiKeyHelp: document.getElementById("endpointApiKeyHelp"),
   taskProfileEndpointName: document.getElementById("taskProfileEndpointName"),
   taskProfileProviderName: document.getElementById("taskProfileProviderName"),
   endpointModelSelect: document.getElementById("endpointModelSelect"),
@@ -518,6 +523,12 @@ function activeProfileRecords() {
 }
 
 function renderTaskProfileEndpointOptions() {
+  const templateId = el.endpointTemplateSelect.value;
+  el.endpointTemplateSelect.replaceChildren(new Option("Blank endpoint", ""));
+  for (const endpoint of state.providerEndpoints) {
+    el.endpointTemplateSelect.append(new Option(endpoint.name || endpoint.base_url, endpoint.id));
+  }
+  el.endpointTemplateSelect.value = templateId;
   const select = el.taskProfileEndpointSelect;
   select.replaceChildren();
   const blank = document.createElement("option");
@@ -704,10 +715,27 @@ function loadEndpointIntoForm() {
   el.taskProfileProviderName.value = endpoint?.provider_name || "";
   el.taskProfileBaseUrl.value = endpoint?.base_url || "";
   el.taskProfileApiKey.value = endpoint?.api_key || "";
+  resetEndpointApiKeyVisibility();
   el.endpointModelId.value = endpoint?.model || "";
   fillSelect(el.endpointModelSelect, endpoint?.models || [], endpoint?.model || "", "Choose a discovered model", endpoint?.model_capabilities || {});
   renderEndpointModelStatus(endpoint);
   updateEndpointEditorState();
+}
+
+function resetEndpointApiKeyVisibility() {
+  el.taskProfileApiKey.classList.add("is-masked");
+  el.endpointApiKeyVisibility.textContent = "Show API key";
+  el.endpointApiKeyHelp.textContent = "Visually hidden. Use Show API key to read the value.";
+}
+
+function toggleEndpointApiKeyVisibility() {
+  if (el.taskProfileApiKey.disabled) return;
+  const masked = el.endpointApiKeyVisibility.textContent === "Show API key";
+  el.taskProfileApiKey.classList.toggle("is-masked", !masked);
+  el.endpointApiKeyVisibility.textContent = masked ? "Hide API key" : "Show API key";
+  el.endpointApiKeyHelp.textContent = masked
+    ? "API key is visible. Use Hide API key to conceal the value."
+    : "Visually hidden. Use Show API key to read the value.";
 }
 
 function renderEndpointModelStatus(endpoint) {
@@ -754,16 +782,21 @@ function syncEndpointDraft() {
 function updateEndpointEditorState() {
   const editing = !!state.endpointDraft;
   const saved = selectedEndpoint();
-  const busy = state.integrationSaving;
+  const busy = Boolean(state.integrationSaving || state.endpointDiscovering);
+  const endpoint = state.endpointDraft || saved;
+  const adding = editing && !state.providerEndpoints.some(item => item.id === state.endpointDraft.id);
   [el.taskProfileEndpointName, el.taskProfileProviderName, el.taskProfileBaseUrl, el.taskProfileApiKey,
     el.endpointModelSelect, el.endpointModelId].forEach(input => { input.disabled = !editing || busy; });
   el.taskProfileEndpointSelect.disabled = editing || busy;
   el.taskProfileAddEndpoint.disabled = editing || busy;
+  el.endpointTemplateField.classList.toggle("hidden", !adding);
+  el.endpointTemplateSelect.disabled = !adding || busy;
+  el.endpointApiKeyVisibility.disabled = !editing || busy;
   el.endpointEditButton.disabled = !saved || editing || busy;
   el.endpointRemoveButton.disabled = !saved || editing || busy;
   el.endpointCancelButton.disabled = !editing || busy;
-  el.taskProfileDiscover.disabled = !editing || busy || !state.endpointDraft?.name
-    || !/^https?:\/\/\S+$/i.test(state.endpointDraft?.base_url || "");
+  el.taskProfileDiscover.disabled = busy || !/^https?:\/\/\S+$/i.test(endpoint?.base_url || "");
+  el.taskProfileDiscover.textContent = state.endpointDiscovering ? "Discovering…" : "Discover Models";
   el.saveProviderEndpoints.disabled = !editing || busy || !endpointFormIsValid(state.endpointDraft)
     || JSON.stringify(state.endpointDraft) === state.endpointEditBaseline;
 }
@@ -972,17 +1005,21 @@ async function saveTaskProfile() {
 }
 
 async function discoverTaskProfileModels() {
+  if (state.integrationSaving || state.endpointDiscovering) return;
+  if (!state.endpointDraft && selectedEndpoint()) editEndpoint();
   syncEndpointDraft();
   const endpoint = state.endpointDraft;
-  if (!endpoint) {
-    toast("Choose or add an endpoint first", true);
+  if (!endpoint || !/^https?:\/\/\S+$/i.test(endpoint.base_url || "")) {
+    toast("Enter a valid endpoint Base URL before discovering models", true);
     return;
   }
-  el.taskProfileDiscover.disabled = true;
+  state.endpointDiscovering = true;
+  updateEndpointEditorState();
+  updateMcpEditorState();
   try {
     const payload = await api("/v1/admin/provider-endpoints/discover", {
       method: "POST",
-      body: JSON.stringify(endpoint),
+      body: JSON.stringify({ ...endpoint, name: endpoint.name || "Model discovery" }),
     }, true);
     endpoint.models = payload.models || [];
     endpoint.model_capabilities = payload.model_capabilities || {};
@@ -994,7 +1031,11 @@ async function discoverTaskProfileModels() {
   } catch (error) {
     toast(error.message, true);
   }
-  finally { updateEndpointEditorState(); }
+  finally {
+    state.endpointDiscovering = false;
+    updateEndpointEditorState();
+    updateMcpEditorState();
+  }
 }
 
 const COMMON_ENDPOINT_PRESETS = [
@@ -1033,6 +1074,7 @@ function addTaskProfileEndpointFromPreset(presetId) {
   state.endpointEditBaseline = "";
   state.activeEndpointId = endpoint.id;
   state.activeEndpointOriginalName = "";
+  el.endpointTemplateSelect.value = "";
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
 
@@ -1056,6 +1098,24 @@ function addTaskProfileEndpoint() {
   state.endpointEditBaseline = "";
   state.activeEndpointId = endpoint.id;
   state.activeEndpointOriginalName = "";
+  el.endpointTemplateSelect.value = "";
+  renderTaskProfileEndpointOptions();
+  loadEndpointIntoForm();
+  el.taskProfileEndpointName.focus();
+}
+
+function applyEndpointTemplate() {
+  if (!state.endpointDraft || state.integrationSaving || state.endpointDiscovering
+    || state.providerEndpoints.some(item => item.id === state.endpointDraft.id)) return;
+  const source = state.providerEndpoints.find(item => item.id === el.endpointTemplateSelect.value);
+  const id = state.endpointDraft.id;
+  state.endpointDraft = source ? {
+    ...JSON.parse(JSON.stringify(source)), id,
+    name: source.name.slice(0, 115) + " copy", model: "",
+  } : {
+    id, name: "", provider_name: "", base_url: "", api_key: "", model: "", models: [],
+    model_capabilities: {}, model_capability_sources: {},
+  };
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   el.taskProfileEndpointName.focus();
@@ -2285,7 +2345,7 @@ function syncMcpServerForm() {
 function updateMcpEditorState() {
   const editing = !!state.mcpServerDraft;
   const saved = state.mcpServers.some(server => server.id === state.activeMcpServerId);
-  const busy = state.integrationSaving;
+  const busy = Boolean(state.integrationSaving || state.endpointDiscovering);
   [el.mcpServerName, el.mcpServerUrl, el.mcpServerToken, el.mcpServerEnabled].forEach(input => {
     input.disabled = !editing || busy;
   });
@@ -2594,6 +2654,8 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
   loadEndpointIntoForm();
 });
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
+if (el.endpointTemplateSelect) el.endpointTemplateSelect.addEventListener("change", applyEndpointTemplate);
+if (el.endpointApiKeyVisibility) el.endpointApiKeyVisibility.addEventListener("click", toggleEndpointApiKeyVisibility);
 if (el.endpointEditButton) el.endpointEditButton.addEventListener("click", editEndpoint);
 if (el.endpointRemoveButton) el.endpointRemoveButton.addEventListener("click", removeEndpoint);
 if (el.endpointCancelButton) el.endpointCancelButton.addEventListener("click", cancelEndpointEdit);
