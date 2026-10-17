@@ -1064,3 +1064,13 @@ body {
 .admin-section-nav .admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:#8cdfe9!important;stroke-width:.8!important;width:42px;height:42px;}
 .admin-section-nav .admin-section-button[data-admin-section="skills"] > span:last-child {display:block;text-align:center;}
 #taskProfileList .task-profile-card.axiom-icon-button > strong,#taskProfileList .task-profile-card > strong {color:var(--accent)!important;}
+
+/* Keep the read-only task foundation comfortably readable at every viewport. */
+#taskProfileEditor #taskProfileFoundation {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 210px;
+  resize: vertical;
+}
