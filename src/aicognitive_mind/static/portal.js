@@ -610,7 +610,9 @@ function updateTaskSaveState() {
   const invalidPrimary = assignment?.provider && assignment.provider !== "connected-host"
     && !endpoint?.model && !assignment.model;
   const invalidFallback = assignment?.fallbacks?.some(item => !item.provider || !item.model);
-  const disabled = state.taskProfileSaving || !assignment || invalidPrimary || invalidFallback
+  // Save must become actionable for every changed selection. Validate on click,
+  // rather than silently disabling the control when an endpoint lacks a model.
+  const disabled = state.taskProfileSaving || !assignment
     || taskProfileConfiguration() === state.taskProfileSnapshot;
   el.saveTaskProfile.disabled = disabled;
   if (el.saveTaskEndpoints) el.saveTaskEndpoints.disabled = disabled;
@@ -942,6 +944,17 @@ async function removeEndpoint() {
 async function saveTaskProfile() {
   const task = state.activeTaskProfile;
   if (!task || el.saveTaskProfile.disabled) return;
+  const selectedAssignment = state.taskModelAssignments.find(item => item.task === task);
+  const selectedEndpoint = state.providerEndpoints.find(item =>
+    item.id === selectedAssignment?.provider || item.name === selectedAssignment?.provider);
+  if (selectedAssignment?.provider !== "connected-host" && !selectedEndpoint?.model && !selectedAssignment?.model) {
+    toast("Select an endpoint with a saved model before saving this task.", true);
+    return;
+  }
+  if (selectedAssignment?.fallbacks?.some(item => !item.provider || !item.model)) {
+    toast("Complete or remove unfinished fallback endpoints before saving.", true);
+    return;
+  }
   state.taskProfileSaving = true;
   el.saveTaskProfile.disabled = true;
   try {
