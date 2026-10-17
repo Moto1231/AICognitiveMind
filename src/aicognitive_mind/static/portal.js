@@ -113,6 +113,7 @@ const el = {
   journalEvidenceList: document.getElementById("journalEvidenceList"),
   taskProviderSelect: document.getElementById("taskProviderSelect"),
   saveProviderEndpoints: document.getElementById("saveProviderEndpoints"),
+  saveEndpointModel: document.getElementById("saveEndpointModel"),
   taskProfileOverview: document.getElementById("taskProfileOverview"),
   refreshMcpServers: document.getElementById("refreshMcpServers"),
   mcpServerSelect: document.getElementById("mcpServerSelect"),
@@ -730,7 +731,7 @@ function renderEndpointModelStatus(endpoint) {
 }
 
 function endpointFormIsValid(endpoint) {
-  return !!(endpoint?.name?.trim() && endpoint?.provider_name?.trim() && endpoint?.model?.trim()
+  return !!(endpoint?.name?.trim() && endpoint?.provider_name?.trim()
     && /^https?:\/\/\S+$/i.test(endpoint?.base_url || ""));
 }
 
@@ -759,8 +760,10 @@ function updateEndpointEditorState() {
   el.endpointCancelButton.disabled = !editing || busy;
   el.taskProfileDiscover.disabled = !editing || busy || !state.endpointDraft?.name
     || !/^https?:\/\/\S+$/i.test(state.endpointDraft?.base_url || "");
-  el.saveProviderEndpoints.disabled = !editing || busy || !endpointFormIsValid(state.endpointDraft)
-    || JSON.stringify(state.endpointDraft) === state.endpointEditBaseline;
+  const changed = JSON.stringify(state.endpointDraft) !== state.endpointEditBaseline;
+  const canSave = editing && !busy && endpointFormIsValid(state.endpointDraft) && changed;
+  el.saveProviderEndpoints.disabled = !canSave;
+  el.saveEndpointModel.disabled = !canSave || !state.endpointDraft?.model?.trim();
 }
 
 function editEndpoint() {
@@ -863,7 +866,7 @@ async function refreshTaskBehaviors() {
 
 async function saveProviderEndpoints() {
   syncEndpointDraft();
-  if (el.saveProviderEndpoints.disabled) return;
+  if (!state.endpointDraft || state.integrationSaving || !endpointFormIsValid(state.endpointDraft)) return;
   const endpoint = state.endpointDraft;
   const previousName = selectedEndpoint()?.name;
   state.integrationSaving = true;
@@ -2592,6 +2595,7 @@ if (el.endpointModelSelect) el.endpointModelSelect.addEventListener("change", ()
   syncEndpointDraft();
 });
 el.saveProviderEndpoints.addEventListener("click", saveProviderEndpoints);
+el.saveEndpointModel.addEventListener("click", saveProviderEndpoints);
 el.taskProviderSelect.addEventListener("change", () => {
   const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
   if (!assignment) return;
