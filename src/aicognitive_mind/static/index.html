@@ -523,9 +523,13 @@
               <p class="muted-copy">Read-only persistent state for the current Mind.</p>
             </section>
             <section class="overview-group">
-              <h4>Performance Logging</h4>
-              <pre id="performanceDiagnostics" class="mcp-tool-output" aria-live="polite">Refresh to load timings.</pre>
-              <p class="muted-copy">Recent request timings from this running process.</p>
+              <h4>API Activity</h4>
+              <div id="apiActivitySummary" class="muted-copy" aria-live="polite">Refresh to load API activity.</div>
+              <label for="apiActivityFilter">Filter calls</label>
+              <select id="apiActivityFilter"><option value="all">All</option><option value="errors">Errors</option><option value="success">Success</option></select>
+              <div id="apiActivityList" aria-live="polite"></div>
+              <pre id="performanceDiagnostics" class="mcp-tool-output" hidden></pre>
+              <p class="muted-copy">Latest 200 completed HTTP requests in this process. In-flight and queue counts are not represented by HTTP timings.</p>
             </section>
           </article>
         </div>
