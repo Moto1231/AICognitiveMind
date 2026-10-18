@@ -154,7 +154,7 @@
           <button class="admin-section-button active" type="button" data-admin-section="overview"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-overview.svg" alt="" width="48" height="52"></span><span>System Overview</span></button>
           <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-behavior.svg" alt="" width="48" height="52"></span><span>Behavior</span></button>
           <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-devices.svg" alt="" width="48" height="52"></span><span>Devices</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-speech.svg" alt="" width="48" height="52"></span><span>Speech Settings</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-speech.svg" alt="" width="48" height="52"></span><span>Voice/Translation</span></button>
           <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-task-profiles.svg" alt="" width="48" height="52"></span><span>Task Profiles</span></button>
           <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon admin-section-icon-mcp" aria-hidden="true"><img src="/static/admin-mcp.svg" alt="" width="48" height="49"></span><span>Endpoints, Servers &amp; Tools</span></button>
           <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="skills-line-icon" viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="#8cdfe9" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M24 2.5 43 13v22L24 45.5 5 35V13Z"/><path d="M24 6.5 39.5 15v18L24 41.5 8.5 33V15Z"/><path d="M16.5 14.5h8v4.5a3.4 3.4 0 1 1 4.8 3.1H34v8h-5.1a3.4 3.4 0 1 1-4.8 3.1h-7.6v-7.6a3.4 3.4 0 1 1 0-4.8Z"/><path d="M13 10.8h6M29 10.8h6M13 37.2h6M29 37.2h6M3 24h5M40 24h5"/><circle cx="13" cy="10.8" r="1.2"/><circle cx="35" cy="10.8" r="1.2"/><circle cx="13" cy="37.2" r="1.2"/><circle cx="35" cy="37.2" r="1.2"/><circle cx="3" cy="24" r=".9"/><circle cx="45" cy="24" r=".9"/></svg></span><span>Skills</span></button>
@@ -212,12 +212,6 @@
                 <div class="task-model-fields">
                   <label id="taskProfileStandardModelField" class="host-behavior-field hidden">Model ID
                     <select id="taskProfileModel" aria-label="Model ID"><option value="">Discover models or choose a model</option></select>
-                  </label>
-                  <label id="taskProfileVoiceModelField" class="host-behavior-field hidden">Fish Audio model ID
-                    <input id="taskProfileVoiceModel" type="text" maxlength="160" placeholder="s2.1-pro-free">
-                  </label>
-                  <label id="taskProfileVoiceReferenceField" class="host-behavior-field hidden">Fish Audio reference / voice ID
-                    <input id="taskProfileVoiceReferenceId" type="text" maxlength="200" placeholder="Optional voice reference ID">
                   </label>
                   <div class="task-fallbacks-editor">
                     <div class="panel-heading"><h4>Fallback endpoints</h4><button id="taskProfileAddFallback" class="secondary-button" type="button">Add fallback</button></div>
@@ -483,7 +477,7 @@
 
           <article id="voiceSection" class="panel hidden">
             <div class="panel-heading">
-              <div><p class="eyebrow">VOICE OUTPUT</p><h3>Speech Settings</h3></div>
+              <div><p class="eyebrow">VOICE OUTPUT</p><h3>Voice/Translation</h3></div>
               <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             
@@ -499,6 +493,15 @@
               </label>
               <label class="host-behavior-field">Browser voice name
                 <input id="voiceName" type="text" maxlength="120" placeholder="Blank uses browser default">
+              </label>
+            </div>
+            <h4>Fish Audio</h4>
+            <div class="task-model-fields">
+              <label id="taskProfileVoiceModelField" class="host-behavior-field">Voice model (configured endpoint)
+                <input id="taskProfileVoiceModel" type="text" maxlength="160" readonly placeholder="Choose model in Endpoints">
+              </label>
+              <label id="taskProfileVoiceReferenceField" class="host-behavior-field">Reference / voice ID
+                <input id="taskProfileVoiceReferenceId" type="text" maxlength="200" placeholder="Optional voice reference ID">
               </label>
             </div>
             <div class="edit-actions"><button id="saveVoiceSettings" class="primary-button" type="button">Save</button></div>
