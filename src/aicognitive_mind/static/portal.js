@@ -193,6 +193,10 @@ const el = {
   taskProfileFallbackList: document.getElementById("taskProfileFallbackList"),
   taskProfileAddFallback: document.getElementById("taskProfileAddFallback"),
   taskProfileAddBehavior: document.getElementById("taskProfileAddBehavior"),
+  voiceOutputEndpoint: document.getElementById("voiceOutputEndpoint"),
+  voiceOutputModel: document.getElementById("voiceOutputModel"),
+  voiceInputEndpoint: document.getElementById("voiceInputEndpoint"),
+  voiceInputModel: document.getElementById("voiceInputModel"),
   voiceRate: document.getElementById("voiceRate"),
   voiceRateValue: document.getElementById("voiceRateValue"),
   voicePitch: document.getElementById("voicePitch"),
@@ -877,12 +881,14 @@ async function refreshProviderEndpoints() {
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   renderTaskProfiles();
+  populateSpeechEndpoints();
 }
 
 async function refreshTaskModelAssignments() {
   const payload = await api("/v1/admin/task-model-assignments", {}, true);
   state.taskModelAssignments = payload.items || [];
   renderTaskProfiles();
+  populateSpeechEndpoints();
 }
 
 async function refreshTaskBehaviors() {
@@ -1120,6 +1126,28 @@ function updateVoiceSliderReadouts() {
   if (el.voiceVolumeValue) el.voiceVolumeValue.value = Number(el.voiceVolume.value).toFixed(2);
 }
 
+function populateSpeechEndpoints() {
+  const types = [["audio_voice", el.voiceOutputEndpoint, el.voiceOutputModel],
+                 ["audio", el.voiceInputEndpoint, el.voiceInputModel]];
+  for (const [task, select, modelField] of types) {
+    const assignment = state.taskModelAssignments.find(item => item.task === task);
+    select.replaceChildren();
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "Select endpoint";
+    select.append(blank);
+    for (const endpoint of state.providerEndpoints) {
+      const option = document.createElement("option");
+      option.value = endpoint.id;
+      option.textContent = endpoint.name || endpoint.id;
+      select.append(option);
+    }
+    select.value = assignment?.provider || "";
+    const endpoint = state.providerEndpoints.find(item => item.id === select.value);
+    modelField.value = endpoint?.model || assignment?.model || "";
+  }
+}
+
 async function loadVoiceSettings() {
   try {
     const settings = await api("/v1/admin/body/voice/settings", {}, true);
@@ -1129,9 +1157,8 @@ async function loadVoiceSettings() {
     el.voiceVolume.value = String(settings.volume ?? 1);
     el.voiceName.value = settings.voiceName || "";
     updateVoiceSliderReadouts();
+    populateSpeechEndpoints();
     const voiceAssignment = state.taskModelAssignments.find(item => item.task === "audio_voice");
-    const voiceEndpoint = state.providerEndpoints.find(item => item.id === voiceAssignment?.provider || item.name === voiceAssignment?.provider);
-    el.taskProfileVoiceModel.value = voiceEndpoint?.model || voiceAssignment?.model || "";
     el.taskProfileVoiceReferenceId.value = voiceAssignment?.voice_reference_id || "";
     if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
   } catch (error) {
@@ -1141,12 +1168,32 @@ async function loadVoiceSettings() {
 
 async function saveVoiceSettings() {
   try {
-    const voiceAssignment = state.taskModelAssignments.find(item => item.task === "audio_voice");
-    if (voiceAssignment && voiceAssignment.voice_reference_id !== el.taskProfileVoiceReferenceId.value.trim()) {
-      const items = state.taskModelAssignments.map(item => item.task === "audio_voice" ? {...item, voice_reference_id: el.taskProfileVoiceReferenceId.value.trim()} : item);
-      const saved = await api("/v1/admin/task-model-assignments", {method: "PUT", body: JSON.stringify({items})}, true);
-      state.taskModelAssignments = saved.items || [];
+    const mappings = [
+      ["audio_voice", el.voiceOutputEndpoint.value],
+      ["audio", el.voiceInputEndpoint.value],
+    ];
+    const items = state.taskModelAssignments.map(item => {
+      const mapping = mappings.find(([task]) => task === item.task);
+      if (!mapping) return item;
+      const endpoint = state.providerEndpoints.find(entry => entry.id === mapping[1]);
+      return {
+        ...item,
+        provider: endpoint?.id || "",
+        model: endpoint?.model || "",
+        ...(item.task === "audio_voice" ? {voice_reference_id: el.taskProfileVoiceReferenceId.value.trim()} : {}),
+      };
+    });
+    for (const [task, provider] of mappings) {
+      if (!items.some(item => item.task === task)) {
+        const endpoint = state.providerEndpoints.find(entry => entry.id === provider);
+        items.push({task, provider: endpoint?.id || "", model: endpoint?.model || "", fallbacks: [], voice_reference_id: task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : ""});
+      }
     }
+    if (mappings.some(([, id]) => id && !state.providerEndpoints.some(endpoint => endpoint.id === id && endpoint.model))) {
+      throw new Error("Select endpoints with saved models.");
+    }
+    const assignments = await api("/v1/admin/task-model-assignments", {method: "PUT", body: JSON.stringify({items})}, true);
+    state.taskModelAssignments = assignments.items || [];
     const settings = await api("/v1/admin/body/voice/settings", {
       method: "POST",
       body: JSON.stringify({
@@ -2687,6 +2734,12 @@ if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click
   el.taskProfileBehaviorSelection?.querySelector("input:not(:disabled)")?.focus();
 });
 
+[["audio_voice", el.voiceOutputEndpoint, el.voiceOutputModel], ["audio", el.voiceInputEndpoint, el.voiceInputModel]].forEach(([task, select, modelField]) => {
+  select.addEventListener("change", () => {
+    const endpoint = state.providerEndpoints.find(item => item.id === select.value);
+    modelField.value = endpoint?.model || "";
+  });
+});
 if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);
 [el.voiceRate, el.voicePitch, el.voiceVolume].forEach((slider) => {
   if (slider) slider.addEventListener("input", updateVoiceSliderReadouts);
