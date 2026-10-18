@@ -825,8 +825,7 @@ function openTaskProfile(task) {
   taskEndpointOptions(el.taskProviderSelect, assignment.provider, task);
   el.taskProfileAssignmentSection.classList.remove("hidden");
   el.taskProfileStandardModelField.classList.add("hidden");
-  el.taskProfileVoiceModelField.classList.add("hidden");
-  el.taskProfileVoiceReferenceField.classList.toggle("hidden", task !== "audio_voice");
+  // Fish Audio reference and model controls live in Voice/Translation.
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
   const detailIcon = document.getElementById?.("taskProfileDetailIcon");
   if (detailIcon) {
@@ -840,7 +839,7 @@ function openTaskProfile(task) {
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
-  el.taskProfileVoiceReferenceId.value = assignment.voice_reference_id || "";
+  // Voice reference is loaded by the Voice/Translation form.
   renderTaskBehaviorSelection();
   renderFallbackSelectors();
   state.taskProfileSnapshot = taskProfileConfiguration();
@@ -986,7 +985,7 @@ async function saveTaskProfile() {
   el.saveTaskProfile.disabled = true;
   try {
     const assignment = state.taskModelAssignments.find(item => item.task === task);
-    assignment.voice_reference_id = task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : assignment.voice_reference_id || "";
+    // Voice reference is managed independently in Voice/Translation.
     const payload = await api("/v1/admin/task-model-assignments", {
       method: "PUT", body: JSON.stringify({ items: state.taskModelAssignments }),
     }, true);
@@ -1130,6 +1129,10 @@ async function loadVoiceSettings() {
     el.voiceVolume.value = String(settings.volume ?? 1);
     el.voiceName.value = settings.voiceName || "";
     updateVoiceSliderReadouts();
+    const voiceAssignment = state.taskModelAssignments.find(item => item.task === "audio_voice");
+    const voiceEndpoint = state.providerEndpoints.find(item => item.id === voiceAssignment?.provider || item.name === voiceAssignment?.provider);
+    el.taskProfileVoiceModel.value = voiceEndpoint?.model || voiceAssignment?.model || "";
+    el.taskProfileVoiceReferenceId.value = voiceAssignment?.voice_reference_id || "";
     if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
   } catch (error) {
     toast("Could not load voice settings: " + error.message, true);
@@ -1138,6 +1141,12 @@ async function loadVoiceSettings() {
 
 async function saveVoiceSettings() {
   try {
+    const voiceAssignment = state.taskModelAssignments.find(item => item.task === "audio_voice");
+    if (voiceAssignment && voiceAssignment.voice_reference_id !== el.taskProfileVoiceReferenceId.value.trim()) {
+      const items = state.taskModelAssignments.map(item => item.task === "audio_voice" ? {...item, voice_reference_id: el.taskProfileVoiceReferenceId.value.trim()} : item);
+      const saved = await api("/v1/admin/task-model-assignments", {method: "PUT", body: JSON.stringify({items})}, true);
+      state.taskModelAssignments = saved.items || [];
+    }
     const settings = await api("/v1/admin/body/voice/settings", {
       method: "POST",
       body: JSON.stringify({
@@ -2677,11 +2686,7 @@ if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click
 if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click", () => {
   el.taskProfileBehaviorSelection?.querySelector("input:not(:disabled)")?.focus();
 });
-if (el.taskProfileVoiceReferenceId) el.taskProfileVoiceReferenceId.addEventListener("input", () => {
-  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
-  if (assignment) assignment.voice_reference_id = el.taskProfileVoiceReferenceId.value;
-  updateTaskSaveState();
-});
+
 if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);
 [el.voiceRate, el.voicePitch, el.voiceVolume].forEach((slider) => {
   if (slider) slider.addEventListener("input", updateVoiceSliderReadouts);
