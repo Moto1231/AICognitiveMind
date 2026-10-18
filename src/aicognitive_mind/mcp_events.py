@@ -428,10 +428,11 @@ class MessageEvents:
                 wake.clear()
                 try:
                     await self.flush()
+                    state = await self.records.get(STATE_KEY) or {"deliveries": {}}
                 except Exception:
                     # Callback URLs, signing secrets and message text must never enter logs.
                     logger.warning("Message event delivery deferred; durable outbox retained")
-                state = await self.records.get(STATE_KEY) or {"deliveries": {}}
+                    state = {"deliveries": {}}
                 now = time.time()
                 waits = [
                     max(0.1, max(item["next_attempt"], item.get("claim_until", 0)) - now)
