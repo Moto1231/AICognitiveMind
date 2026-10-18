@@ -881,12 +881,14 @@ async function refreshProviderEndpoints() {
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   renderTaskProfiles();
+  populateSpeechEndpoints();
 }
 
 async function refreshTaskModelAssignments() {
   const payload = await api("/v1/admin/task-model-assignments", {}, true);
   state.taskModelAssignments = payload.items || [];
   renderTaskProfiles();
+  populateSpeechEndpoints();
 }
 
 async function refreshTaskBehaviors() {
