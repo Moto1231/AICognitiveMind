@@ -92,6 +92,14 @@ async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
     state = ctx.request_context.lifespan_context
     result = await state.mind_service.status()
     result["storage_tenancy"] = state.tenancy_probe
+    result["active_storage"] = {
+        "provider": (
+            "surreal" if type(state.runtime).__name__ == "SurrealRuntime"
+            else "mongo" if type(state.runtime).__name__ == "MongoRuntime"
+            else "unknown"
+        ),
+        "runtime_class": type(state.runtime).__name__,
+    }
     return result
 
 
