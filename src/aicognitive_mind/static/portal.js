@@ -2334,9 +2334,9 @@ function updateMcpEditorState() {
   el.mcpEditServer.disabled = !saved || editing || busy;
   el.mcpDeleteServer.disabled = !saved || editing || busy;
   el.mcpCancelEdit.disabled = !editing || busy;
-  const server = state.mcpServerDraft;
+  const server = selectedMcpServer();
   const valid = !!(server?.name && /^https?:\/\/\S+$/i.test(server?.url || ""));
-  el.mcpDiscoverTools.disabled = !editing || busy || !valid;
+  el.mcpDiscoverTools.disabled = busy || !valid;
   el.saveMcpServers.disabled = !editing || busy || !valid || JSON.stringify(server) === state.mcpEditBaseline;
   el.mcpRunTool.disabled = editing || busy || !saved;
 }
@@ -2472,7 +2472,8 @@ function addMcpServer() {
 }
 
 async function discoverMcpTools() {
-  if (!state.mcpServerDraft) return;
+  // Discovery of an existing server enters edit mode so results can be saved.
+  if (!state.mcpServerDraft) editMcpServer();
   const server = syncMcpServerForm();
   if (!server) {
     addMcpServer();
