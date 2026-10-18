@@ -213,5 +213,42 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("WWW-Authenticate", response.headers)
 
 
+    @deployment_running
+    async def test_modern_discovery_advertises_message_event_and_tools(self):
+        token = self.token(subject=self.settings.app_access_username)
+        headers = {
+            "Authorization": "Bearer " + token,
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2026-07-28",
+        }
+        discovered = await self.client.post(self.deployment.MCP_PATH, headers=headers, json={
+            "jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {},
+        })
+        self.assertEqual(discovered.status_code, 200, discovered.text)
+        self.assertIn("events", discovered.json()["result"]["capabilities"])
+        listed = await self.client.post(self.deployment.MCP_PATH, headers=headers, json={
+            "jsonrpc": "2.0", "id": 2, "method": "events/list", "params": {},
+        })
+        self.assertEqual(listed.status_code, 200, listed.text)
+        event = listed.json()["result"]["events"][0]
+        self.assertEqual(event["name"], "message.created")
+        self.assertEqual(event["delivery"], ["webhook"])
+        tools = {tool.name for tool in await self.deployment.axiom_mcp.list_tools()}
+        self.assertTrue({
+            "read_incoming_message", "claim_incoming_message",
+            "complete_incoming_message", "release_incoming_message",
+        }.issubset(tools))
+
+    @deployment_running
+    async def test_other_oauth_mind_cannot_discover_root_message_events(self):
+        response = await self.client.post(self.deployment.MCP_PATH, headers={
+            "Authorization": "Bearer " + self.token(subject="different-mind"),
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2026-07-28",
+        }, json={"jsonrpc": "2.0", "id": 1, "method": "events/list", "params": {}})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["result"]["events"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
