@@ -16,6 +16,8 @@ from mcp.server.auth.provider import AccessToken
 from mcp.shared.auth import OAuthClientInformationFull
 
 from aicognitive_mind.config import Settings
+from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.mcp_events import MessageEvents
 
 
 def deployment_running(test):
@@ -36,9 +38,11 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
             patch("aicognitive_mind.config.get_settings", return_value=self.settings)
         )
 
+        self.event_records = RuntimeRecords(SimpleNamespace(mind_id=self.settings.axiom_mind_id))
+
         @asynccontextmanager
         async def test_lifespan(_server):
-            yield SimpleNamespace(tenancy_probe={})
+            yield SimpleNamespace(tenancy_probe={}, hosts=SimpleNamespace(records=self.event_records))
 
         self.stack.enter_context(patch("aicognitive_mind.chatgpt_mcp.lifespan", test_lifespan))
         deployment = importlib.import_module("aicognitive_mind.deployment")
@@ -222,12 +226,18 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
             "MCP-Protocol-Version": "2026-07-28",
         }
         discovered = await self.client.post(self.deployment.MCP_PATH, headers=headers, json={
-            "jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {},
+            "jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {"_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }},
         })
         self.assertEqual(discovered.status_code, 200, discovered.text)
         self.assertIn("events", discovered.json()["result"]["capabilities"])
         listed = await self.client.post(self.deployment.MCP_PATH, headers=headers, json={
-            "jsonrpc": "2.0", "id": 2, "method": "events/list", "params": {},
+            "jsonrpc": "2.0", "id": 2, "method": "events/list", "params": {"_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+            }},
         })
         self.assertEqual(listed.status_code, 200, listed.text)
         event = listed.json()["result"]["events"][0]
@@ -245,9 +255,50 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
             "Authorization": "Bearer " + self.token(subject="different-mind"),
             "Accept": "application/json, text/event-stream",
             "MCP-Protocol-Version": "2026-07-28",
-        }, json={"jsonrpc": "2.0", "id": 1, "method": "events/list", "params": {}})
+        }, json={"jsonrpc": "2.0", "id": 1, "method": "events/list", "params": {"_meta": {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities": {},
+        }}})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["result"]["events"], [])
+
+
+
+    @deployment_running
+    async def test_modern_subscription_lifecycle_uses_authenticated_endpoint(self):
+        headers = {
+            "Authorization": "Bearer " + self.token(subject=self.settings.app_access_username),
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2026-07-28",
+        }
+        meta = {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities": {},
+        }
+        destination = {"mode": "webhook", "url": "https://chatgpt.example/messages"}
+        secret = "whsec_" + base64.b64encode(b"x" * 32).decode()
+
+        async def verify(url, key, event_id, payload, sub_id):
+            return 200, json.dumps({"challenge": payload["challenge"]}).encode()
+
+        with patch("aicognitive_mind.mcp_events.post_webhook", side_effect=verify):
+            subscribed = await self.client.post(self.deployment.MCP_PATH, headers=headers, json={
+                "jsonrpc": "2.0", "id": 1, "method": "events/subscribe", "params": {
+                    "_meta": meta, "name": "message.created", "arguments": {},
+                    "delivery": {**destination, "secret": secret},
+                },
+            })
+        self.assertEqual(subscribed.status_code, 200, subscribed.text)
+        self.assertIn("id", subscribed.json()["result"])
+        self.assertTrue(await MessageEvents(self.event_records).enabled())
+        canceled = await self.client.post(self.deployment.MCP_PATH, headers=headers, json={
+            "jsonrpc": "2.0", "id": 2, "method": "events/unsubscribe", "params": {
+                "_meta": meta, "name": "message.created", "arguments": {}, "delivery": destination,
+            },
+        })
+        self.assertEqual(canceled.status_code, 200, canceled.text)
+        self.assertNotIn("error", canceled.json())
+        self.assertFalse(await MessageEvents(self.event_records).enabled())
 
 
 if __name__ == "__main__":
