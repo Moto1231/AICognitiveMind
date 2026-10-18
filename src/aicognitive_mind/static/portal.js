@@ -825,7 +825,6 @@ function openTaskProfile(task) {
   taskEndpointOptions(el.taskProviderSelect, assignment.provider, task);
   el.taskProfileAssignmentSection.classList.remove("hidden");
   el.taskProfileStandardModelField.classList.add("hidden");
-  el.taskProfileVoiceModelField.classList.add("hidden");
   // Fish Audio reference and model controls live in Voice/Translation.
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
   const detailIcon = document.getElementById?.("taskProfileDetailIcon");
