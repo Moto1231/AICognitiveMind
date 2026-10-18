@@ -154,7 +154,8 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
                 "status": "interaction_committed", "occurred_at": "2026-10-16T12:00:00Z",
             }),
         )
-        hosts = SimpleNamespace(active=AsyncMock(return_value=None), records=records, service=service)
+        hosts = SimpleNamespace(active=AsyncMock(return_value=None),
+            message_events_enabled=AsyncMock(return_value=False), records=records, service=service)
         core = SimpleNamespace(interact=AsyncMock())
         with patch("aicognitive_mind.host_runtime.TaskModelDispatcher", return_value=dispatcher), patch(
             "aicognitive_mind.config.body_allow_standalone_fallback_enabled", return_value=True,
@@ -181,7 +182,8 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         core.interact.assert_not_awaited()
 
     async def test_body_configured_endpoint_does_not_bypass_fallback_disabled(self):
-        hosts = SimpleNamespace(active=AsyncMock(return_value=None))
+        hosts = SimpleNamespace(active=AsyncMock(return_value=None),
+                                message_events_enabled=AsyncMock(return_value=False))
         core = SimpleNamespace(interact=AsyncMock())
         with patch("aicognitive_mind.config.body_allow_standalone_fallback_enabled", return_value=False):
             with self.assertRaisesRegex(RuntimeError, "fallback is disabled"):

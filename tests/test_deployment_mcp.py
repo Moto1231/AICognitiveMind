@@ -16,6 +16,8 @@ from mcp.server.auth.provider import AccessToken
 from mcp.shared.auth import OAuthClientInformationFull
 
 from aicognitive_mind.config import Settings
+from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.mcp_events import MessageEvents
 
 
 def deployment_running(test):
@@ -36,9 +38,11 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
             patch("aicognitive_mind.config.get_settings", return_value=self.settings)
         )
 
+        self.event_records = RuntimeRecords(SimpleNamespace(mind_id=self.settings.axiom_mind_id))
+
         @asynccontextmanager
         async def test_lifespan(_server):
-            yield SimpleNamespace(tenancy_probe={})
+            yield SimpleNamespace(tenancy_probe={}, hosts=SimpleNamespace(records=self.event_records))
 
         self.stack.enter_context(patch("aicognitive_mind.chatgpt_mcp.lifespan", test_lifespan))
         deployment = importlib.import_module("aicognitive_mind.deployment")
@@ -211,6 +215,68 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 404, response.text)
         self.assertNotIn("location", response.headers)
         self.assertNotIn("WWW-Authenticate", response.headers)
+
+
+    async def modern_rpc(self, token, method, params=None):
+        return await self.client.post(self.deployment.MCP_PATH, headers={
+            "Authorization": "Bearer " + token,
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2026-07-28",
+            "MCP-Method": method,
+        }, json={"jsonrpc": "2.0", "id": 1, "method": method, "params": {
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+            },
+            **(params or {}),
+        }})
+
+    @deployment_running
+    async def test_modern_discovery_advertises_message_event_and_tools(self):
+        token = self.token(subject=self.settings.app_access_username)
+        discovered = await self.modern_rpc(token, "server/discover")
+        self.assertEqual(discovered.status_code, 200, discovered.text)
+        self.assertIn("events", discovered.json()["result"]["capabilities"])
+        listed = await self.modern_rpc(token, "events/list")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        event = listed.json()["result"]["events"][0]
+        self.assertEqual(event["name"], "message.created")
+        self.assertEqual(event["delivery"], ["webhook"])
+        tools = {tool.name for tool in await self.deployment.axiom_mcp.list_tools()}
+        self.assertTrue({
+            "read_incoming_message", "claim_incoming_message",
+            "complete_incoming_message", "release_incoming_message",
+        }.issubset(tools))
+
+    @deployment_running
+    async def test_other_oauth_mind_cannot_discover_root_message_events(self):
+        response = await self.modern_rpc(self.token(subject="different-mind"), "events/list")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["result"]["events"], [])
+
+    @deployment_running
+    async def test_modern_subscription_lifecycle_uses_authenticated_endpoint(self):
+        token = self.token(subject=self.settings.app_access_username)
+        destination = {"mode": "webhook", "url": "https://chatgpt.example/messages"}
+        secret = "whsec_" + base64.b64encode(b"x" * 32).decode()
+
+        async def verify(url, key, event_id, payload, sub_id):
+            return 200, json.dumps({"challenge": payload["challenge"]}).encode()
+
+        with patch("aicognitive_mind.mcp_events.post_webhook", side_effect=verify):
+            subscribed = await self.modern_rpc(token, "events/subscribe", {
+                "name": "message.created", "arguments": {},
+                "delivery": {**destination, "secret": secret},
+            })
+        self.assertEqual(subscribed.status_code, 200, subscribed.text)
+        self.assertIn("id", subscribed.json()["result"])
+        self.assertTrue(await MessageEvents(self.event_records).enabled())
+        canceled = await self.modern_rpc(token, "events/unsubscribe", {
+            "name": "message.created", "arguments": {}, "delivery": destination,
+        })
+        self.assertEqual(canceled.status_code, 200, canceled.text)
+        self.assertNotIn("error", canceled.json())
+        self.assertFalse(await MessageEvents(self.event_records).enabled())
 
 
 if __name__ == "__main__":

@@ -393,8 +393,18 @@ class HostRuntime:
             raise CommitConflict("Host lease changed")
         return {"expires": revised["expires"]}
 
+    async def message_events_enabled(self) -> bool:
+        from aicognitive_mind.body_sessions import body_session
+        from aicognitive_mind.mcp_events import MessageEvents
+
+        return await MessageEvents(self.records).enabled(body_session.get())
+
     async def submit(self, message: str, *, priority: int = 0) -> dict:
-        if not await self.active():
+        from aicognitive_mind.body_sessions import body_session
+        from aicognitive_mind.mcp_events import MessageEvents
+
+        notify = priority == 0 and await self.message_events_enabled()
+        if not await self.active() and not notify:
             raise RuntimeError("No external reasoning host is attached")
         key = uuid4().hex
         request = {
@@ -405,6 +415,8 @@ class HostRuntime:
             # Lower numbers run first. Human text stays ahead of background
             # sensory interpretation requests even when those requests arrived earlier.
             "priority": int(priority),
+            "body_session": body_session.get(),
+            "notify_message_event": notify,
             "created": time.time(),
             # Main reasoning requests have no task-provider deadline. They remain
             # pending until the connected reasoning host explicitly completes them.
@@ -414,6 +426,12 @@ class HostRuntime:
             "result": {},
         }
         await self.records.create(key, request)
+        if notify:
+            try:
+                await MessageEvents(self.records).enqueue(request)
+            except Exception:
+                # The atomic queue marker lets the delivery worker repair this after a restart.
+                logger.warning("Message event enqueue deferred; queued request retained")
         while True:
             latest = await self.records.get(key)
             if latest and latest["state"] == "complete":
@@ -470,11 +488,18 @@ class HostRuntime:
         self, token: str, request_id: str, response_text: str, proposed_memories: tuple = ()
     ) -> dict:
         host = await self.require(token)
+        return await self._complete_claim(
+            host["token_hash"], request_id, response_text, proposed_memories
+        )
+
+    async def _complete_claim(
+        self, claim_hash: str, request_id: str, response_text: str, proposed_memories: tuple = ()
+    ) -> dict:
         request = await self.records.get(request_id)
         if (
             not request
             or request.get("kind") != "body_request"
-            or request["claim"] != host["token_hash"]
+            or request["claim"] != claim_hash
         ):
             raise PermissionError("Body request was not claimed by this host")
         if request["state"] == "complete":
@@ -502,6 +527,63 @@ class HostRuntime:
         return result
 
 
+    async def read_incoming_message(self, request_id: str) -> dict:
+        request = await self.records.get(request_id)
+        if (
+            not request or request.get("kind") != "body_request"
+            or request.get("priority", 0) != 0
+        ):
+            raise ValueError("Incoming human message was not found")
+        return {
+            "request_id": request_id, "state": request["state"],
+            "user_message": request["message"],
+            "session_id": request.get("body_session", "legacy"),
+            "created": request["created"],
+            "result": request.get("result", {}),
+        }
+
+    async def claim_incoming_message(self, request_id: str) -> dict:
+        """Claim one webhook-selected human message without requiring a live host lease."""
+        for _ in range(8):
+            message = await self.read_incoming_message(request_id)
+            if message["state"] == "complete":
+                return {"status": "already_complete", **message}
+            request = await self.records.get(request_id)
+            if request.get("claim") and (
+                request.get("claim_until") is None or request["claim_until"] > time.time()
+            ):
+                return {"status": "in_progress", "request_id": request_id}
+            token = secrets.token_urlsafe(32)
+            claim_hash = "event:" + hashlib.sha256(token.encode()).hexdigest()
+            claimed = {**request, "claim": claim_hash, "claim_until": time.time() + 900}
+            if await self.records.replace(request_id, request, claimed):
+                return {"status": "claimed", **message, "claim_token": token}
+        raise CommitConflict("Message claim changed; retry")
+
+    async def complete_incoming_message(
+        self, claim_token: str, request_id: str, response_text: str,
+        proposed_memories: tuple = (),
+    ) -> dict:
+        await self.read_incoming_message(request_id)
+        return await self._complete_claim(
+            "event:" + hashlib.sha256(claim_token.encode()).hexdigest(),
+            request_id, response_text, proposed_memories,
+        )
+
+    async def release_incoming_message(self, claim_token: str, request_id: str) -> dict:
+        await self.read_incoming_message(request_id)
+        request = await self.records.get(request_id)
+        claim_hash = "event:" + hashlib.sha256(claim_token.encode()).hexdigest()
+        if not request or request.get("claim") != claim_hash:
+            raise PermissionError("Message was not claimed by this event task")
+        if request["state"] == "complete":
+            return {"status": "already_complete"}
+        released = {**request, "claim": "", "claim_until": 0.0}
+        if not await self.records.replace(request_id, request, released):
+            raise CommitConflict("Message claim changed; retry")
+        return {"status": "released"}
+
+
 class HostAwareCore:
     """Route Body cognition to a live host; never silently double-run a timeout."""
 
@@ -514,7 +596,9 @@ class HostAwareCore:
     async def interact(
         self, message: str, *, source: str = "human", input_context: dict | None = None
     ) -> Any:
-        if await self.hosts.active():
+        if await self.hosts.active() or (
+            source == "human" and await self.hosts.message_events_enabled()
+        ):
             import json
 
             from aicognitive_mind.domain import InteractionResult
