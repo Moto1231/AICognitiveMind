@@ -193,10 +193,6 @@ const el = {
   taskProfileFallbackList: document.getElementById("taskProfileFallbackList"),
   taskProfileAddFallback: document.getElementById("taskProfileAddFallback"),
   taskProfileAddBehavior: document.getElementById("taskProfileAddBehavior"),
-  voiceOutputEndpoint: document.getElementById("voiceOutputEndpoint"),
-  voiceOutputModel: document.getElementById("voiceOutputModel"),
-  voiceInputEndpoint: document.getElementById("voiceInputEndpoint"),
-  voiceInputModel: document.getElementById("voiceInputModel"),
   voiceRate: document.getElementById("voiceRate"),
   voiceRateValue: document.getElementById("voiceRateValue"),
   voicePitch: document.getElementById("voicePitch"),
@@ -829,7 +825,8 @@ function openTaskProfile(task) {
   taskEndpointOptions(el.taskProviderSelect, assignment.provider, task);
   el.taskProfileAssignmentSection.classList.remove("hidden");
   el.taskProfileStandardModelField.classList.add("hidden");
-  // Fish Audio reference and model controls live in Voice/Translation.
+  el.taskProfileVoiceModelField.classList.add("hidden");
+  el.taskProfileVoiceReferenceField.classList.toggle("hidden", task !== "audio_voice");
   el.taskProfileTitle.textContent = taskModelLabels[task] || displayLabel(task);
   const detailIcon = document.getElementById?.("taskProfileDetailIcon");
   if (detailIcon) {
@@ -843,7 +840,7 @@ function openTaskProfile(task) {
   el.taskProfileFoundation.value = state.taskFoundations[task] || "";
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
-  // Voice reference is loaded by the Voice/Translation form.
+  el.taskProfileVoiceReferenceId.value = assignment.voice_reference_id || "";
   renderTaskBehaviorSelection();
   renderFallbackSelectors();
   state.taskProfileSnapshot = taskProfileConfiguration();
@@ -881,14 +878,12 @@ async function refreshProviderEndpoints() {
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
   renderTaskProfiles();
-  populateSpeechEndpoints();
 }
 
 async function refreshTaskModelAssignments() {
   const payload = await api("/v1/admin/task-model-assignments", {}, true);
   state.taskModelAssignments = payload.items || [];
   renderTaskProfiles();
-  populateSpeechEndpoints();
 }
 
 async function refreshTaskBehaviors() {
@@ -991,7 +986,7 @@ async function saveTaskProfile() {
   el.saveTaskProfile.disabled = true;
   try {
     const assignment = state.taskModelAssignments.find(item => item.task === task);
-    // Voice reference is managed independently in Voice/Translation.
+    assignment.voice_reference_id = task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : assignment.voice_reference_id || "";
     const payload = await api("/v1/admin/task-model-assignments", {
       method: "PUT", body: JSON.stringify({ items: state.taskModelAssignments }),
     }, true);
@@ -1126,28 +1121,6 @@ function updateVoiceSliderReadouts() {
   if (el.voiceVolumeValue) el.voiceVolumeValue.value = Number(el.voiceVolume.value).toFixed(2);
 }
 
-function populateSpeechEndpoints() {
-  const types = [["audio_voice", el.voiceOutputEndpoint, el.voiceOutputModel],
-                 ["audio", el.voiceInputEndpoint, el.voiceInputModel]];
-  for (const [task, select, modelField] of types) {
-    const assignment = state.taskModelAssignments.find(item => item.task === task);
-    select.replaceChildren();
-    const blank = document.createElement("option");
-    blank.value = "";
-    blank.textContent = "Select endpoint";
-    select.append(blank);
-    for (const endpoint of state.providerEndpoints) {
-      const option = document.createElement("option");
-      option.value = endpoint.id;
-      option.textContent = endpoint.name || endpoint.id;
-      select.append(option);
-    }
-    select.value = assignment?.provider || "";
-    const endpoint = state.providerEndpoints.find(item => item.id === select.value);
-    modelField.value = endpoint?.model || assignment?.model || "";
-  }
-}
-
 async function loadVoiceSettings() {
   try {
     const settings = await api("/v1/admin/body/voice/settings", {}, true);
@@ -1157,9 +1130,6 @@ async function loadVoiceSettings() {
     el.voiceVolume.value = String(settings.volume ?? 1);
     el.voiceName.value = settings.voiceName || "";
     updateVoiceSliderReadouts();
-    populateSpeechEndpoints();
-    const voiceAssignment = state.taskModelAssignments.find(item => item.task === "audio_voice");
-    el.taskProfileVoiceReferenceId.value = voiceAssignment?.voice_reference_id || "";
     if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
   } catch (error) {
     toast("Could not load voice settings: " + error.message, true);
@@ -1168,32 +1138,6 @@ async function loadVoiceSettings() {
 
 async function saveVoiceSettings() {
   try {
-    const mappings = [
-      ["audio_voice", el.voiceOutputEndpoint.value],
-      ["audio", el.voiceInputEndpoint.value],
-    ];
-    const items = state.taskModelAssignments.map(item => {
-      const mapping = mappings.find(([task]) => task === item.task);
-      if (!mapping) return item;
-      const endpoint = state.providerEndpoints.find(entry => entry.id === mapping[1]);
-      return {
-        ...item,
-        provider: endpoint?.id || "",
-        model: endpoint?.model || "",
-        ...(item.task === "audio_voice" ? {voice_reference_id: el.taskProfileVoiceReferenceId.value.trim()} : {}),
-      };
-    });
-    for (const [task, provider] of mappings) {
-      if (!items.some(item => item.task === task)) {
-        const endpoint = state.providerEndpoints.find(entry => entry.id === provider);
-        items.push({task, provider: endpoint?.id || "", model: endpoint?.model || "", fallbacks: [], voice_reference_id: task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : ""});
-      }
-    }
-    if (mappings.some(([, id]) => id && !state.providerEndpoints.some(endpoint => endpoint.id === id && endpoint.model))) {
-      throw new Error("Select endpoints with saved models.");
-    }
-    const assignments = await api("/v1/admin/task-model-assignments", {method: "PUT", body: JSON.stringify({items})}, true);
-    state.taskModelAssignments = assignments.items || [];
     const settings = await api("/v1/admin/body/voice/settings", {
       method: "POST",
       body: JSON.stringify({
@@ -2733,12 +2677,10 @@ if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click
 if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click", () => {
   el.taskProfileBehaviorSelection?.querySelector("input:not(:disabled)")?.focus();
 });
-
-[["audio_voice", el.voiceOutputEndpoint, el.voiceOutputModel], ["audio", el.voiceInputEndpoint, el.voiceInputModel]].forEach(([task, select, modelField]) => {
-  select.addEventListener("change", () => {
-    const endpoint = state.providerEndpoints.find(item => item.id === select.value);
-    modelField.value = endpoint?.model || "";
-  });
+if (el.taskProfileVoiceReferenceId) el.taskProfileVoiceReferenceId.addEventListener("input", () => {
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (assignment) assignment.voice_reference_id = el.taskProfileVoiceReferenceId.value;
+  updateTaskSaveState();
 });
 if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);
 [el.voiceRate, el.voicePitch, el.voiceVolume].forEach((slider) => {
