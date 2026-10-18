@@ -194,6 +194,7 @@ class TaskModelDispatcher:
         for suffix in (
             "/audio/transcriptions",
             "/audio/speech",
+            "/asr",
             "/chat/completions",
             "/models",
         ):
@@ -223,8 +224,11 @@ class TaskModelDispatcher:
         json_body: dict[str, Any] | None = None,
         data: dict[str, str] | None = None,
         files: dict[str, tuple[str, bytes, str]] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         headers = self._headers(endpoint)
+        if extra_headers:
+            headers.update(extra_headers)
         request_url = self._url(endpoint, path)
         try:
             if self.client is not None:
@@ -440,16 +444,25 @@ class TaskModelDispatcher:
             memory_refs=runtime_context.memory_refs,
             working_context=runtime_context.working_context,
         )
-        # OpenAI-compatible transcription APIs accept an optional prompt. It is
-        # the audio task's layered behavior, not an assumption that transcription
-        # endpoints support chat-style system messages.
-        transcription_prompt = await self.prompt_assembler.system_prompt(runtime_context)
-        payload = await self._request(
-            endpoint,
-            "audio/transcriptions",
-            data={"model": assignment.model, "prompt": transcription_prompt},
-            files={"file": (filename, audio_bytes, media_type)},
-        )
+        # Fish ASR is not OpenAI-compatible: it expects /v1/asr, an
+        # "audio" multipart field and the selected model in a header.
+        # Keep the generic OpenAI-compatible behavior for other endpoints.
+        fish_asr = urlparse(endpoint.base_url).hostname in {"api.fish.audio", "fish.audio"}
+        if fish_asr:
+            payload = await self._request(
+                endpoint,
+                "asr",
+                files={"audio": (filename, audio_bytes, media_type)},
+                extra_headers={"model": assignment.model},
+            )
+        else:
+            transcription_prompt = await self.prompt_assembler.system_prompt(runtime_context)
+            payload = await self._request(
+                endpoint,
+                "audio/transcriptions",
+                data={"model": assignment.model, "prompt": transcription_prompt},
+                files={"file": (filename, audio_bytes, media_type)},
+            )
         text = payload.get("text")
         if not isinstance(text, str) or not text.strip():
             raise TaskDispatchError(
