@@ -1707,7 +1707,7 @@ async def list_admin_skills(request: Request) -> dict[str, Any]:
 async def get_admin_skill(slug: str, request: Request) -> dict[str, Any]:
     require_admin(request)
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
-        raise HTTPException(status_code=400, detail="Invalid skill slug")
+        raise HTTPException(status_code=400, detail="Skill ID must start with a lowercase letter or digit and contain only lowercase letters, digits, or hyphens (maximum 64 characters)")
     result = await asyncio.to_thread(_skill_github_call, f"contents/skills/drafts/{slug}/SKILL.md")
     return {"slug": slug, "sha": result["sha"], "content": base64.b64decode(result["content"]).decode("utf-8")}
 
@@ -1715,7 +1715,10 @@ async def get_admin_skill(slug: str, request: Request) -> dict[str, Any]:
 @app.post("/v1/admin/skills/validate")
 async def validate_admin_skill(payload: SkillDraftPayload, request: Request) -> dict[str, Any]:
     require_admin(request)
-    return {"valid": not (errors := _validate_skill_content(payload.content)), "errors": errors}
+    errors = _validate_skill_content(payload.content)
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", payload.slug):
+        errors.insert(0, "Skill ID must start with a lowercase letter or digit and contain only lowercase letters, digits, or hyphens (maximum 64 characters)")
+    return {"valid": not errors, "errors": errors}
 
 
 @app.put("/v1/admin/skills/{slug}")
