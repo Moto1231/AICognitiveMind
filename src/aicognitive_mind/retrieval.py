@@ -1,8 +1,10 @@
 """Bounded database-side candidate retrieval and provider-neutral counts."""
 
+import time
 from typing import Any
 
 from aicognitive_mind.commit import surreal_query
+from aicognitive_mind.timing import emit
 
 
 def json_time(value: Any) -> Any:
@@ -118,6 +120,23 @@ async def count(store: Any, *, exclude_checkpoint_type: str | None = None) -> in
 
 
 async def candidates(store: Any, tokens: set[str], limit: int = 256) -> list:
+    """Retrieve recall candidates, logging how long each retrieval takes."""
+    base = getattr(store, "base", store)
+    table = "journal" if "Journal" in type(base).__name__ else "memory"
+    started = time.perf_counter()
+    rows = await _candidates(store, tokens, limit)
+    emit(
+        "timing candidates table=%s tokens=%d limit=%d rows=%d total=%.3fs",
+        table,
+        len(tokens),
+        limit,
+        len(rows),
+        time.perf_counter() - started,
+    )
+    return rows
+
+
+async def _candidates(store: Any, tokens: set[str], limit: int = 256) -> list:
     # Staging delegates reads to its base; include pending changes in working-memory
     # comparisons separately, while recall describes committed history.
     base = getattr(store, "base", store)
@@ -178,17 +197,33 @@ async def candidates(store: Any, tokens: set[str], limit: int = 256) -> list:
             if value
         ]
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        queried = time.perf_counter()
         rows = await base._database.query(
             f"SELECT * FROM {table}{where} "
             f"ORDER BY {date} DESC, id ASC LIMIT {limit};",
             variables,
         )
+        query_seconds = time.perf_counter() - queried
+        fell_back = False
         if not rows:
+            fell_back = True
             fallback_where = f" WHERE {scope}" if scope else ""
             rows = await base._database.query(
                 f"SELECT * FROM {table}{fallback_where} "
                 f"ORDER BY {date} DESC, id ASC LIMIT {limit};",
                 {"mind_id": base.mind_id} if scope else {},
             )
-        return [model.model_validate(_document(row)) for row in rows]
+        query_seconds = time.perf_counter() - queried
+        validated = time.perf_counter()
+        result = [model.model_validate(_document(row)) for row in rows]
+        emit(
+            "timing candidates.surreal table=%s tokens=%d db=%.3fs validate=%.3fs rows=%d fallback=%s",
+            table,
+            len(words),
+            query_seconds,
+            time.perf_counter() - validated,
+            len(rows),
+            fell_back,
+        )
+        return result
     return await store.read()

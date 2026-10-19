@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from surrealdb import AsyncSurreal
@@ -23,6 +24,7 @@ from aicognitive_mind.storage import (
     _journal_matches,
     _memory_matches,
 )
+from aicognitive_mind.timing import caller, emit
 
 
 class SurrealRuntime:
@@ -66,9 +68,15 @@ class SurrealRuntime:
             "runtime_records",
             "commit_receipts",
         ):
+            started = time.perf_counter()
             await self.database.query(
                 f"UPDATE {table} SET mind_id = $mind_id WHERE mind_id = NONE;",
                 {"mind_id": self.legacy_mind_id},
+            )
+            emit(
+                "timing startup.migrate_legacy_scope table=%s total=%.3fs",
+                table,
+                time.perf_counter() - started,
             )
 
         from surrealdb import RecordID
@@ -87,6 +95,7 @@ class SurrealRuntime:
             await self.database.create(scoped_state_id, value)
 
     async def initialize(self) -> None:
+        started = time.perf_counter()
         await self.database.connect()
         await self.database.use(self._namespace, self._database_name)
         if self._username is not None and self._password is not None:
@@ -100,7 +109,9 @@ class SurrealRuntime:
                 credentials["database"] = self._database_name
             await self.database.signin(credentials)
         await self.ping()
+        emit("timing startup.connect total=%.3fs", time.perf_counter() - started)
         await self._migrate_legacy_scope()
+        emit("timing startup.initialize total=%.3fs", time.perf_counter() - started)
 
     async def ping(self) -> None:
         await self.database.version()
@@ -217,14 +228,27 @@ class SurrealJournalStore:
         return entry
 
     async def read(self) -> list[JournalEntry]:
+        # Reads the entire journal; log who asked and how expensive it was.
+        who = caller()
+        started = time.perf_counter()
         records = _records(
             await self._database.query(
                 "SELECT * FROM journal WHERE mind_id = $mind_id;",
                 {"mind_id": self.mind_id},
             )
         )
+        queried = time.perf_counter()
         entries = [JournalEntry.model_validate(_document(record)) for record in records]
-        return sorted(entries, key=lambda entry: entry.occurred_at)
+        validated = time.perf_counter()
+        ordered = sorted(entries, key=lambda entry: entry.occurred_at)
+        emit(
+            "timing journal.read caller=%s rows=%d db=%.3fs validate=%.3fs",
+            who,
+            len(ordered),
+            queried - started,
+            validated - queried,
+        )
+        return ordered
 
     async def query_page(
         self,
@@ -256,6 +280,7 @@ class SurrealJournalStore:
     async def latest_checkpoint(self, checkpoint_type: str) -> list[JournalEntry]:
         # Retrieve only the latest exact checkpoint without transferring or
         # counting the append-only journal's historical entries.
+        started = time.perf_counter()
         records = _records(
             await self._database.query(
                 "SELECT * FROM journal WHERE mind_id = $mind_id "
@@ -267,6 +292,12 @@ class SurrealJournalStore:
                     "checkpoint_type": checkpoint_type,
                 },
             )
+        )
+        emit(
+            "timing journal.latest_checkpoint type=%s rows=%d total=%.3fs",
+            checkpoint_type,
+            len(records),
+            time.perf_counter() - started,
         )
         return [JournalEntry.model_validate(_document(record)) for record in records]
 
@@ -334,6 +365,8 @@ class SurrealMemoryStore:
         return memory
 
     async def read(self) -> list[DurableMemory]:
+        who = caller()
+        started = time.perf_counter()
         records = _records(
             await self._database.query(
                 "SELECT * FROM memory WHERE mind_id = $mind_id;",
@@ -341,7 +374,14 @@ class SurrealMemoryStore:
             )
         )
         memories = [DurableMemory.model_validate(_document(record)) for record in records]
-        return sorted(memories, key=lambda memory: memory.formed_at)
+        ordered = sorted(memories, key=lambda memory: memory.formed_at)
+        emit(
+            "timing memory.read caller=%s rows=%d total=%.3fs",
+            who,
+            len(ordered),
+            time.perf_counter() - started,
+        )
+        return ordered
 
     async def query_page(
         self,
@@ -410,10 +450,14 @@ class SurrealEvidenceStore:
         self.mind_id = mind_id
 
     async def preserve(self, artifact: SensoryEvidenceArtifact) -> SensoryEvidenceArtifact:
+        # Narrow by the content hash in the database instead of loading and
+        # validating every preserved artifact on each capture. The exact
+        # captured_at comparison still happens on the (few) matching rows.
+        started = time.perf_counter()
         records = _records(
             await self._database.query(
-                "SELECT * FROM evidence WHERE mind_id = $mind_id;",
-                {"mind_id": self.mind_id},
+                "SELECT * FROM evidence WHERE mind_id = $mind_id AND sha256 = $sha;",
+                {"mind_id": self.mind_id, "sha": artifact.sha256},
             )
         )
         for record in records:
@@ -422,14 +466,26 @@ class SurrealEvidenceStore:
                 existing.sha256 == artifact.sha256
                 and existing.captured_at == artifact.captured_at
             ):
+                emit(
+                    "timing evidence.preserve duplicate=True candidates=%d total=%.3fs",
+                    len(records),
+                    time.perf_counter() - started,
+                )
                 return existing
         await self._database.create(
             "evidence",
             {"mind_id": self.mind_id, **artifact.model_dump(mode="json")},
         )
+        emit(
+            "timing evidence.preserve duplicate=False candidates=%d total=%.3fs",
+            len(records),
+            time.perf_counter() - started,
+        )
         return artifact
 
     async def read(self) -> list[SensoryEvidenceArtifact]:
+        who = caller()
+        started = time.perf_counter()
         records = _records(
             await self._database.query(
                 "SELECT * FROM evidence WHERE mind_id = $mind_id;",
@@ -440,10 +496,17 @@ class SurrealEvidenceStore:
             SensoryEvidenceArtifact.model_validate(_document(record))
             for record in records
         ]
-        return sorted(
+        ordered = sorted(
             artifacts,
             key=lambda artifact: artifact.captured_at,
         )
+        emit(
+            "timing evidence.read caller=%s rows=%d total=%.3fs",
+            who,
+            len(ordered),
+            time.perf_counter() - started,
+        )
+        return ordered
 
     async def find_exact(
         self,

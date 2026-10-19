@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 from uuid import uuid4
 
@@ -30,6 +31,7 @@ from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.state_context import CurrentStateLedger, CurrentStateLedgerRepository
+from aicognitive_mind.timing import StageTimer, emit
 
 from aicognitive_mind.task_behaviors import (
     TaskBehaviorRegistry,
@@ -157,26 +159,33 @@ class CognitiveMcpService:
         *, source: str = "human", input_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return recalled knowledge plus Axiom's persisted current-state ledger."""
-        mind = await self._require_mind()
+        timer = StageTimer(f"begin_interaction source={source}")
+        with timer.stage("mind"):
+            mind = await self._require_mind()
         steward = MemoryStewardTool(
             mind=mind,
             input_text=user_message,
             memory=self._memory,
             journal=self._journal,
         )
-        recalled = await steward.invoke(
-            {
-                "action": "recall",
-                "focus": user_message,
-            }
-        )
-        contract = await self._compose_reasoning_contract()
-        behaviors = await self._host_behaviors.selected("reasoning")
-        current_state = await self._refresh_current_state(
-            mind, recalled["context"], user_message, host_working_context or {}, contract,
-            [item.model_dump(mode="json") for item in behaviors],
-            source=source, input_context=input_context,
-        )
+        with timer.stage("recall"):
+            recalled = await steward.invoke(
+                {
+                    "action": "recall",
+                    "focus": user_message,
+                }
+            )
+        with timer.stage("contract"):
+            contract = await self._compose_reasoning_contract()
+        with timer.stage("behaviors"):
+            behaviors = await self._host_behaviors.selected("reasoning")
+        with timer.stage("state"):
+            current_state = await self._refresh_current_state(
+                mind, recalled["context"], user_message, host_working_context or {}, contract,
+                [item.model_dump(mode="json") for item in behaviors],
+                source=source, input_context=input_context,
+            )
+        timer.log()
         return {
             "status": "ready_to_reason",
             "idempotency_key": uuid4().hex,
@@ -219,75 +228,85 @@ class CognitiveMcpService:
         runtime_source: str = "connected_mcp_host",
     ) -> dict[str, Any]:
         """Let the Steward review proposed learning, commit accepted memory, and journal the experience."""
-        mind = await self._require_mind()
+        timer = StageTimer(f"complete_interaction source={source}")
+        with timer.stage("mind"):
+            mind = await self._require_mind()
         steward = MemoryStewardTool(
             mind=mind,
             input_text=user_message,
             memory=self._memory,
             journal=self._journal,
         )
-        await steward.invoke({"action": "recall", "focus": user_message})
+        with timer.stage("recall"):
+            await steward.invoke({"action": "recall", "focus": user_message})
 
-        for evidence in current_evidence:
-            await steward.invoke(
-                {
-                    "action": "consider_evidence",
-                    **evidence.model_dump(mode="json"),
-                }
-            )
+        with timer.stage("evidence"):
+            for evidence in current_evidence:
+                await steward.invoke(
+                    {
+                        "action": "consider_evidence",
+                        **evidence.model_dump(mode="json"),
+                    }
+                )
 
         reframe_decisions: list[dict[str, Any]] = []
-        for proposal in belief_reframes:
-            reframe = await steward.invoke(
-                {
-                    "action": "reframe_belief",
-                    **proposal.model_dump(mode="json"),
-                }
-            )
-            reframe_decisions.append(reframe)
+        with timer.stage("reframes"):
+            for proposal in belief_reframes:
+                reframe = await steward.invoke(
+                    {
+                        "action": "reframe_belief",
+                        **proposal.model_dump(mode="json"),
+                    }
+                )
+                reframe_decisions.append(reframe)
 
         transition_decisions: list[dict[str, Any]] = []
-        for proposal in belief_transitions:
-            transition = await steward.invoke(
-                {
-                    "action": "transition_belief",
-                    **proposal.model_dump(mode="json"),
-                }
-            )
-            transition_decisions.append(transition)
+        with timer.stage("transitions"):
+            for proposal in belief_transitions:
+                transition = await steward.invoke(
+                    {
+                        "action": "transition_belief",
+                        **proposal.model_dump(mode="json"),
+                    }
+                )
+                transition_decisions.append(transition)
 
         decisions: list[dict[str, Any]] = []
-        for proposal in proposed_memories:
-            decision = await steward.invoke(
-                {
-                    "action": "propose_memory",
-                    **proposal.model_dump(mode="json"),
-                }
-            )
-            decisions.append(decision)
+        with timer.stage("memories"):
+            for proposal in proposed_memories:
+                decision = await steward.invoke(
+                    {
+                        "action": "propose_memory",
+                        **proposal.model_dump(mode="json"),
+                    }
+                )
+                decisions.append(decision)
 
-        trace = await steward.complete()
-        journal_entry = await self._journal.append(
-            JournalEntry(
-                kind=JournalKind.INTERACTION,
-                experience=journal_safe_value({
-                    "input": {
-                        "source": source,
-                        "content": user_message,
-                        **({"context": input_context} if input_context else {}),
-                    },
-                    "memory_steward": trace.model_dump(mode="python"),
-                    "expression": {
-                        "source": "conscious_workspace",
-                        "content": response_text,
-                    },
-                    "reasoning_runtime": {
-                        "source": runtime_source,
-                    },
-                }),
-            ),
-            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
-        )
+        with timer.stage("steward_complete"):
+            trace = await steward.complete()
+        with timer.stage("journal_append"):
+            journal_entry = await self._journal.append(
+                JournalEntry(
+                    kind=JournalKind.INTERACTION,
+                    experience=journal_safe_value({
+                        "input": {
+                            "source": source,
+                            "content": user_message,
+                            **({"context": input_context} if input_context else {}),
+                        },
+                        "memory_steward": trace.model_dump(mode="python"),
+                        "expression": {
+                            "source": "conscious_workspace",
+                            "content": response_text,
+                        },
+                        "reasoning_runtime": {
+                            "source": runtime_source,
+                        },
+                    }),
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+        timer.log()
 
         return {
             "status": "interaction_committed",
@@ -316,9 +335,13 @@ class CognitiveMcpService:
         return updated.as_context()
 
     async def _load_current_state(self) -> CurrentStateLedger:
-        return await CurrentStateLedgerRepository(self._journal).load()
+        started = time.perf_counter()
+        ledger = await CurrentStateLedgerRepository(self._journal).load()
+        emit("timing ledger.load total=%.3fs", time.perf_counter() - started)
+        return ledger
 
     async def _persist_current_state(self, ledger: CurrentStateLedger) -> None:
+        started = time.perf_counter()
         await self._journal.append(
             JournalEntry(kind=JournalKind.CHECKPOINT, experience={
                 "checkpoint_type": "current_state_ledger",
@@ -326,6 +349,7 @@ class CognitiveMcpService:
             }),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
+        emit("timing ledger.persist total=%.3fs", time.perf_counter() - started)
 
     async def _refresh_current_state(
         self, mind: CognitiveMind, recalled: dict[str, Any], message: str,
