@@ -1,12 +1,13 @@
 {
   "name": "axiom-mind",
-  "version": "0.1.0+codex.20260925051739",
+  "version": "0.1.1",
   "description": "Use Axiom as the persistent Mind behind a replaceable AI reasoning host.",
   "author": {
     "name": "William Enright"
   },
   "repository": "https://github.com/Moto1231/AICognitiveMind",
   "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Axiom",
     "shortDescription": "Persistent identity, memory, and continuity.",

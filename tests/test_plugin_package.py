@@ -20,6 +20,7 @@ class AxiomPluginPackageTests(unittest.TestCase):
         )
         overlay = json.loads((root / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(overlay["interface"]["displayName"], "Axiom")
+        self.assertEqual(overlay["name"], manifest["name"])
         self.assertEqual(overlay["version"], manifest["version"])
 
         server = mcp["mcpServers"]["axiom"]
@@ -28,6 +29,23 @@ class AxiomPluginPackageTests(unittest.TestCase):
         self.assertEqual(parsed.scheme, "https")
         self.assertEqual(parsed.path, "/axiom-mcp")
         self.assertTrue(parsed.hostname)
+
+    def test_codex_compatibility_manifest_exposes_the_portable_mcp_server(self):
+        root = Path("plugins/axiom-mind")
+        overlay = json.loads((root / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(overlay["mcpServers"], "./.mcp.json")
+
+        compatibility_path = root / overlay["mcpServers"]
+        self.assertTrue(compatibility_path.is_file())
+        compatibility = json.loads(compatibility_path.read_text(encoding="utf-8"))
+        portable = json.loads((root / "mcp.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(compatibility["mcpServers"]), set(portable["mcpServers"]))
+        self.assertEqual(set(compatibility["mcpServers"]), {"axiom"})
+
+        endpoint = "https://ai-cognitive-mind.onrender.com/axiom-mcp"
+        self.assertEqual(compatibility["mcpServers"]["axiom"]["url"], endpoint)
+        self.assertEqual(portable["mcpServers"]["axiom"]["url"], endpoint)
+        self.assertEqual(portable["mcpServers"]["axiom"]["type"], "streamable-http")
 
     def test_repository_marketplace_exposes_axiom_plugin(self):
         marketplace = json.loads(
