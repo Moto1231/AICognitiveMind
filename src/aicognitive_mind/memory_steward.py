@@ -1410,7 +1410,7 @@ class MemoryStewardTool:
         for memory in directly_related:
             expanded_tokens.update(_tokens(" ".join(memory.associations)))
 
-        if expanded_tokens != focus_tokens:
+        if expanded_tokens != retrieval_tokens:
             memories = await candidates(self._memory, expanded_tokens)
             experiences = await candidates(self._journal, expanded_tokens)
         ranked_memories = _rank(memories, expanded_tokens, self._recall_limit)
@@ -2465,10 +2465,31 @@ _STOP_WORDS = {
 }
 
 
+def _retrieval_text(text: str) -> str:
+    """Use visible prose for recall without changing the journaled input.
+
+    Host plugin/app mentions and attached skill paths describe the interface,
+    rather than the subject the human wants to recall. Ordinary Markdown links
+    retain their visible labels, including repository or document names.
+    """
+    def visible_link(match: re.Match[str]) -> str:
+        label, target = match.groups()
+        target = target.strip().strip("<>").replace("\\", "/").casefold()
+        if target.startswith(("plugin://", "app://")):
+            return " "
+        if "/.codex/skills/" in target and target.endswith("/skill.md"):
+            return " "
+        return label
+
+    return re.sub(r"\[([^\]\n]*)\]\(([^)\n]*)\)", visible_link, text)
+
+
 def _tokens(text: str) -> set[str]:
     return {
         token
-        for token in re.findall(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", text.casefold())
+        for token in re.findall(
+            r"[a-z0-9]+(?:[.-][a-z0-9]+)*", _retrieval_text(text).casefold()
+        )
         if len(token) > 2 and token not in _STOP_WORDS
     }
 
@@ -2494,7 +2515,9 @@ _CONTEXT_REFERENCES = {
 
 def _needs_recent_context(text: str) -> bool:
     """Whether the current utterance depends on conversational antecedents."""
-    words = set(re.findall(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", text.casefold()))
+    words = set(re.findall(
+        r"[a-z0-9]+(?:[.-][a-z0-9]+)*", _retrieval_text(text).casefold()
+    ))
     meaningful = _tokens(text)
     return bool(words & _CONTEXT_REFERENCES) or len(meaningful) <= 1
 

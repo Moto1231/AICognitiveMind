@@ -3,11 +3,14 @@
 # of this file is prohibited without prior written permission from the
 # copyright holder.
 
+import asyncio
 import re
 from datetime import datetime
 from typing import Any
 
-from pymongo import ASCENDING, DESCENDING, AsyncMongoClient
+from bson import BSON
+from pymongo import ASCENDING, DESCENDING, TEXT, AsyncMongoClient
+from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
 
 from aicognitive_mind.domain import (
@@ -20,6 +23,89 @@ from aicognitive_mind.domain import (
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 from aicognitive_mind.storage import MindAlreadyInitializedError
+
+
+async def _candidate_documents(
+    collection: AsyncCollection[dict[str, Any]],
+    mind_id: str,
+    date_field: str,
+    tokens: set[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Search indexed words across history, then fetch a bounded candidate page.
+
+    Portal searches retain literal substring matching. Recall uses Mongo's native
+    word tokenizer with no stemming or stop words, including for older documents.
+    Strip search operators so a token cannot turn an OR query into a negation.
+    Preserve a bounded set of compound terms with separate phrase queries: Mongo
+    otherwise widens gpt-6 into gpt OR 6 and can crowd out older exact matches.
+    A timeout or unavailable text index must surface to the caller.
+    """
+    bounded_limit = max(0, min(limit, 1000))
+    if not bounded_limit:
+        return []
+    compounds = sorted({
+        token.lower()
+        for token in tokens
+        if len(token) <= 128 and re.fullmatch(r"[^\W_]+(?:[.-][^\W_]+)+", token)
+    })[:4]
+    words = sorted(
+        {
+            word.lower()
+            for token in tokens
+            if token.lower() not in compounds
+            for word in re.findall(r"[^\W_]+", token)
+            if len(word) <= 128
+        }
+    )[:64]
+    scope: dict[str, Any] = {"mind_id": mind_id}
+    query = dict(scope)
+    if words:
+        query["$text"] = {"$search": " ".join(words), "$language": "none"}
+
+    async def fetch(
+        selector: dict[str, Any], page_limit: int = bounded_limit
+    ) -> list[dict[str, Any]]:
+        cursor = (
+            collection.find(selector, {"mind_id": 0})
+            .sort(date_field, DESCENDING)
+            .limit(page_limit)
+            .collation({"locale": "simple"})
+            .max_time_ms(5000)
+        )
+        return [document async for document in cursor]
+
+    async def general_candidates() -> list[dict[str, Any]]:
+        return await fetch(query) if words or not compounds else []
+
+    protected_limit = min(bounded_limit, 64) if words or len(compounds) > 1 else bounded_limit
+    pages = await asyncio.gather(
+        general_candidates(),
+        *(
+            fetch(
+                {**scope, "$text": {"$search": f'"{token}"', "$language": "none"}},
+                protected_limit,
+            )
+            for token in compounds
+        ),
+    )
+    protected = sorted(
+        (document for page in pages[1:] for document in page),
+        key=lambda document: document[date_field],
+        reverse=True,
+    )
+    matches: list[dict[str, Any]] = []
+    seen: set[bytes] = set()
+    for document in [*protected, *pages[0]]:
+        identity = BSON.encode({"_id": document["_id"]})
+        if identity not in seen:
+            seen.add(identity)
+            matches.append(document)
+            if len(matches) == bounded_limit:
+                break
+    # Retain the existing recent-history fallback for a genuine no-match result.
+    # This uses the existing mind/date index and never counts or scans all rows.
+    return matches if matches or not (words or compounds) else await fetch(scope)
 
 
 class MongoRuntime:
@@ -93,6 +179,17 @@ class MongoRuntime:
         await self.database["memory"].create_index(
             [("mind_id", ASCENDING), ("associations", ASCENDING)]
         )
+        for table in ("journal", "memory"):
+            # A native index includes existing records without rewriting cognitive
+            # history, and Mongo maintains it for direct and transactional writes.
+            # Mongo permits only one text index; fail rather than drop another one.
+            await self.database[table].create_index(
+                [("mind_id", ASCENDING), ("$**", TEXT)],
+                name="recall_text_v1",
+                default_language="none",
+                language_override="_recall_index_language",
+                collation={"locale": "simple"},
+            )
         await self.database["diagnostics"].create_index(
             [("mind_id", ASCENDING), ("observed_at", ASCENDING)]
         )
@@ -214,6 +311,16 @@ class MongoJournalStore:
             {"_id": 0, "mind_id": 0},
         ).sort("occurred_at", ASCENDING)
         return [JournalEntry.model_validate(document) async for document in cursor]
+
+    async def query_candidates(
+        self,
+        tokens: set[str],
+        limit: int = 256,
+    ) -> list[JournalEntry]:
+        documents = await _candidate_documents(
+            self._collection, self.mind_id, "occurred_at", tokens, limit
+        )
+        return [JournalEntry.model_validate(document) for document in documents]
 
     def _portal_filter(
         self,
@@ -470,6 +577,16 @@ class MongoMemoryStore:
             {"_id": 0, "mind_id": 0},
         ).sort("formed_at", ASCENDING)
         return [DurableMemory.model_validate(document) async for document in cursor]
+
+    async def query_candidates(
+        self,
+        tokens: set[str],
+        limit: int = 256,
+    ) -> list[DurableMemory]:
+        documents = await _candidate_documents(
+            self._collection, self.mind_id, "formed_at", tokens, limit
+        )
+        return [DurableMemory.model_validate(document) for document in documents]
 
     def _portal_filter(
         self,

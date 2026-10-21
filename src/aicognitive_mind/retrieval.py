@@ -147,29 +147,7 @@ async def _candidates(store: Any, tokens: set[str], limit: int = 256) -> list:
     date = "occurred_at" if table == "journal" else "formed_at"
     words = sorted(tokens)[:64]
     if hasattr(base, "_collection"):
-        scope = (
-            {"mind_id": base.mind_id}
-            if getattr(base, "mind_id", None) is not None
-            else {}
-        )
-        query = (
-            {"$or": [base._portal_filter(search=word) for word in words]}
-            if words
-            else scope
-        )
-        cursor = (
-            base._collection.find(query, {"_id": 0, "mind_id": 0})
-            .sort(date, -1)
-            .limit(limit)
-        )
-        matches = [model.model_validate(row) async for row in cursor]
-        if not matches:
-            matches, _ = await base.query_page(
-                offset=0,
-                limit=limit,
-                newest_first=True,
-            )
-        return matches
+        return await base.query_candidates(set(words), limit=limit)
     if hasattr(base, "_database"):
         from aicognitive_mind.surreal_storage import _document
 
