@@ -31,6 +31,7 @@ from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.task_model_assignments import TaskKind
+from aicognitive_mind.timing import StageTimer, emit
 from aicognitive_mind.voice_settings import VoiceSettings
 
 async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
@@ -716,33 +717,55 @@ def build_chatgpt_mcp(
         Returns Axiom identity, recalled durable memory, prior experience, guidance, the
         idempotency key, and the validated context to use for this turn.
         """
-        if host_working_context is None:
-            host_working_context = HostWorkingContext()
-        state = ctx.request_context.lifespan_context
-        context_json = host_working_context.model_dump(mode="json")
-        result = await state.mind_service.begin_interaction(user_message, context_json)
-        interaction_id = str(result["idempotency_key"])
-        hosts = HostRuntime(state.storage.mind, state.mind_service)
-        pending_requests = await hosts.records.pending()
-        result["body_work"] = {
-            "host_attached": await hosts.active() is not None,
-            **_summarize_body_work(pending_requests),
-            "processing_policy": (
-                "Commit the current direct human response first, then claim at most one queued "
-                "Body request per interaction turn. The queue orders human text ahead of sensory "
-                "interpretation. Complete only after successful processing."
-            ),
-        }
-        await _trace_event(
-            state.storage,
-            interaction_id,
-            "begin",
-            {
-                "request": {"user_message": user_message, "host_working_context": context_json},
-                "response": {**result, "host_working_context": context_json},
-            },
-        )
-        return {**result, "interaction_trace_id": interaction_id, "host_working_context": context_json}
+        timer = StageTimer("mcp.begin_interaction")
+        try:
+            with timer.stage("context"):
+                if host_working_context is None:
+                    host_working_context = HostWorkingContext()
+                state = ctx.request_context.lifespan_context
+                context_json = host_working_context.model_dump(mode="json")
+            with timer.stage("service"):
+                result = await state.mind_service.begin_interaction(user_message, context_json)
+            interaction_id = str(result["idempotency_key"])
+            hosts = HostRuntime(state.storage.mind, state.mind_service)
+            with timer.stage("body_queue"):
+                pending_requests = await hosts.records.pending()
+            with timer.stage("active_host"):
+                host_attached = await hosts.active() is not None
+            with timer.stage("body_summary"):
+                result["body_work"] = {
+                    "host_attached": host_attached,
+                    **_summarize_body_work(pending_requests),
+                    "processing_policy": (
+                        "Commit the current direct human response first, then claim at most one "
+                        "queued Body request per interaction turn. The queue orders human text "
+                        "ahead of sensory "
+                        "interpretation. Complete only after successful processing."
+                    ),
+                }
+            with timer.stage("trace"):
+                await _trace_event(
+                    state.storage,
+                    interaction_id,
+                    "begin",
+                    {
+                        "request": {
+                            "user_message": user_message,
+                            "host_working_context": context_json,
+                        },
+                        "response": {**result, "host_working_context": context_json},
+                    },
+                )
+            return {
+                **result,
+                "interaction_trace_id": interaction_id,
+                "host_working_context": context_json,
+            }
+        except Exception as exc:
+            emit("timing mcp.begin_interaction error=%s", type(exc).__name__)
+            raise
+        finally:
+            timer.log()
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     async def complete_interaction(
@@ -761,31 +784,52 @@ def build_chatgpt_mcp(
         use an empty memory list when nothing should persist. The independent Memory Steward
         decides what is retained. Reuse both context and idempotency key on retries.
         """
-        state = ctx.request_context.lifespan_context
-        context_json = host_working_context.model_dump(mode="json")
-        request_payload = {
-            "user_message": user_message,
-            "response_text": response_text,
-            "host_working_context": context_json,
-            "idempotency_key": idempotency_key,
-            "proposed_memories": [m.model_dump(mode="json") for m in proposed_memories],
-            "current_evidence": [e.model_dump(mode="json") for e in (current_evidence or [])],
-        }
-        await _trace_event(state.storage, idempotency_key, "complete_request", request_payload)
+        timer = StageTimer("mcp.complete_interaction")
         try:
-            result = await state.mind_service.complete_interaction(
-                user_message=user_message,
-                response_text=response_text,
-                proposed_memories=tuple(proposed_memories or ()),
-                current_evidence=tuple(current_evidence or ()),
-                idempotency_key=idempotency_key,
-            )
+            with timer.stage("context"):
+                state = ctx.request_context.lifespan_context
+                context_json = host_working_context.model_dump(mode="json")
+                request_payload = {
+                    "user_message": user_message,
+                    "response_text": response_text,
+                    "host_working_context": context_json,
+                    "idempotency_key": idempotency_key,
+                    "proposed_memories": [m.model_dump(mode="json") for m in proposed_memories],
+                    "current_evidence": [
+                        e.model_dump(mode="json") for e in (current_evidence or [])
+                    ],
+                }
+            with timer.stage("trace_request"):
+                await _trace_event(state.storage, idempotency_key, "complete_request", request_payload)
+            try:
+                with timer.stage("service"):
+                    result = await state.mind_service.complete_interaction(
+                        user_message=user_message,
+                        response_text=response_text,
+                        proposed_memories=tuple(proposed_memories or ()),
+                        current_evidence=tuple(current_evidence or ()),
+                        idempotency_key=idempotency_key,
+                    )
+            except Exception as exc:
+                with timer.stage("trace_error"):
+                    await _trace_event(
+                        state.storage, idempotency_key, "complete_error",
+                        {"error_type": type(exc).__name__, "error": str(exc)},
+                    )
+                raise
+            response_payload = {
+                **result,
+                "interaction_trace_id": idempotency_key,
+                "host_working_context": context_json,
+            }
+            with timer.stage("trace_response"):
+                await _trace_event(state.storage, idempotency_key, "complete_response", response_payload)
+            return response_payload
         except Exception as exc:
-            await _trace_event(state.storage, idempotency_key, "complete_error", {"error_type": type(exc).__name__, "error": str(exc)})
+            emit("timing mcp.complete_interaction error=%s", type(exc).__name__)
             raise
-        response_payload = {**result, "interaction_trace_id": idempotency_key, "host_working_context": context_json}
-        await _trace_event(state.storage, idempotency_key, "complete_response", response_payload)
-        return response_payload
+        finally:
+            timer.log()
 
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def read_current_state(ctx: Context[AppState]) -> dict[str, Any]:

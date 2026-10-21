@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from aicognitive_mind.permissions import CognitiveOperation
 from aicognitive_mind.storage import MindAlreadyInitializedError
+from aicognitive_mind.timing import StageTimer, emit
 
 
 class CommitConflict(RuntimeError):
@@ -342,46 +343,66 @@ def atomic(method: Any) -> Any:
 
     @wraps(method)
     async def wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:
-        stores = {
-            table: getattr(self, f"_{table}")
-            for table in ("mind", "journal", "memory")
-            if hasattr(getattr(self, f"_{table}", None), "_policy")
-        }
-        if not stores or any(isinstance(store, StagedStore) for store in stores.values()):
-            return await method(self, *args, **kwargs)
-        bound = inspect.signature(method).bind(self, *args, **kwargs)
-        bound.apply_defaults()
-        arguments = {
-            k: v for k, v in bound.arguments.items() if k not in {"self", "idempotency_key"}
-        }
-        token = bound.arguments.get("idempotency_key")
-        if token is not None and (not isinstance(token, str) or not 1 <= len(token) <= 128):
-            raise ValueError("idempotency_key must contain 1 to 128 characters")
-        key = (
-            hashlib.sha256(f"{method.__qualname__}:{token}".encode()).hexdigest() if token else None
-        )
-        fingerprint = hashlib.sha256(
-            json.dumps(document(arguments), sort_keys=True, default=str).encode()
-        ).hexdigest()
-        previous = await receipt(stores, key)
-        if previous:
-            if previous["fingerprint"] != fingerprint:
-                raise CommitConflict("Idempotency key was already used for different input")
-            return deepcopy(previous["result"])
-        version = await revision(stores)
-        staged = copy(self)
-        operations: list = []
-        for table, store in stores.items():
-            setattr(staged, f"_{table}", StagedStore(store, table, operations))
-        result = await method(staged, *args, **kwargs)
-        saved = {"fingerprint": fingerprint, "result": document(result)}
+        timer = StageTimer(f"commit.atomic method={method.__name__}")
         try:
-            await commit(stores, operations, key, saved, version)
-        except Exception:
-            previous = await receipt(stores, key)
-            if previous and previous["fingerprint"] == fingerprint:
+            with timer.stage("prepare"):
+                stores = {
+                    table: getattr(self, f"_{table}")
+                    for table in ("mind", "journal", "memory")
+                    if hasattr(getattr(self, f"_{table}", None), "_policy")
+                }
+            if not stores or any(isinstance(store, StagedStore) for store in stores.values()):
+                with timer.stage("method"):
+                    return await method(self, *args, **kwargs)
+            with timer.stage("fingerprint"):
+                bound = inspect.signature(method).bind(self, *args, **kwargs)
+                bound.apply_defaults()
+                arguments = {
+                    k: v
+                    for k, v in bound.arguments.items()
+                    if k not in {"self", "idempotency_key"}
+                }
+                token = bound.arguments.get("idempotency_key")
+                if token is not None and (not isinstance(token, str) or not 1 <= len(token) <= 128):
+                    raise ValueError("idempotency_key must contain 1 to 128 characters")
+                key = (
+                    hashlib.sha256(f"{method.__qualname__}:{token}".encode()).hexdigest()
+                    if token else None
+                )
+                fingerprint = hashlib.sha256(
+                    json.dumps(document(arguments), sort_keys=True, default=str).encode()
+                ).hexdigest()
+            with timer.stage("receipt"):
+                previous = await receipt(stores, key)
+            if previous:
+                if previous["fingerprint"] != fingerprint:
+                    raise CommitConflict("Idempotency key was already used for different input")
                 return deepcopy(previous["result"])
+            with timer.stage("revision"):
+                version = await revision(stores)
+            with timer.stage("stage_stores"):
+                staged = copy(self)
+                operations: list = []
+                for table, store in stores.items():
+                    setattr(staged, f"_{table}", StagedStore(store, table, operations))
+            with timer.stage("method"):
+                result = await method(staged, *args, **kwargs)
+            with timer.stage("serialize_result"):
+                saved = {"fingerprint": fingerprint, "result": document(result)}
+            try:
+                with timer.stage("commit"):
+                    await commit(stores, operations, key, saved, version)
+            except Exception:
+                with timer.stage("recovery_receipt"):
+                    previous = await receipt(stores, key)
+                if previous and previous["fingerprint"] == fingerprint:
+                    return deepcopy(previous["result"])
+                raise
+            return result
+        except Exception as exc:
+            emit("timing commit.atomic method=%s error=%s", method.__name__, type(exc).__name__)
             raise
-        return result
+        finally:
+            timer.log()
 
     return wrapped
