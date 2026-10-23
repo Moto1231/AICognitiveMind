@@ -9,7 +9,13 @@ from pymongo import ASCENDING, DESCENDING, TEXT
 from pymongo.errors import ExecutionTimeout, OperationFailure
 
 from aicognitive_mind.domain import DurableMemory, JournalEntry, JournalKind, MemoryClass
-from aicognitive_mind.mongo_storage import MongoJournalStore, MongoMemoryStore, MongoRuntime
+from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.mongo_storage import (
+    MongoJournalStore,
+    MongoMemoryStore,
+    MongoMindStore,
+    MongoRuntime,
+)
 
 
 class CandidateCursor:
@@ -284,6 +290,97 @@ class MongoCandidateIntegrationTests(unittest.IsolatedAsyncioTestCase):
         assert self.name.startswith("axiom_retrieval_test_")
         await self.runtime.client.drop_database(self.name)
         await self.runtime.close()
+
+    async def test_pending_diagnostics_preserve_full_scoped_rows_without_logging_payload(self):
+        now = datetime.now(UTC).timestamp()
+        older_text = "private-pending-older snowman \u2603"
+        later_text = "private-pending-later"
+        older_binary = b"private-binary-older"
+        later_binary = b"private-binary-later\x00"
+        older = {
+            "kind": "body_request",
+            "state": "pending",
+            "created": now - 20,
+            "deadline": None,
+            "request_id": "private-request-older",
+            "message": {"content": older_text, "attachments": [older_binary]},
+            "claim": {
+                "host_id": "private-host-marker",
+                "claim_token": "private-claim-marker",
+                "expires": now + 300,
+            },
+            "context": {"future_field": "private-extra-marker"},
+        }
+        later = {
+            "kind": "body_request",
+            "state": "pending",
+            "created": now - 10,
+            "deadline": now + 600,
+            "request_id": "private-request-later",
+            "message": {"content": later_text, "binary": later_binary},
+            "claim": None,
+            "extra_field": {"proof": ["private-proof-marker"]},
+        }
+        collection = self.runtime.database["runtime_records"]
+        await collection.insert_many(
+            [
+                {"mind_id": "alpha", "key": "private-key-later", **later},
+                {
+                    "mind_id": "alpha", "key": "private-key-expired", **later,
+                    "deadline": now - 60, "request_id": "private-expired-marker",
+                },
+                {"mind_id": "beta", "key": "private-key-beta", **older},
+                {
+                    "mind_id": "alpha", "key": "private-key-complete", **older,
+                    "state": "complete", "request_id": "private-complete-marker",
+                },
+                {"mind_id": "alpha", "key": "private-key-older", **older},
+            ]
+        )
+        records = RuntimeRecords(MongoMindStore(self.runtime.database, "alpha"))
+        with (
+            patch("aicognitive_mind.pending_diagnostics.timing.ENABLED", True),
+            patch("aicognitive_mind.pending_diagnostics.timing.emit") as emit,
+        ):
+            rows = await records.pending()
+
+        self.assertEqual(rows, [older, later])
+        emit.assert_called_once()
+        template, *values = emit.call_args.args
+        message = template % tuple(values)
+        fields = dict(field.split("=", 1) for field in message.split() if "=" in field)
+        self.assertEqual(fields["backend"], "mongo")
+        self.assertEqual(fields["client"], "AsyncMongoClient")
+        self.assertEqual(fields["outcome"], "ok")
+        self.assertEqual(fields["rows"], "2")
+        older_chars = sum(map(len, (
+            "body_request", "pending", older["request_id"], older_text,
+            "private-host-marker", "private-claim-marker", "private-extra-marker",
+        )))
+        later_chars = sum(map(len, (
+            "body_request", "pending", later["request_id"], later_text,
+            "private-proof-marker",
+        )))
+        self.assertEqual(int(fields["string_chars_total"]), older_chars + later_chars)
+        self.assertEqual(int(fields["string_chars_max"]), max(older_chars, later_chars))
+        self.assertEqual(
+            int(fields["binary_bytes_total"]), len(older_binary) + len(later_binary)
+        )
+        self.assertEqual(
+            int(fields["binary_bytes_max"]), max(len(older_binary), len(later_binary))
+        )
+        self.assertEqual(fields["sizes_complete"], "True")
+        for phase in (
+            "wall_s", "cursor_construct_s", "first_next_s", "remaining_next_s",
+            "materialize_s", "size_s",
+        ):
+            self.assertGreaterEqual(float(fields[phase]), 0)
+        for private_value in (
+            older_text, later_text, "private-binary", "private-request", "private-host",
+            "private-claim", "private-extra", "private-proof", "private-key", "alpha",
+            "beta", "private-expired", "private-complete",
+        ):
+            self.assertNotIn(private_value, message)
 
     async def test_old_documents_across_full_history_and_dynamic_fields_are_indexed(self):
         self.assertEqual(

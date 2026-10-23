@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from aicognitive_mind.commit import CommitConflict, backend, surreal_query
+from aicognitive_mind.pending_diagnostics import PendingReadDiagnostics
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 
 
@@ -183,6 +184,22 @@ class RuntimeRecords:
         return True
 
     async def pending(self) -> list[dict]:
+        diagnostics = PendingReadDiagnostics(self.kind, self.db)
+        rows: list[dict] = []
+        outcome = "error"
+        try:
+            rows = await self._pending(diagnostics, rows)
+            outcome = "ok"
+            return rows
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        finally:
+            diagnostics.log(rows, outcome)
+
+    async def _pending(
+        self, diagnostics: PendingReadDiagnostics, rows: list[dict],
+    ) -> list[dict]:
         now = time.time()
         if self.kind == "mongo":
             cursor = (
@@ -202,14 +219,17 @@ class RuntimeRecords:
                 .sort("created", 1)
                 .limit(512)
             )
-            return [
-                {
+            diagnostics.mark("cursor_construct")
+            async for row in cursor:
+                diagnostics.mark("row")
+                rows.append({
                     k: v
                     for k, v in row.items()
                     if k not in {"_id", "mind_id", "key"}
-                }
-                async for row in cursor
-            ]
+                })
+                diagnostics.mark("materialize")
+            diagnostics.mark("cursor_exhausted")
+            return rows
         if self.kind == "surreal":
             return await self.db.query(
                 "SELECT * OMIT id, mind_id, key FROM runtime_records "
