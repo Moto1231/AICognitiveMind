@@ -341,8 +341,8 @@ async def complete_interaction(
     response_text: str,
     host_working_context: HostWorkingContext,
     idempotency_key: str,
-    proposed_memories: list[MemoryProposal],
     ctx: Context[AppState],
+    proposed_memories: list[MemoryProposal] | None = None,
     current_evidence: list[ResearchObservation] | None = None,
     belief_transitions: list[BeliefTransitionProposal] | None = None,
     belief_reframes: list[BeliefReframeProposal] | None = None,
@@ -351,9 +351,9 @@ async def complete_interaction(
 
     Supply the updated host_working_context and the idempotency_key returned by begin_interaction.
     The host context is returned to the host for its next turn and is not made durable. The
-    connected model proposes only stable learning worth preserving. The Memory Steward
-    independently accepts/rejects those proposals, commits accepted durable memory, and journals
-    the complete user/response experience. Pass an empty list when nothing deserves retention.
+    Memory Steward independently reviews the complete user/response experience, working context,
+    and supplied evidence, then selects and classifies what to retain. Host memory suggestions
+    are optional and never determine whether review or learning occurs.
     When current external evidence materially informed reasoning, include it with its separate
     provenance / confidence / weight appraisal. When evidence bears on a recalled semantic tension,
     also include its semantic interpretation (subject / attribute / value) so the Memory Steward
@@ -369,7 +369,7 @@ async def complete_interaction(
     result = await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,
         response_text=response_text,
-        proposed_memories=tuple(proposed_memories),
+        proposed_memories=tuple(proposed_memories or ()),
         current_evidence=tuple(current_evidence or ()),
         belief_transitions=tuple(belief_transitions or ()),
         belief_reframes=tuple(belief_reframes or ()),
@@ -435,10 +435,13 @@ async def next_body_interaction(lease_token: str, ctx: Context[AppState]) -> dic
 
 @mcp.tool()
 async def complete_body_interaction(lease_token: str, request_id: str, response_text: str,
-    proposed_memories: list[MemoryProposal], ctx: Context[AppState]) -> dict[str, Any]:
-    """Commit and deliver a claimed Body response exactly once; retry with unchanged input."""
+    ctx: Context[AppState], proposed_memories: list[MemoryProposal] | None = None) -> dict[str, Any]:
+    """Commit and deliver a claimed Body response exactly once; retry with unchanged input.
+
+    Memory suggestions are optional; the Steward independently reviews the whole interaction.
+    """
     return await ctx.request_context.lifespan_context.hosts.complete(
-        lease_token, request_id, response_text, tuple(proposed_memories))
+        lease_token, request_id, response_text, tuple(proposed_memories or ()))
 
 @mcp.tool()
 async def propose_self_name(user_message: str, candidate_name: str, rationale: str,

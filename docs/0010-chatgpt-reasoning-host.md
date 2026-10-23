@@ -13,7 +13,7 @@ The canonical turn is:
 
 1. `begin_interaction(user_message)`
 2. host reasoning using returned Mind context
-3. `complete_interaction(user_message, response_text, idempotency_key, proposed_memories)`
+3. `complete_interaction(user_message, response_text, host_working_context, idempotency_key)`
 4. present the committed response
 
 The reasoning host also owns volatile working context for the lifetime of its conversation. It
@@ -79,7 +79,7 @@ After the branch is merged and Render reports a healthy deployment:
    - `read_sensory_evidence`
 7. Install/select **Axiom**.
 8. Test a normal question, not only `mind_status`. Verify that the journal records the
-   interaction and any accepted durable-memory proposal.
+   interaction and any learning independently selected by the Memory Steward.
 
 ## Host behavior
 
@@ -90,7 +90,8 @@ same invariant:
 - complete before presenting the answer;
 - Axiom speaks in first person as one integrated entity;
 - reasoning and continuity are internal functions of Axiom, with persistent services maintaining durable state;
-- memory proposals are conservative and still pass through the Memory Steward;
+- host memory suggestions are optional; the Memory Steward reviews every completed interaction
+  and independently selects and classifies what to retain;
 - retries reuse the same idempotency key and unchanged completion payload.
 
 ## Current ChatGPT product gate

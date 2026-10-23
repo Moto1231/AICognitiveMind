@@ -76,6 +76,34 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
                 "Remember Atlas", "Different", idempotency_key="turn-1"
             )
 
+    async def test_all_memory_destinations_have_identical_durable_retry_receipts(self):
+        for kind in MemoryClass:
+            with self.subTest(memory_class=kind):
+                proposal = MemoryProposal(
+                    memory_class=kind, content=f"Grounded {kind.value} selection.",
+                    grounding=("current interaction",),
+                )
+                args = ("Review this interaction", "Reviewed", (proposal,))
+                first = await self.service.complete_interaction(
+                    *args, idempotency_key=f"class-{kind.value}"
+                )
+                retried = await self.service.complete_interaction(
+                    *args, idempotency_key=f"class-{kind.value}"
+                )
+                self.assertEqual(first, retried)
+                decision = retried["memory_decisions"][0]
+                self.assertTrue(decision["accepted"])
+                if kind in {MemoryClass.WORKING, MemoryClass.EPISODIC}:
+                    self.assertNotIn("memory", decision)
+                    self.assertEqual(decision["context"]["memory_class"], kind.value)
+                else:
+                    self.assertNotIn("context", decision)
+                    self.assertEqual(decision["memory"]["memory_class"], kind.value)
+        self.assertEqual(len(await self.memory.read()), 4)
+        self.assertEqual(
+            sum(entry.kind.value == "interaction" for entry in await self.journal.read()), 6
+        )
+
     async def test_late_transaction_failure_rolls_back_prior_write(self):
         original = await self.mind.load()
         replacement = original.model_copy(update={"identity": MindIdentity(self_name="Changed")})
@@ -298,8 +326,19 @@ class PersistentRestartTests(unittest.IsolatedAsyncioTestCase):
                 content="Atlas uses SurrealDB.",
                 grounding=("direct user statement",),
             )
+            proposals = (
+                proposal,
+                MemoryProposal(
+                    memory_class=MemoryClass.WORKING, content="Continue checking Atlas.",
+                    grounding=("current task",),
+                ),
+                MemoryProposal(
+                    memory_class=MemoryClass.EPISODIC, content="We checked Atlas together.",
+                    grounding=("this interaction",),
+                ),
+            )
             first = await service.complete_interaction(
-                "Remember Atlas", "Saved", (proposal,), idempotency_key="restart-turn"
+                "Remember Atlas", "Saved", proposals, idempotency_key="restart-turn"
             )
             await runtime.close()
             runtime = SurrealRuntime(uri, "test", "restart")
@@ -314,9 +353,10 @@ class PersistentRestartTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(resumed["mind"], updated.model_dump(mode="json"))
                 self.assertEqual(len(resumed["recalled_context"]["durable_memory"]), 1)
                 retried = await service.complete_interaction(
-                    "Remember Atlas", "Saved", (proposal,), idempotency_key="restart-turn"
+                    "Remember Atlas", "Saved", proposals, idempotency_key="restart-turn"
                 )
                 self.assertEqual(retried, first)
+                self.assertEqual(len(retried["memory_decisions"]), 3)
                 await service.complete_interaction(
                     "Continue", "Still Axiom", idempotency_key="second-host"
                 )

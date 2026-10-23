@@ -244,7 +244,7 @@ class CognitiveMcpService:
         runtime_source: str = "connected_mcp_host",
         host_working_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Let the Steward review proposed learning, commit accepted memory, and journal the experience."""
+        """Let the Steward choose and route learning, then atomically commit the experience."""
         timer = StageTimer(f"complete_interaction source={source}")
         with timer.stage("mind"):
             mind = await self._require_mind()

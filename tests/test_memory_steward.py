@@ -205,29 +205,81 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(await core.read_journal()), 1)
 
-    async def test_memory_steward_refuses_direct_identity_change(self) -> None:
+    async def test_identity_memory_preserves_canonical_identity(self) -> None:
         memory = InMemoryMemoryStore()
+        mind = CognitiveMind(identity=MindIdentity(
+            self_name="Genesis",
+            foundational_values=("careful reasoning",),
+            commitments=("preserve grounded evidence",),
+            relationships=({"name": "human", "role": "collaborator"},),
+        ))
+        original = mind.model_copy(deep=True)
         tool = MemoryStewardTool(
-            mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
-            input_text="Change who you are.",
+            mind=mind,
+            input_text="You are a persistent Cognitive Mind.",
             memory=memory,
             journal=InMemoryJournalStore(),
         )
-        await tool.invoke({"action": "recall", "focus": "Change who you are."})
+        await tool.invoke({"action": "recall", "focus": "persistent Cognitive Mind"})
 
         decision = await tool.invoke(
             {
                 "action": "propose_memory",
                 "memory_class": "identity",
-                "content": "A reasoning engine changed the Mind's identity.",
+                "content": "The human described me as a persistent Cognitive Mind.",
                 "associations": ["identity"],
-                "grounding": ["reasoning-engine-proposal"],
+                "grounding": ["user_message: You are a persistent Cognitive Mind."],
             }
         )
         await tool.complete()
 
-        self.assertFalse(decision["accepted"])
-        self.assertEqual(await memory.read(), [])
+        self.assertTrue(decision["accepted"])
+        self.assertEqual(decision["destination"], "durable_memory")
+        self.assertIsNone(decision.get("context"))
+        stored = await memory.read()
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0].memory_class, MemoryClass.IDENTITY)
+        self.assertEqual(stored[0].content, decision["memory"]["content"])
+        self.assertEqual(mind, original)
+
+    async def test_working_and_episodic_choices_retain_context_without_duplicate_storage(self) -> None:
+        for memory_class, destination in (
+            (MemoryClass.WORKING, "working_context"),
+            (MemoryClass.EPISODIC, "interaction_journal"),
+        ):
+            with self.subTest(memory_class=memory_class):
+                memory = InMemoryMemoryStore()
+                journal = InMemoryJournalStore()
+                working_context = {"summary": "The active task is being discussed."}
+                tool = MemoryStewardTool(
+                    mind=CognitiveMind(identity=MindIdentity(self_name="Genesis")),
+                    input_text="We are reviewing the active task together.",
+                    memory=memory,
+                    journal=journal,
+                    working_context=working_context,
+                )
+                await tool.invoke({"action": "recall", "focus": "active task"})
+                proposal = {
+                    "action": "propose_memory",
+                    "memory_class": memory_class.value,
+                    "content": "We reviewed the active task together.",
+                    "associations": ["active task"],
+                    "grounding": ["user_message: We are reviewing the active task together."],
+                    "artifacts": [{"kind": "experience_context", "payload": {"task": "active"}}],
+                }
+                decision = await tool.invoke(proposal)
+                trace = await tool.complete()
+
+                self.assertTrue(decision["accepted"])
+                self.assertEqual(decision["destination"], destination)
+                self.assertIsNone(decision.get("memory"))
+                self.assertEqual(decision["context"], proposal)
+                traced = trace.model_dump(mode="json")["memory_decisions"][0]
+                self.assertEqual(traced["destination"], destination)
+                self.assertEqual(traced["context"], proposal)
+                self.assertEqual(await memory.read(), [])
+                self.assertEqual(await journal.read(), [])
+                self.assertEqual(working_context, {"summary": "The active task is being discussed."})
 
 
 

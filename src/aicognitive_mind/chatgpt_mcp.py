@@ -113,9 +113,11 @@ When the user is interacting through Axiom:
    changes what you should say or do. You remain Axiom as one integrated identity throughout.
 4. Before presenting the human-facing answer, call complete_interaction with the exact user
    message, the response you intend to give, the idempotency_key returned by begin_interaction,
-   your updated host_working_context, and only stable learning worth review by Axiom's Memory
-   Steward. Always include proposed_memories, using an empty list when nothing should persist.
-   The host context is volatile conversation state, not a durable-memory proposal.
+   your updated host_working_context, and material current_evidence from tools or research.
+   Axiom's Memory Steward independently decides what to retain and how to classify it.
+   proposed_memories is optional: suggestions do not decide whether learning occurs, and
+   omitting them never skips the Steward's review. The host context is volatile conversation
+   state, not a durable-memory proposal.
 5. Present the same committed response to the user.
 
 Do not bypass begin_interaction/complete_interaction merely because the answer seems simple.
@@ -778,15 +780,16 @@ def build_chatgpt_mcp(
         host_working_context: HostWorkingContext,
         idempotency_key: str,
         ctx: Context[AppState],
-        proposed_memories: list[MemoryProposal],
+        proposed_memories: list[MemoryProposal] | None = None,
         current_evidence: list[ResearchObservation] | None = None,
     ) -> dict[str, Any]:
         """MANDATORY after reasoning and before presenting Axiom's answer.
 
-        response_text must be the human-facing answer you intend to present. Propose only
-        updated volatile host_working_context and stable learning worth durable-memory review;
-        use an empty memory list when nothing should persist. The independent Memory Steward
-        decides what is retained. Reuse both context and idempotency key on retries.
+        response_text must be the human-facing answer you intend to present. Supply updated
+        volatile host_working_context and material current_evidence. Memory suggestions are
+        optional; the independent Memory Steward reviews every completed interaction and
+        decides what to retain and how to classify it. Reuse the same completion payload and
+        idempotency key on retries.
         """
         timer = StageTimer("mcp.complete_interaction")
         try:
@@ -798,7 +801,9 @@ def build_chatgpt_mcp(
                     "response_text": response_text,
                     "host_working_context": context_json,
                     "idempotency_key": idempotency_key,
-                    "proposed_memories": [m.model_dump(mode="json") for m in proposed_memories],
+                    "proposed_memories": [
+                        m.model_dump(mode="json") for m in (proposed_memories or [])
+                    ],
                     "current_evidence": [
                         e.model_dump(mode="json") for e in (current_evidence or [])
                     ],

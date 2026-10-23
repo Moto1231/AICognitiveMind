@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, TypeAdapter, model_serializer
 
 from aicognitive_mind.domain import (
     CognitiveActor,
@@ -241,8 +241,20 @@ class SemanticTension(BaseModel):
 class MemoryDecision(BaseModel):
     accepted: bool
     reason: str
+    destination: Literal["durable_memory", "working_context", "interaction_journal"] = "durable_memory"
     memory: DurableMemory | None = None
+    context: ProposeMemoryCall | None = None
     tensions: tuple[SemanticTension, ...] = ()
+
+    @model_serializer(mode="wrap")
+    def serialize_destination(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        payload = handler(self)
+        # Surreal NONE values omit fields on receipt reads. Keep the first result
+        # and durable retries identical without removing any selected content.
+        for key in ("memory", "context"):
+            if payload.get(key) is None:
+                payload.pop(key, None)
+        return payload
 
 
 class BeliefTransitionDecision(BaseModel):
@@ -2082,18 +2094,25 @@ class MemoryStewardTool:
 
 
     async def _consider_memory(self, call: ProposeMemoryCall) -> MemoryDecision:
-        if call.memory_class not in {
-            MemoryClass.SEMANTIC,
-            MemoryClass.PROCEDURAL,
-            MemoryClass.REFLECTIVE,
-        }:
+        if call.memory_class == MemoryClass.WORKING:
             return MemoryDecision(
-                accepted=False,
+                accepted=True,
                 reason=(
-                    f"{call.memory_class.value} memory is outside this V0.1 Steward's "
-                    "authority; episodic experience is journaled automatically and identity "
-                    "or values require constitutional governance."
+                    "Accepted as temporary working context for the host; no durable memory "
+                    "or shared context state was written."
                 ),
+                destination="working_context",
+                context=call,
+            )
+        if call.memory_class == MemoryClass.EPISODIC:
+            return MemoryDecision(
+                accepted=True,
+                reason=(
+                    "Accepted as an episodic annotation for the interaction journal; "
+                    "the existing experience records this decision without a duplicate durable memory."
+                ),
+                destination="interaction_journal",
+                context=call,
             )
 
         existing = await self._working_memories()

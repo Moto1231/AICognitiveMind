@@ -248,7 +248,67 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("host_working_context", schema["required"])
         completion_schema = tools["complete_interaction"].input_schema
         self.assertIn("idempotency_key", completion_schema["required"])
-        self.assertIn("proposed_memories", completion_schema["required"])
+        self.assertNotIn("proposed_memories", completion_schema["required"])
+
+    async def test_deployed_complete_reviews_without_host_memory_suggestions(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        service = SimpleNamespace(complete_interaction=AsyncMock(return_value={
+            "status": "interaction_committed", "memory_decisions": [],
+        }))
+        record = AsyncMock()
+        storage = SimpleNamespace(diagnostics=SimpleNamespace(record=record))
+        ctx = SimpleNamespace(request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(mind_service=service, storage=storage)
+        ))
+        working = HostWorkingContext(summary="Steward owns memory decisions")
+        complete = server._tool_manager.get_tool("complete_interaction").fn
+
+        result = await complete(
+            user_message="Remember the result.", response_text="The result is recorded.",
+            host_working_context=working, idempotency_key="steward-turn", ctx=ctx,
+        )
+
+        service.complete_interaction.assert_awaited_once_with(
+            user_message="Remember the result.", response_text="The result is recorded.",
+            proposed_memories=(), current_evidence=(), idempotency_key="steward-turn",
+            host_working_context=working.model_dump(mode="json"),
+        )
+        self.assertEqual(result["status"], "interaction_committed")
+        self.assertEqual(result["host_working_context"], working.model_dump(mode="json"))
+        request = record.await_args_list[0].args[0].implementation
+        self.assertEqual(request["phase"], "complete_request")
+        self.assertEqual(request["payload"]["proposed_memories"], [])
+        self.assertEqual(request["payload"]["current_evidence"], [])
+
+    async def test_administrative_completion_accepts_omitted_memory_suggestions(self):
+        from aicognitive_mind.mcp_server import mcp
+
+        tools = {tool.name: tool for tool in await mcp.list_tools()}
+        for name in ("complete_interaction", "complete_body_interaction"):
+            self.assertNotIn("proposed_memories", tools[name].input_schema["required"])
+        complete = mcp._tool_manager.get_tool("complete_interaction").fn
+        service = SimpleNamespace(complete_interaction=AsyncMock(return_value={
+            "status": "interaction_committed", "memory_decisions": [],
+        }))
+        hosts = SimpleNamespace(complete=AsyncMock(return_value={"status": "complete"}))
+        ctx = SimpleNamespace(request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(mind_service=service, hosts=hosts)
+        ))
+        working = HostWorkingContext(summary="Independent Steward review")
+
+        await complete(
+            user_message="Continue.", response_text="Continuing.",
+            host_working_context=working, idempotency_key="admin-turn", ctx=ctx,
+        )
+        self.assertEqual(service.complete_interaction.await_args.kwargs["proposed_memories"], ())
+        self.assertEqual(
+            service.complete_interaction.await_args.kwargs["idempotency_key"], "admin-turn"
+        )
+        complete_body = mcp._tool_manager.get_tool("complete_body_interaction").fn
+        await complete_body(
+            lease_token="test-lease", request_id="test-request", response_text="Ready.", ctx=ctx,
+        )
+        hosts.complete.assert_awaited_once_with("test-lease", "test-request", "Ready.", ())
 
     async def test_deployed_surface_registers_current_state_tools(self):
         server = build_chatgpt_mcp(self.base, self.provider)
