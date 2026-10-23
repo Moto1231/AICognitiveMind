@@ -173,6 +173,7 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
     async def test_body_keeps_live_reasoning_host_priority_over_endpoint(self):
         hosts = SimpleNamespace(
             active=AsyncMock(return_value={"name": "Codex", "model": "host-model"}),
+            message_events_enabled=AsyncMock(return_value=False),
             submit=AsyncMock(return_value={"response_text": "Host reply.", "occurred_at": "2026-10-16T12:00:00Z"}),
         )
         core = SimpleNamespace(interact=AsyncMock())

@@ -737,7 +737,7 @@ def build_chatgpt_mcp(
             with timer.stage("body_queue"):
                 pending_requests = await hosts.records.pending()
             with timer.stage("active_host"):
-                host_attached = await hosts.active() is not None
+                host_attached = await hosts.active(pending_requests=pending_requests) is not None
             with timer.stage("body_summary"):
                 result["body_work"] = {
                     "host_attached": host_attached,

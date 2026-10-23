@@ -8,6 +8,7 @@ from aicognitive_mind.chatgpt_mcp import build_chatgpt_mcp
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.commit import atomic, commit, receipt, revision
 from aicognitive_mind.host_context import HostWorkingContext
+from aicognitive_mind.host_runtime import HostRuntime
 
 
 class InteractionTimingTests(unittest.IsolatedAsyncioTestCase):
@@ -41,15 +42,18 @@ class InteractionTimingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("private-error-detail", log)
 
     async def test_begin_attributes_queue_host_and_trace_delays_outside_service(self):
+        snapshot = [{"message": self.secret, "priority": 0}]
+
         async def begin(*args):
             self.clock += 2
             return {"status": "ready_to_reason", "idempotency_key": self.secret}
 
         async def pending():
             self.clock += 3
-            return [{"message": self.secret, "priority": 0}]
+            return snapshot
 
-        async def active():
+        async def active(*, pending_requests):
+            self.assertIs(pending_requests, snapshot)
             self.clock += 5
             return {"lease_token": self.secret}
 
@@ -70,6 +74,8 @@ class InteractionTimingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["idempotency_key"], self.secret)
         self.assertTrue(result["body_work"]["host_attached"])
         self.assertEqual(result["body_work"]["pending_human_messages"], 1)
+        hosts.records.pending.assert_awaited_once_with()
+        hosts.active.assert_awaited_once_with(pending_requests=snapshot)
         self.assertEqual(diagnostics.record.await_count, 1)
         log = "\n".join(logs.output)
         for expected in (
@@ -78,6 +84,100 @@ class InteractionTimingTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertIn(expected, log)
         self.assert_private(log)
+
+    def body_request_scenarios(self, now):
+        queued = [
+            {"priority": 0, "message": self.secret},
+            {"priority": 10, "message": "Interpret this audio percept."},
+            {"priority": 5, "message": "Other queued work."},
+        ]
+        for label, claim, claim_until, attached in (
+            ("valid claim", "test-claim", now + 30, True),
+            ("indefinite claim", "test-claim", None, True),
+            ("expired claim", "test-claim", now - 1, False),
+            ("unclaimed request", None, None, False),
+        ):
+            claimed = {
+                "priority": 10, "message": "Interpret this vision percept.",
+                "claim": claim, "claim_until": claim_until,
+            }
+            yield label, [claimed, *queued], attached
+        yield "empty snapshot", [], False
+
+    async def stale_host_runtime(self, service, requests, now):
+        mind = SimpleNamespace(mind_id="timing-fixture")
+        hosts = HostRuntime(mind, service)
+        await hosts.records.create("active_host", {
+            "name": "Timing fixture", "model": "fixture-model", "expires": None,
+            "last_heartbeat_at": now - hosts.HEARTBEAT_STALE_AFTER_SECONDS - 1,
+        })
+        for index, request in enumerate(requests):
+            await hosts.records.create(f"request-{index}", {
+                "kind": "body_request", "request_id": f"request-{index}", "state": "pending",
+                "created": now - 10 + index, "deadline": now + 60, **request,
+            })
+        snapshots = []
+        read_pending = hosts.records.pending
+
+        async def pending():
+            snapshot = await read_pending()
+            snapshots.append(snapshot)
+            return snapshot
+
+        hosts.records.pending = AsyncMock(side_effect=pending)
+        return hosts, mind, snapshots
+
+    async def test_begin_reuses_real_pending_snapshot_for_stale_host_claims(self):
+        now = 1000.0
+        tool = self.server()._tool_manager.get_tool("begin_interaction").fn
+        for label, requests, attached in self.body_request_scenarios(now):
+            with self.subTest(case=label):
+                service = SimpleNamespace(begin_interaction=AsyncMock(return_value={
+                    "status": "ready_to_reason", "idempotency_key": self.secret,
+                }))
+                diagnostics = SimpleNamespace(record=AsyncMock())
+                hosts, mind, snapshots = await self.stale_host_runtime(service, requests, now)
+                hosts.active = AsyncMock(wraps=hosts.active)
+                ctx = self.context(service, diagnostics)
+                ctx.request_context.lifespan_context.storage.mind = mind
+                with (
+                    patch("aicognitive_mind.host_runtime.time.time", return_value=now),
+                    patch("aicognitive_mind.chatgpt_mcp.HostRuntime", return_value=hosts),
+                ):
+                    result = await tool(user_message=self.secret, ctx=ctx)
+
+                hosts.records.pending.assert_awaited_once_with()
+                self.assertIs(hosts.active.await_args.kwargs["pending_requests"], snapshots[0])
+                summary = result["body_work"]
+                in_progress = int(attached)
+                self.assertEqual(summary["host_attached"], attached)
+                self.assertEqual(summary["in_progress_requests"], in_progress)
+                self.assertEqual(summary["pending_requests"], len(requests) - in_progress)
+                self.assertEqual(summary["pending_human_messages"], int(bool(requests)))
+                self.assertEqual(summary["pending_other_requests"], int(bool(requests)))
+                self.assertEqual(
+                    summary["pending_sensory_interpretations"],
+                    2 - in_progress if requests else 0,
+                )
+                self.assertEqual(result["idempotency_key"], self.secret)
+                diagnostics.record.assert_awaited_once()
+
+    async def test_status_reuses_real_pending_snapshot_for_stale_host_claims(self):
+        now = 1000.0
+        for label, requests, attached in self.body_request_scenarios(now):
+            with self.subTest(case=label):
+                hosts, _mind, _snapshots = await self.stale_host_runtime(
+                    SimpleNamespace(), requests, now,
+                )
+                with patch("aicognitive_mind.host_runtime.time.time", return_value=now):
+                    status = await hosts.status()
+
+                hosts.records.pending.assert_awaited_once_with()
+                self.assertEqual(status["connected"], attached)
+                self.assertEqual(status["host_state"], "connected" if attached else "stale")
+                self.assertEqual(status["requests"]["in_progress"], int(attached))
+                self.assertEqual(status["requests"]["pending"], len(requests) - int(attached))
+                self.assertEqual(len(status["requests"]["items"]), len(requests))
 
     async def test_begin_failed_queue_still_logs_partial_stages_and_error_class(self):
         async def pending():
