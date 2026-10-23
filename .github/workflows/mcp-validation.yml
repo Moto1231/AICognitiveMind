@@ -68,8 +68,8 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Verify portal editing and task configuration
-        run: node --test tests/portal_editors.test.cjs
+      - name: Verify portal editing and live Body recovery
+        run: node --test tests/portal_editors.test.cjs tests/live_body_connection.test.cjs
 
       - name: Validate MCP server import
         run: python -c "import aicognitive_mind.mcp_server; print('MCP server import OK')"

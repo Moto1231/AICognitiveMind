@@ -10,11 +10,15 @@ from mcp.shared.auth import OAuthClientInformationFull
 
 from aicognitive_mind.chatgpt_mcp import (
     HOST_INSTRUCTIONS,
+    _live_body_status,
     _summarize_body_work,
     build_chatgpt_mcp,
 )
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.host_context import HostWorkingContext
+from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.body_sessions import BodyQueue, body_session
+from aicognitive_mind.body import BrowserVoiceOutput
 
 
 class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
@@ -116,6 +120,65 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.provider = AxiomAuthorizationServerProvider(
             self.base, username="mind", password="secret",
         )
+
+    def test_live_body_readiness_distinguishes_missing_invalid_and_stale_sessions(self):
+        self.assertEqual(_live_body_status(None)["status"], "missing")
+        for registration in ({"session_id": "private"},
+                             {"session_id": None, "updated_at": 1000},
+                             {"session_id": "private", "updated_at": float("nan")}):
+            self.assertEqual(_live_body_status(registration)["status"], "invalid")
+        with patch("aicognitive_mind.chatgpt_mcp.time.time", return_value=1000):
+            for updated_at, expected in ((880, "active"), (879, "stale")):
+                result = _live_body_status({"session_id": "private", "updated_at": updated_at})
+                self.assertEqual(result["status"], expected)
+                self.assertEqual(result["speech_available"], expected == "active")
+                self.assertNotIn("private", str(result))
+
+    async def test_speech_reports_recoverable_error_without_queueing_to_stale_body(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        mind = SimpleNamespace(mind_id="speech-test")
+        records = RuntimeRecords(mind)
+        await records.create("active_body_session", {"session_id": "private", "updated_at": 1})
+        ctx = SimpleNamespace(request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(storage=SimpleNamespace(mind=mind))
+        ))
+        result = await server._tool_manager.get_tool("speak_body_text").fn(text="Test", ctx=ctx)
+        self.assertTrue(result.is_error)
+        self.assertTrue(result.model_dump(by_alias=True)["isError"])
+        self.assertEqual(result.structured_content["status"], "stale")
+        self.assertIn("foreground", result.content[0].text)
+        self.assertEqual(set(mind._runtime_records), {"active_body_session"})
+
+    async def test_speech_queues_only_to_registered_body_and_preserves_caller_session(self):
+        import time
+
+        server = build_chatgpt_mcp(self.base, self.provider)
+        mind = SimpleNamespace(mind_id="speech-test")
+        records = RuntimeRecords(mind)
+        await records.create("active_body_session", {
+            "session_id": "phone", "updated_at": time.time(),
+        })
+        ctx = SimpleNamespace(request_context=SimpleNamespace(
+            lifespan_context=SimpleNamespace(storage=SimpleNamespace(mind=mind))
+        ))
+        caller = body_session.set("caller")
+        try:
+            result = await server._tool_manager.get_tool("speak_body_text").fn(text="Test", ctx=ctx)
+            self.assertFalse(result.is_error)
+            self.assertEqual(result.structured_content["status"], "queued")
+            self.assertFalse(result.structured_content["playback_confirmed"])
+            self.assertEqual(body_session.get(), "caller")
+            queue = BodyQueue(records, "mouth", BrowserVoiceOutput())
+            self.assertEqual(await queue.deliver(), (None, None))
+            phone = body_session.set("phone")
+            try:
+                intent, receipt = await queue.deliver()
+                self.assertEqual(intent.text, "Test")
+                self.assertTrue(receipt)
+            finally:
+                body_session.reset(phone)
+        finally:
+            body_session.reset(caller)
 
     def test_begin_interaction_surfaces_queue_and_preserves_human_priority(self):
         summary = _summarize_body_work(
