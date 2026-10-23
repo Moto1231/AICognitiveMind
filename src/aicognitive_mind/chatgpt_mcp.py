@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import time
 from typing import Any, Literal
 
@@ -33,6 +34,32 @@ from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.task_model_assignments import TaskKind
 from aicognitive_mind.timing import StageTimer, emit
 from aicognitive_mind.voice_settings import VoiceSettings
+
+
+def _live_body_status(active: dict[str, Any] | None) -> dict[str, Any]:
+    """Report speech readiness without exposing the private Body session identifier."""
+    recovery = "Bring Live Body to the foreground and refresh it with Voice enabled."
+    if not active:
+        return {"status": "missing", "speech_available": False,
+                "detail": f"No active live Body session is registered. {recovery}"}
+    try:
+        session_id = active["session_id"]
+        updated_at = float(active["updated_at"])
+        if not isinstance(session_id, str) or not session_id or not math.isfinite(updated_at):
+            raise ValueError("Invalid Body registration")
+    except (KeyError, TypeError, ValueError):
+        return {"status": "invalid", "speech_available": False,
+                "detail": f"Active Body session registration is invalid. {recovery}"}
+    age = max(0.0, time.time() - updated_at)
+    available = age <= 120
+    return {
+        "status": "active" if available else "stale",
+        "speech_available": available,
+        "last_checkin_age_seconds": int(age),
+        "detail": ("Live Body has checked in recently; playback is not yet confirmed."
+                   if available else f"No active live Body session has checked in recently. {recovery}"),
+    }
+
 
 async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
     """Persist an exact MCP transport event for one Axiom interaction."""
@@ -324,6 +351,9 @@ def build_chatgpt_mcp(
             "active_external_host": await HostRuntime(
                 state.storage.mind, state.mind_service
             ).active(),
+            "live_body": _live_body_status(
+                await RuntimeRecords(state.storage.mind).get("active_body_session")
+            ),
             "fallback_provider": provider_name,
             "fallback_requested_model": requested_model,
         }
@@ -375,7 +405,7 @@ def build_chatgpt_mcp(
         pitch: float | None = None,
         volume: float | None = None,
         voice_name: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> CallToolResult:
         """Queue text for the active live Body to speak through its configured Mouth.
 
         Use for ordinary reasoning-host replies when a live Body session is active.
@@ -389,15 +419,15 @@ def build_chatgpt_mcp(
         state = ctx.request_context.lifespan_context
         records = RuntimeRecords(state.storage.mind)
         active = await records.get("active_body_session")
-        if not active:
-            raise RuntimeError("No active live Body session is registered")
-        try:
-            session_id = str(active["session_id"])
-            updated_at = float(active["updated_at"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise RuntimeError("Active Body session registration is invalid") from exc
-        if not session_id or time.time() - updated_at > 120:
-            raise RuntimeError("No active live Body session has checked in recently")
+        readiness = _live_body_status(active)
+        if not readiness["speech_available"]:
+            return CallToolResult(
+                is_error=True,
+                content=[TextContent(type="text", text=readiness["detail"])],
+                structured_content=readiness,
+            )
+        assert active is not None
+        session_id = active["session_id"]
 
         settings = await VoiceSettings(state.storage.mind).read()
         intent = configured_voice_intent(
@@ -417,7 +447,7 @@ def build_chatgpt_mcp(
         finally:
             body_session.reset(token)
 
-        return {
+        result = {
             "status": "queued",
             "playback_confirmed": False,
             "characters": len(speech_text),
@@ -426,6 +456,10 @@ def build_chatgpt_mcp(
             "pitch": intent.metadata["pitch"],
             "volume": intent.metadata["volume"],
         }
+        return CallToolResult(
+            content=[TextContent(type="text", text=json.dumps(result))],
+            structured_content=result,
+        )
 
     @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     def open_live_body() -> dict[str, str]:

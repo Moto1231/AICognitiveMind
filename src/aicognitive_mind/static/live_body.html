@@ -769,9 +769,30 @@
 
     async function registerActiveBodySession() {
       try {
-        await bodyFetch("/v1/body/session/active", { method: "POST" });
+        const response = await bodyFetch("/v1/body/session/active", { method: "POST" });
+        return response.ok;
       } catch (_) {
         // Keep the Body usable when session registration is temporarily unavailable.
+        return false;
+      }
+    }
+
+    let bodyReconnectBusy = false;
+    async function resumeBodyConnection() {
+      if (document.hidden || bodyReconnectBusy) return;
+      bodyReconnectBusy = true;
+      try {
+        await registerActiveBodySession();
+        // A restored mobile page can retain an EventSource whose connection died
+        // while suspended. Reopen it and drain any already queued expression.
+        mouthEvents?.close();
+        mouthEvents = null;
+        connectMouthEvents();
+        await consumeExpressionOutputs();
+      } catch (_) {
+        // A failed wake-up keeps expression queued for the next connection event.
+      } finally {
+        bodyReconnectBusy = false;
       }
     }
 
@@ -1407,7 +1428,7 @@
         if (realtimeAudio) realtimeAudio.muted = true;
         setStatus("VOICE OFF\nSpoken output is disabled; vision and hearing are unchanged.");
       } else {
-        connectMouthEvents();
+        resumeBodyConnection();
         if (realtimeAudio) realtimeAudio.muted = false;
         refreshSharedVoiceSettings();
         setStatus("VOICE ON\nSpoken output is enabled.");
@@ -1440,11 +1461,13 @@
 
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
+        resumeBodyConnection();
         checkForBodyPageUpdate();
         refreshSharedVoiceSettings();
         refreshConnectedHostStatus();
       }
     });
+    window.addEventListener("pageshow", resumeBodyConnection);
     window.addEventListener("beforeunload", () => {
       stopTalking();
       disableVision({ persist: false });

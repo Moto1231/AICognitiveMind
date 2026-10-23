@@ -27,6 +27,21 @@ A live host takes precedence over standalone reasoning. A timed-out host request
 
 `begin_interaction` now includes a read-only `body_work` snapshot: whether a reasoning host is attached and counts of queued human, sensory, and other requests. The connected host should commit the current direct human response first, then claim at most one queued Body request during that turn. This bounded step makes sensory interpretation part of the normal interaction lifecycle without letting a backlog monopolize a human reply. The queue remains authoritative: `next_body_interaction` claims work, and `complete_body_interaction` marks it complete only after the host has produced a response. If the host is not attached, the snapshot reports that state but does not pretend to process the queue. This is turn-triggered processing, not autonomous between-turn awareness.
 
+### Live Body speech recovery
+
+`get_body_reasoning_status.live_body` reports whether the browser's speech session is active,
+missing, invalid, or stale, plus its last check-in age when available. A registered reasoning
+host does not by itself establish that a browser is ready to play speech. `speak_body_text`
+returns an explicit MCP tool error with recovery instructions when the browser has not
+checked in within 120 seconds; successful queueing still reports `playback_confirmed: false`.
+
+When Live Body returns to the foreground, is restored by browser navigation, or has Voice
+enabled, it registers its session again, reconnects the Mouth event stream, and checks for
+queued expression. Voice remains off when the user has disabled it. This restores browser
+delivery after suspension; it does not create a reasoning-host event subscription or provide
+autonomous processing while the host is idle. See [message events](chatgpt-message-events.md)
+for that separate handoff.
+
 MCP HTTP binds to loopback by default. Set `MCP_ACCESS_TOKEN` to use a non-loopback bind, and send `Authorization: Bearer <token>`. Use TLS at the deployment boundary for remote traffic. Stdio does not use HTTP authentication. The application password for the browser portal is a separate setting.
 
 ## Optional fallback and quotas
