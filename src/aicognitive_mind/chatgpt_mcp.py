@@ -649,7 +649,7 @@ def build_chatgpt_mcp(
     )
     async def execute_task(
         task: TaskKind,
-        operation: Literal["chat", "transcribe"],
+        operation: Literal["chat", "transcribe", "synthesize_voice"],
         ctx: Context[AppState],
         messages: list[dict[str, Any]] | None = None,
         temperature: float | None = None,
@@ -660,12 +660,15 @@ def build_chatgpt_mcp(
         state_ref: str | None = None,
         memory_refs: list[str] | None = None,
         working_context: str = "",
+        text: str | None = None,
     ) -> dict[str, Any]:
         """Run a configured specialist task using Axiom's saved provider/model assignment.
 
         Use operation="chat" with messages for chat-style tasks, or operation="transcribe"
         with base64-encoded audio, filename, and media_type. Provider, model, and behavior
         come from Axiom's saved configuration rather than caller-supplied model names.
+        Use operation="synthesize_voice", task="audio_voice", and text to return
+        generated MP3 for local playback without a Body page or Body session.
         """
         return await execute_configured_task(
             task=task,
@@ -680,6 +683,7 @@ def build_chatgpt_mcp(
             state_ref=state_ref,
             memory_refs=memory_refs,
             working_context=working_context,
+            text=text,
         )
 
     @server.tool(

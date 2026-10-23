@@ -29,6 +29,7 @@ from aicognitive_mind.tenancy import verify_live_tenancy
 from aicognitive_mind.task_behaviors import TaskExecutionContext
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskKind
+from aicognitive_mind.voice_settings import VoiceSettings
 
 
 @dataclass
@@ -106,7 +107,7 @@ async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
 @mcp.tool()
 async def execute_task(
     task: TaskKind,
-    operation: Literal["chat", "transcribe"],
+    operation: Literal["chat", "transcribe", "synthesize_voice"],
     ctx: Context[AppState],
     messages: list[dict[str, Any]] | None = None,
     temperature: float | None = None,
@@ -117,6 +118,7 @@ async def execute_task(
     state_ref: str | None = None,
     memory_refs: list[str] | None = None,
     working_context: str = "",
+    text: str | None = None,
 ) -> dict[str, Any]:
     """Run a configured specialist task through its saved provider/model assignment.
 
@@ -124,7 +126,9 @@ async def execute_task(
     extraction, memory-recall, or other chat-style tasks. Use operation="transcribe"
     with base64-encoded audio, filename, and media_type for transcription. The provider,
     model, and behavior are resolved from Axiom's saved configuration, not supplied by
-    the caller. Optional compact context references are included in the task prompt.
+    the caller. Use operation="synthesize_voice", task="audio_voice", and text for
+    speech output. It returns base64 MP3 for playback by the current client, without
+    a Body session. Optional compact context references are included in the task prompt.
     """
     state = ctx.request_context.lifespan_context
     dispatcher = state.task_dispatcher
@@ -141,6 +145,18 @@ async def execute_task(
         payload: dict[str, Any] = {"operation": "chat", "messages": messages}
         if temperature is not None:
             payload["temperature"] = temperature
+    elif operation == "synthesize_voice":
+        if task != "audio_voice":
+            raise ValueError('operation="synthesize_voice" requires task="audio_voice".')
+        if not text or not text.strip() or len(text) > 20_000:
+            raise ValueError("Voice output requires 1–20000 characters of text.")
+        settings = await VoiceSettings(state.storage.mind).read()
+        payload = {
+            "operation": "synthesize_voice",
+            "text": text.strip(),
+            "speed": settings["rate"],
+            "volume": (settings["volume"] - 1.0) * 20.0,
+        }
     else:
         if not filename or not media_type or not audio_base64:
             raise ValueError(
@@ -172,6 +188,20 @@ async def execute_task(
         or any(item.provider and item.model for item in assignment.fallbacks)
     )
     if not has_specialist:
+        if operation == "synthesize_voice":
+            # A reasoning host cannot return synthesized audio. The client may
+            # use its device voice only for this explicit unconfigured result.
+            return {
+                "status": "not_configured",
+                "task": task,
+                "operation": operation,
+                "routing": "local_device_voice",
+                "result": {
+                    "voice_name": settings["voiceName"],
+                    "rate": settings["rate"],
+                    "volume": settings["volume"],
+                },
+            }
         host = await state.hosts.active() if state.hosts is not None else None
         if host is None:
             return {
@@ -253,6 +283,13 @@ async def execute_task(
             "model": assignment.model,
             "operation": operation,
             "error": str(exc),
+        }
+    if operation == "synthesize_voice":
+        if not isinstance(result, bytes) or not result or len(result) > 20_000_000:
+            raise ValueError("Voice provider returned empty, invalid, or oversized audio.")
+        result = {
+            "audio_base64": base64.b64encode(result).decode("ascii"),
+            "media_type": "audio/mpeg",
         }
     return {
         "status": "completed",
