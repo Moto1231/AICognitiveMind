@@ -247,9 +247,11 @@ class HostRuntime:
         current = time.time() if now is None else now
         return current - float(host["last_heartbeat_at"]) > cls.HEARTBEAT_STALE_AFTER_SECONDS
 
-    async def _has_claimed_request(self) -> bool:
+    async def _has_claimed_request(self, pending_requests: list[dict] | None = None) -> bool:
         now = time.time()
-        for request in await self.records.pending():
+        if pending_requests is None:
+            pending_requests = await self.records.pending()
+        for request in pending_requests:
             if not request.get("claim"):
                 continue
             claim_until = request.get("claim_until")
@@ -265,13 +267,15 @@ class HostRuntime:
             return None
         return host
 
-    async def active(self) -> dict | None:
+    async def active(self, *, pending_requests: list[dict] | None = None) -> dict | None:
         host = await self._raw_live_host()
         if not host:
             return None
         # Do not declare a host dead while it owns an in-flight request. This
         # protects long reasoning calls from being interrupted by task timeouts.
-        if self._heartbeat_stale(host) and not await self._has_claimed_request():
+        # Read-only callers that already fetched the queue can share that snapshot.
+        # Lease and claim mutations continue to obtain their own current records.
+        if self._heartbeat_stale(host) and not await self._has_claimed_request(pending_requests):
             return None
         return {
             key: host.get(key)
@@ -281,12 +285,12 @@ class HostRuntime:
     async def status(self) -> dict:
         now = time.time()
         raw_host = await self._raw_live_host()
-        stale = self._heartbeat_stale(raw_host, now) and not await self._has_claimed_request()
+        requests = await self.records.pending()
+        stale = self._heartbeat_stale(raw_host, now) and not await self._has_claimed_request(requests)
         host = None if stale else (
             {key: raw_host.get(key) for key in ("name", "model", "expires", "attached_at", "last_heartbeat_at")}
             if raw_host else None
         )
-        requests = await self.records.pending()
         items = []
         for request in requests:
             raw_claim_until = request.get("claim_until")
@@ -404,7 +408,7 @@ class HostRuntime:
         from aicognitive_mind.mcp_events import MessageEvents
 
         notify = priority == 0 and await self.message_events_enabled()
-        if not await self.active() and not notify:
+        if not notify and not await self.active():
             raise RuntimeError("No external reasoning host is attached")
         key = uuid4().hex
         request = {
@@ -596,9 +600,9 @@ class HostAwareCore:
     async def interact(
         self, message: str, *, source: str = "human", input_context: dict | None = None
     ) -> Any:
-        if await self.hosts.active() or (
+        if (
             source == "human" and await self.hosts.message_events_enabled()
-        ):
+        ) or await self.hosts.active():
             import json
 
             from aicognitive_mind.domain import InteractionResult

@@ -264,7 +264,7 @@ class CallbackSecurityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class EventMessageHandoffTests(unittest.IsolatedAsyncioTestCase):
-    async def test_message_can_wake_without_live_host_and_completes_once(self):
+    async def test_event_message_skips_active_host_lookups_and_completes_once(self):
         mind = SimpleNamespace(mind_id="axiom")
         service = SimpleNamespace(complete_interaction=AsyncMock(
             return_value={"occurred_at": "2026-10-18T08:00:00Z"}
@@ -274,6 +274,7 @@ class EventMessageHandoffTests(unittest.IsolatedAsyncioTestCase):
             200, json.dumps({"challenge": a[3].get("challenge")}).encode()
         )))
         await events.subscribe(OWNER, params())
+        hosts.active = AsyncMock(wraps=hosts.active)
         fallback = SimpleNamespace(interact=AsyncMock())
         core = HostAwareCore(fallback, hosts)
         task = asyncio.create_task(core.interact("Hello from the Body"))
@@ -295,6 +296,7 @@ class EventMessageHandoffTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await hosts.claim_incoming_message(request_id))["status"], "already_complete")
             service.complete_interaction.assert_awaited_once()
             fallback.interact.assert_not_awaited()
+            hosts.active.assert_not_awaited()
             self.assertIsNone(await hosts.active())
         finally:
             task.cancel()
@@ -307,6 +309,23 @@ class EventMessageHandoffTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await hosts.claim_incoming_message(request["request_id"]))["status"], "in_progress")
         with self.assertRaises(PermissionError):
             await hosts.complete_incoming_message("wrong", request["request_id"], "no")
+
+    async def test_sensory_requests_still_require_a_host_when_events_are_enabled(self):
+        hosts = HostRuntime(SimpleNamespace(mind_id="axiom"), SimpleNamespace())
+        events = MessageEvents(hosts.records, post=AsyncMock(side_effect=lambda *a: (
+            200, json.dumps({"challenge": a[3].get("challenge")}).encode()
+        )))
+        await events.subscribe(OWNER, params())
+        hosts.active = AsyncMock(wraps=hosts.active)
+        fallback = SimpleNamespace(interact=AsyncMock())
+        with self.assertRaisesRegex(RuntimeError, "No external reasoning host"):
+            await hosts.submit("Interpret this vision percept", priority=10)
+        with patch("aicognitive_mind.config.body_allow_standalone_fallback_enabled", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "No external reasoning host"):
+                await HostAwareCore(fallback, hosts).interact("A vision percept", source="sensory")
+        self.assertEqual(hosts.active.await_count, 2)
+        self.assertEqual(await hosts.records.pending(), [])
+        fallback.interact.assert_not_awaited()
 
     async def test_failed_task_can_release_and_message_can_be_reclaimed(self):
         hosts = HostRuntime(SimpleNamespace(mind_id="axiom"), SimpleNamespace())
