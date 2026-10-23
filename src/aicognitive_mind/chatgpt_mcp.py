@@ -813,6 +813,7 @@ def build_chatgpt_mcp(
                         proposed_memories=tuple(proposed_memories or ()),
                         current_evidence=tuple(current_evidence or ()),
                         idempotency_key=idempotency_key,
+                        host_working_context=context_json,
                     )
             except Exception as exc:
                 with timer.stage("trace_error"):

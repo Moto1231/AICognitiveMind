@@ -1,10 +1,12 @@
+from functools import partial
+from aicognitive_mind.memory_steward import MemoryStewardTool
 import json
 import unittest
 
 from aicognitive_mind.mcp_service import (
     BeliefReframeProposal,
     BeliefTransitionProposal,
-    CognitiveMcpService,
+    CognitiveMcpService as ProductionMcpService,
     MemoryProposal,
 )
 from aicognitive_mind.memory_steward import (
@@ -22,6 +24,9 @@ from aicognitive_mind.storage import (
     InMemoryMemoryStore,
     InMemoryMindStore,
 )
+
+
+CognitiveMcpService = partial(ProductionMcpService, steward_factory=MemoryStewardTool)
 
 
 class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):

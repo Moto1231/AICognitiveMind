@@ -37,7 +37,7 @@ async def main():
         await runtime.close()
         parameters = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "aicognitive_mind.mcp_server", "--transport", "stdio"],
+            args=["scripts/mcp_test_server.py", "--transport", "stdio"],
             env={
                 **os.environ,
                 "STORAGE_PROVIDER": "surreal",

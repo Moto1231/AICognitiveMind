@@ -1150,12 +1150,19 @@ class MemoryStewardTool:
         memory: MemoryStore,
         journal: JournalStore,
         recall_limit: int = 6,
+        *,
+        working_context: dict[str, Any] | None = None,
+        current_state: dict[str, Any] | None = None,
+        runtime: Any = None,
     ) -> None:
         self._mind = mind
         self._input_text = input_text
         self._memory = memory
         self._journal = journal
         self._recall_limit = recall_limit
+        self._working_context = working_context or {}
+        self._current_state = current_state or {}
+        self.assessment: dict[str, Any] = {}
         self._brief: MemoryBrief | None = None
         self._evidence: list[ResearchObservation] = []
         self._decisions: list[MemoryDecision] = []
@@ -1187,6 +1194,27 @@ class MemoryStewardTool:
     @property
     def input_schema(self) -> dict[str, Any]:
         return _CALL_ADAPTER.json_schema()
+
+    def host_context(self) -> dict[str, Any]:
+        """Legacy storage-tool context; model-backed stewardship returns a curated brief."""
+        return self._require_recall().model_dump(mode="json")
+
+    def state_context(self) -> dict[str, Any]:
+        return self._require_recall().model_dump(mode="json")
+
+    async def review_interaction(
+        self, response_text: str, proposed_memories: tuple[Any, ...],
+        current_evidence: tuple[Any, ...], belief_transitions: tuple[Any, ...],
+        belief_reframes: tuple[Any, ...],
+    ) -> dict[str, Any]:
+        """Offline storage-rule adapter; MCP defaults to the model-backed subclass."""
+        await self.invoke({"action": "recall", "focus": self._input_text})
+        return {
+            "proposed_memories": proposed_memories,
+            "current_evidence": current_evidence,
+            "belief_transitions": belief_transitions,
+            "belief_reframes": belief_reframes,
+        }
 
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
         if self._completed:

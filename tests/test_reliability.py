@@ -1,3 +1,5 @@
+from functools import partial
+from aicognitive_mind.memory_steward import MemoryStewardTool
 import asyncio
 import tempfile
 import unittest
@@ -14,7 +16,7 @@ from aicognitive_mind.domain import CognitiveActor, CognitiveMind, MemoryClass, 
 from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_server import McpTokenAuth
-from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
+from aicognitive_mind.mcp_service import CognitiveMcpService as ProductionMcpService, MemoryProposal
 from aicognitive_mind.standalone import ProviderUnavailable, StandaloneRuntime
 from aicognitive_mind.surreal_storage import (
     SurrealJournalStore,
@@ -22,6 +24,9 @@ from aicognitive_mind.surreal_storage import (
     SurrealMindStore,
     SurrealRuntime,
 )
+
+
+CognitiveMcpService = partial(ProductionMcpService, steward_factory=MemoryStewardTool)
 
 
 class ReliabilityTests(unittest.IsolatedAsyncioTestCase):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from typing import Any
 from uuid import uuid4
 
@@ -24,10 +25,11 @@ from aicognitive_mind.memory_steward import (
     SemanticScope,
 )
 from aicognitive_mind.prompts import (
-    CONSCIOUS_MEMORY_STEWARD_SYSTEM_PROMPT,
     CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
 )
 from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
+from aicognitive_mind.steward_agent import ModelMemorySteward
+from aicognitive_mind.task_dispatcher import TaskModelDispatcher
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.state_context import CurrentStateLedger, CurrentStateLedgerRepository
@@ -70,11 +72,15 @@ class CognitiveMcpService:
         mind: MindStore,
         journal: JournalStore,
         memory: MemoryStore,
+        *,
+        steward_factory: Callable[..., MemoryStewardTool] = ModelMemorySteward,
     ) -> None:
         self._mind = mind
         self._journal = journal
         self._memory = memory
         records = RuntimeRecords(mind)
+        self._steward_factory = steward_factory
+        self._steward_runtime = TaskModelDispatcher(records, timeout=30)
         self._host_behaviors = HostBehaviorRegistry(records)
         self._task_prompt_assembler = TaskPromptAssembler(TaskBehaviorRegistry(records))
 
@@ -162,11 +168,17 @@ class CognitiveMcpService:
         timer = StageTimer(f"begin_interaction source={source}")
         with timer.stage("mind"):
             mind = await self._require_mind()
-        steward = MemoryStewardTool(
+        with timer.stage("state_context"):
+            state_context = await self._load_current_state()
+        steward = self._steward_factory(
             mind=mind,
             input_text=user_message,
             memory=self._memory,
             journal=self._journal,
+            working_context={**(host_working_context or {}),
+                             "input_source": source, "input_context": input_context},
+            current_state=state_context.as_context(),
+            runtime=self._steward_runtime,
         )
         with timer.stage("recall"):
             recalled = await steward.invoke(
@@ -181,7 +193,7 @@ class CognitiveMcpService:
             behaviors = await self._host_behaviors.selected("reasoning")
         with timer.stage("state"):
             current_state = await self._refresh_current_state(
-                mind, recalled["context"], user_message, host_working_context or {}, contract,
+                mind, steward.state_context(), user_message, host_working_context or {}, contract,
                 [item.model_dump(mode="json") for item in behaviors],
                 source=source, input_context=input_context,
             )
@@ -191,6 +203,7 @@ class CognitiveMcpService:
             "idempotency_key": uuid4().hex,
             "mind": mind.model_dump(mode="json"),
             "recalled_context": recalled["context"],
+            "memory_assessment": steward.assessment,
             "current_state": current_state.as_context(),
             "speaker_identification_required": (
                 source == "human"
@@ -198,7 +211,9 @@ class CognitiveMcpService:
             ),
             "conscious_workspace_contract": contract,
             "next_step": (
-                "Reason as this Mind using the recalled context. If unresolved evidence includes "
+                "Use the Steward's assessment and any returned brief. A no_recall_needed outcome "
+                "means work can proceed using current context; do not force a lookup. "
+                "If unresolved evidence includes "
                 "investigation guidance, pursue the material questions that can change or clarify "
                 "the conclusion and submit useful findings as current_evidence. If resolution "
                 "readiness says candidate_ready, you may explicitly propose that exact value in "
@@ -207,7 +222,8 @@ class CognitiveMcpService:
                 "propose the exact competing values in belief_reframes only when the evidence-backed "
                 "finding supplies explicit scopes for both values. "
                 "Before presenting the final answer, call complete_interaction with the response "
-                "text and only stable memory proposals that should influence future interactions. "
+                "text, updated host_working_context, evidence and optional memory suggestions. "
+                "The Steward independently reviews the whole result even when suggestions are empty. "
                 "Pass the returned idempotency_key unchanged on completion and any retry."
             ),
         }
@@ -226,22 +242,32 @@ class CognitiveMcpService:
         source: str = "human",
         input_context: dict[str, Any] | None = None,
         runtime_source: str = "connected_mcp_host",
+        host_working_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Let the Steward review proposed learning, commit accepted memory, and journal the experience."""
         timer = StageTimer(f"complete_interaction source={source}")
         with timer.stage("mind"):
             mind = await self._require_mind()
-        steward = MemoryStewardTool(
+        with timer.stage("state_context"):
+            state_context = await self._load_current_state()
+        steward = self._steward_factory(
             mind=mind,
             input_text=user_message,
             memory=self._memory,
             journal=self._journal,
+            working_context={**(host_working_context or {}),
+                             "input_source": source, "input_context": input_context},
+            current_state=state_context.as_context(),
+            runtime=self._steward_runtime,
         )
-        with timer.stage("recall"):
-            await steward.invoke({"action": "recall", "focus": user_message})
+        with timer.stage("review"):
+            review = await steward.review_interaction(
+                response_text, proposed_memories, current_evidence,
+                belief_transitions, belief_reframes,
+            )
 
         with timer.stage("evidence"):
-            for evidence in current_evidence:
+            for evidence in review["current_evidence"]:
                 await steward.invoke(
                     {
                         "action": "consider_evidence",
@@ -251,7 +277,7 @@ class CognitiveMcpService:
 
         reframe_decisions: list[dict[str, Any]] = []
         with timer.stage("reframes"):
-            for proposal in belief_reframes:
+            for proposal in review["belief_reframes"]:
                 reframe = await steward.invoke(
                     {
                         "action": "reframe_belief",
@@ -262,7 +288,7 @@ class CognitiveMcpService:
 
         transition_decisions: list[dict[str, Any]] = []
         with timer.stage("transitions"):
-            for proposal in belief_transitions:
+            for proposal in review["belief_transitions"]:
                 transition = await steward.invoke(
                     {
                         "action": "transition_belief",
@@ -273,7 +299,7 @@ class CognitiveMcpService:
 
         decisions: list[dict[str, Any]] = []
         with timer.stage("memories"):
-            for proposal in proposed_memories:
+            for proposal in review["proposed_memories"]:
                 decision = await steward.invoke(
                     {
                         "action": "propose_memory",
@@ -284,6 +310,9 @@ class CognitiveMcpService:
 
         with timer.stage("steward_complete"):
             trace = await steward.complete()
+            trace_payload = trace.model_dump(mode="python")
+            trace_payload["recalled_context"] = steward.host_context()
+            trace_payload["assessment"] = steward.assessment
         with timer.stage("journal_append"):
             journal_entry = await self._journal.append(
                 JournalEntry(
@@ -294,7 +323,7 @@ class CognitiveMcpService:
                             "content": user_message,
                             **({"context": input_context} if input_context else {}),
                         },
-                        "memory_steward": trace.model_dump(mode="python"),
+                        "memory_steward": trace_payload,
                         "expression": {
                             "source": "conscious_workspace",
                             "content": response_text,
@@ -318,7 +347,7 @@ class CognitiveMcpService:
             ],
             "belief_transition_decisions": transition_decisions,
             "belief_reframe_decisions": reframe_decisions,
-            "memory_steward_contract": CONSCIOUS_MEMORY_STEWARD_SYSTEM_PROMPT,
+            "memory_review": steward.assessment,
         }
 
     async def read_current_state(self) -> dict[str, Any]:
@@ -371,12 +400,13 @@ class CognitiveMcpService:
         }, source="persistent_mind_identity")
         ledger.answer("behaviors", {"rules": behaviors, "contract_loaded": bool(contract)},
                       source="runtime_behavior_assembler")
-        ledger.answer("skills", [
-            {"memory_class": m.get("memory_class"), "content": m.get("content"),
-             "associations": m.get("associations", [])}
-            for m in recalled.get("durable_memory", [])
-            if m.get("memory_class") == MemoryClass.PROCEDURAL.value
-        ][:12], source="memory_steward_recall")
+        if recalled.get("recall_outcome") not in {"no_recall_needed", "no_relevant_memory"}:
+            ledger.answer("skills", [
+                {"memory_class": m.get("memory_class"), "content": m.get("content"),
+                 "associations": m.get("associations", [])}
+                for m in recalled.get("durable_memory", [])
+                if m.get("memory_class") == MemoryClass.PROCEDURAL.value
+            ][:12], source="memory_steward_recall")
         if first_context:
             ledger.answer("mood", None, status="unknown",
                           source="memory_steward_no_grounded_mood",

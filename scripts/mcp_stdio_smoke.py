@@ -50,7 +50,7 @@ async def main() -> None:
         )
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "aicognitive_mind.mcp_server", "--transport", "stdio"],
+        args=["scripts/mcp_test_server.py", "--transport", "stdio"],
         env=env,
     )
 
