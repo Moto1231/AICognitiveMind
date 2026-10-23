@@ -37,6 +37,10 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         self.stack.enter_context(
             patch("aicognitive_mind.config.get_settings", return_value=self.settings)
         )
+        # Other test modules may import the portal before this fixture runs.
+        self.stack.enter_context(
+            patch("aicognitive_mind.api.get_settings", return_value=self.settings)
+        )
 
         self.event_records = RuntimeRecords(SimpleNamespace(mind_id=self.settings.axiom_mind_id))
 
