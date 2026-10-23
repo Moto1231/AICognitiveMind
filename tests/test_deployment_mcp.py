@@ -149,7 +149,7 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         )
         required = tools["complete_interaction"]["inputSchema"]["required"]
         self.assertIn("idempotency_key", required)
-        self.assertIn("proposed_memories", required)
+        self.assertNotIn("proposed_memories", required)
 
     @deployment_running
     async def test_invalid_expired_and_wrong_resource_tokens_remain_rejected(self):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from importlib.resources import files
 from typing import Annotated, Any, Literal
 
@@ -46,6 +47,10 @@ class Support(Step):
 
 class ReviewedMemory(ProposeMemoryCall):
     model_config = ConfigDict(extra="forbid")
+    # These legacy proposal fields are optional for the independent reviewer.
+    # Grounding is derived from validated support, never from model assertions.
+    action: Literal["propose_memory"] = "propose_memory"
+    grounding: tuple[str, ...] = ()
     support: tuple[Support, ...] = Field(min_length=1, max_length=6)
 
 
@@ -73,8 +78,12 @@ class ModelMemorySteward(MemoryStewardTool):
         self._search_count = 0
         self.assessment: dict[str, Any] = {}
         self._public_context: dict[str, Any] = {}
+        self._validation_corrections = 0
 
-    async def _run(self, phase: Literal["recall", "review"], result: dict[str, Any]) -> Any:
+    async def _run(
+        self, phase: Literal["recall", "review"], result: dict[str, Any],
+        *, validate_finish: Callable[[Any], None] | None = None,
+    ) -> Any:
         adapter = RECALL_STEPS if phase == "recall" else REVIEW_STEPS
         skill = files("aicognitive_mind").joinpath("skills/memory-steward/SKILL.md").read_text()
         context = {
@@ -92,6 +101,7 @@ class ModelMemorySteward(MemoryStewardTool):
             },
             {"role": "user", "content": json.dumps(context, default=str)},
         ]
+        self._validation_corrections = 0
         try:
             async with asyncio.timeout(60):
                 for _ in range(4):
@@ -106,10 +116,35 @@ class ModelMemorySteward(MemoryStewardTool):
                         text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
                     try:
                         step = adapter.validate_json(text)
-                    except ValidationError as exc:
-                        raise StewardProtocolError(
-                            "Memory Steward returned invalid phase JSON."
-                        ) from exc
+                        if not isinstance(step, Search) and validate_finish is not None:
+                            validate_finish(step)
+                    except (ValidationError, StewardProtocolError) as exc:
+                        if isinstance(exc, ValidationError):
+                            detail = "; ".join(
+                                f"{'.'.join(map(str, error['loc'])) or 'response'}: "
+                                f"{error['msg']}"
+                                for error in exc.errors(include_input=False, include_url=False)[:5]
+                            )[:1000]
+                        else:
+                            detail = str(exc)
+                        if phase != "review" or self._validation_corrections:
+                            raise StewardProtocolError(
+                                f"Memory Steward {phase} validation failed: {detail}"
+                            ) from exc
+                        self._validation_corrections += 1
+                        messages.extend([
+                            {"role": "assistant", "content": raw},
+                            {"role": "user", "content": json.dumps({
+                                "validation_error": detail,
+                                "correction": (
+                                    "Return one corrected review matching the phase schema. "
+                                    "Preserve supported decisions and their classifications; "
+                                    "do not invent evidence or silently discard valid learning. "
+                                    "Explain any changed decision in the review reason."
+                                ),
+                            })},
+                        ])
+                        continue
                     if not isinstance(step, Search):
                         return step
                     found = await self._search(step)
@@ -155,11 +190,14 @@ class ModelMemorySteward(MemoryStewardTool):
                 break
         return found
 
-    def _select(self, references: tuple[str, ...], summary: str) -> None:
+    def _validate_references(self, references: tuple[str, ...]) -> None:
         if len(set(references)) != len(references) or any(
             reference not in self._records for reference in references
         ):
             raise StewardProtocolError("Memory Steward selected an unknown or repeated source.")
+
+    def _select(self, references: tuple[str, ...], summary: str) -> None:
+        self._validate_references(references)
         selected = [self._records[reference] for reference in references]
         self._brief = self._build_brief(
             focus=self._input_text,
@@ -228,6 +266,12 @@ class ModelMemorySteward(MemoryStewardTool):
             return [item.model_dump(mode="json") for item in items]
 
         evidence_data = data(current_evidence)
+
+        def validate(finished: ReviewFinish) -> None:
+            self._validate_review(
+                finished, response_text, current_evidence, belief_transitions, belief_reframes,
+            )
+
         finished = await self._run(
             "review",
             {
@@ -237,10 +281,24 @@ class ModelMemorySteward(MemoryStewardTool):
                 "belief_transitions": data(belief_transitions),
                 "belief_reframes": data(belief_reframes),
             },
+            validate_finish=validate,
+        )
+        reviewed = self._validate_review(
+            finished, response_text, current_evidence, belief_transitions, belief_reframes,
         )
         self._select(finished.references, "")
         self.assessment = {"outcome": "reviewed", "reason": finished.reason}
+        if self._validation_corrections:
+            self.assessment["validation_corrections"] = self._validation_corrections
         self._public_context = {**self.assessment, "searches": self._search_count}
+        return reviewed
+
+    def _validate_review(
+        self, finished: ReviewFinish, response_text: str,
+        current_evidence: tuple[Any, ...], belief_transitions: tuple[Any, ...],
+        belief_reframes: tuple[Any, ...],
+    ) -> dict[str, Any]:
+        self._validate_references(finished.references)
         sources = {
             "user_message": [self._input_text],
             "response_text": [response_text],
@@ -251,26 +309,22 @@ class ModelMemorySteward(MemoryStewardTool):
             ],
         }
         memories = []
-        for candidate in finished.memories:
-            if candidate.memory_class not in {
-                MemoryClass.SEMANTIC,
-                MemoryClass.PROCEDURAL,
-                MemoryClass.REFLECTIVE,
-            }:
-                raise StewardProtocolError("Memory Steward cannot revise identity or values.")
+        for index, candidate in enumerate(finished.memories):
             for support in candidate.support:
                 if not support.quote.strip() or not any(
                     support.quote in text for text in sources[support.source]
                 ):
                     raise StewardProtocolError(
-                        "Memory Steward learning has no matching evidence quote."
+                        f"Reviewed memory {index} ({candidate.memory_class.value}) has no "
+                        f"matching {support.source} evidence quote."
                     )
                 if (
                     support.source == "response_text"
-                    and candidate.memory_class == MemoryClass.SEMANTIC
+                    and candidate.memory_class in {MemoryClass.SEMANTIC, MemoryClass.IDENTITY}
                 ):
                     raise StewardProtocolError(
-                        "An answer alone cannot ground an external semantic fact."
+                        f"Reviewed memory {index} ({candidate.memory_class.value}) cannot use "
+                        "response_text as factual grounding; use user_message or current_evidence."
                     )
             value = candidate.model_dump(exclude={"support"})
             value["grounding"] = tuple(
@@ -278,14 +332,22 @@ class ModelMemorySteward(MemoryStewardTool):
             )
             memories.append(ProposeMemoryCall.model_validate(value))
 
-        def selected(indices: tuple[int, ...], items: tuple[Any, ...]) -> tuple[Any, ...]:
+        def selected(
+            field: str, indices: tuple[int, ...], items: tuple[Any, ...],
+        ) -> tuple[Any, ...]:
             if len(set(indices)) != len(indices) or any(i < 0 or i >= len(items) for i in indices):
-                raise StewardProtocolError("Memory Steward selected an invalid review item.")
+                raise StewardProtocolError(
+                    f"Memory Steward {field} contains an out-of-range or repeated index."
+                )
             return tuple(items[i] for i in indices)
 
         return {
             "proposed_memories": tuple(memories),
-            "current_evidence": selected(finished.evidence_indices, current_evidence),
-            "belief_transitions": selected(finished.transition_indices, belief_transitions),
-            "belief_reframes": selected(finished.reframe_indices, belief_reframes),
+            "current_evidence": selected(
+                "evidence_indices", finished.evidence_indices, current_evidence,
+            ),
+            "belief_transitions": selected(
+                "transition_indices", finished.transition_indices, belief_transitions,
+            ),
+            "belief_reframes": selected("reframe_indices", finished.reframe_indices, belief_reframes),
         }

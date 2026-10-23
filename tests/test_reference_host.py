@@ -1,3 +1,4 @@
+import json
 import unittest
 from types import SimpleNamespace
 from typing import Any
@@ -230,6 +231,32 @@ class ReferenceHostTests(unittest.IsolatedAsyncioTestCase):
                     "conscious_workspace_contract": "Use memory responsibly.",
                 },
             )
+
+    async def test_openai_reasoner_does_not_require_host_memory_suggestions(self) -> None:
+        for suggestions in ({}, {"proposed_memories": None}):
+            with self.subTest(suggestions=suggestions):
+                arguments = {
+                    "response_text": "Continuing.",
+                    "working_context": HostWorkingContext(summary="Current task").model_dump(
+                        mode="json"
+                    ),
+                    **suggestions,
+                }
+                response = SimpleNamespace(output=[SimpleNamespace(
+                    type="function_call", name="finalize_turn", arguments=json.dumps(arguments),
+                )], output_text="")
+                client = FakeOpenAIClient(response)
+                reasoner = OpenAIHostReasoner(api_key="test-key", client=client)
+
+                result = await reasoner.reason("Continue.", {"host_working_context": {}})
+
+                self.assertEqual(result.response_text, "Continuing.")
+                self.assertEqual(result.proposed_memories, ())
+                self.assertEqual(result.working_context.summary, "Current task")
+                request = client.responses.calls[0]
+                schema = request["tools"][0]["parameters"]
+                self.assertIn("null", schema["properties"]["proposed_memories"]["type"])
+                self.assertIn("independently", request["instructions"])
 
 
 if __name__ == "__main__":

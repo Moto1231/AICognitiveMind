@@ -339,7 +339,8 @@ async def _realtime_body_session(request: Request) -> Response:
                 "complete_interaction with the same user message, the exact answer you intend to "
                 "speak, the updated host_working_context, and idempotency_key from "
                 "begin_interaction. Use the committed tool result's context on the next turn. "
-                "Always include proposed_memories, using an empty list when nothing should persist. "
+                "Include material current_evidence. Memory suggestions in proposed_memories are "
+                "optional; the Steward independently selects and classifies what to retain. "
                 "Never bypass the independent "
             "Memory Steward. Keep spoken responses concise unless the user asks for detail."
         ),

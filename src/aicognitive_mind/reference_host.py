@@ -83,17 +83,18 @@ class OpenAIHostReasoner:
             "confirmation grounds a known identity; do not turn a person mentioned in history into "
             "the person currently present. Preserve evidence and uncertainty in grounding. "
             "When the answer is ready, call finalize_turn with the human-facing response, the updated "
-            "working_context, and only stable learning that deserves durable-memory review. "
-            "Do not propose identity changes. If nothing should persist, use an empty "
-            "proposed_memories array."
+            "working_context, and any optional memory suggestions. The Memory Steward independently "
+            "selects and classifies what to retain from the full interaction; you do not decide "
+            "whether learning occurs. Use null for proposed_memories when not supplying suggestions. "
+            "Memory suggestions never authorize canonical identity or foundational-value changes."
         )
 
         finalize_tool = {
             "type": "function",
             "name": "finalize_turn",
             "description": (
-                "Return the final human-facing response and stable memory proposals. "
-                "The host will submit these proposals to the independent Memory Steward."
+                "Return the final human-facing response and updated working context. "
+                "Memory suggestions are optional; the Steward reviews the interaction independently."
             ),
             "parameters": {
                 "type": "object",
@@ -151,17 +152,19 @@ class OpenAIHostReasoner:
                         "additionalProperties": False,
                     },
                     "proposed_memories": {
-                        "type": "array",
+                        "type": ["array", "null"],
                         "items": {
                             "type": "object",
                             "properties": {
                                 "memory_class": {
                                     "type": "string",
                                     "enum": [
+                                        "working",
                                         "episodic",
                                         "semantic",
                                         "procedural",
                                         "reflective",
+                                        "identity",
                                     ],
                                 },
                                 "content": {
@@ -221,7 +224,7 @@ class OpenAIHostReasoner:
                     raise RuntimeError("finalize_turn returned no response text")
                 memories = tuple(
                     MemoryProposal.model_validate(memory)
-                    for memory in arguments.get("proposed_memories", [])
+                    for memory in (arguments.get("proposed_memories") or [])
                 )
                 context = HostWorkingContext.model_validate(arguments["working_context"])
                 return HostReasoningResult(

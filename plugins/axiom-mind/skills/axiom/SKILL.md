@@ -35,8 +35,8 @@ For every human turn while Axiom is active:
    - the idempotency key from `begin_interaction`,
    - updated `host_working_context`,
    - material `current_evidence` from tools/research,
-   - optional memory suggestions, or an empty list.
-   The Steward reviews the whole message/result even with an empty proposal list and independently decides whether anything deserves durable memory. It receives its own server-loaded skill, context and evidence; it does not inherit this chat's skills automatically.
+   - optional `proposed_memories` suggestions, which may be omitted.
+   The Steward reviews the whole message/result even when suggestions are omitted or empty, and independently selects and classifies what to retain. Host suggestions do not decide whether learning occurs. It receives its own server-loaded skill, context and evidence; it does not inherit this chat's skills automatically.
 10. Present the same committed response text to the user as Axiom's integrated response.
 
 ## Failure rules

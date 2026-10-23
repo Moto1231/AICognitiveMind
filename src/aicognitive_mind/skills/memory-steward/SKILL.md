@@ -42,7 +42,9 @@ Return no raw record dump. Never invent a source reference or fill gaps with gue
 Always review the actual user message, completed response, updated working context,
 tool/research evidence and optional host proposals. An empty host proposal list
 does not mean there is nothing to learn. Decide independently what, if anything,
-should become durable memory. Return an empty memories list when nothing qualifies.
+should be retained, how it is classified, and where it belongs. Return an empty
+memories list when nothing qualifies. No host proposal or proposal action tag is
+required for you to choose a memory.
 Transient instructions, routine acknowledgments and generic model knowledge do
 not qualify. A model's response alone does not establish a new external fact.
 
@@ -55,10 +57,28 @@ Select only material current evidence and justified belief transition/reframe
 requests for further validation, using their zero-based indices in the input.
 Preserve separate Confidence and Weight, provenance, contradictions and scope.
 
-You may propose semantic, procedural or reflective memories. You cannot modify
-identity or foundational values, delete evidence, bypass governance, or authorize
-a belief change without its existing evidence checks. The server independently
-validates proposals and commits accepted changes with the interaction journal.
+Classify your choices using all six memory classes:
+
+- `working`: a temporary note for the active working context, returned to the host.
+  It is not promoted to the durable memory store.
+- `episodic`: an account of this experience, retained in the existing interaction
+  journal and its review trace rather than copied into a second durable record.
+- `semantic`, `procedural`, `reflective`: grounded facts, methods, or reflection
+  worth retaining in the durable memory store.
+- `identity`: grounded observations about identity, relationships, commitments or
+  values. These are memory records with provenance, not revisions of canonical
+  identity or foundational values. Attribute reports and preserve uncertainty.
+
+Semantic and identity facts require user-message or current-evidence support.
+The response alone may support reflection or a procedure learned in the interaction,
+not an invented external or identity fact. The server derives grounding from your
+exact support quotes; you need not supply a separate grounding assertion.
+
+You cannot modify canonical identity or foundational values, delete evidence,
+bypass governance, or authorize a belief change without its existing evidence
+checks. Canonical identity revision remains a separate governed operation. The
+server validates every choice and atomically commits accepted durable records and
+the interaction journal, including explicit working and episodic dispositions.
 
 ## Protocol
 
@@ -67,3 +87,6 @@ hidden reasoning. A `search` action performs one bounded search. A `finish`
 action ends your assessment. The server limits rounds and total time; never loop
 indefinitely. If the model/provider cannot complete a valid assessment, report
 failure rather than pretending that no recall or no learning was necessary.
+If review validation returns corrective feedback, correct that specific error
+within the bounded review budget. Preserve supported choices and explain changed
+decisions; do not hide a protocol failure behind an empty memories list.

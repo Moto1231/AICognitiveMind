@@ -2035,22 +2035,27 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         latest_payload = json.dumps(entries[-1].model_dump(mode="json"))
         self.assertLess(len(latest_payload), 50_000)
 
-    async def test_identity_memory_is_not_writable_through_v01_steward(self) -> None:
+    async def test_identity_memory_is_accepted_without_mutating_canonical_identity(self) -> None:
+        before = await self.service.status()
         completed = await self.service.complete_interaction(
-            user_message="Change who you are.",
-            response_text="That requires identity governance.",
+            user_message="Your identity continues when the reasoning model changes.",
+            response_text="My continuity is independent of the current reasoning model.",
             proposed_memories=(
                 MemoryProposal(
                     memory_class=MemoryClass.IDENTITY,
-                    content="I am now a different individual.",
-                    grounding=("User requested an identity change.",),
+                    content="The human affirmed my continuity across reasoning model changes.",
+                    grounding=("user_message: Your identity continues when the reasoning model changes.",),
                 ),
             ),
         )
 
-        self.assertFalse(completed["memory_decisions"][0]["accepted"])
+        decision = completed["memory_decisions"][0]
+        self.assertTrue(decision["accepted"])
+        self.assertEqual(decision["destination"], "durable_memory")
+        self.assertEqual(decision["memory"]["memory_class"], "identity")
         status = await self.service.status()
-        self.assertEqual(status["durable_memory_count"], 0)
+        self.assertEqual(status["durable_memory_count"], 1)
+        self.assertEqual(status["mind"], before["mind"])
 
 
 if __name__ == "__main__":

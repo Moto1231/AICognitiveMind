@@ -53,7 +53,7 @@ MongoDB is used as a document store, not as a relational model:
 
 - one root document contains the mind's current identity and developmental state;
 - journal documents preserve whole experiences without foreign keys or domain identifiers;
-- memory documents preserve whole Steward-curated semantic, procedural, and reflective memory;
+- memory documents preserve whole Steward-curated semantic, procedural, reflective, and identity-class evidence;
 - diagnostic documents preserve implementation provenance outside the persona.
 
 MongoDB's internal `_id` is physical storage metadata. It is neither exposed to nor used by the Cognitive Core.
@@ -68,24 +68,35 @@ MongoDB's internal `_id` is physical storage metadata. It is neither exposed to 
 
 ### Executable Memory Steward boundary
 
-The V0.1 Conscious Memory Steward is exposed to the reasoning engine as an interaction-scoped
-tool. The system prompt requires recall before response, permits research evidence to be submitted
-for comparison, and permits durable memory to be proposed but not written by the reasoning
-engine. The runtime rejects a response that bypasses recall.
+The Conscious Memory Steward independently reviews every completed interaction. It receives the
+human input, response, working context, material evidence, and optional host suggestions, then
+chooses what deserves learning and how to classify it. An empty suggestion list still requires
+review. The host supplies the experience and evidence; it does not decide what enters memory.
+The runtime rejects a response that bypasses recall.
 
-Whole interactions remain episodic journal experiences. Only Steward-approved stable learning is
-written to durable memory; identity and value changes remain subject to constitutional governance.
+Working selections return as temporary context for the host without changing shared context state
+or creating durable memory. Episodic selections annotate the existing interaction journal rather
+than producing duplicate durable records. The selected content, grounding, and artifacts remain
+visible in the Steward's decision and interaction trace. Stable learning follows the existing
+deduplication, evidence, and unresolved-tension rules before durable commit. Production review
+derives grounding from validated source quotes; a memory class label does not supply authority
+or turn the host's answer into evidence for an external fact.
+
+Identity-class memory records evidence about self-understanding and continuity. It does not
+modify the canonical mind's identity, values, commitments, or relationships. Those changes remain
+subject to constitutional governance and separate permissions. Memory and journal changes commit
+together through the existing atomic, idempotent interaction boundary.
 
 ## Memory classes
 
-| Memory class | Purpose |
-| --- | --- |
-| Working | Temporary information used in the current conscious task |
-| Episodic | Events and experiences: what happened, when, and with whom |
-| Semantic | Concepts, facts, relationships, and accumulated understanding |
-| Procedural | Methods, skills, routines, and learned ways of doing things |
-| Identity | Values, commitments, relationships, self-understanding, and continuity |
-| Reflective | Interpretations, lessons, questions, tensions, and changes in understanding |
+| Memory class | Purpose | Destination |
+| --- | --- | --- |
+| Working | Temporary information used in the current conscious task | Host working context |
+| Episodic | Events and experiences: what happened, when, and with whom | Existing interaction journal |
+| Semantic | Concepts, facts, relationships, and accumulated understanding | Durable memory |
+| Procedural | Methods, skills, routines, and learned ways of doing things | Durable memory |
+| Identity | Evidence about values, commitments, relationships, self-understanding, and continuity | Durable memory; canonical identity remains governed separately |
+| Reflective | Interpretations, lessons, questions, tensions, and changes in understanding | Durable memory |
 
 Raw experiential history is append-only. Corrections and reinterpretations become later journal documents rather than destructive replacements.
 

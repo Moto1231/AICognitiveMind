@@ -20,7 +20,7 @@ Configure the API and MCP process to use the same persistent database. Separate 
 2. Renew with `renew_reasoning_host` while working. The lease lasts 120 seconds.
 3. Poll `next_body_interaction`. It returns a request identifier, the user message, and the same identity/memory context as `begin_interaction`.
 4. Reason externally; inspect original media with `read_sensory_evidence` when its reference is present. The returned original media is hash-verified. Governed name proposals use `propose_self_name`.
-5. Call `complete_body_interaction` with the request identifier, response, and memory proposals. This commits through the same Memory Steward and delivers the response back to the waiting Body. Retry unchanged input if delivery is interrupted.
+5. Call `complete_body_interaction` with the request identifier, response, and any optional memory suggestions. The same Memory Steward reviews the whole interaction and independently selects and classifies what to retain, then the committed response is delivered back to the waiting Body. Retry unchanged input if delivery is interrupted.
 6. Detach explicitly with `renew_reasoning_host(..., detach=true)` before another host attaches. An expired lease also permits handoff. Old tokens cannot complete requests after another host takes over.
 
 A live host takes precedence over standalone reasoning. A timed-out host request is not silently sent to a second model. The API reports actual active-host metadata separately from the configured primary architecture. Hosts must implement this polling protocol; displaying `External Host` alone does not attach a model.

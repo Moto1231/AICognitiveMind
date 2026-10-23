@@ -16,7 +16,11 @@ from aicognitive_mind.domain import (
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
-from aicognitive_mind.steward_agent import ModelMemorySteward, StewardProtocolError
+from aicognitive_mind.steward_agent import (
+    REVIEW_STEPS,
+    ModelMemorySteward,
+    StewardProtocolError,
+)
 from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore, InMemoryMindStore
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import (
@@ -201,21 +205,140 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await memory.read(), [])
         self.assertEqual(len([e for e in await journal.read() if e.kind == "interaction"]), 1)
 
-    async def test_ungrounded_learning_and_identity_changes_abort_without_writes(self):
+    async def test_independent_class_choices_use_appropriate_destinations_without_identity_revision(self):
+        statements = {
+            "working": "The active task is checking the Atlas tests.",
+            "episodic": "We checked the Atlas tests today.",
+            "semantic": "Atlas uses SurrealDB.",
+            "procedural": "Run the Atlas test suite before publishing.",
+            "identity": "The human calls Axiom a trusted coding partner.",
+            "reflective": "We learned to check scope before repeating a claim.",
+        }
+        review = {
+            "action": "finish", "reason": "Retain each grounded choice in its proper place.",
+            "memories": [
+                {
+                    "memory_class": kind, "content": text,
+                    "support": [{"source": "user_message", "quote": text}],
+                }
+                for kind, text in statements.items()
+            ],
+        }
+        # Independent choices need neither a host proposal nor the old proposal tag.
+        schema = REVIEW_STEPS.validate_python(review)
+        self.assertEqual(len(schema.memories), len(MemoryClass))
+        model = ScriptedModel(review)
+        service, journal, memory = await self.service(model)
+        original = await service._mind.load()
+        completed = await service.complete_interaction(
+            " ".join(statements.values()), "I will use that context appropriately.",
+            host_working_context={"summary": "Checking Atlas"},
+        )
+        self.assertEqual(completed["status"], "interaction_committed")
+        decisions = completed["memory_decisions"]
+        self.assertEqual(len(decisions), 6)
+        self.assertTrue(all(item["accepted"] for item in decisions))
+        for decision, (kind, content) in zip(decisions, statements.items(), strict=True):
+            if kind in {"working", "episodic"}:
+                expected = "working_context" if kind == "working" else "interaction_journal"
+                self.assertEqual(decision["destination"], expected)
+                self.assertIsNone(decision.get("memory"))
+                self.assertEqual(decision["context"]["memory_class"], kind)
+                self.assertEqual(decision["context"]["content"], content)
+                self.assertEqual(decision["context"]["grounding"], ["user_message: " + content])
+            else:
+                self.assertEqual(decision["destination"], "durable_memory")
+                self.assertEqual(decision["memory"]["memory_class"], kind)
+        self.assertEqual(
+            {item.memory_class for item in await memory.read()},
+            {MemoryClass.SEMANTIC, MemoryClass.PROCEDURAL,
+             MemoryClass.IDENTITY, MemoryClass.REFLECTIVE},
+        )
+        self.assertEqual(await service._mind.load(), original)
+        episodes = [entry for entry in await journal.read() if entry.kind == "interaction"]
+        self.assertEqual(len(episodes), 1)
+        self.assertEqual(
+            len(episodes[0].experience["memory_steward"]["memory_decisions"]), 6
+        )
+        supplied = json.loads(model.calls[0][1]["messages"][1]["content"])
+        self.assertEqual(supplied["host_proposals"], [])
+
+    async def test_ungrounded_learning_aborts_after_bounded_feedback_without_writes(self):
         for learning in [
             self.learning(support=[{"source": "user_message", "quote": "Not in the input"}]),
-            self.learning(memory_class="identity"),
             self.learning(support=[{"source": "response_text", "quote": "Atlas uses SurrealDB"}]),
+            self.learning(memory_class="identity", support=[
+                {"source": "response_text", "quote": "Atlas uses SurrealDB"},
+            ]),
         ]:
             with self.subTest(learning=learning):
-                service, journal, memory = await self.service(ScriptedModel(learning))
+                model = ScriptedModel(learning, learning)
+                service, journal, memory = await self.service(model)
                 before = await journal.read()
-                with self.assertRaises(StewardProtocolError):
+                original = await service._mind.load()
+                with self.assertRaisesRegex(StewardProtocolError, "Reviewed memory 0"):
                     await service.complete_interaction(
                         "Atlas uses SurrealDB", "Atlas uses SurrealDB"
                     )
+                self.assertEqual(len(model.calls), 2)
                 self.assertEqual(await memory.read(), [])
                 self.assertEqual(await journal.read(), before)
+                self.assertEqual(await service._mind.load(), original)
+
+    async def test_review_schema_feedback_corrects_class_without_losing_independent_learning(self):
+        valid = self.learning()
+        model = ScriptedModel(self.learning(memory_class="unknown"), valid)
+        service, _, memory = await self.service(model)
+        completed = await service.complete_interaction("Atlas uses SurrealDB", "Understood.")
+        self.assertEqual(completed["memory_review"]["validation_corrections"], 1)
+        self.assertEqual(len(await memory.read()), 1)
+        feedback = json.loads(model.calls[1][1]["messages"][-1]["content"])
+        self.assertIn("memories.0.memory_class", feedback["validation_error"])
+        self.assertIn("identity", feedback["validation_error"])
+        self.assertIn("Preserve supported decisions", feedback["correction"])
+        self.assertTrue(completed["memory_decisions"][0]["accepted"])
+
+    async def test_review_grounding_feedback_is_correctable_before_any_commit(self):
+        model = ScriptedModel(
+            self.learning(support=[{"source": "user_message", "quote": "Invented quote"}]),
+            self.learning(),
+        )
+        service, journal, memory = await self.service(model)
+        completed = await service.complete_interaction("Atlas uses SurrealDB", "Understood.")
+        feedback = json.loads(model.calls[1][1]["messages"][-1]["content"])
+        self.assertIn("matching user_message evidence quote", feedback["validation_error"])
+        self.assertEqual(len(await memory.read()), 1)
+        self.assertNotIn("Invented quote", json.dumps(completed))
+        self.assertEqual(len([e for e in await journal.read() if e.kind == "interaction"]), 1)
+
+    async def test_invalid_review_is_not_silently_treated_as_no_learning(self):
+        for review, error in (
+            (self.learning(memory_class="unknown"), "memories.0.memory_class"),
+            ({**self.learning(), "identity": {"self_name": "Override"}}, "identity"),
+            ({**self.learning(), "evidence_indices": [7]}, "evidence_indices"),
+        ):
+            with self.subTest(error=error):
+                model = ScriptedModel(review, review)
+                service, journal, memory = await self.service(model)
+                before = await journal.read()
+                with self.assertRaisesRegex(StewardProtocolError, error):
+                    await service.complete_interaction("Atlas uses SurrealDB", "Understood.")
+                self.assertEqual(len(model.calls), 2)
+                self.assertEqual(await memory.read(), [])
+                self.assertEqual(await journal.read(), before)
+
+    async def test_later_invalid_choice_cannot_partially_commit_earlier_valid_choice(self):
+        review = self.learning()
+        invalid = self.learning(content="An unsupported decision", support=[
+            {"source": "user_message", "quote": "Never supplied"},
+        ])["memories"][0]
+        review["memories"].append(invalid)
+        service, journal, memory = await self.service(ScriptedModel(review, review))
+        before = await journal.read()
+        with self.assertRaisesRegex(StewardProtocolError, "Reviewed memory 1"):
+            await service.complete_interaction("Atlas uses SurrealDB", "Understood.")
+        self.assertEqual(await memory.read(), [])
+        self.assertEqual(await journal.read(), before)
 
     async def test_unconfigured_profile_is_an_explicit_failure(self):
         service = CognitiveMcpService(
