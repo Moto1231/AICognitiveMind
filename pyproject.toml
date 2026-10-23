@@ -24,8 +24,10 @@ dependencies = [
 [project.scripts]
 cognitive-mind = "aicognitive_mind.reference_host:main"
 cognitive-mind-init = "aicognitive_mind.initialize_cli:main"
+cognitive-mind-media = "aicognitive_mind.remote_media:main"
 
 [project.optional-dependencies]
+remote-media = ["opencv-python-headless>=4.10,<6", "sounddevice>=0.5,<1"]
 dev = [
     "mypy>=1.14,<2",
     "pytest>=8.3,<10",

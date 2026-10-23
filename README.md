@@ -29,7 +29,11 @@ Body
 
 The **Mind** owns identity, memory, belief, reasoning, governance, and continuity.
 
-The **Body** owns eyes, ears, mouth, face, sensors, and physical/computer interfaces.
+In self-hosted mode, the **Body** owns eyes, ears, mouth, face, sensors, and
+physical/computer interfaces. In remote agent mode, a host's local device adapter
+can supply audio input, voice playback, and camera/vision without running Body.
+Both modes use the existing Axiom task assignments. See
+[`Remote agent media`](docs/0025-remote-agent-media.md).
 
 The Body does not own durable memory or identity. Raw sensory input remains transient until the Mind
 interprets it and normal memory governance decides whether anything should persist.

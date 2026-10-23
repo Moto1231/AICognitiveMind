@@ -1,9 +1,11 @@
 import base64
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from aicognitive_mind.mcp_server import execute_task
 from aicognitive_mind.task_behaviors import default_task_behaviors
+from aicognitive_mind.task_dispatcher import TaskDispatchError
 
 
 class FakeDispatcher:
@@ -81,6 +83,109 @@ class McpTaskExecutionTests(unittest.IsolatedAsyncioTestCase):
                 audio_base64="not base64!",
             )
         self.assertEqual(dispatcher.calls, [])
+
+    def voice_context(self, dispatcher):
+        ctx = self.make_context(dispatcher)
+        ctx.request_context.lifespan_context.storage = SimpleNamespace(mind=object())
+        return ctx
+
+    async def test_voice_uses_saved_task_and_returns_portable_audio_without_body(self):
+        dispatcher = FakeDispatcher()
+        dispatcher.execute = AsyncMock(return_value=b"MP3 audio")
+        with patch("aicognitive_mind.mcp_server.VoiceSettings") as settings:
+            settings.return_value.read = AsyncMock(
+                return_value={
+                    "rate": 1.2,
+                    "volume": 0.5,
+                    "voiceName": "local voice",
+                }
+            )
+            result = await execute_task(
+                task="audio_voice",
+                operation="synthesize_voice",
+                text=" Say this. ",
+                ctx=self.voice_context(dispatcher),
+            )
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["provider"], "provider-a")
+        self.assertEqual(base64.b64decode(result["result"]["audio_base64"]), b"MP3 audio")
+        context, payload = dispatcher.execute.await_args.args
+        self.assertEqual(context.task, "audio_voice")
+        self.assertEqual(
+            payload,
+            {"operation": "synthesize_voice", "text": "Say this.", "speed": 1.2, "volume": -10.0},
+        )
+
+    async def test_unconfigured_voice_does_not_handoff_to_reasoning_host(self):
+        dispatcher = FakeDispatcher()
+        dispatcher.assignment = AsyncMock(
+            return_value=SimpleNamespace(
+                provider="",
+                model="",
+                fallbacks=(),
+            )
+        )
+        ctx = self.voice_context(dispatcher)
+        host = SimpleNamespace(active=AsyncMock(), submit=AsyncMock())
+        ctx.request_context.lifespan_context.hosts = host
+        with patch("aicognitive_mind.mcp_server.VoiceSettings") as settings:
+            settings.return_value.read = AsyncMock(
+                return_value={
+                    "rate": 1.0,
+                    "volume": 1.0,
+                    "voiceName": "",
+                }
+            )
+            result = await execute_task(
+                task="audio_voice", operation="synthesize_voice", text="Hello", ctx=ctx
+            )
+        self.assertEqual(result["status"], "not_configured")
+        host.active.assert_not_awaited()
+        host.submit.assert_not_awaited()
+        self.assertEqual(dispatcher.calls, [])
+
+    async def test_voice_provider_failure_is_not_an_unconfigured_result(self):
+        dispatcher = FakeDispatcher()
+        dispatcher.execute = AsyncMock(side_effect=TaskDispatchError("quota exhausted"))
+        with patch("aicognitive_mind.mcp_server.VoiceSettings") as settings:
+            settings.return_value.read = AsyncMock(return_value={"rate": 1.0, "volume": 1.0})
+            result = await execute_task(
+                task="audio_voice",
+                operation="synthesize_voice",
+                text="Hello",
+                ctx=self.voice_context(dispatcher),
+            )
+        self.assertEqual(result["status"], "task_failed")
+        self.assertEqual(result["error"], "quota exhausted")
+
+    async def test_voice_validates_task_and_text_before_provider_access(self):
+        dispatcher = FakeDispatcher()
+        for task, text in [("audio", "hello"), ("audio_voice", " "), ("audio_voice", "a" * 20001)]:
+            with self.subTest(task=task, length=len(text)), self.assertRaises(ValueError):
+                await execute_task(
+                    task=task,
+                    operation="synthesize_voice",
+                    text=text,
+                    ctx=self.voice_context(dispatcher),
+                )
+        self.assertEqual(dispatcher.calls, [])
+
+    async def test_voice_rejects_empty_or_non_audio_provider_result(self):
+        for audio in [b"", "text is not generated audio"]:
+            dispatcher = FakeDispatcher()
+            dispatcher.execute = AsyncMock(return_value=audio)
+            with (
+                self.subTest(result_type=type(audio).__name__),
+                patch("aicognitive_mind.mcp_server.VoiceSettings") as settings,
+            ):
+                settings.return_value.read = AsyncMock(return_value={"rate": 1.0, "volume": 1.0})
+                with self.assertRaisesRegex(ValueError, "empty, invalid, or oversized"):
+                    await execute_task(
+                        task="audio_voice",
+                        operation="synthesize_voice",
+                        text="Hello",
+                        ctx=self.voice_context(dispatcher),
+                    )
 
 
 if __name__ == "__main__":
