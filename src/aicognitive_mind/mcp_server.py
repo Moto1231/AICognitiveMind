@@ -374,6 +374,7 @@ async def complete_interaction(
         belief_transitions=tuple(belief_transitions or ()),
         belief_reframes=tuple(belief_reframes or ()),
         idempotency_key=idempotency_key,
+        host_working_context=host_working_context.model_dump(mode="json"),
     )
     return {
         **result,

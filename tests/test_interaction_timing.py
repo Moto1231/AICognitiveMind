@@ -128,6 +128,7 @@ class InteractionTimingTests(unittest.IsolatedAsyncioTestCase):
         service.complete_interaction.assert_awaited_once_with(
             user_message=self.secret, response_text=self.secret,
             proposed_memories=(), current_evidence=(), idempotency_key=self.secret,
+            host_working_context=HostWorkingContext(summary=self.secret).model_dump(mode="json"),
         )
         self.assertEqual(diagnostics.record.await_count, 2)
         log = "\n".join(logs.output)

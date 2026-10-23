@@ -1,10 +1,15 @@
+from functools import partial
+from aicognitive_mind.memory_steward import MemoryStewardTool
 import unittest
 
-from aicognitive_mind.mcp_service import CognitiveMcpService
+from aicognitive_mind.mcp_service import CognitiveMcpService as ProductionMcpService
 from aicognitive_mind.state_context import CurrentStateLedger
 from aicognitive_mind.storage import (
     InMemoryJournalStore, InMemoryMemoryStore, InMemoryMindStore,
 )
+
+
+CognitiveMcpService = partial(ProductionMcpService, steward_factory=MemoryStewardTool)
 
 
 class BeginContextTests(unittest.IsolatedAsyncioTestCase):

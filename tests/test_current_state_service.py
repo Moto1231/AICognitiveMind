@@ -1,3 +1,5 @@
+from functools import partial
+from aicognitive_mind.memory_steward import MemoryStewardTool
 import asyncio
 import json
 import unittest
@@ -6,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.domain import CognitiveActor, JournalEntry, JournalKind
-from aicognitive_mind.mcp_service import CognitiveMcpService
+from aicognitive_mind.mcp_service import CognitiveMcpService as ProductionMcpService
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
 from aicognitive_mind.host_runtime import HostAwareCore, RuntimeRecords
 from aicognitive_mind.state_context import apply_current_state_event
@@ -16,6 +18,9 @@ from aicognitive_mind.storage import (
     InMemoryMemoryStore,
     InMemoryMindStore,
 )
+
+
+CognitiveMcpService = partial(ProductionMcpService, steward_factory=MemoryStewardTool)
 
 
 class CurrentStateServiceTests(unittest.IsolatedAsyncioTestCase):

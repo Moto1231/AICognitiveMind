@@ -102,7 +102,7 @@ jobs:
           SURREALDB_NAMESPACE: ci
           SURREALDB_DATABASE: cognitive_mind_http
         run: |
-          python -m aicognitive_mind.mcp_server > /tmp/mcp-server.log 2>&1 &
+          python scripts/mcp_test_server.py > /tmp/mcp-server.log 2>&1 &
           echo $! > /tmp/mcp-server.pid
 
       - name: Wait for MCP HTTP server

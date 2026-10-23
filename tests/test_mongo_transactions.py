@@ -1,10 +1,12 @@
+from functools import partial
+from aicognitive_mind.memory_steward import MemoryStewardTool
 import os
 import unittest
 from uuid import uuid4
 
 from aicognitive_mind.commit import commit
 from aicognitive_mind.domain import MindIdentity
-from aicognitive_mind.mcp_service import CognitiveMcpService
+from aicognitive_mind.mcp_service import CognitiveMcpService as ProductionMcpService
 from aicognitive_mind.mongo_storage import (
     MongoDiagnosticStore,
     MongoJournalStore,
@@ -14,6 +16,8 @@ from aicognitive_mind.mongo_storage import (
 )
 from aicognitive_mind.snapshot import cognitive_snapshot
 
+
+CognitiveMcpService = partial(ProductionMcpService, steward_factory=MemoryStewardTool)
 
 @unittest.skipUnless(os.environ.get("MONGODB_TEST_URI"), "Requires disposable Mongo replica set")
 class MongoTransactions(unittest.IsolatedAsyncioTestCase):
