@@ -75,6 +75,33 @@ class TaskModelAssignmentRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(loaded[0].fallbacks[0].model, "fallback-vision-model")
         self.assertEqual(loaded[0].fallbacks[1].provider, "Third Provider")
 
+    async def test_clearing_media_specialists_round_trips_without_restoring_models(self):
+        registry = TaskModelAssignmentRegistry(FakeRecords())
+        assignments = await registry.list()
+        for item in assignments:
+            if item.task in {"audio", "vision", "audio_voice"}:
+                item.provider = "saved-endpoint"
+                item.model = "saved-model"
+                item.fallbacks = TaskModelAssignment(
+                    task=item.task,
+                    fallbacks=[{"provider": "backup", "model": "backup-model"}],
+                ).fallbacks
+        await registry.replace(assignments)
+        assignments = await registry.list()
+        voice_before = next(item for item in assignments if item.task == "audio_voice").model_dump()
+        for item in assignments:
+            if item.task in {"audio", "vision"}:
+                item.provider = ""
+                item.model = ""
+                item.fallbacks = []
+        await registry.replace(assignments)
+        loaded = {item.task: item for item in await registry.list()}
+        for task in ("audio", "vision"):
+            self.assertEqual(loaded[task].provider, "")
+            self.assertEqual(loaded[task].model, "")
+            self.assertEqual(loaded[task].fallbacks, [])
+        self.assertEqual(loaded["audio_voice"].model_dump(), voice_before)
+
     async def test_migrates_legacy_single_fallback_into_chain(self):
         records = FakeRecords()
         records.values["task_model_assignments"] = {"items": [

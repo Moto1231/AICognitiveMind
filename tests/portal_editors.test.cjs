@@ -537,6 +537,53 @@ test('legacy task model survives same endpoint selection and behavior-only saves
   assert.equal(ui.toasts.some(([message, error]) => message.includes('Save a model') && error), true);
 });
 
+test('clearing primary and fallback selections saves an unassigned task and preserves other configuration', async () => {
+  const ui = editor();
+  const voice = { task: 'audio_voice', provider: 'fish', model: 'saved-voice',
+    voice_reference_id: 'custom-voice', fallbacks: [] };
+  ui.state.taskModelAssignments.push(voice);
+  const endpoints = JSON.stringify(ui.state.providerEndpoints);
+  ui.state.taskModelAssignments[0].behavior_ids = [];
+  ui.openTaskProfile('vision');
+  ui.el.taskProviderSelect.value = '';
+  ui.el.taskProviderSelect.listeners.change();
+  const fallback = ui.el.taskProfileFallbackList.children[0].children[0].children[0];
+  fallback.value = '';
+  fallback.listeners.change();
+  assert.equal(ui.el.saveTaskProfile.disabled, false);
+  await ui.saveTaskProfile();
+  assert.equal(ui.calls.length, 1);
+  const saved = ui.calls[0].body.items.find(item => item.task === 'vision');
+  assert.equal(saved.provider, '');
+  assert.equal(saved.model, '');
+  assert.deepEqual(saved.fallbacks, []);
+  assert.deepEqual(saved.behavior_ids, []);
+  assert.deepEqual(ui.calls[0].body.items.find(item => item.task === 'audio_voice'), voice);
+  assert.equal(JSON.stringify(ui.state.providerEndpoints), endpoints);
+  assert.equal(ui.el.saveTaskProfile.disabled, true);
+  ui.openTaskProfile('vision');
+  assert.equal(ui.el.taskProviderSelect.value, '');
+  assert.equal(ui.state.taskModelAssignments[0].fallbacks.length, 0);
+});
+
+test('clearing only the primary keeps configured fallbacks and Cancel restores selections', async () => {
+  const ui = editor();
+  ui.openTaskProfile('vision');
+  const before = JSON.stringify(ui.state.taskModelAssignments[0]);
+  ui.el.taskProviderSelect.value = '';
+  ui.el.taskProviderSelect.listeners.change();
+  ui.discardTaskProfileChanges();
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments[0]), before);
+  assert.equal(ui.calls.length, 0);
+  ui.openTaskProfile('vision');
+  ui.el.taskProviderSelect.value = '';
+  ui.el.taskProviderSelect.listeners.change();
+  await ui.saveTaskProfile();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].body.items[0].provider, '');
+  assert.equal(ui.calls[0].body.items[0].fallbacks[0].provider, 'OpenAI - GPT');
+});
+
 test('task cards retain the task names for icon decoration', () => {
   const ui = editor();
   ui.renderTaskProfiles();
