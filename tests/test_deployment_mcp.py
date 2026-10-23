@@ -83,14 +83,16 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         self.provider.access_tokens[access.token] = access
         return access.token
 
-    async def rpc(self, token, method="tools/list", params=None):
+    async def rpc(self, token, method="tools/list", params=None, *, path=None):
+        headers = {
+            "Accept": "application/json, text/event-stream",
+            "MCP-Protocol-Version": "2025-03-26",
+        }
+        if token is not None:
+            headers["Authorization"] = "Bearer " + token
         return await self.client.post(
-            self.deployment.MCP_PATH,
-            headers={
-                "Authorization": "Bearer " + token,
-                "Accept": "application/json, text/event-stream",
-                "MCP-Protocol-Version": "2025-03-26",
-            },
+            path or self.deployment.MCP_PATH,
+            headers=headers,
             json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}},
         )
 
@@ -103,10 +105,13 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
             urlparse(manifest["mcpServers"]["axiom"]["url"]).path,
             self.deployment.MCP_PATH,
         )
-        response = await self.client.get(self.deployment.MCP_PATH)
-        self.assertEqual(response.status_code, 401)
         metadata_path = "/.well-known/oauth-protected-resource/axiom-mcp"
-        self.assertIn(self.base + metadata_path, response.headers["WWW-Authenticate"])
+        for path in (self.deployment.MCP_PATH, self.deployment.MCP_PATH + "/"):
+            with self.subTest(path=path):
+                response = await self.client.get(path)
+                self.assertEqual(response.status_code, 401)
+                self.assertIn(self.base + metadata_path, response.headers["WWW-Authenticate"])
+                self.assertNotIn("location", response.headers)
         metadata = await self.client.get(metadata_path)
         self.assertEqual(metadata.status_code, 200)
         self.assertEqual(metadata.json()["resource"], self.provider.resource_url)
@@ -144,26 +149,105 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
 
     @deployment_running
     async def test_invalid_expired_and_wrong_resource_tokens_remain_rejected(self):
-        for updates in (
-            {"expires_at": int(time.time()) - 1},
-            {"resource": None},
-            {"resource": self.base + "/mcp"},
-            {"resource": "https://other.example/axiom-mcp"},
-        ):
-            with self.subTest(updates=updates):
-                response = await self.rpc(self.token(**updates))
-                self.assertEqual(response.status_code, 401, response.text)
-                self.assertEqual(response.json()["error"], "invalid_token")
-        self.assertEqual((await self.rpc("unknown-token")).status_code, 401)
+        for path in (self.deployment.MCP_PATH, self.deployment.MCP_PATH + "/"):
+            for updates in (
+                {"expires_at": int(time.time()) - 1},
+                {"resource": None},
+                {"resource": self.base + "/mcp"},
+                {"resource": "https://other.example/axiom-mcp"},
+            ):
+                with self.subTest(path=path, updates=updates):
+                    response = await self.rpc(self.token(**updates), path=path)
+                    self.assertEqual(response.status_code, 401, response.text)
+                    self.assertEqual(response.json()["error"], "invalid_token")
+            for token in (None, "unknown-token"):
+                with self.subTest(path=path, token=token):
+                    response = await self.rpc(token, path=path)
+                    self.assertEqual(response.status_code, 401, response.text)
+                    self.assertIn("Bearer", response.headers["WWW-Authenticate"])
+                    self.assertNotIn("location", response.headers)
 
     @deployment_running
     async def test_valid_token_without_required_scope_is_forbidden(self):
-        response = await self.rpc(self.token(scopes=[]))
-        self.assertEqual(response.status_code, 403, response.text)
-        self.assertEqual(response.json()["error"], "insufficient_scope")
+        for path in (self.deployment.MCP_PATH, self.deployment.MCP_PATH + "/"):
+            with self.subTest(path=path):
+                response = await self.rpc(self.token(scopes=[]), path=path)
+                self.assertEqual(response.status_code, 403, response.text)
+                self.assertEqual(response.json()["error"], "insufficient_scope")
 
     @deployment_running
-    async def test_authorization_code_pkce_and_refresh_preserve_exact_resource(self):
+    async def test_oauth_minted_token_initializes_and_lists_tools_on_both_path_forms(self):
+        tokens = await self.authorization_code_tokens()
+        token = tokens["access_token"]
+        access = await self.provider.load_access_token(token)
+        self.assertEqual(access.resource, self.base + "/axiom-mcp")
+        for path in (self.deployment.MCP_PATH, self.deployment.MCP_PATH + "/"):
+            with self.subTest(path=path):
+                initialized = await self.rpc(token, "initialize", {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "path-regression-test", "version": "1"},
+                }, path=path)
+                self.assertEqual(initialized.status_code, 200, initialized.text)
+                self.assertNotIn("location", initialized.headers)
+                self.assertEqual(initialized.json()["result"]["serverInfo"]["name"], "Axiom")
+                listed = await self.rpc(token, path=path)
+                self.assertEqual(listed.status_code, 200, listed.text)
+                self.assertNotIn("location", listed.headers)
+                names = {tool["name"] for tool in listed.json()["result"]["tools"]}
+                self.assertTrue({"begin_interaction", "complete_interaction"}.issubset(names))
+
+    @deployment_running
+    async def test_mcp_diagnostics_cover_both_path_forms_without_token_contents(self):
+        token = self.token()
+        for path in (self.deployment.MCP_PATH, self.deployment.MCP_PATH + "/"):
+            with self.subTest(path=path):
+                with self.assertLogs("aicognitive_mind.auth_diagnostics", level="WARNING") as logs:
+                    response = await self.rpc(token, path=path)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertTrue(any(
+                    f"MCP_DIAG request method=POST path={path} " in line
+                    and "authorization=True" in line for line in logs.output
+                ))
+                self.assertTrue(any(
+                    f"MCP_DIAG response method=POST path={path} status=200" in line
+                    for line in logs.output
+                ))
+                self.assertNotIn(token, "\n".join(logs.output))
+
+    @deployment_running
+    async def test_oauth_token_does_not_bypass_portal_protection(self):
+        tokens = await self.authorization_code_tokens()
+        token = tokens["access_token"]
+        for path in ("/axiom-mcp/unregistered-child", "/axiom-mcp-extra"):
+            with self.subTest(path=path):
+                response = await self.client.get(path, headers={"Authorization": "Bearer " + token})
+                self.assertEqual(response.status_code, 401, response.text)
+                self.assertNotIn("WWW-Authenticate", response.headers)
+                basic = await self.client.get(path, auth=httpx.BasicAuth(
+                    self.settings.app_access_username, "test-password"
+                ))
+                self.assertEqual(basic.status_code, 404, basic.text)
+                session = {"mind_id": "__legacy__", "expires_at": time.time() + 3600}
+                with patch("aicognitive_mind.api.read_portal_session", return_value=session):
+                    self.client.cookies.set("axiom_portal_session", "test-portal-session")
+                    try:
+                        cookie = await self.client.get(path)
+                    finally:
+                        self.client.cookies.clear()
+                self.assertEqual(cookie.status_code, 404, cookie.text)
+
+    @deployment_running
+    async def test_portal_credentials_do_not_authorize_mcp_path_forms(self):
+        for path in (self.deployment.MCP_PATH, self.deployment.MCP_PATH + "/"):
+            with self.subTest(path=path):
+                response = await self.client.post(path, auth=httpx.BasicAuth(
+                    self.settings.app_access_username, "test-password"
+                ), json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+                self.assertEqual(response.status_code, 401, response.text)
+                self.assertIn("Bearer", response.headers["WWW-Authenticate"])
+
+    async def authorization_code_tokens(self):
         verifier = "v" * 64
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
         response = await self.client.get("/authorize", params={
@@ -194,7 +278,11 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
             "redirect_uri": "https://client.example/callback",
         })
         self.assertEqual(token_response.status_code, 200, token_response.text)
-        tokens = token_response.json()
+        return token_response.json()
+
+    @deployment_running
+    async def test_authorization_code_pkce_and_refresh_preserve_exact_resource(self):
+        tokens = await self.authorization_code_tokens()
         self.assertEqual((await self.rpc(tokens["access_token"])).status_code, 200)
         refreshed = await self.client.post("/token", data={
             "grant_type": "refresh_token",

@@ -125,7 +125,7 @@ class _AuthDiagnosticMiddleware:
         method = scope.get("method", "")
         watched = path in {"/portal", "/signup", "/oauth/login", "/oauth/signup", "/v1/portal/login", "/v1/portal/signup"}
         mcp_boundary = (
-            path == MCP_PATH
+            path in {MCP_PATH, MCP_PATH + "/"}
             or path.startswith("/.well-known/")
             or path in {"/register", "/authorize", "/token", "/revoke"}
         )
@@ -435,8 +435,14 @@ app = axiom_mcp.streamable_http_app(
 # argument. The returned object is an ordinary Starlette app, so append Axiom's
 # login endpoints and portal after MCP/OAuth discovery routes are constructed.
 # Mount("/") must remain last because it matches every remaining path.
+_mcp_route = next(
+    route for route in app.routes if isinstance(route, Route) and route.path == MCP_PATH
+)
 app.router.routes.extend(
     [
+        # Share the SDK's OAuth-protected ASGI handler without redirecting or
+        # rewriting the request. The OAuth resource remains the canonical MCP_PATH.
+        Route(MCP_PATH + "/", endpoint=_mcp_route.app, methods=_mcp_route.methods),
         Route("/", endpoint=_public_entry, methods=["GET"]),
         Route("/portal", endpoint=_portal_login_page, methods=["GET"]),
         Route("/v1/portal/login", endpoint=_portal_login_post, methods=["POST"]),
