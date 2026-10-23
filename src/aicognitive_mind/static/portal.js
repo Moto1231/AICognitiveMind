@@ -578,7 +578,7 @@ function fillSelect(select, values, selected, placeholder, capabilityMap = null)
 }
 
 function taskEndpointOptions(select, selected, task = state.activeTaskProfile) {
-  select.replaceChildren(new Option("Choose endpoint", ""));
+  select.replaceChildren(new Option(task === "fallback" ? "None (remove fallback)" : "None (default routing)", ""));
   if (task === "reasoning") select.append(new Option("Connected reasoning host", "connected-host"));
   for (const endpoint of state.providerEndpoints) {
     const option = new Option(endpoint.name || "Unnamed endpoint", endpoint.id);
@@ -679,6 +679,12 @@ function renderFallbackSelectors() {
     select.setAttribute("aria-label", label.textContent);
     taskEndpointOptions(select, fallback.provider, "fallback");
     select.addEventListener("change", () => {
+      if (!select.value) {
+        assignment.fallbacks.splice(index, 1);
+        renderFallbackSelectors();
+        updateTaskSaveState();
+        return;
+      }
       const endpoint = state.providerEndpoints.find(item => item.id === select.value);
       const sameEndpoint = endpoint && (fallback.provider === endpoint.id || fallback.provider === endpoint.name);
       fallback.provider = endpoint?.id || select.value;
@@ -974,7 +980,8 @@ async function saveTaskProfile() {
   const selectedAssignment = state.taskModelAssignments.find(item => item.task === task);
   const selectedEndpoint = state.providerEndpoints.find(item =>
     item.id === selectedAssignment?.provider || item.name === selectedAssignment?.provider);
-  if (selectedAssignment?.provider !== "connected-host" && !selectedEndpoint?.model && !selectedAssignment?.model) {
+  if (selectedAssignment?.provider && selectedAssignment.provider !== "connected-host"
+      && !selectedEndpoint?.model && !selectedAssignment.model) {
     toast("Select an endpoint with a saved model before saving this task.", true);
     return;
   }
