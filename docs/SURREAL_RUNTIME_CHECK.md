@@ -1,7 +1,7 @@
 # Bounded Surreal runtime storage check
 
 This manual diagnostic tests application commit
-`65157abe34b659b0da2c6c162fa51ee8fff5de6d` against only
+`79aa753a2ab8f395473857d0b54408a490b65808` against only
 `mir-ai-06gmqbgl1duq581garj3eabaq4.aws-use1.surreal.cloud`, namespace `mir_ai`,
 database `ai_cognitive_mind`, with database user `axiom_runtime`, role EDITOR only.
 It is not a migration or production switch. It does not initialize the canonical
@@ -36,7 +36,10 @@ pings the server, inspects only metadata and aggregate counts, and requires:
 - Any existing table has only its default schemaless definition, without a view,
   relation type, changefeed or other custom table-level behavior.
 
-Only then it constructs the existing application stores on that SDK connection
+Only then it calls the application's shared `bootstrap_tables` helper. Eight
+individual `DEFINE TABLE IF NOT EXISTS ... SCHEMALESS PERMISSIONS NONE` statements
+create missing application tables without overwriting definitions or records.
+It then constructs the existing application stores on that SDK connection
 and runs the unchanged `verify_live_tenancy` synthetic probe. The probe writes a
 new generated scope, checks isolation, and deletes only its own scoped records.
 The diagnostic independently checks all eight aggregate counts afterward.
@@ -62,34 +65,40 @@ A passing result is permission evidence for the separately approved conditional
 Render recovery, not proof of canonical Mind/model setup or working cognition.
 The workflow itself does not change Render, Mongo, reader credentials or GitHub settings.
 
-## Local validation and remaining startup difference
+## Bootstrap repair and local validation
 
-Twenty-one focused tests cover configuration/source/target guards, database
-Editor-only role parsing, schema and nonempty-target refusals, privacy, timeouts,
-partial failures and independently verified cleanup. Real isolated `mem://`
-tests exercise the existing probe and cleanup after an injected mid-probe failure;
-authentication/role metadata in those fixtures is synthetic, not a Cloud test.
-The complete local regression suite also passes: **542 tests, 7 skipped**
-(163.109 seconds). An earlier run hit its 180-second diagnostic runner limit
-inside an existing provider-factory test; the bounded rerun with named-test
-progress completed without an assertion failure.
+Normal `SurrealRuntime.initialize()` now calls the same helper after connection,
+selection, authentication and ping, before its first legacy UPDATE or state read.
+Each statement is checked separately. Existing tables, including custom schema,
+remain unchanged. A bootstrap error closes the owned connection and propagates;
+partial empty table definitions are retained rather than removed. Mongo startup
+does not call this helper.
 
-A separate disposable local SurrealKV check also exercised the unchanged
-`65157abe` combined OAuth/MCP/web lifespan with init-only synthetic settings and
-ambient credentials removed. It entered and closed successfully, `/health`
-returned 200, the canonical Mind remained absent, and all eight tables had zero
-records afterward. Its local result is retained as
-`surreal-local-deployment-startup.log` in the original workbench, outside this repository.
+The full regression suite passes: **566 tests, 7 skipped** (100.718 seconds).
+Schema tests cover fresh and repeated startup, existing definitions/data,
+partial failure, connection cleanup and the Mongo boundary. Startup diagnostic
+tests cover guard ordering, partial bootstrap, privacy and independent cleanup.
 
-Untouched production startup still executes legacy-scope UPDATE queries and a
-conditional legacy commit-state copy; the remote diagnostic does neither. With
-a freshly verified empty database, those startup statements have no existing
-records to migrate or copy. The local result supports that empty-start path,
-but it does not establish 3.x startup safety: undefined tables can still make
-those UPDATEs fail before any data migration. This diagnostic does not add table
-bootstrap. Authenticated Cloud startup and server compatibility remain unproved.
-Recheck emptiness before cutover; stop if data or custom schema appears. No model/cognition readiness is
-implied by storage startup or an HTTP health response.
+Actual local **SurrealDB 3.3.2**, downloaded from the official release and verified
+against its SHA256, reproduced `read_primary_mind` and `cleanup_mind`
+`NotFound/Table` before the repair. On the same disposable loopback memory server,
+the shared bootstrap followed by the unchanged tenancy probe passed; all eight
+record counts were zero afterward. Repeated bootstrap retained definitions and
+an existing custom table's fields, index and synthetic record.
+
+Normal runtime startup and repeated startup also passed on 3.3.2 with a synthetic
+database Editor. A separate fresh database passed the combined OAuth/MCP/web
+lifespan: `/health` returned 200, all eight tables remained empty, the canonical
+Mind remained absent, and shutdown completed. No model, interaction, Body or
+Cloud calls were made; both local servers were stopped. Metadata-only local
+artifacts are `local_surreal3_bootstrap_result.json` and
+`local_surreal3_combined_startup_result.json` in the workbench outside the repository.
+
+The remote diagnostic still skips normal startup's legacy-scope UPDATEs and
+conditional commit-state copy. Actual 3.3.2 local startup covers those statements
+on empty synthetic storage; it does not establish Cloud deployment, account
+routing, model setup or cognition readiness. Recheck target emptiness before
+any cutover and stop if data or custom schema appears.
 
 ## Failure trace and SurrealDB 3.x compatibility
 
@@ -99,7 +108,7 @@ the probe stopped with only `operation_failed`. That report does not establish
 that any write succeeded, nor identify the failing operation. The existing
 `write_attempted` flag means the probe was entered, not that its first write ran.
 
-The diagnostic now wraps only the probe's existing SDK calls. It performs no
+The diagnostic wraps bootstrap and probe SDK calls. The trace performs no
 additional database I/O and preserves their original arguments, results and
 exceptions. Its `probe_diagnostics` contains fixed operation labels, the last
 successful label, and separate first SDK failure and cleanup failure metadata. Raw
@@ -120,21 +129,24 @@ not that core version. Cloud Studio reported 3.3.2. SurrealDB's
 and [2.x-to-3.x guide](https://surrealdb.com/docs/build/migrating/from-old-surrealdb-versions/2x-to-3x#19-schema-strictness-changes)
 document that 3.x errors on SELECT/UPDATE/DELETE against undefined tables.
 
-The unchanged probe reads `mind` before any table bootstrap and deletes from
-possibly undefined tables in `finally`. A local fixture modeling the documented
-3.x behavior reproduces the missing-table read being masked by a later cleanup
-delete failure; the trace preserves both. Normal runtime startup also issues
-legacy-scope UPDATEs before defining tables. This is a concrete compatibility
-gap and a strong lead for the Cloud failure, but the first Cloud exception is
-not retrospectively verified. No standalone 3.x server or Docker executable was
-available locally; the fixture is not an actual 3.x engine test.
+The second authorized Cloud run, Actions `40128420307`, reported server 3.3.2,
+SDK 2.0.0, and `NotFound/Table` at `read_primary_mind`, followed by the same
+classification at `cleanup_mind`. Authentication and Editor-only verification
+passed; all before/after counts were zero. No create operation was reached.
+That confirmed the missing-table gap now repaired locally.
 
-The next bounded run, only after publication/run approval, should retain the
-same application SHA, target, database-scoped user, guards and cleanup. It should
-run once to obtain the fixed operation/classification metadata. If it confirms
-missing tables, the proposed repair is explicit default-table bootstrap before
-fresh-start reads/legacy updates; that repair is not included in this patch.
+## Next bounded Cloud check
 
-This local trace patch passes 33 startup/trace tests, including real embedded
-probe cleanup and modeled 3.x missing-table behavior, plus 29 existing read-only
-preflight and tenancy regressions. No new Cloud run was performed while preparing it.
+After publication and execution approval, publish/merge with `[skip render]`
+and run this manual workflow once. It must install the pinned repaired application
+SHA above, retain the same host/namespace/database, Editor credentials, empty/default
+schema guards and synthetic-scope cleanup. Require `schema_bootstrap=complete`,
+`status=passed`, `cleanup=empty` and zero counts for all eight tables. The separate
+`write_attempted` flag still means entry into the probe, not successful first DML.
+
+On a bootstrap failure the report identifies the fixed table operation, skips
+the probe and checks record counts independently. Partial empty tables remain;
+there is no schema rollback or deletion. Stop on unexpected data/schema, denied
+permissions, unverified cleanup or any other failure; inspect the result before
+another attempt. No additional Cloud run, publication or production change was
+made while preparing this local repair.

@@ -1,8 +1,9 @@
 # Clean-start setup: current implementation and local demonstration
 
-Base source: `main` commit `d24fa4241a470801ded4eae2425ae3f277367def`.
-The signup/login repair below was validated on `fix/surreal-account-signup`.
-Publishing and merging this repair is separate from deployment or a database switch.
+The original setup demonstration used `main` commit `d24fa4241a470801ded4eae2425ae3f277367def`.
+The signup/login repair described below was merged as `65157abe`.
+The subsequent local table-bootstrap repair is application commit `79aa753`.
+Publishing a repair is separate from deployment or a database switch.
 This is a clean start: no identity, account, configuration, memory or journal import.
 Existing Mongo and production settings remain untouched.
 
@@ -10,10 +11,11 @@ Existing Mongo and production settings remain untouched.
 
 1. **Storage startup:** `create_storage(settings)` selects Surreal and calls
    `SurrealRuntime.initialize()`. It connects, selects namespace/database, signs
-   in when credentials are supplied, pings, and runs legacy-scope updates.
+   in when credentials are supplied, pings, defines the eight missing default
+   application tables with `IF NOT EXISTS`, and runs legacy-scope updates.
    Opening storage is therefore potentially mutating. Startup does not create a
-   canonical Mind. There is no explicit table/index/schema installation script;
-   Surreal materializes schemaless tables when records are written.
+   canonical Mind. The shared table bootstrap preserves existing definitions and
+   records; it adds no indexes, account or Mind data.
 2. **One-time Mind initialization:** the installed command
    `cognitive-mind-init --self-name "<new name>" --value "<new value>"`
    invokes `initialize_cli.initialize_once`. It atomically writes a Mind,
@@ -45,7 +47,25 @@ Source entry points:
 - [Account setup](../src/aicognitive_mind/accounts.py),
   [portal routes](../src/aicognitive_mind/deployment.py)
 
-## Demonstrated locally
+## SurrealDB 3.x fresh-start repair
+
+SurrealDB 3.3.2 rejects reads, updates and deletes against undefined tables.
+The old startup/probe relied on 2.x behavior and could fail before its first
+write. The shared bootstrap now runs before normal runtime reads/updates and
+before the bounded diagnostic's synthetic tenancy probe.
+
+On actual disposable local SurrealDB 3.3.2, the original missing-table error
+was reproduced. The repaired normal runtime, repeated startup, tenancy probe
+and combined OAuth/MCP/web lifespan passed. Fresh startup created eight empty
+tables without initializing a canonical Mind. Existing custom schema and a
+synthetic record survived repeated bootstrap. Both local servers stopped.
+The full local regression suite passed 566 tests with 7 skipped.
+
+See [the runtime check](SURREAL_RUNTIME_CHECK.md) for the exact repaired source
+pin, authenticated Cloud guard/cleanup plan and local evidence. Cloud execution
+of this repair and production cutover remain separate, pending steps.
+
+## Earlier setup demonstration (before explicit bootstrap)
 
 The local harness uses a fresh SurrealKV directory, explicit init-only settings,
 no `.env` or ambient credential sources, no cloud credentials, and synthetic data.
@@ -68,7 +88,7 @@ Actual results:
 
 | Step | Observed result |
 | --- | --- |
-| Open fresh local storage | No tables, Mind or journal; revision 0 |
+| Open fresh local storage before bootstrap repair | No tables, Mind or journal; revision 0 |
 | Run existing initializer | `status=initialized` |
 | Restart in another process | Mind/identity preserved; one initialization journal entry; revision 1 |
 | Inspect lazy table bootstrap | `mind`, `journal`, `commit_state` created |
@@ -160,29 +180,19 @@ per-account model setup and account-scoped MCP cognition remain unproved.
 
 ## Smallest next setup slice
 
-The local first-account readback/mapping repair is complete. Next, prove one
-account reaches its own initialized Mind and configured Memory Recall
-task through begin/complete and restart. Keep synthetic test data in local,
-isolated storage. Stop on partial signup, wrong-tenant routing, duplicate commits
-or missing provider configuration; preserve the local test artifacts for diagnosis.
+The dedicated database-scoped Editor `axiom_runtime` is now configured for the
+bounded Cloud check; the separate reader remains unchanged. The two authorized
+Cloud checks authenticated successfully but stopped at missing-table reads.
+The next step is approval to publish/merge this local bootstrap repair and run
+the [same bounded check](SURREAL_RUNTIME_CHECK.md) once against its exact repaired
+source pin. No new user, permission expansion, import or reset is required.
 
-Only after that slice passes should a Cloud writer be provisioned with approval:
-
-- Target the already verified fresh `mir_ai / ai_cognitive_mind`, or an explicitly
-  approved rehearsal database such as `mir_ai / axiom_freshstart_20261024`.
-  The rehearsal name is proposed, not verified unused or created.
-- The proposed future writer role is a dedicated **database-scoped EDITOR**,
-  never root/namespace/OWNER. The documented role permits data/schema edits
-  without IAM grants, but these unauthenticated embedded tests did not establish
-  minimum grants or Cloud compatibility. Verify that role in a bounded Cloud
-  test after approval. Leave the existing Actions reader unchanged.
-- Pin the exact host, namespace, database, auth level and fresh Mind target before
-  writes. Recheck target emptiness first. No production data is copied.
-- Do not use full MCP startup as a harmless smoke test: its live tenancy probe
-  creates and deletes temporary records. Any future test must explicitly account
-  for those operations.
-- Do not change Render's provider or credentials until the Cloud setup and
-  account-scoped tests pass and cutover is separately authorized.
+Storage success does not resolve the routing/model gaps above. Subsequently prove
+one account reaches its own initialized Mind and configured Memory Recall task
+through begin/complete and restart, using synthetic isolated data. Stop on partial
+signup, wrong-tenant routing, duplicate commits or missing provider configuration.
+Full MCP startup includes a tenancy probe that writes and deletes synthetic
+records; it must not be treated as a harmless read-only check.
 
 Before cutover, rollback is simply stopping the test and retaining existing
 Mongo/service settings. There is no migration to reverse. No existing local or
