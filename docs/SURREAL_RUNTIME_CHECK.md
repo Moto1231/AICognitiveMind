@@ -85,7 +85,56 @@ Untouched production startup still executes legacy-scope UPDATE queries and a
 conditional legacy commit-state copy; the remote diagnostic does neither. With
 a freshly verified empty database, those startup statements have no existing
 records to migrate or copy. The local result supports that empty-start path,
-but authenticated Cloud startup, connection ordering and server permissions
-remain unproved until the authorized remote checks run. Recheck emptiness before
-cutover; stop if data or custom schema appears. No model/cognition readiness is
+but it does not establish 3.x startup safety: undefined tables can still make
+those UPDATEs fail before any data migration. This diagnostic does not add table
+bootstrap. Authenticated Cloud startup and server compatibility remain unproved.
+Recheck emptiness before cutover; stop if data or custom schema appears. No model/cognition readiness is
 implied by storage startup or an HTTP health response.
+
+## Failure trace and SurrealDB 3.x compatibility
+
+The first authorized Cloud run, Actions `40126780923`, authenticated successfully
+and verified database Editor-only metadata. Before/after counts were zero, but
+the probe stopped with only `operation_failed`. That report does not establish
+that any write succeeded, nor identify the failing operation. The existing
+`write_attempted` flag means the probe was entered, not that its first write ran.
+
+The diagnostic now wraps only the probe's existing SDK calls. It performs no
+additional database I/O and preserves their original arguments, results and
+exceptions. Its `probe_diagnostics` contains fixed operation labels, the last
+successful label, and separate first SDK failure and cleanup failure metadata. Raw
+transaction failures may include a bounded statement ordinal. Only allowlisted
+exception categories, server-kind path components and JSON-RPC codes are copied;
+messages, traceback text, SQL, field values, identifiers and error details are
+never emitted. If cleanup masks an earlier Python/model error, a separate fixed
+classification of that exception context is retained; its exact Python operation
+is not inferred from the last SDK call. Advertised server and SDK versions are
+reduced to numeric versions.
+The normal independent cleanup inventory is unchanged.
+
+A verified version difference explains why embedded success is insufficient:
+the installed Python SDK is 2.0.0, while its wheel SBOM identifies the embedded
+core as 2.3.10. Its local `version()` response is the binding's hardcoded version,
+not that core version. Cloud Studio reported 3.3.2. SurrealDB's
+[statement reference](https://surrealdb.com/docs/reference/query-language/statements/overview#output-when-resource-not-defined)
+and [2.x-to-3.x guide](https://surrealdb.com/docs/build/migrating/from-old-surrealdb-versions/2x-to-3x#19-schema-strictness-changes)
+document that 3.x errors on SELECT/UPDATE/DELETE against undefined tables.
+
+The unchanged probe reads `mind` before any table bootstrap and deletes from
+possibly undefined tables in `finally`. A local fixture modeling the documented
+3.x behavior reproduces the missing-table read being masked by a later cleanup
+delete failure; the trace preserves both. Normal runtime startup also issues
+legacy-scope UPDATEs before defining tables. This is a concrete compatibility
+gap and a strong lead for the Cloud failure, but the first Cloud exception is
+not retrospectively verified. No standalone 3.x server or Docker executable was
+available locally; the fixture is not an actual 3.x engine test.
+
+The next bounded run, only after publication/run approval, should retain the
+same application SHA, target, database-scoped user, guards and cleanup. It should
+run once to obtain the fixed operation/classification metadata. If it confirms
+missing tables, the proposed repair is explicit default-table bootstrap before
+fresh-start reads/legacy updates; that repair is not included in this patch.
+
+This local trace patch passes 33 startup/trace tests, including real embedded
+probe cleanup and modeled 3.x missing-table behavior, plus 29 existing read-only
+preflight and tenancy regressions. No new Cloud run was performed while preparing it.
