@@ -1,8 +1,8 @@
 # Clean-start setup: current implementation and local demonstration
 
 Base source: `main` commit `d24fa4241a470801ded4eae2425ae3f277367def`.
-The signup/login repair below is local on `fix/surreal-account-signup`; it has
-not been published, merged or deployed.
+The signup/login repair below was validated on `fix/surreal-account-signup`.
+Publishing and merging this repair is separate from deployment or a database switch.
 This is a clean start: no identity, account, configuration, memory or journal import.
 Existing Mongo and production settings remain untouched.
 
@@ -81,17 +81,18 @@ The deterministic adapter demonstrates storage/lifecycle/idempotency wiring. It
 does not verify an external model, provider quota, HTTP OAuth, Body communication,
 or Surreal Cloud write compatibility.
 
-Local results and reproduction scripts:
+One-off probes and logs remain outside the repository in the original local
+workbench: `local_surreal_setup_probe.py`, `local_surreal_setup_result.json`,
+`local_surreal_account_probe.py`, `local_surreal_account_probe.before.json`,
+`local_surreal_account_probe.result.json`, `local_surreal_query_matrix.result.json`,
+`signup-account-tests.log`, `signup-portal-tests.log`, and `signup-full-tests.log`.
+They are local diagnostic artifacts, not prerequisites for the committed tests.
+Reproduce the committed signup/login regressions from the repository root with:
 
-- [Root setup probe](../../local_surreal_setup_probe.py)
-- [Root setup results](../../local_surreal_setup_result.json)
-- [Account probe](../../local_surreal_account_probe.py)
-- [Original failing account results](../../local_surreal_account_probe.before.json)
-- [Repaired account results](../../local_surreal_account_probe.result.json)
-- [SDK isolation matrix](../../local_surreal_query_matrix.result.json)
-- [Account regression log](../../signup-account-tests.log)
-- [HTTP-route regression log](../../signup-portal-tests.log)
-- [Full-suite log](../../signup-full-tests.log)
+```shell
+python -m unittest discover -s tests -p test_accounts.py -v
+python -m unittest discover -s tests -p test_portal_accounts.py -v
+```
 
 ## First-account repair and verified behavior
 
@@ -193,5 +194,6 @@ The successful reader preflight ran `d24fa424`, because it was dispatched with
 `--ref main` after the owner added `skills/drafts/axiom/SKILL.md` at 13:42:40 UTC.
 Its sole parent is `118464c`; the only change is that 62-line skill draft. No
 initialization, storage, workflow or authentication code changed between them.
-The draft and all unrelated work were preserved. This local work is uncommitted;
-no PR, merge, deployment or Cloud write was performed.
+The draft and all unrelated work were preserved. The repair was tested locally;
+its publication and merge retain `[skip render]`. No deployment or Cloud write
+is part of this change.
