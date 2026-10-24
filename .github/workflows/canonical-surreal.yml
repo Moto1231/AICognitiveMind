@@ -38,6 +38,7 @@ jobs:
           pip install -e .
 
       - name: Require canonical Surreal secrets
+        if: ${{ inputs.operation == 'migrate-from-atlas' }}
         env:
           SURREALDB_URI: ${{ secrets.CANONICAL_SURREALDB_URI }}
           SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}

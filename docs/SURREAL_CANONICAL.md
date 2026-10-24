@@ -71,6 +71,9 @@ Requests retain TLS verification, reject redirects and embedded URL credentials,
 and have per-request, whole-run and response-size bounds. Errors use fixed failure
 categories; raw server responses and exception messages are suppressed. Missing
 configuration or connection/query failure exits unsuccessfully without writes.
+The check still reports the safe endpoint identity when credentials are missing,
+without making a database request. The workflow's credential gate applies only to
+migration; it must not prevent that diagnostic report.
 
 Run only `operation=check` for diagnosis. The older `migrate-from-atlas` operation
 below predates multi-mind operational state and is not a complete modern deployment
