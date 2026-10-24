@@ -79,6 +79,15 @@ class MetadataDatabase:
         self.calls.append(("query", sql))
         if self.after_probe and self.fail_stage == "after_inventory":
             raise RuntimeError(PRIVATE)
+        match = re.fullmatch(r"DEFINE TABLE IF NOT EXISTS ([a-z_]+) SCHEMALESS PERMISSIONS NONE;", sql)
+        if match and match[1] in command.TABLES:
+            if self.fail_stage == "bootstrap" and match[1] == "memory":
+                raise RuntimeError(PRIVATE)
+            self.counts.setdefault(match[1], 0)
+            self.table_definitions.setdefault(
+                match[1], "DEFINE TABLE " + match[1] + " TYPE ANY SCHEMALESS PERMISSIONS NONE",
+            )
+            return None
         if sql == "INFO FOR DB;":
             return {
                 "users": {"axiom_runtime": self.role},
@@ -177,6 +186,9 @@ class StartupWriteGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stderr.getvalue(), "")
         self.assertNotIn(PRIVATE, json.dumps(result))
         self.assertNotIn(PROBE_ID, json.dumps(result))
+        if result["schema_bootstrap"] == "not_started":
+            self.assertFalse(any(call[0] == "query" and call[1].startswith("DEFINE ")
+                                 for call in db.calls))
         return result, factory, probe
 
     async def test_configuration_failure_never_constructs_client(self):
@@ -203,7 +215,7 @@ class StartupWriteGuardTests(unittest.IsolatedAsyncioTestCase):
             SURREALDB_NAMESPACE="elsewhere", SURREALDB_DATABASE="elsewhere",
             SURREALDB_AUTH_LEVEL="root", STORAGE_PROVIDER="mongo", AXIOM_MIND_ID="elsewhere",
         ))
-        self.assertEqual(command.APP_SHA, "65157abe34b659b0da2c6c162fa51ee8fff5de6d")
+        self.assertEqual(command.APP_SHA, "79aa753a2ab8f395473857d0b54408a490b65808")
         self.assertEqual(command.HOST, "mir-ai-06gmqbgl1duq581garj3eabaq4.aws-use1.surreal.cloud")
         factory.assert_called_once_with(f"wss://{command.HOST}/rpc")
         self.assertEqual([call for call in db.calls if call[0] == "signin"], [("signin", {
@@ -215,6 +227,7 @@ class StartupWriteGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["role"], "EDITOR")
         self.assertEqual(result["legacy_migration"], "skipped")
         self.assertEqual(result["cleanup"], "empty")
+        self.assertEqual(result["schema_bootstrap"], "complete")
         self.assertEqual(set(result["before_counts"]), set(command.TABLES))
         self.assertTrue(all(value == 0 for value in result["after_counts"].values()))
         probe.assert_awaited_once()
@@ -259,6 +272,71 @@ class StartupWriteGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["before_counts"]["runtime_records"], 2)
         self.assertEqual(db.counts, {"mind": 1, "runtime_records": 2})
         self.assertFalse(result["write_attempted"])
+        self.assertEqual(result["schema_bootstrap"], "not_started")
+        self.assertFalse(any(call[0] == "query" and call[1].startswith("DEFINE ") for call in db.calls))
+        probe.assert_not_awaited()
+
+    async def test_bootstrap_is_shared_and_follows_guard_before_probe(self):
+        db = MetadataDatabase()
+        db.counts = {"mind": 0}
+        original = "DEFINE TABLE mind TYPE ANY SCHEMALESS PERMISSIONS NONE"
+        db.table_definitions["mind"] = original
+        seen = []
+
+        async def checked(storage):
+            seen.append(set(db.counts))
+            self.assertEqual(set(db.counts), set(command.TABLES))
+            self.assertEqual(db.table_definitions["mind"], original)
+            return {"status": "passed", "primary_initialized": False}
+
+        with patch.object(command, "bootstrap_tables", wraps=command.bootstrap_tables) as bootstrap:
+            result, _, probe = await self.run_fixture(db, probe=AsyncMock(side_effect=checked))
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["schema_bootstrap"], "complete")
+        bootstrap.assert_awaited_once()
+        probe.assert_awaited_once()
+        self.assertEqual(len(seen), 1)
+        define_positions = [index for index, call in enumerate(db.calls)
+                            if call[0] == "query" and call[1].startswith("DEFINE ")]
+        first_info = next(index for index, call in enumerate(db.calls)
+                          if call == ("query", "INFO FOR DB;"))
+        self.assertEqual(len(define_positions), 8)
+        self.assertGreater(min(define_positions), first_info)
+
+    async def test_bootstrap_failure_keeps_partial_empty_schema_and_skips_probe(self):
+        db = MetadataDatabase()
+        db.fail_stage = "bootstrap"
+        result, _, probe = await self.run_fixture(db)
+        self.assertEqual(result["status"], "stopped")
+        self.assertEqual(result["stage"], "bootstrap")
+        self.assertEqual(result["schema_bootstrap"], "attempted")
+        self.assertFalse(result["write_attempted"])
+        self.assertEqual(result["cleanup"], "empty")
+        self.assertTrue(all(count == 0 for count in result["after_counts"].values()))
+        self.assertEqual(set(db.counts), {"mind", "journal"})
+        self.assertEqual(result["probe_diagnostics"]["first_failure"]["operation"], "bootstrap_memory")
+        self.assertFalse(any(call[0] == "query" and re.match(r"(?:DELETE|REMOVE|DROP) ", call[1])
+                             for call in db.calls))
+        probe.assert_not_awaited()
+        self.assertTrue(db.closed)
+
+    async def test_bootstrap_failure_unverifiable_inventory_is_not_reported_empty(self):
+        class UnverifiableDatabase(MetadataDatabase):
+            async def query(self, sql):
+                if self.fail_stage == "bootstrap" and "memory" in self.counts and sql == "INFO FOR DB;":
+                    raise RuntimeError(PRIVATE)
+                if sql.startswith("DEFINE TABLE IF NOT EXISTS memory "):
+                    self.counts["memory"] = 0
+                    raise RuntimeError(PRIVATE)
+                return await super().query(sql)
+
+        db = UnverifiableDatabase()
+        db.fail_stage = "bootstrap"
+        result, _, probe = await self.run_fixture(db)
+        self.assertEqual(result["status"], "stopped")
+        self.assertEqual(result["stage"], "bootstrap")
+        self.assertEqual(result["cleanup"], "unverified")
+        self.assertNotIn("after_counts", result)
         probe.assert_not_awaited()
 
     async def test_unknown_tables_and_custom_database_code_are_rejected(self):

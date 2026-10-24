@@ -2,7 +2,8 @@
 
 This reuses the application's stores and live tenancy probe, not the ordinary
 storage initializer: that initializer performs out-of-scope legacy migration.
-Only the existing probe writes, and its cleanup targets its generated scope.
+The shared bootstrap defines missing tables before the existing probe writes;
+probe cleanup targets only its generated scope.
 No canonical Mind, account, model configuration or imported data is created.
 """
 
@@ -22,6 +23,7 @@ from surrealdb.errors import ServerError
 
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.persistence import StorageBundle
+from aicognitive_mind.surreal_schema import bootstrap_tables
 from aicognitive_mind.surreal_preflight import TABLES, _count, _quiet_transport
 from aicognitive_mind.surreal_storage import (
     SurrealDiagnosticStore,
@@ -33,7 +35,7 @@ from aicognitive_mind.surreal_storage import (
 from aicognitive_mind.tenancy import verify_live_tenancy
 
 
-APP_SHA = "65157abe34b659b0da2c6c162fa51ee8fff5de6d"
+APP_SHA = "79aa753a2ab8f395473857d0b54408a490b65808"
 HOST = "mir-ai-06gmqbgl1duq581garj3eabaq4.aws-use1.surreal.cloud"
 URI = f"wss://{HOST}/rpc"
 NAMESPACE = "mir_ai"
@@ -124,6 +126,11 @@ class ProbeDatabase:
         if method == "query_raw":
             return "initialize_probe_mind" if isinstance(target, str) and "CREATE ONLY $record" in target else "transaction"
         if method == "query" and isinstance(target, str):
+            bootstrap = re.fullmatch(
+                r"DEFINE TABLE IF NOT EXISTS ([a-z_]+) SCHEMALESS PERMISSIONS NONE;", target,
+            )
+            if bootstrap and bootstrap[1] in TABLES:
+                return "bootstrap_" + bootstrap[1]
             match = re.search(r"\bFROM ([a-z_]+)\b", target)
             table = match[1] if match and match[1] in TABLES else None
             if table:
@@ -261,7 +268,7 @@ async def run_check(
         "namespace": NAMESPACE, "database": DATABASE,
         "auth_scope": "database", "legacy_migration": "skipped",
         "status": "stopped", "stage": "configuration",
-        "write_attempted": False, "cleanup": "not_started",
+        "schema_bootstrap": "not_started", "write_attempted": False, "cleanup": "not_started",
     }
     if env.get("AXIOM_STARTUP_APP_SHA") != APP_SHA:
         report["error_kind"] = "application_source_not_pinned"
@@ -298,8 +305,11 @@ async def run_check(
                 report["role"] = "EDITOR"
                 if any(before.values()):
                     raise CheckStopped("target_nonempty")
-                report.update(stage="tenancy_probe", write_attempted=True, cleanup="unverified")
+                report.update(stage="bootstrap", schema_bootstrap="attempted")
                 trace = ProbeDatabase(db)
+                await bootstrap_tables(trace)
+                report["schema_bootstrap"] = "complete"
+                report.update(stage="tenancy_probe", write_attempted=True, cleanup="unverified")
                 result = await probe(_stores(trace))
                 if result.get("status") != "passed" or result.get("primary_initialized") is not False:
                     raise CheckStopped("tenancy_probe_failed")
@@ -331,7 +341,10 @@ async def run_check(
             if trace is not None:
                 report["probe_diagnostics"] = trace.snapshot()
             if db is not None:
-                if report["write_attempted"] and report["cleanup"] == "unverified":
+                if (
+                    report["write_attempted"] and report["cleanup"] == "unverified"
+                    or report["schema_bootstrap"] == "attempted"
+                ):
                     try:
                         async with asyncio.timeout(15):
                             after = await _inventory(db)

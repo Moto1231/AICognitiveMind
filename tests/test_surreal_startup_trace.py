@@ -55,7 +55,11 @@ class ForwardingDatabase:
 
 
 class StrictMissingTableDatabase(fixtures.MetadataDatabase):
-    """Model documented 3.x missing-table failures, not a Cloud connection."""
+    """Inject missing-table failures after bootstrap, as if a table disappeared.
+
+    This deliberately forced fault tests trace preservation; normal fresh-start
+    3.x bootstrap success is covered separately by the schema/runtime tests.
+    """
 
     async def query(self, sql, variables=None):
         if sql.startswith("SELECT * FROM mind ") or sql.startswith("DELETE FROM "):
