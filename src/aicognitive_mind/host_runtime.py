@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import secrets
 import time
 from copy import deepcopy
@@ -24,15 +25,56 @@ class RuntimeRecords:
         self.kind, self.db = backend({"mind": mind})
         self.mind_id = str(getattr(mind, "mind_id", "root"))
 
+    @staticmethod
+    def _payload(key: str, value: dict | None) -> dict | None:
+        if not value:
+            return None
+        payload = {
+            k: deepcopy(v)
+            for k, v in value.items()
+            if k not in {"id", "_id", "mind_id", "key"}
+        }
+        if key.startswith("account_") and "account_mind_id" not in payload:
+            # Early signup stored its generated tenant selector in the same
+            # field used by RuntimeRecords for storage scope. Only that exact
+            # historical selector format is evidence of an account mapping.
+            # A scope matching the record ID is metadata, not a tenant choice.
+            legacy_target = value.get("mind_id")
+            record_id = value.get("id")
+            surreal_id = getattr(record_id, "id", None)
+            mongo_id = value.get("_id")
+            is_scope = (
+                isinstance(surreal_id, str)
+                and surreal_id == f"{legacy_target}__{key}"
+            ) or (
+                isinstance(mongo_id, str)
+                and mongo_id == f"{legacy_target}:{key}"
+            )
+            if (
+                isinstance(legacy_target, str)
+                and re.fullmatch(r"mind_[0-9a-f]{32}", legacy_target)
+                and not is_scope
+            ):
+                payload["account_mind_id"] = legacy_target
+        return payload
+
     async def get(self, key: str) -> dict | None:
         if self.kind == "mongo":
             # Accounts are global selectors for tenant Minds. Do not scope them
             # to the current root Mind, which may change across deployments.
-            query = {"key": key} if key.startswith("account_") else {
-                "mind_id": self.mind_id,
-                "key": key,
-            }
-            value = await self.db["runtime_records"].find_one(query)
+            if key.startswith("account_"):
+                cursor = self.db["runtime_records"].find(
+                    {"$or": [{"key": key}, {"_id": key}]}
+                ).limit(2)
+                matches = [row async for row in cursor]
+                if len(matches) > 1:
+                    raise CommitConflict("Ambiguous account registry records")
+                value = matches[0] if matches else None
+            else:
+                value = await self.db["runtime_records"].find_one({
+                    "mind_id": self.mind_id,
+                    "key": key,
+                })
         elif self.kind == "surreal":
             from surrealdb import RecordID
 
@@ -40,30 +82,22 @@ class RuntimeRecords:
             # whichever root Mind happens to initialize the deployed process.
             # Keep one canonical unscoped account registry across root mind IDs.
             if key.startswith("account_"):
-                # Account identity is the globally unique deterministic key. Query
-                # by that key first so login can recover accounts written under
-                # either the canonical or the briefly shipped tenant-scoped ID.
-                # surreal_query normalizes driver response envelopes.
+                # Include canonical records that predate the key field and older
+                # root-scoped records. A duplicate selector must never silently
+                # choose another tenant's credentials or Mind.
                 results = await surreal_query(
                     self.db,
-                    "SELECT * FROM runtime_records WHERE key = $key LIMIT 1;",
-                    {"key": key},
+                    "SELECT * FROM runtime_records WHERE key = $key OR id = $canonical LIMIT 2;",
+                    {"key": key, "canonical": RecordID("runtime_records", key)},
                 )
                 matches = results[0] if results else []
+                if len(matches) > 1:
+                    raise CommitConflict("Ambiguous account registry records")
                 value = matches[0] if isinstance(matches, list) and matches else None
                 if value is not None:
                     logger.warning("AUTH_DIAG registry key_lookup_found")
                 else:
                     logger.warning("AUTH_DIAG registry key_lookup_missing")
-                    # Recover canonical records created before `key` was
-                    # persisted as a field on the record.
-                    value = await self.db.select(RecordID("runtime_records", key))
-                    if isinstance(value, list):
-                        value = value[0] if value else None
-                    logger.warning(
-                        "AUTH_DIAG registry canonical_id_lookup result=%s",
-                        "found" if value else "missing",
-                    )
             else:
                 scoped_id = RecordID(
                     "runtime_records",
@@ -78,15 +112,7 @@ class RuntimeRecords:
                         value = value[0] if value else None
         else:
             value = getattr(self.db, "_runtime_records", {}).get(key)
-        return (
-            {
-                k: deepcopy(v)
-                for k, v in value.items()
-                if k not in {"id", "_id", "mind_id", "key"}
-            }
-            if value
-            else None
-        )
+        return self._payload(key, value)
 
     async def create(self, key: str, value: dict) -> None:
         if self.kind == "mongo":

@@ -42,6 +42,18 @@ class AccountService:
         so a failed initialization could leave a valid account pointing at an
         empty tenant. Repair that state when the account next authenticates.
         """
+        if getattr(self.registry_store, "kind", None) == "surreal":
+            from aicognitive_mind.surreal_storage import SurrealMindStore
+
+            # The registry already owns the connection to this namespace/database.
+            # Opening another native SurrealKV engine on the same path can leave
+            # the first engine with stale serialization state after tenant writes.
+            # Remote Surreal connections can use this same tenant-scoped store.
+            mind = SurrealMindStore(self.registry_store.db, mind_id)
+            if await mind.load() is None:
+                await mind.initialize(CognitiveMind(identity=MindIdentity(self_name=None)))
+            return
+
         storage = await create_storage(self.settings, mind_id=mind_id)
         try:
             if await storage.mind.load() is None:
@@ -68,7 +80,7 @@ class AccountService:
         await self.registry_store.create(key, {
             "kind": "account",
             "username": username,
-            "mind_id": mind_id,
+            "account_mind_id": mind_id,
             "password_salt": salt,
             "password_hash": digest,
             "active": True,
@@ -77,7 +89,7 @@ class AccountService:
         # database create acknowledgement is not proof that authentication can
         # retrieve the account (for example, after a scope/namespace mismatch).
         persisted = await self.registry_store.get(key)
-        if not persisted or persisted.get("mind_id") != mind_id:
+        if not persisted or persisted.get("account_mind_id") != mind_id:
             logger.error("AUTH_DIAG signup registry_readback_failed")
             raise RuntimeError("Account storage verification failed; signup was not confirmed.")
         logger.warning("AUTH_DIAG signup registry_readback_ok")
@@ -103,7 +115,7 @@ class AccountService:
         # If tenant storage is temporarily unhealthy, valid credentials should
         # still establish the account session instead of turning login into a
         # 500. Tenant access/repair belongs after authentication.
-        mind_id_value = record.get("mind_id")
+        mind_id_value = record.get("account_mind_id")
         if mind_id_value:
             mind_id = str(mind_id_value)
         else:
