@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import time
+from contextlib import suppress
 from typing import Any
 
 from surrealdb import AsyncSurreal
@@ -24,6 +25,7 @@ from aicognitive_mind.storage import (
     _journal_matches,
     _memory_matches,
 )
+from aicognitive_mind.surreal_schema import bootstrap_tables
 from aicognitive_mind.timing import caller, emit
 
 
@@ -110,6 +112,14 @@ class SurrealRuntime:
             await self.database.signin(credentials)
         await self.ping()
         emit("timing startup.connect total=%.3fs", time.perf_counter() - started)
+        try:
+            await bootstrap_tables(self.database)
+        except BaseException:
+            # Preserve the original bootstrap failure even if close also fails.
+            # Partial empty schema is retained for safe IF NOT EXISTS retry.
+            with suppress(Exception):
+                await self.database.close()
+            raise
         await self._migrate_legacy_scope()
         emit("timing startup.initialize total=%.3fs", time.perf_counter() - started)
 
