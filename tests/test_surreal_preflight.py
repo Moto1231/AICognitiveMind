@@ -9,6 +9,7 @@ import re
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -104,6 +105,25 @@ class RpcFixture:
 
 
 class SurrealPreflightTests(unittest.IsolatedAsyncioTestCase):
+    def test_workflow_credential_gate_applies_only_to_migration(self):
+        workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" /
+                    "canonical-surreal.yml").read_text(encoding="utf-8")
+        gate = workflow.split("- name: Require canonical Surreal secrets\n", 1)[1]
+        gate = gate.split("\n      - name:", 1)[0]
+        self.assertIn("if: ${{ inputs.operation == 'migrate-from-atlas' }}", gate)
+
+    async def test_missing_credentials_report_host_without_any_network_request(self):
+        factory = unittest.mock.Mock(side_effect=AssertionError("No network without credentials"))
+        result = await preflight(
+            settings(surrealdb_username=None, surrealdb_password=None), client_factory=factory,
+        )
+        factory.assert_not_called()
+        self.assertEqual(result, {
+            "endpoint_host": "database.example.invalid", "namespace": "fixture_namespace",
+            "database": "fixture_database", "connection": "not_configured",
+            "stage": "configuration", "error_kind": "missing_credentials",
+        })
+
     async def test_reads_only_metadata_and_fixed_aggregate_queries(self):
         fixture = RpcFixture()
         fixture.table_names.add("private_table; DELETE mind; " + PRIVATE)
