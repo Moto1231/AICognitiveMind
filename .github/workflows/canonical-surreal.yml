@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - check
+          - check-root
           - migrate-from-atlas
 
 concurrency:
@@ -60,6 +61,18 @@ jobs:
           SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
           SURREALDB_AUTH_LEVEL: database
         run: python scripts/surreal_canonical.py check
+
+      - name: Read-only root-scope diagnostic (explicit)
+        if: ${{ inputs.operation == 'check-root' }}
+        env:
+          STORAGE_PROVIDER: surreal
+          SURREALDB_URI: ${{ secrets.CANONICAL_SURREALDB_URI }}
+          SURREALDB_NAMESPACE: mir_ai
+          SURREALDB_DATABASE: ai_cognitive_mind
+          SURREALDB_USERNAME: ${{ secrets.CANONICAL_SURREALDB_USERNAME }}
+          SURREALDB_PASSWORD: ${{ secrets.CANONICAL_SURREALDB_PASSWORD }}
+          SURREALDB_AUTH_LEVEL: root
+        run: python scripts/surreal_canonical.py check-root
 
       - name: Require Atlas source secret
         if: ${{ inputs.operation == 'migrate-from-atlas' }}

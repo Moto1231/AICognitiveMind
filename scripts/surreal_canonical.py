@@ -109,8 +109,11 @@ def _print_counts(label: str, counts: dict[str, int]) -> None:
         print(f"{table}: {counts[table]}")
 
 
-async def _check(settings: Settings) -> None:
-    report = await preflight(settings)
+async def _check(settings: Settings, *, root_diagnostic: bool = False) -> None:
+    report = (
+        await preflight(settings, root_diagnostic=True)
+        if root_diagnostic else await preflight(settings)
+    )
     print(json.dumps(report, sort_keys=True))
     if report["connection"] != "ok":
         raise SystemExit(1)
@@ -192,6 +195,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Read-only remote preflight: target identity, aggregate counts and conflicts.",
     )
     subparsers.add_parser(
+        "check-root",
+        help="Explicit one-signin root diagnostic pinned to the approved mir-ai target.",
+    )
+    subparsers.add_parser(
         "migrate-from-atlas",
         help="Copy one validated Mind from canonical Atlas into an empty canonical Surreal target.",
     )
@@ -200,7 +207,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    if args.command == "check":
+    if args.command in {"check", "check-root"}:
         # Ignore local dotenv files: only the explicit workflow environment is
         # authoritative here. Never let validation print credential input values.
         try:
@@ -209,7 +216,8 @@ def main() -> None:
             print('{"connection": "error", "error_kind": "invalid_configuration", '
                   '"stage": "configuration"}')
             raise SystemExit(1) from None
-        asyncio.run(_check(settings))
+        asyncio.run(_check(settings, root_diagnostic=True) if args.command == "check-root"
+                    else _check(settings))
         return
 
     settings = get_settings()

@@ -79,6 +79,18 @@ Run only `operation=check` for diagnosis. The older `migrate-from-atlas` operati
 below predates multi-mind operational state and is not a complete modern deployment
 migration. Do not run it or switch providers without a reviewed preservation plan.
 
+`operation=check-root` is a separate, explicitly authorized diagnostic. It permits
+exactly one instance/root signin, without namespace/database signin fields or
+headers, to the approved `mir-ai-06gmqbgl1duq581garj3eabaq4.aws-use1.surreal.cloud`
+endpoint only (TLS, default port, `/rpc`). Its target is pinned to
+`mir_ai / ai_cognitive_mind`. It first checks target membership with `INFO FOR ROOT`
+and `INFO FOR NS`; missing targets stop the check without creating anything.
+Only an existing target proceeds to the same read-only inventory queries. This
+operation never falls back to another authentication scope or retries signin.
+It preserves only allowlisted RPC error categories/codes, never server messages.
+The default `check`, migration behavior and application authentication defaults
+remain database-scoped. Root authentication requires separate approval before run.
+
 ## Legacy migration contract
 
 `scripts/surreal_canonical.py migrate-from-atlas`:
