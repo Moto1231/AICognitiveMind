@@ -1,0 +1,46 @@
+name: Surreal runtime storage write check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-surreal
+  cancel-in-progress: false
+
+jobs:
+  startup-storage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out diagnostic
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out approved application source
+        uses: actions/checkout@v4
+        with:
+          ref: 65157abe34b659b0da2c6c162fa51ee8fff5de6d
+          path: startup-source
+          persist-credentials: false
+
+      - name: Verify application source pin
+        run: test "$(git -C startup-source rev-parse HEAD)" = "65157abe34b659b0da2c6c162fa51ee8fff5de6d"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install approved application
+        run: pip install ./startup-source
+
+      - name: Run bounded synthetic storage probe
+        env:
+          AXIOM_STARTUP_APP_SHA: 65157abe34b659b0da2c6c162fa51ee8fff5de6d
+          AXIOM_RUNTIME_SURREALDB_USERNAME: ${{ secrets.AXIOM_RUNTIME_SURREALDB_USERNAME }}
+          AXIOM_RUNTIME_SURREALDB_PASSWORD: ${{ secrets.AXIOM_RUNTIME_SURREALDB_PASSWORD }}
+        run: python -I -B scripts/surreal_startup_write.py
