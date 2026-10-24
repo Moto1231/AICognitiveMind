@@ -48,7 +48,7 @@ jobs:
           test -n "$SURREALDB_USERNAME" || (echo "Missing CANONICAL_SURREALDB_USERNAME" && exit 1)
           test -n "$SURREALDB_PASSWORD" || (echo "Missing CANONICAL_SURREALDB_PASSWORD" && exit 1)
 
-      - name: Check canonical Surreal
+      - name: Read-only canonical Surreal preflight
         if: ${{ inputs.operation == 'check' }}
         env:
           STORAGE_PROVIDER: surreal

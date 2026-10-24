@@ -16,6 +16,7 @@ from aicognitive_mind.domain import (
     JournalEntry,
 )
 from aicognitive_mind.surreal_storage import SurrealRuntime, _document, _records
+from aicognitive_mind.surreal_preflight import preflight
 
 
 COGNITIVE_TABLES = ("mind", "journal", "memory", "diagnostics")
@@ -109,23 +110,10 @@ def _print_counts(label: str, counts: dict[str, int]) -> None:
 
 
 async def _check(settings: Settings) -> None:
-    runtime = SurrealRuntime(
-        settings.surrealdb_uri,
-        settings.surrealdb_namespace,
-        settings.surrealdb_database,
-        settings.surrealdb_username,
-        settings.surrealdb_password,
-        settings.surrealdb_auth_level,
-    )
-    await runtime.initialize()
-    try:
-        counts = await _surreal_counts(runtime)
-        print("Surreal connection: OK")
-        print(f"namespace: {settings.surrealdb_namespace}")
-        print(f"database: {settings.surrealdb_database}")
-        _print_counts("cognitive tables:", counts)
-    finally:
-        await runtime.close()
+    report = await preflight(settings)
+    print(json.dumps(report, sort_keys=True))
+    if report["connection"] != "ok":
+        raise SystemExit(1)
 
 
 async def _migrate_from_atlas(settings: Settings) -> None:
@@ -201,7 +189,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser(
         "check",
-        help="Connect to canonical Surreal and report cognitive table counts.",
+        help="Read-only remote preflight: target identity, aggregate counts and conflicts.",
     )
     subparsers.add_parser(
         "migrate-from-atlas",
@@ -212,13 +200,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    settings = get_settings()
-    _require_remote_surreal(settings)
-
     if args.command == "check":
+        # Ignore local dotenv files: only the explicit workflow environment is
+        # authoritative here. Never let validation print credential input values.
+        try:
+            settings = Settings(_env_file=None)
+        except Exception:
+            print('{"connection": "error", "error_kind": "invalid_configuration", '
+                  '"stage": "configuration"}')
+            raise SystemExit(1) from None
         asyncio.run(_check(settings))
         return
 
+    settings = get_settings()
+    _require_remote_surreal(settings)
     _require_atlas(settings)
     asyncio.run(_migrate_from_atlas(settings))
 

@@ -50,7 +50,33 @@ ROLES EDITOR;
 
 Store the actual password only in the GitHub secret. Do not commit it to the repository.
 
-## Safe migration contract
+## Read-only preflight
+
+The `Canonical Surreal` workflow's `check` operation uses the existing Surreal
+secret references. It authenticates an existing database-scoped system user and
+issues only `INFO FOR DB` and aggregate `SELECT` queries over the eight known
+application tables. HTTP namespace/database headers select the target. It never
+calls `USE`, application initialization, the tenancy probe, or migration code;
+some Surreal versions can create missing namespaces/databases through `USE`.
+
+Output is limited to the endpoint hostname, namespace/database, connection
+outcome, table and tenant counts, and conflict indicators. Account compatibility
+counts identify missing legacy keys, missing tenant mappings and duplicate global
+keys without returning account identifiers, hashes, credentials or record contents.
+Unknown table names and schema definitions are not logged. A populated target or
+legacy account state requires inspection before any migration; this preflight does
+not compare Mongo history or establish which database is newer.
+
+Requests retain TLS verification, reject redirects and embedded URL credentials,
+and have per-request, whole-run and response-size bounds. Errors use fixed failure
+categories; raw server responses and exception messages are suppressed. Missing
+configuration or connection/query failure exits unsuccessfully without writes.
+
+Run only `operation=check` for diagnosis. The older `migrate-from-atlas` operation
+below predates multi-mind operational state and is not a complete modern deployment
+migration. Do not run it or switch providers without a reviewed preservation plan.
+
+## Legacy migration contract
 
 `scripts/surreal_canonical.py migrate-from-atlas`:
 
@@ -62,7 +88,7 @@ Store the actual password only in the GitHub secret. Do not commit it to the rep
 6. Removes MongoDB physical `_id` metadata rather than importing it into cognition.
 7. Writes validated cognitive documents into Surreal.
 8. Reads the Surreal documents back and verifies domain-level parity.
-9. Rolls the target cognitive tables back to empty if migration or verification fails.
+9. Preserves a committed target for inspection if post-commit verification fails.
 
 This is intentionally a one-home migration, not dual-write synchronization.
 
