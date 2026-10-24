@@ -29,6 +29,11 @@ MAX_RESPONSE_BYTES = 1_048_576
 REQUEST_TIMEOUT_SECONDS = 10.0
 PREFLIGHT_TIMEOUT_SECONDS = 60.0
 INFO_QUERY = "INFO FOR DB;"
+ROOT_INFO_QUERY = "INFO FOR ROOT;"
+NAMESPACE_INFO_QUERY = "INFO FOR NS;"
+ROOT_DIAGNOSTIC_HOST = "mir-ai-06gmqbgl1duq581garj3eabaq4.aws-use1.surreal.cloud"
+ROOT_DIAGNOSTIC_NAMESPACE = "mir_ai"
+ROOT_DIAGNOSTIC_DATABASE = "ai_cognitive_mind"
 DUPLICATE_MIND_QUERY = (
     "SELECT count() AS total FROM "
     "(SELECT mind_id, count() AS copies FROM mind "
@@ -74,6 +79,51 @@ def count_queries(table: str) -> tuple[str, str, str]:
 
 class PreflightError(Exception):
     """Contains only a fixed, content-free failure category."""
+
+
+def _rpc_failure(error: Any) -> PreflightError:
+    category = "rpc_error"
+    code = error.get("code") if isinstance(error, dict) else None
+    allowed_codes = {-32700, -32600, -32602, -32603, -32000, -32002}
+    if type(code) is not int or code not in allowed_codes:
+        code = None
+    kinds = []
+    structured_kind_present = isinstance(error, dict) and "kind" in error
+    detail = error
+    for _ in range(4):
+        if not isinstance(detail, dict):
+            break
+        kind = detail.get("kind")
+        if not isinstance(kind, str):
+            break
+        kinds.append(kind)
+        detail = detail.get("details")
+    path = tuple(kinds)
+    if path == ("NotAllowed", "Auth", "InvalidAuth") and code in {None, -32002}:
+        category = "authentication_rejected"
+    elif path == ("Validation", "InvalidParams") and code in {None, -32603}:
+        category = "invalid_rpc_params"
+    elif path == ("NotFound", "Namespace") and code in {None, -32000}:
+        category = "namespace_missing"
+    elif path == ("NotFound", "Database") and code in {None, -32000}:
+        category = "database_missing"
+    elif not structured_kind_present and code == -32603:
+        category = "invalid_rpc_params"
+    elif not structured_kind_present and code == -32700:
+        category = "rpc_parse_error"
+    elif not structured_kind_present and code == -32600:
+        category = "invalid_rpc_request"
+    elif not structured_kind_present and code == -32602:
+        category = "rpc_method_not_allowed"
+    elif not structured_kind_present and code == -32002:
+        category = "authentication_or_authorization_rejected"
+    return PreflightError(category, code)
+
+
+def _target_exists(info: Any, collection: str, target: str) -> bool:
+    if not isinstance(info, dict) or not isinstance(info.get(collection), dict):
+        raise PreflightError("invalid_metadata_response")
+    return target in info[collection]
 
 
 class _DiscardOutput:
@@ -143,7 +193,9 @@ async def _rpc(
                 raise PreflightError("response_too_large")
             body.extend(chunk)
         result = json.loads(body)
-    if not isinstance(result, dict) or "error" in result or "result" not in result:
+    if isinstance(result, dict) and "error" in result:
+        raise _rpc_failure(result["error"])
+    if not isinstance(result, dict) or "result" not in result:
         raise PreflightError("rpc_error")
     return result["result"]
 
@@ -176,6 +228,7 @@ async def preflight(
     *,
     client_factory: Any = httpx.AsyncClient,
     timeout_seconds: float = PREFLIGHT_TIMEOUT_SECONDS,
+    root_diagnostic: bool = False,
 ) -> dict[str, Any]:
     """Return only target identity, outcomes, aggregate counts and conflict flags."""
     report: dict[str, Any] = {
@@ -188,7 +241,19 @@ async def preflight(
     try:
         host, endpoint = _endpoint(settings)
         report["endpoint_host"] = host
-        if settings.surrealdb_auth_level != "database":
+        if root_diagnostic:
+            report.update(auth_scope="root", authenticated=False)
+            uri = urlsplit(settings.surrealdb_uri)
+            if (
+                host != ROOT_DIAGNOSTIC_HOST
+                or uri.port not in {None, 443}
+                or uri.path.rstrip("/") not in {"", "/rpc"}
+                or settings.surrealdb_namespace != ROOT_DIAGNOSTIC_NAMESPACE
+                or settings.surrealdb_database != ROOT_DIAGNOSTIC_DATABASE
+                or settings.surrealdb_auth_level != "root"
+            ):
+                raise PreflightError("root_target_not_approved")
+        elif settings.surrealdb_auth_level != "database":
             raise PreflightError("database_scoped_auth_required")
         if not settings.surrealdb_username or not settings.surrealdb_password:
             report["connection"] = "not_configured"
@@ -197,26 +262,50 @@ async def preflight(
             raise PreflightError("invalid_configuration")
         headers = {
             "Accept": "application/json", "Content-Type": "application/json",
-            "Surreal-NS": settings.surrealdb_namespace,
-            "Surreal-DB": settings.surrealdb_database,
         }
+        signin = {"user": settings.surrealdb_username, "pass": settings.surrealdb_password}
+        if not root_diagnostic:
+            headers.update({
+                "Surreal-NS": settings.surrealdb_namespace,
+                "Surreal-DB": settings.surrealdb_database,
+            })
+            signin.update(NS=settings.surrealdb_namespace, DB=settings.surrealdb_database)
         with _quiet_transport():
             async with asyncio.timeout(timeout_seconds):
                 async with client_factory(
                     timeout=REQUEST_TIMEOUT_SECONDS, follow_redirects=False, trust_env=False,
                 ) as client:
                     report["stage"] = "authentication"
-                    token = await _rpc(client, endpoint, headers, "signin", [{
-                        "NS": settings.surrealdb_namespace,
-                        "DB": settings.surrealdb_database,
-                        "user": settings.surrealdb_username,
-                        "pass": settings.surrealdb_password,
-                    }])
+                    # Exactly one signin; scope is selected explicitly, never retried.
+                    token = await _rpc(client, endpoint, headers, "signin", [signin])
                     if isinstance(token, dict):
                         token = token.get("access")
                     if not isinstance(token, str) or not token:
                         raise PreflightError("invalid_auth_response")
                     headers["Authorization"] = f"Bearer {token}"
+                    if root_diagnostic:
+                        report.update(authenticated=True, stage="namespace_existence")
+                        root_info = await _query(client, endpoint, headers, ROOT_INFO_QUERY)
+                        exists = _target_exists(
+                            root_info, "namespaces", settings.surrealdb_namespace,
+                        )
+                        del root_info
+                        report["namespace_exists"] = exists
+                        if not exists:
+                            raise PreflightError("namespace_missing")
+                        headers["Surreal-NS"] = settings.surrealdb_namespace
+                        report["stage"] = "database_existence"
+                        namespace_info = await _query(
+                            client, endpoint, headers, NAMESPACE_INFO_QUERY,
+                        )
+                        exists = _target_exists(
+                            namespace_info, "databases", settings.surrealdb_database,
+                        )
+                        del namespace_info
+                        report["database_exists"] = exists
+                        if not exists:
+                            raise PreflightError("database_missing")
+                        headers["Surreal-DB"] = settings.surrealdb_database
                     report["stage"] = "metadata"
                     info = await _query(client, endpoint, headers, INFO_QUERY)
                     if not isinstance(info, dict) or not isinstance(info.get("tables"), dict):
@@ -272,6 +361,8 @@ async def preflight(
         report.update(summary)
     except PreflightError as exc:
         report["error_kind"] = exc.args[0]
+        if len(exc.args) > 1 and exc.args[1] is not None:
+            report["error_code"] = exc.args[1]
     except (TimeoutError, httpx.TimeoutException):
         report["error_kind"] = "timeout"
     except httpx.TransportError:
