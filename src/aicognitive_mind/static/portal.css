@@ -1048,12 +1048,13 @@ body {
 @media(max-width:560px) { #taskProfileEditor > .task-profile-section {padding:14px;} .task-detail-icon {width:48px;height:48px;flex-basis:48px;} .task-detail-icon > .axiom-button-icon {width:44px;height:44px;} }
 
 /* Major administration sections match Endpoints / MCP Servers separation */
-#overviewSection .overview-group, #taskProfileEditor > .task-profile-section { display:block; width:100%; margin:22px 0 0; padding:24px; border:1px solid rgba(104,216,255,.28); border-radius:15px; background:linear-gradient(135deg,rgba(19,35,58,.95),rgba(9,19,35,.95)); box-shadow:0 9px 25px rgba(0,0,0,.18); box-sizing:border-box; }
+#overviewSection .overview-group, #taskProfileEditor > .task-profile-section, #taskProfileOverview > .task-profile-selection { display:block; width:100%; margin:22px 0 0; padding:24px; border:1px solid rgba(104,216,255,.28); border-radius:15px; background:linear-gradient(135deg,rgba(19,35,58,.95),rgba(9,19,35,.95)); box-shadow:0 9px 25px rgba(0,0,0,.18); box-sizing:border-box; }
+#taskProfileOverview > .task-profile-selection > .task-profile-grid { margin-top: 0; }
 #overviewSection .overview-group > h4, #taskProfileEditor > .task-profile-section > h4, #taskProfileEditor .task-profile-behavior-heading h4 { font-size:17px; margin:0 0 18px; color:var(--text); }
 #overviewSection .overview-group + .overview-group, #taskProfileEditor > .task-profile-section + .task-profile-section { margin-top:28px; }
 #taskProfileList .task-profile-card.axiom-icon-button > .axiom-button-icon { width:20px!important; height:20px!important; max-width:20px; max-height:20px; }
 #taskProfileList .task-profile-card.axiom-icon-button { min-height:82px; padding:10px; }
-@media(max-width:560px){#overviewSection .overview-group,#taskProfileEditor > .task-profile-section{padding:14px;}}
+@media(max-width:560px){#overviewSection .overview-group,#taskProfileEditor > .task-profile-section,#taskProfileOverview > .task-profile-selection{padding:14px;}}
 
 #skillsSection { grid-column:1/-1; } #skillsSection .overview-group {border:1px solid var(--line);border-radius:14px;padding:20px;margin:20px 0;} #skillsContent {font-family:ui-monospace,monospace;min-height:280px;} #skillsStatus{font-size:12px;color:var(--accent);}
 
