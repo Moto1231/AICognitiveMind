@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import json
 import logging
+import math
 from typing import Any
 from urllib.parse import urlparse
 
@@ -230,6 +232,7 @@ class TaskModelDispatcher:
         data: dict[str, str] | None = None,
         files: dict[str, tuple[str, bytes, str]] | None = None,
         extra_headers: dict[str, str] | None = None,
+        retry_steward_rate_limit: bool = False,
     ) -> dict[str, Any]:
         headers = self._headers(endpoint)
         if extra_headers:
@@ -255,6 +258,18 @@ class TaskModelDispatcher:
             raise TaskDispatchError(
                 f"Provider endpoint '{endpoint.name}' could not complete {path}: {exc.__class__.__name__}"
             ) from exc
+        if retry_steward_rate_limit and response.status_code == 429:
+            try:
+                delay = float(getattr(response, "headers", {}).get("retry-after", ""))
+            except (TypeError, ValueError):
+                delay = -1.0
+            if math.isfinite(delay) and 0 <= delay <= 30:
+                logger.info("task_provider_rate_limit_retry endpoint=%s wait=%.3f", endpoint.name, delay)
+                await asyncio.sleep(delay)
+                return await self._request(
+                    endpoint, path, json_body=json_body, data=data, files=files,
+                    extra_headers=extra_headers,
+                )
         if response.is_error:
             excerpt = response.text[:1200]
             logger.error(
@@ -407,7 +422,10 @@ class TaskModelDispatcher:
                 tools=steward_action_tools(steward_action_phase),
                 tool_choice="auto", parallel_tool_calls=False,
             )
-        payload = await self._request(endpoint, "chat/completions", json_body=body)
+        payload = await self._request(
+            endpoint, "chat/completions", json_body=body,
+            retry_steward_rate_limit=steward_action_phase is not None,
+        )
         try:
             message = payload["choices"][0]["message"]
             if not isinstance(message, dict):

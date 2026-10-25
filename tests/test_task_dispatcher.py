@@ -2,6 +2,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
+
 from aicognitive_mind.host_runtime import HostAwareCore, HostAwareInterpreter
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_behaviors import TaskExecutionContext
@@ -107,6 +109,22 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("image_url", str(kwargs["json"]["messages"]))
         self.assertEqual(set(kwargs["json"]), {"model", "messages"})
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer admin-key")
+
+    async def test_ordinary_chat_does_not_retry_429_with_retry_after(self):
+        records = await self.configured()
+        calls = []
+
+        def handle(request):
+            calls.append(request)
+            return httpx.Response(429, headers={"retry-after": "2.9625"}, json={"error": "TPM"})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            dispatcher = TaskModelDispatcher(records, client=client)
+            with patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep:
+                with self.assertRaisesRegex(TaskDispatchError, "HTTP 429"):
+                    await dispatcher.complete_chat("vision", [{"role": "user", "content": "Describe."}])
+        self.assertEqual(len(calls), 1)
+        sleep.assert_not_awaited()
 
     async def test_json_response_option_rejects_other_tasks_and_unsupported_formats(self):
         client = FakeClient(FakeResponse({}))

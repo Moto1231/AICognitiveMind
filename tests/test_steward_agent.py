@@ -2,7 +2,7 @@
 
 import json
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 import httpx
 
@@ -439,6 +439,84 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(artifact["properties"]["payload"]["additionalProperties"], True)
         phases = [json.loads(call["messages"][1]["content"])["phase"] for call in calls]
         self.assertEqual(phases, ["recall", "recall", "review"])
+
+    async def test_http_native_actions_retry_one_numeric_429_per_request(self):
+        service, _, memory = await self.service(None)
+        await memory.remember(DurableMemory(
+            memory_class=MemoryClass.SEMANTIC, content="Atlas uses SurrealDB.",
+            grounding=("Earlier project decision",),
+        ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+        records = await self.configured_recall_records(service)
+        steps, delays = iter([SEARCH, BRIEF, NOTHING]), iter(["0", "2.9625", "30"])
+        calls = []
+
+        def handle(request):
+            calls.append(json.loads(request.content))
+            if len(calls) % 2:
+                return httpx.Response(429, headers={"retry-after": next(delays)}, json={"error": "TPM"})
+            return httpx.Response(200, json={
+                "choices": [{"message": native_message(next(steps))}],
+            })
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            with (
+                patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep,
+                patch("aicognitive_mind.steward_agent.candidates", wraps=candidates) as search,
+            ):
+                begun = await service.begin_interaction("What database does Atlas use?")
+                completed = await service.complete_interaction(
+                    "What database does Atlas use?", "Atlas uses SurrealDB.",
+                    idempotency_key=begun["idempotency_key"],
+                )
+        self.assertEqual(sleep.await_args_list, [call(0.0), call(2.9625), call(30.0)])
+        self.assertEqual(len(calls), 6)
+        for index in (0, 2, 4):
+            self.assertEqual(calls[index], calls[index + 1])
+        search.assert_awaited_once()
+        self.assertEqual(begun["recalled_context"]["summary"], "Atlas uses SurrealDB.")
+        self.assertEqual(completed["status"], "interaction_committed")
+
+    async def test_http_steward_retry_hints_are_bounded_and_failures_are_atomic(self):
+        cases = [(hint, 429, 1) for hint in (
+            None, "", "tomorrow", "-0.01", "30.01", "nan", "inf", "-inf",
+            "Wed, 21 Oct 2026 07:28:00 GMT",
+        )] + [("2.9625", 429, 2), ("1", 400, 1), ("1", 503, 1), ("1", None, 1)]
+        for phase in ("recall", "review"):
+            for hint, status, expected_calls in cases:
+                with self.subTest(phase=phase, hint=hint, status=status):
+                    service, journal, memory = await self.service(None)
+                    records = await self.configured_recall_records(service)
+                    before, original = await journal.read(), await service._mind.load()
+                    calls = []
+
+                    def handle(request):
+                        calls.append(request)
+                        if status is None:
+                            raise httpx.ConnectError("Offline transport failure", request=request)
+                        headers = {} if hint is None else {"retry-after": hint}
+                        return httpx.Response(status, headers=headers, json={"error": "Failure"})
+
+                    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                        service._steward_runtime = TaskModelDispatcher(records, client=client)
+                        with (
+                            patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep,
+                            patch("aicognitive_mind.steward_agent.candidates", new_callable=AsyncMock) as search,
+                            self.assertRaises(TaskDispatchError),
+                        ):
+                            if phase == "recall":
+                                await service.begin_interaction("What database does Atlas use?")
+                            else:
+                                await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+                    self.assertEqual(len(calls), expected_calls)
+                    if expected_calls == 2:
+                        sleep.assert_awaited_once_with(2.9625)
+                    else:
+                        sleep.assert_not_awaited()
+                    search.assert_not_awaited()
+                    self.assertEqual(await journal.read(), before)
+                    self.assertEqual(await service._mind.load(), original)
+                    self.assertEqual(await memory.read(), [])
 
     async def test_http_json_content_remains_valid_with_registered_action_tools(self):
         service, journal, memory = await self.service(None)
