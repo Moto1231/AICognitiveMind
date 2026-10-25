@@ -119,6 +119,45 @@ class CurrentStateServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(skills["status"], "current")
         self.assertEqual({item["slug"] for item in skills["value"]}, set(REQUIRED_SKILLS))
 
+    async def test_unknown_resolution_notes_survive_unchanged_begins_until_real_events(self):
+        fields = ("locality", "current_scene")
+        values = {key: {
+            "value": None, "status": "unknown", "source": "bounded_current_context_check",
+            "note": json.dumps({
+                "field": key, "attempts": [{"kind": "current_context_check", "result": "no grounded evidence"}],
+                "retry_condition": "new evidence or a state-changing event",
+            }),
+        } for key in fields}
+        seeded = await self.service.update_current_state("state_refreshed", {"values": values})
+        expected = {key: seeded["fields"][key] for key in fields}
+        service = ProductionMcpService(self.mind, self.journal, self.memory)
+        service._steward_runtime = SimpleNamespace(execute=AsyncMock(return_value=json.dumps({
+            "action": "finish", "outcome": "no_recall_needed", "reason": "Current context suffices.",
+        })))
+        for _ in range(2):
+            begun = await service.begin_interaction("Continue.", {"summary": "Unchanged current-state check"})
+            self.assertEqual(begun["memory_assessment"]["outcome"], "no_recall_needed")
+            for key in fields:
+                # Whole-answer equality includes source, JSON note and observed_at.
+                self.assertEqual(begun["current_state"]["fields"][key], expected[key])
+        reloaded = await service.read_current_state()
+        self.assertEqual({key: reloaded["fields"][key] for key in fields}, expected)
+
+        for event, affected in (
+            ("scene_changed", {"current_scene"}),
+            ("location_changed", {"locality", "current_scene"}),
+        ):
+            seeded = await service.update_current_state("state_refreshed", {"values": values})
+            changed = await service.update_current_state(event)
+            for key in fields:
+                answer = changed["fields"][key]
+                if key in affected:
+                    self.assertEqual(answer["status"], "unknown")
+                    self.assertEqual(answer["source"], "invalidated by event:" + event)
+                    self.assertNotEqual(answer["note"], values[key]["note"])
+                else:
+                    self.assertEqual(answer, seeded["fields"][key])
+
     async def test_body_endpoint_preserves_sensory_provenance_without_inventing_human_presence(self) -> None:
         dispatcher = SimpleNamespace(
             assignment=AsyncMock(return_value=TaskModelAssignment(task="reasoning", provider="endpoint")),
