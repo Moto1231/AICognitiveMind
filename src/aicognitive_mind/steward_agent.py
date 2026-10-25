@@ -68,21 +68,24 @@ RECALL_STEPS = TypeAdapter(Annotated[Search | RecallFinish, Field(discriminator=
 REVIEW_STEPS = TypeAdapter(Annotated[Search | ReviewFinish, Field(discriminator="action")])
 
 
+class RecallAction(Step):
+    decision: Annotated[Search | RecallFinish, Field(discriminator="action")]
+
+
+class ReviewAction(Step):
+    decision: Annotated[Search | ReviewFinish, Field(discriminator="action")]
+
+
 def steward_action_tools(phase: str) -> list[dict[str, Any]]:
-    """Expose only the existing phase decisions as local provider functions."""
+    """Expose one fixed provider function containing the existing phase decision."""
     if phase not in {"recall", "review"}:
         raise ValueError("Unknown Memory Steward phase")
-    finish = RecallFinish if phase == "recall" else ReviewFinish
-    return [
-        {"type": "function", "function": {
-            "name": name, "description": description,
-            "parameters": model.model_json_schema(),
-        }}
-        for name, model, description in (
-            ("search", Search, "Request one bounded memory or journal search."),
-            ("finish", finish, "Finish the current Memory Steward assessment."),
-        )
-    ]
+    wrapper = RecallAction if phase == "recall" else ReviewAction
+    return [{"type": "function", "function": {
+        "name": "steward_action",
+        "description": "Submit one validated search or finish decision for this assessment.",
+        "parameters": wrapper.model_json_schema(),
+    }}]
 
 
 class ModelMemorySteward(MemoryStewardTool):
@@ -116,7 +119,7 @@ class ModelMemorySteward(MemoryStewardTool):
             {
                 "role": "system",
                 "content": skill + (
-                    "\n\nUse the supplied search and finish function parameter schemas."
+                    "\n\nCall steward_action with one decision matching its parameter schema."
                     if native_actions else "\n\nPHASE SCHEMA:\n" + json.dumps(adapter.json_schema())
                 ),
             },
