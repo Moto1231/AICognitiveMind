@@ -10,6 +10,7 @@ from aicognitive_mind.provider_endpoints import (
     _reported_capabilities,
     _documented_capabilities,
     discover_endpoint_model_details,
+    enrich_endpoint_capabilities,
 )
 
 
@@ -66,6 +67,144 @@ class ProviderEndpointTests(unittest.IsolatedAsyncioTestCase):
             "architecture": {"output_modalities": ["text"]},
             "model_info": {"supports_function_calling": True, "supports_audio_output": False},
         }), ["Vision", "Text", "Tools"])
+
+    def test_openrouter_parameters_and_mistral_feature_names_are_recognized(self):
+        self.assertEqual(_reported_capabilities({
+            "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["text"]},
+            "supported_parameters": ["tools", "tool_choice", "structured_outputs", "response_format"],
+        }), ["Text", "Vision", "Tools", "Structured Outputs"])
+        self.assertEqual(_reported_capabilities({"capabilities": {
+            "completion_chat": True, "function_calling": True, "vision": True,
+        }}), ["Text", "Tools", "Vision"])
+
+    def test_response_format_alone_and_generation_methods_do_not_claim_tools_or_schema(self):
+        self.assertEqual(_reported_capabilities({"supported_parameters": ["response_format"]}), [])
+        self.assertEqual(_reported_capabilities({
+            "id": "tool-vision-model", "supportedGenerationMethods": ["generateContent"],
+        }), [])
+
+    def test_input_and_output_modalities_distinguish_speech_generation_from_chat(self):
+        self.assertEqual(_reported_capabilities({"architecture": {
+            "input_modalities": ["text"], "output_modalities": ["audio"],
+        }}), ["Text Input", "Audio Output"])
+        self.assertEqual(_reported_capabilities({
+            "input_modalities": ["audio", "image"], "output_modalities": ["text"],
+        }), ["Audio Input", "Vision", "Text"])
+
+    def test_malformed_modality_values_are_ignored_without_crashing(self):
+        for malformed in (None, "audio", 7, {"text": True}):
+            with self.subTest(value=malformed):
+                self.assertEqual(_reported_capabilities({
+                    "input_modalities": malformed, "output_modalities": malformed,
+                    "architecture": {"input_modalities": malformed, "output_modalities": malformed},
+                }), [])
+
+    def test_explicit_false_takes_precedence_over_equivalent_positive_parameter(self):
+        self.assertEqual(_reported_capabilities({
+            "capabilities": {"function_calling": False, "audio": False},
+            "supported_parameters": ["tools", "tool_choice"],
+            "model_info": {"supports_function_calling": True, "supports_audio_input": True},
+        }), [])
+
+    def test_modality_feature_maps_preserve_positive_and_negative_values(self):
+        self.assertEqual(_reported_capabilities({
+            "modalities": {"text": True, "audio": False},
+            "metadata": {"supports_audio_output": True},
+        }), ["Text"])
+
+    def test_saved_gemini_tts_view_gets_documented_directional_labels_without_mutation(self):
+        model = "models/gemini-3.8-flash-tts"
+        endpoint = ProviderEndpoint(id="gemini", name="Saved Gemini", api_key="unchanged-key",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai", model=model, models=[model])
+        before = endpoint.model_dump()
+        enriched = enrich_endpoint_capabilities(endpoint)
+        self.assertEqual(enriched.model_capabilities[model], ["Text Input", "Audio Output"])
+        self.assertNotIn("Tools", enriched.model_capabilities[model])
+        self.assertTrue(enriched.model_capability_sources[model].startswith("https://ai.google.dev/"))
+        self.assertEqual(endpoint.model_dump(), before)
+        self.assertEqual((enriched.api_key, enriched.model, enriched.models),
+                         (endpoint.api_key, endpoint.model, endpoint.models))
+
+    def test_legacy_flattened_tts_metadata_is_disambiguated_by_exact_documented_model(self):
+        model = "models/gemini-3.8-flash-tts"
+        endpoint = ProviderEndpoint(id="gemini", name="Gemini",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai", model=model,
+            model_capabilities={model: ["Text", "Audio"]},
+            model_capability_sources={model: "provider_metadata"})
+        enriched = enrich_endpoint_capabilities(endpoint)
+        self.assertEqual(enriched.model_capabilities[model], ["Text Input", "Audio Output"])
+        self.assertTrue(enriched.model_capability_sources[model].startswith("provider_metadata+https://ai.google.dev/"))
+        blocked = endpoint.model_copy(update={"model_capability_exclusions": {model: ["Audio Output"]}})
+        self.assertEqual(enrich_endpoint_capabilities(blocked).model_capabilities[model], ["Text Input"])
+
+    async def test_discovery_direction_correction_retains_documentation_provenance(self):
+        endpoint = ProviderEndpoint(id="gemini", name="Gemini", model="models/gemini-3.8-flash-tts",
+                                    base_url="https://generativelanguage.googleapis.com/v1beta/openai")
+        details = await self.discover_fixture(endpoint, {"data": [{
+            "id": endpoint.model, "modalities": ["text", "audio"],
+        }]})
+        self.assertEqual(details["model_capabilities"][endpoint.model], ["Text Input", "Audio Output"])
+        self.assertTrue(details["model_capability_sources"][endpoint.model].startswith("provider_metadata+https://ai.google.dev/"))
+
+    async def test_documentation_supplements_partial_metadata_and_keeps_mixed_provenance(self):
+        endpoint = ProviderEndpoint(id="cerebras", name="Cerebras", model="gpt-oss-120b",
+                                    base_url="https://api.cerebras.ai/v1")
+        details = await self.discover_fixture(endpoint, {"data": [{
+            "id": "gpt-oss-120b", "input_modalities": ["text"],
+        }]})
+        self.assertEqual(details["model_capabilities"][endpoint.model], ["Text", "Tools", "Structured Outputs"])
+        source = details["model_capability_sources"][endpoint.model]
+        self.assertTrue(source.startswith("provider_metadata+https://inference-docs.cerebras.ai/"))
+        enriched = enrich_endpoint_capabilities(endpoint.model_copy(update=details))
+        self.assertEqual(enriched.model_capability_sources[endpoint.model], source)
+
+    async def test_explicit_negative_survives_discovery_save_and_saved_view_enrichment(self):
+        endpoint = ProviderEndpoint(id="cerebras", name="Cerebras", model="gpt-oss-120b",
+                                    base_url="https://api.cerebras.ai/v1")
+        details = await self.discover_fixture(endpoint, {"data": [{
+            "id": "gpt-oss-120b", "input_modalities": ["text"],
+            "capabilities": {"function_calling": False, "structured_outputs": False},
+        }]})
+        self.assertEqual(details["model_capabilities"][endpoint.model], ["Text"])
+        self.assertEqual(set(details["model_capability_exclusions"][endpoint.model]), {"Tools", "Structured Outputs"})
+        records = FakeRecords()
+        registry = ProviderEndpointRegistry(records)
+        await registry.replace([endpoint.model_copy(update=details)])
+        loaded = (await registry.list())[0]
+        enriched = enrich_endpoint_capabilities(loaded)
+        self.assertEqual(enriched.model_capabilities[endpoint.model], ["Text"])
+        self.assertEqual(set(enriched.model_capability_exclusions[endpoint.model]), {"Tools", "Structured Outputs"})
+
+    def test_saved_exclusion_aliases_cannot_be_reintroduced_by_documentation(self):
+        endpoint = ProviderEndpoint(id="cerebras", name="Cerebras", model="gpt-oss-120b",
+            base_url="https://api.cerebras.ai/v1", model_capability_exclusions={
+                "gpt-oss-120b": ["tool_calling", "structured outputs"],
+            })
+        self.assertEqual(enrich_endpoint_capabilities(endpoint).model_capabilities[endpoint.model], ["Text"])
+
+    async def discover_fixture(self, endpoint, payload):
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return payload
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            async def get(self, url, headers=None):
+                return FakeResponse()
+
+        with patch("aicognitive_mind.provider_endpoints.httpx.AsyncClient", FakeClient):
+            return await discover_endpoint_model_details(endpoint)
 
     def test_documented_modalities_are_scoped_to_actual_openai_endpoint(self):
         official = ProviderEndpoint(id="openai", name="OpenAI", base_url="https://api.openai.com/v1")

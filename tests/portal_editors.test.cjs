@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../src/aicognitive_mind/static/portal.js'), 'utf8');
 const editorFunctions = [
-  'selectedEndpoint', 'renderTaskProfileEndpointOptions', 'fillSelect', 'modelCapabilityLabel',
+  'selectedEndpoint', 'renderTaskProfileEndpointOptions', 'fillSelect', 'modelCapabilityLabel', 'capabilityDocumentationSource',
   'loadEndpointIntoForm', 'renderEndpointModelStatus', 'endpointFormIsValid', 'syncEndpointDraft',
   'updateEndpointEditorState', 'editEndpoint', 'cancelEndpointEdit', 'saveProviderEndpoints',
   'refreshProviderEndpoints',
@@ -73,7 +73,7 @@ function editor({ apiHandler } = {}) {
   const calls = [];
   const toasts = [];
   const context = vm.createContext({
-    state, el, COMMON_ENDPOINT_PRESETS: [], crypto: { randomUUID: () => ++endpointSequence === 1 ? 'new-id' : `new-id-${endpointSequence}` },
+    state, el, URL, COMMON_ENDPOINT_PRESETS: [], crypto: { randomUUID: () => ++endpointSequence === 1 ? 'new-id' : `new-id-${endpointSequence}` },
     taskModelLabels: { reasoning: 'Reasoning', vision: 'Vision', audio_voice: 'Audio/Voice' },
     displayLabel: value => value,
     Option: class extends Element {
@@ -111,6 +111,100 @@ function editor({ apiHandler } = {}) {
   context.loadMcpServerIntoForm();
   return { ...context, calls, toasts };
 }
+
+test('missing capability details stay explicitly unverified without losing a saved model selection', () => {
+  const ui = editor();
+  const endpoint = ui.state.providerEndpoints[0];
+  endpoint.models = ['other-model'];
+  const before = JSON.stringify(endpoint);
+  ui.loadEndpointIntoForm();
+  assert.equal(ui.el.endpointModelSelect.value, endpoint.model);
+  const saved = ui.el.endpointModelSelect.options.find(option => option.value === endpoint.model);
+  assert.match(saved.textContent, /Capabilities not supplied; compatibility unverified/);
+  assert.match(saved.textContent, /\(saved\)/);
+  assert.match(ui.el.endpointModelStatus.textContent, /Capabilities not supplied; compatibility unverified/);
+  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling has not been tested'));
+  assert.equal(JSON.stringify(endpoint), before);
+  assert.equal(ui.calls.length, 0);
+});
+
+test('provider documentation labels distinguish speech output and keep live tool verification separate', () => {
+  const ui = editor();
+  const endpoint = ui.state.providerEndpoints[0];
+  endpoint.model = 'models/gemini-3.8-flash-tts';
+  endpoint.models = [endpoint.model];
+  endpoint.model_capabilities = { [endpoint.model]: ['Text Input', 'Audio Output'] };
+  endpoint.model_capability_sources = {
+    [endpoint.model]: 'https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash-tts',
+  };
+  ui.loadEndpointIntoForm();
+  const option = ui.el.endpointModelSelect.options.find(item => item.value === endpoint.model);
+  assert.match(option.textContent, /Text Input · Audio Output/);
+  assert.doesNotMatch(option.textContent, /Tools|compatibility unverified/);
+  const link = ui.el.endpointModelStatus.children.find(item => item?.tagName === 'A');
+  assert.equal(link.href, endpoint.model_capability_sources[endpoint.model]);
+  assert.equal(link.textContent, 'Documented capabilities (not tested)');
+  assert.equal(link.rel, 'noopener noreferrer');
+  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling has not been tested'));
+  ui.state.endpointProbe = { endpointId: endpoint.id, model: endpoint.model,
+    baseUrl: endpoint.base_url, message: 'Tool calling test failed: incompatible model' };
+  ui.renderEndpointModelStatus(endpoint);
+  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling test failed: incompatible model'));
+  assert.equal(ui.state.providerEndpoints[0].model, 'models/gemini-3.8-flash-tts');
+});
+
+test('documented and mixed capability sources link only to trusted provider documentation', () => {
+  const ui = editor();
+  const endpoint = ui.state.providerEndpoints[0];
+  endpoint.model_capabilities = { [endpoint.model]: ['Text', 'Tools'] };
+  for (const source of [
+    'https://developers.openai.com/api/docs/models/gpt-5.5',
+    'https://console.groq.com/docs/model/openai/gpt-oss-20b',
+    'https://inference-docs.cerebras.ai/capabilities/tool-use',
+    'https://docs.sambanova.ai/docs/en/features/function-calling',
+    'https://sambanova.ai/blog/start-building-with-lightning-fast-gpt-oss-120b-on-sambacloud',
+    'https://docs.mistral.ai/models/mistral-medium-3-5-26-04',
+    'https://openrouter.ai/openai/gpt-chat-latest',
+  ]) {
+    endpoint.model_capability_sources = { [endpoint.model]: 'provider_metadata+' + source };
+    ui.renderEndpointModelStatus(endpoint);
+    const link = ui.el.endpointModelStatus.children.find(item => item?.tagName === 'A');
+    assert.equal(link?.href, source);
+    assert.equal(link.textContent, 'Provider metadata + documented capabilities (not tested)');
+  }
+  for (const source of [
+    'javascript:alert(1)', 'data:text/html,unsafe', 'http://docs.mistral.ai/models/a',
+    'https://docs.mistral.ai.evil.example/models/a', 'https://docs.mistral.ai@evil.example/models/a',
+    'https://docs.mistral.ai:444/models/a', 'https://docs.mistral.ai/../login',
+    'https://ai.google.dev/gemini-api/docs/models/a?redirect=https://evil.example',
+    'provider_metadata+javascript:alert(1)',
+  ]) {
+    endpoint.model_capability_sources = { [endpoint.model]: source };
+    ui.renderEndpointModelStatus(endpoint);
+    assert.equal(ui.el.endpointModelStatus.children.some(item => item?.tagName === 'A'), false, source);
+  }
+});
+
+test('refresh displays enriched saved model labels without discovering again or changing configuration', async () => {
+  let saved;
+  const ui = editor({ apiHandler: async () => ({ items: [{ ...saved,
+    model_capabilities: { [saved.model]: ['Text', 'Tools'] },
+    model_capability_sources: { [saved.model]: 'https://inference-docs.cerebras.ai/capabilities/tool-use' },
+  }], revision: 9 }) });
+  saved = { ...ui.state.providerEndpoints[0] };
+  const assignments = JSON.stringify(ui.state.taskModelAssignments);
+  await ui.refreshProviderEndpoints();
+  const option = ui.el.endpointModelSelect.options.find(item => item.value === saved.model);
+  assert.match(option.textContent, /Text · Tools/);
+  assert.doesNotMatch(option.textContent, /Capabilities not supplied/);
+  assert.equal(ui.state.providerEndpoints[0].api_key, saved.api_key);
+  assert.equal(ui.state.providerEndpoints[0].model, saved.model);
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].url, '/v1/admin/provider-endpoints');
+  assert.equal(ui.calls[0].body, undefined);
+  assert.equal(ui.state.endpointDraft, null);
+});
 
 test('endpoint fields stay locked until Edit and Save requires a valid changed draft', () => {
   const ui = editor();
@@ -370,6 +464,7 @@ test('Add can use a saved endpoint as a deeply isolated template with a separate
   original.models = ['gpt-test', 'gpt-next'];
   original.model_capabilities = { 'gpt-test': ['Text'] };
   original.model_capability_sources = { 'gpt-test': 'provider_metadata' };
+  original.model_capability_exclusions = { 'gpt-test': ['Tools'] };
   const before = JSON.stringify(original);
   const assignments = JSON.stringify(ui.state.taskModelAssignments);
   ui.addTaskProfileEndpoint();
@@ -387,12 +482,14 @@ test('Add can use a saved endpoint as a deeply isolated template with a separate
   assert.deepEqual([...draft.models], ['gpt-test', 'gpt-next']);
   assert.deepEqual([...draft.model_capabilities['gpt-test']], ['Text']);
   assert.equal(draft.model_capability_sources['gpt-test'], 'provider_metadata');
+  assert.deepEqual([...draft.model_capability_exclusions['gpt-test']], ['Tools']);
   assert.equal(ui.el.taskProfileEndpointName.value, draft.name);
   assert.equal(ui.el.taskProfileApiKey.value, 'test-key');
   assert.equal(ui.el.saveProviderEndpoints.disabled, true);
   draft.models.push('draft-only-model');
   draft.model_capabilities['gpt-test'].push('Vision');
   draft.model_capability_sources['gpt-test'] = 'draft-only-source';
+  draft.model_capability_exclusions['gpt-test'].push('Vision');
   assert.equal(JSON.stringify(original), before);
   assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
   ui.cancelEndpointEdit();
@@ -502,6 +599,7 @@ test('Discover Models works on a selected saved endpoint and holds the result in
   const ui = editor({ apiHandler: async () => ({
     models: ['gpt-test', 'gpt-next'], model_capabilities: { 'gpt-next': ['Text', 'Vision'] },
     model_capability_sources: { 'gpt-next': 'provider_metadata' },
+    model_capability_exclusions: { 'gpt-next': ['Tools'] },
   }) });
   const original = JSON.stringify(ui.state.providerEndpoints[0]);
   const assignments = JSON.stringify(ui.state.taskModelAssignments);
@@ -516,6 +614,7 @@ test('Discover Models works on a selected saved endpoint and holds the result in
   assert.equal(ui.state.endpointDraft.id, 'openai');
   assert.deepEqual([...ui.state.endpointDraft.models], ['gpt-test', 'gpt-next']);
   assert.deepEqual([...ui.state.endpointDraft.model_capabilities['gpt-next']], ['Text', 'Vision']);
+  assert.deepEqual([...ui.state.endpointDraft.model_capability_exclusions['gpt-next']], ['Tools']);
   assert.equal(JSON.stringify(ui.state.providerEndpoints[0]), original);
   assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
   assert.equal(ui.el.taskProfileEndpointName.disabled, false);

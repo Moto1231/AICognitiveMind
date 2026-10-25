@@ -1065,7 +1065,34 @@ body {
 
 /* Skills icon: match the blue, light-outline treatment of the other admin artwork. */
 .admin-section-icon .skills-line-icon, .admin-form-icon .skills-line-icon { color:#60a5fa; stroke:#60a5fa; width:100%; height:auto; max-height:48px; }
-#skillsValidate { min-width:52px; padding-inline:10px; }
+#skillsSection .edit-actions { display: flex; flex-wrap: wrap; align-items: center; }
+#skillsSection button.axiom-icon-button {
+  inline-size: 36px;
+  block-size: 36px;
+  min-inline-size: 36px;
+  min-block-size: 36px;
+  padding: 6px;
+  flex: 0 0 36px;
+}
+
+/* Behavior panels and editor interiors share the dark Administration palette. */
+#behaviorsSection .host-behavior-card {
+  background: rgba(10, 25, 43, .55);
+  border-color: var(--border);
+  color: var(--text);
+}
+#behaviorsSection .host-behavior-field :is(input, textarea) {
+  color-scheme: dark;
+  background: #101d30;
+  color: var(--text);
+}
+#behaviorsSection .host-behavior-field :is(input, textarea):disabled {
+  opacity: 1;
+  color: var(--muted);
+  -webkit-text-fill-color: var(--muted);
+}
+#behaviorsSection .host-behavior-enabled { color: var(--text); }
+#behaviorsSection .host-behavior-enabled:has(input:disabled) { color: var(--muted); }
 
 /* Keep lower administration menu and content visible. */
 #adminView {padding-bottom:96px;}
