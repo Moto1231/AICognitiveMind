@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261025-capability-labels">
+  <link rel="stylesheet" href="/static/portal.css?v=20261025-task-panel">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -224,9 +224,10 @@
                 <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
                 <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
               </div>
-              
+              <section class="overview-group task-profile-selection" aria-label="Task selection">
+                <div id="taskProfileList" class="task-profile-grid"></div>
+              </section>
             </div>
-            <div id="taskProfileList" class="task-profile-grid"></div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
               <div class="panel-heading task-profile-editor-heading">
                 <div class="task-profile-detail-identity"><span id="taskProfileDetailIcon" class="task-detail-icon" aria-hidden="true">◆</span><div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3></div></div>
@@ -711,6 +712,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261025-capability-labels"></script>
+  <script src="/static/portal.js?v=20261025-task-panel"></script>
 </body>
 </html>
