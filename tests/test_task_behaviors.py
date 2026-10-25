@@ -44,9 +44,9 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(load_required_skill(slug), other)
         assignments = await TaskModelAssignmentRegistry(records).list()
         reasoning = next(item for item in assignments if item.task == "reasoning")
-        self.assertTrue(set(REQUIRED_SKILLS) <= set(reasoning.behavior_ids))
+        self.assertEqual(reasoning.behavior_ids, [])
 
-    async def test_every_task_has_code_owned_foundation_and_mutable_profile(self):
+    async def test_every_task_has_factory_foundation_and_mutable_profile(self):
         registry = TaskBehaviorRegistry(FakeRecords())
         profiles = await registry.list()
         self.assertEqual({item.task for item in profiles}, set(TASK_BEHAVIOR_LABELS))
@@ -91,7 +91,7 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
             memory_refs=("memory-3",),
             working_context="Current frame shows a doorway.",
         ))
-        self.assertLess(prompt.index("IMMUTABLE AXIOM TASK FOUNDATION"), prompt.index("CONFIGURABLE TASK BEHAVIOR"))
+        self.assertLess(prompt.index("AXIOM TASK FOUNDATION"), prompt.index("CONFIGURABLE TASK BEHAVIOR"))
         self.assertLess(prompt.index("CONFIGURABLE TASK BEHAVIOR"), prompt.index("CURRENT ASSIGNMENT"))
         self.assertIn(TASK_FOUNDATIONS["vision"], prompt)
         self.assertIn("Be concise.", prompt)

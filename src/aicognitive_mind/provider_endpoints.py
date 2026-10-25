@@ -6,6 +6,12 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, Field, field_validator
 
+from aicognitive_mind.commit import CommitConflict
+
+
+class ProviderEndpointRevisionConflict(ValueError):
+    """A provider catalog save used a stale or concurrently changed revision."""
+
 
 class ProviderEndpoint(BaseModel):
     id: str = Field(min_length=1, max_length=120)
@@ -44,22 +50,43 @@ class ProviderEndpointRegistry:
         self.records = records
 
     async def list(self) -> list[ProviderEndpoint]:
+        return (await self.snapshot())[0]
+
+    async def snapshot(self) -> tuple[list[ProviderEndpoint], int]:
         record = await self.records.get(self.RECORD_KEY)
         if not record:
-            return []
-        return [ProviderEndpoint.model_validate(value) for value in record.get("items", [])]
+            return [], 0
+        return ([ProviderEndpoint.model_validate(value) for value in record.get("items", [])],
+                record.get("revision", 0))
 
-    async def replace(self, endpoints: list[ProviderEndpoint]) -> list[ProviderEndpoint]:
+    async def replace(
+        self, endpoints: list[ProviderEndpoint], *, expected_revision: int | None = None,
+    ) -> list[ProviderEndpoint]:
+        if expected_revision is not None and (type(expected_revision) is not int or expected_revision < 0):
+            raise ValueError("expected_revision must be a nonnegative integer")
         by_id = {item.id: item for item in endpoints}
         if len(by_id) != len(endpoints):
             raise ValueError("Endpoint IDs must be unique")
         ordered = list(by_id.values())
-        after = {"items": [item.model_dump(mode="json") for item in ordered]}
         before = await self.records.get(self.RECORD_KEY)
+        revision = (before or {}).get("revision", 0)
+        if expected_revision is not None and expected_revision != revision:
+            raise ProviderEndpointRevisionConflict("Provider endpoints changed; refresh before saving.")
+        after = {"items": [item.model_dump(mode="json") for item in ordered], "revision": revision + 1}
         if before is None:
-            await self.records.create(self.RECORD_KEY, after)
-        elif not await self.records.replace(self.RECORD_KEY, before, after):
-            raise RuntimeError("Provider endpoints changed concurrently; refresh and retry")
+            try:
+                await self.records.create(self.RECORD_KEY, after)
+            except Exception as exc:
+                if await self.records.get(self.RECORD_KEY) is not None:
+                    raise ProviderEndpointRevisionConflict("Provider endpoints changed; refresh before saving.") from exc
+                raise
+        else:
+            try:
+                replaced = await self.records.replace(self.RECORD_KEY, before, after)
+            except CommitConflict as exc:
+                raise ProviderEndpointRevisionConflict("Provider endpoints changed; refresh before saving.") from exc
+            if not replaced:
+                raise ProviderEndpointRevisionConflict("Provider endpoints changed; refresh before saving.")
         return ordered
 
 

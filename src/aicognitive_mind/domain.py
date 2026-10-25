@@ -27,6 +27,7 @@ class MemoryClass(StrEnum):
 
 class CognitiveActor(StrEnum):
     HUMAN = "human"
+    ADMINISTRATOR = "administrator"
     CONSCIOUS_WORKSPACE = "conscious_workspace"
     SUBCONSCIOUS_LAYER = "subconscious_layer"
     CONSCIOUS_MEMORY_STEWARD = "conscious_memory_steward"

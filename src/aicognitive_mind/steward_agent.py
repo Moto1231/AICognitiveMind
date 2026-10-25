@@ -169,6 +169,7 @@ class ModelMemorySteward(MemoryStewardTool):
     def __init__(self, *args: Any, runtime: Any, **kwargs: Any) -> None:
         super().__init__(*args, runtime=runtime, **kwargs)
         self.runtime = runtime
+        self.skill_records: Any | None = None
         self._records: dict[str, DurableMemory | JournalEntry] = {}
         self._search_count = 0
         self.assessment: dict[str, Any] = {}
@@ -182,7 +183,17 @@ class ModelMemorySteward(MemoryStewardTool):
         adapter = RECALL_STEPS if phase == "recall" else REVIEW_STEPS
         finish_adapter = TypeAdapter(RecallFinish if phase == "recall" else ReviewFinish)
         native_actions = getattr(self.runtime, "supports_steward_action_tools", False) is True
-        skill = files("aicognitive_mind").joinpath("skills/memory-steward/SKILL.md").read_text()
+        records = self.skill_records
+        if records is None:
+            records = getattr(getattr(self.runtime, "assignments", None), "records", None)
+        if records is None:
+            # Standalone test/custom runtimes without Mind storage retain defaults.
+            skill = files("aicognitive_mind").joinpath("skills/memory-steward/SKILL.md").read_text()
+        else:
+            from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+
+            configured = await EffectiveSkillRegistry(records).get("memory-steward")
+            skill = configured["content"] if configured and configured["enabled"] else ""
         context = {
             "phase": phase,
             "identity": self._mind.identity.model_dump(mode="json"),

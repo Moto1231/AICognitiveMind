@@ -5,6 +5,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, REQUIRED_SKILL_NAMES
+from aicognitive_mind.domain import utc_now
+
+
+class BehaviorRevisionConflict(ValueError):
+    """The Administrator edited a stale behavior catalog."""
 
 
 class HostBehavior(BaseModel):
@@ -46,14 +51,32 @@ REQUIRED_HOST_BEHAVIORS = tuple(
     HostBehavior(
         id=slug, name=REQUIRED_SKILL_NAMES[slug],
         instruction=(
-            f"{REQUIRED_SKILL_NAMES[slug]} is required for every Axiom reasoning interaction. "
-            "Apply its full packaged protocol supplied in the mandatory reasoning contract, "
-            "including fresh instances and follow-ups. Optional task memberships cannot disable it."
+            f"{REQUIRED_SKILL_NAMES[slug]} follows the effective Mind skill configuration "
+            "chosen by the Administrator. Saved skill, behavior and task settings take "
+            "precedence over package defaults."
         ),
         priority=index, protected=True, required=True,
     )
     for index, slug in enumerate(REQUIRED_SKILLS)
 )
+
+
+def _upgrade_legacy_factory_markers(items: list[HostBehavior]) -> list[HostBehavior]:
+    """Replace only the exact formerly read-only generated marker rows."""
+    legacy = {
+        slug: HostBehavior(
+            id=slug, name=REQUIRED_SKILL_NAMES[slug],
+            instruction=(
+                f"{REQUIRED_SKILL_NAMES[slug]} is required for every Axiom reasoning interaction. "
+                "Apply its full packaged protocol supplied in the mandatory reasoning contract, "
+                "including fresh instances and follow-ups. Optional task memberships cannot disable it."
+            ),
+            priority=index, protected=True, required=True,
+        ) for index, slug in enumerate(REQUIRED_SKILLS)
+    }
+    replacements = {item.id: item for item in REQUIRED_HOST_BEHAVIORS}
+    return [replacements[item.id].model_copy(deep=True) if item == legacy.get(item.id) else item
+            for item in items]
 
 
 class HostBehaviorRegistry:
@@ -63,18 +86,25 @@ class HostBehaviorRegistry:
         self.records = records
 
     async def list(self) -> list[HostBehavior]:
+        return (await self.snapshot())[0]
+
+    async def snapshot(self) -> tuple[list[HostBehavior], int]:
         record = await self.records.get(self.RECORD_KEY)
         items = (
-            [HostBehavior.model_validate(item) for item in record.get("items", [])
-             if item.get("id") not in REQUIRED_SKILLS]
-            if record else [item.model_copy(deep=True) for item in DEFAULT_HOST_BEHAVIORS]
+            [HostBehavior.model_validate(item) for item in record.get("items", [])]
+            if record is not None else [item.model_copy(deep=True) for item in (
+                *REQUIRED_HOST_BEHAVIORS, *DEFAULT_HOST_BEHAVIORS,
+            )]
         )
-        # Required protocols come from the installed package, including when an
-        # older or tampered saved catalog omits, disables or rewrites their rows.
-        # Preserve every other record and leave storage unchanged on this read.
-        items = [*(item.model_copy(deep=True) for item in REQUIRED_HOST_BEHAVIORS), *items]
+        revision = (record or {}).get("revision", 0)
+        if record is not None and not any(key in record for key in ("revision", "updated_by", "updated_at")):
+            # These markers were forced by old code, not authored through the
+            # new Administrator editor. Reconcile their exact defaults on read;
+            # a later explicit Save persists them. Never reinsert missing rows
+            # or rewrite an Administrator-owned revision or custom instruction.
+            items = _upgrade_legacy_factory_markers(items)
         if record and record.get("task_profiles_migrated"):
-            return items
+            return items, revision
         # Promote the former inline task instructions into the shared catalog
         # without mutating storage on a read. The next catalog save persists them.
         # Once a task has explicit memberships, removing the legacy catalog item
@@ -100,32 +130,35 @@ class HostBehaviorRegistry:
                 priority=200,
             ))
             ids.add(behavior_id)
-        return items
+        return items, revision
 
-    async def replace(self, behaviors: list[HostBehavior]) -> list[HostBehavior]:
-        current = await self.list()
+    async def replace(
+        self, behaviors: list[HostBehavior], *, expected_revision: int | None = None,
+    ) -> list[HostBehavior]:
         if len({item.id for item in behaviors}) != len(behaviors):
             raise ValueError("Behavior IDs must be unique")
-        protected = {item.id: item for item in current if item.protected}
-        incoming = {item.id: item for item in behaviors}
-        for behavior_id, original in protected.items():
-            candidate = incoming.get(behavior_id)
-            if behavior_id in REQUIRED_SKILLS and candidate != original:
-                raise ValueError(f"Required Axiom behavior cannot be changed: {behavior_id}")
-            if candidate is None or not candidate.enabled or candidate.instruction != original.instruction:
-                raise ValueError(f"Protected host behavior cannot be removed, disabled, or rewritten: {behavior_id}")
-            if not candidate.protected:
-                raise ValueError(f"Protected host behavior cannot be unprotected: {behavior_id}")
+        before = await self.records.get(self.RECORD_KEY)
+        revision = (before or {}).get("revision", 0)
+        if expected_revision is not None and expected_revision != revision:
+            raise BehaviorRevisionConflict("Behavior catalog changed; refresh before saving.")
         ordered = sorted(behaviors, key=lambda item: (item.priority, item.id))
         after = {
             "items": [item.model_dump(mode="json") for item in ordered],
             "task_profiles_migrated": True,
+            "revision": revision + 1, "updated_by": "administrator", "updated_at": utc_now().isoformat(),
         }
-        before = await self.records.get(self.RECORD_KEY)
         if before is None:
-            await self.records.create(self.RECORD_KEY, after)
+            try:
+                await self.records.create(self.RECORD_KEY, after)
+            except Exception as exc:
+                # Backends expose different duplicate-create exceptions. Only
+                # a confirmed competing record converts the failure to a
+                # revision conflict; genuine storage failures stay visible.
+                if await self.records.get(self.RECORD_KEY) is not None:
+                    raise BehaviorRevisionConflict("Host behavior registry changed; refresh before saving.") from exc
+                raise
         elif not await self.records.replace(self.RECORD_KEY, before, after):
-            raise RuntimeError("Host behavior registry changed concurrently; refresh and retry")
+            raise BehaviorRevisionConflict("Host behavior registry changed; refresh before saving.")
         return ordered
 
     async def selected(self, task: str) -> list[HostBehavior]:
@@ -142,9 +175,7 @@ class HostBehaviorRegistry:
             selected.add(f"task-{task}-legacy")
         else:
             selected = set(membership)
-        return [item for item in catalog if item.enabled and (
-            item.id in selected or (task == "reasoning" and item.protected)
-        )]
+        return [item for item in catalog if item.enabled and item.id in selected]
 
     async def compose(self, core_contract: str, *, task: str = "reasoning") -> str:
         enabled = await self.selected(task)

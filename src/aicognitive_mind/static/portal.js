@@ -19,10 +19,22 @@ const state = {
   activeMemory: null,
   activeJournal: null,
   hostBehaviors: [],
+  hostBehaviorDraft: null,
+  hostBehaviorRevision: null,
+  hostBehaviorSaving: false,
+  cognitiveConfiguration: null,
+  cognitiveDraft: null,
+  cognitiveSaving: false,
+  foundationIdentity: null,
+  foundationIdentityDraft: null,
+  foundationIdentitySaving: false,
+  taskFoundationDraft: null,
+  taskFoundationSaving: false,
   taskModelAssignments: [],
   taskBehaviors: [],
   taskFoundations: {},
   providerEndpoints: [],
+  providerEndpointRevision: null,
   mcpServers: [],
   activeMcpServerId: null,
   activeTaskProfile: null,
@@ -31,6 +43,9 @@ const state = {
   endpointDraft: null,
   endpointEditBaseline: "",
   endpointDiscovering: false,
+  endpointProbing: false,
+  endpointProbe: null,
+  providerSetupDraft: null,
   mcpServerDraft: null,
   mcpEditBaseline: "",
   integrationSaving: false,
@@ -111,6 +126,7 @@ const el = {
   journalEvidenceDetail: document.getElementById("journalEvidenceDetail"),
   journalEvidenceList: document.getElementById("journalEvidenceList"),
   taskProviderSelect: document.getElementById("taskProviderSelect"),
+  taskProviderRotation: document.getElementById("taskProviderRotation"),
   saveProviderEndpoints: document.getElementById("saveProviderEndpoints"),
   taskProfileOverview: document.getElementById("taskProfileOverview"),
   mcpServerSelect: document.getElementById("mcpServerSelect"),
@@ -160,6 +176,8 @@ const el = {
   hostBehaviorList: document.getElementById("hostBehaviorList"),
   addHostBehavior: document.getElementById("addHostBehavior"),
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
+  editHostBehaviors: document.getElementById("editHostBehaviors"),
+  cancelHostBehaviors: document.getElementById("cancelHostBehaviors"),
   taskProfileList: document.getElementById("taskProfileList"),
   taskProfileEditor: document.getElementById("taskProfileEditor"),
   taskProfileTitle: document.getElementById("taskProfileTitle"),
@@ -167,6 +185,11 @@ const el = {
   taskProfileEndpointSection: document.getElementById("taskProfileEndpointSection"),
   taskProfileEndpointSelect: document.getElementById("taskProfileEndpointSelect"),
   taskProfileAddEndpoint: document.getElementById("taskProfileAddEndpoint"),
+  prepareProviderConnections: document.getElementById("prepareProviderConnections"),
+  providerSetupPanel: document.getElementById("providerSetupPanel"),
+  providerSetupList: document.getElementById("providerSetupList"),
+  saveProviderConnections: document.getElementById("saveProviderConnections"),
+  cancelProviderConnections: document.getElementById("cancelProviderConnections"),
   endpointTemplateField: document.getElementById("endpointTemplateField"),
   endpointTemplateSelect: document.getElementById("endpointTemplateSelect"),
   endpointApiKeyVisibility: document.getElementById("endpointApiKeyVisibility"),
@@ -182,6 +205,7 @@ const el = {
   taskProfileBaseUrl: document.getElementById("taskProfileBaseUrl"),
   taskProfileApiKey: document.getElementById("taskProfileApiKey"),
   taskProfileDiscover: document.getElementById("taskProfileDiscover"),
+  endpointProbeButton: document.getElementById("endpointProbeButton"),
   taskProfileAssignmentSection: document.getElementById("taskProfileAssignmentSection"),
   taskProfileModel: document.getElementById("taskProfileModel"),
   taskProfileModels: document.getElementById("taskProfileModels"),
@@ -203,6 +227,10 @@ const el = {
   voiceSettingsRevision: document.getElementById("voiceSettingsRevision"),
   saveVoiceSettings: document.getElementById("saveVoiceSettings"),
   taskProfileFoundation: document.getElementById("taskProfileFoundation"),
+  taskFoundationEdit: document.getElementById("taskFoundationEdit"),
+  taskFoundationSave: document.getElementById("taskFoundationSave"),
+  taskFoundationCancel: document.getElementById("taskFoundationCancel"),
+  taskFoundationStatus: document.getElementById("taskFoundationStatus"),
   taskProfileBehaviorSelection: document.getElementById("taskProfileBehaviorSelection"),
   taskProfileBehaviorName: document.getElementById("taskProfileBehaviorName"),
   taskProfileInstructions: document.getElementById("taskProfileInstructions"),
@@ -342,7 +370,8 @@ async function validateAdmin() {
 
 function renderHostBehaviors() {
   el.hostBehaviorList.replaceChildren();
-  for (const behavior of state.hostBehaviors) {
+  const editing = Boolean(state.hostBehaviorDraft) && !state.hostBehaviorSaving;
+  for (const behavior of state.hostBehaviorDraft || state.hostBehaviors) {
     const row = document.createElement("div");
     row.className = "memory-card host-behavior-card";
     const fields = document.createElement("div");
@@ -354,9 +383,9 @@ function renderHostBehaviors() {
     title.type = "text";
     title.value = behavior.name;
     title.maxLength = 120;
-    title.readOnly = behavior.protected;
+    title.readOnly = !editing;
     title.setAttribute("aria-label", "Behavior name");
-    title.addEventListener("input", () => { behavior.name = title.value; updateBehaviorSaveState(); });
+    title.addEventListener("input", () => { if (!editing) return; behavior.name = title.value; updateBehaviorSaveState(); });
     nameField.append(title);
     const instructionField = document.createElement("label");
     instructionField.className = "host-behavior-field host-behavior-instruction";
@@ -365,9 +394,9 @@ function renderHostBehaviors() {
     instruction.rows = 5;
     instruction.maxLength = 4000;
     instruction.value = behavior.instruction;
-    instruction.readOnly = behavior.protected;
+    instruction.readOnly = !editing;
     instruction.setAttribute("aria-label", "Instruction");
-    instruction.addEventListener("input", () => { behavior.instruction = instruction.value; updateBehaviorSaveState(); });
+    instruction.addEventListener("input", () => { if (!editing) return; behavior.instruction = instruction.value; updateBehaviorSaveState(); });
     instructionField.append(instruction);
     const priorityField = document.createElement("label");
     priorityField.className = "host-behavior-field host-behavior-priority";
@@ -377,32 +406,46 @@ function renderHostBehaviors() {
     priority.min = "0";
     priority.max = "10000";
     priority.value = behavior.priority;
-    priority.disabled = behavior.required === true;
+    priority.disabled = !editing;
     priority.setAttribute("aria-label", "Priority");
-    priority.addEventListener("change", () => { behavior.priority = Number(priority.value); updateBehaviorSaveState(); });
+    priority.addEventListener("change", () => { if (!editing) return; behavior.priority = Number(priority.value); updateBehaviorSaveState(); });
     priorityField.append(priority);
     fields.append(nameField, priorityField, instructionField);
     const enabled = document.createElement("input");
     enabled.type = "checkbox";
     enabled.checked = behavior.enabled;
-    enabled.disabled = behavior.protected;
+    enabled.disabled = !editing;
     enabled.setAttribute("aria-label", "Enable behavior");
-    enabled.addEventListener("change", () => { behavior.enabled = enabled.checked; updateBehaviorSaveState(); });
+    enabled.addEventListener("change", () => { if (!editing) return; behavior.enabled = enabled.checked; updateBehaviorSaveState(); });
     const label = document.createElement("label");
     label.className = "host-behavior-enabled";
-    label.append(enabled, document.createTextNode(behavior.protected ? " Enabled · Protected" : " Enabled"));
+    label.append(enabled, document.createTextNode(" Enabled"));
+    const flags = [];
+    for (const [key, text] of [["required", "Required"], ["protected", "Protected"]]) {
+      const flag = document.createElement("input");
+      flag.type = "checkbox";
+      flag.checked = behavior[key] === true;
+      flag.disabled = !editing;
+      flag.setAttribute("aria-label", text + " behavior");
+      flag.addEventListener("change", () => { if (!editing) return; behavior[key] = flag.checked; updateBehaviorSaveState(); });
+      const flagLabel = document.createElement("label");
+      flagLabel.className = "host-behavior-enabled";
+      flagLabel.append(flag, document.createTextNode(" " + text));
+      flags.push(flagLabel);
+    }
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "secondary-button";
     remove.textContent = "Remove";
-    remove.disabled = behavior.protected;
+    remove.disabled = !editing;
     remove.addEventListener("click", () => {
-      state.hostBehaviors = state.hostBehaviors.filter(item => item.id !== behavior.id);
+      if (!state.hostBehaviorDraft || state.hostBehaviorSaving) return;
+      state.hostBehaviorDraft = state.hostBehaviorDraft.filter(item => item.id !== behavior.id);
       renderHostBehaviors();
     });
     const controls = document.createElement("div");
     controls.className = "host-behavior-controls";
-    controls.append(label, remove);
+    controls.append(label, ...flags, remove);
     row.append(fields, controls);
     el.hostBehaviorList.append(row);
   }
@@ -410,21 +453,45 @@ function renderHostBehaviors() {
 }
 
 function updateBehaviorSaveState() {
+  const editing = Boolean(state.hostBehaviorDraft);
   if (el.saveHostBehaviors) el.saveHostBehaviors.disabled =
-    JSON.stringify(state.hostBehaviors) === state.hostBehaviorSnapshot ||
-    state.hostBehaviors.some(item => !item.name.trim() || !item.instruction.trim());
+    !editing || state.hostBehaviorSaving || JSON.stringify(state.hostBehaviorDraft) === state.hostBehaviorSnapshot ||
+    state.hostBehaviorDraft.some(item => !item.name.trim() || !item.instruction.trim()
+      || !Number.isInteger(item.priority) || item.priority < 0 || item.priority > 10000);
+  if (el.editHostBehaviors) el.editHostBehaviors.disabled = !Number.isInteger(state.hostBehaviorRevision) || editing || state.hostBehaviorSaving;
+  if (el.cancelHostBehaviors) el.cancelHostBehaviors.disabled = !editing || state.hostBehaviorSaving;
+  if (el.addHostBehavior) el.addHostBehavior.disabled = !Number.isInteger(state.hostBehaviorRevision) || state.hostBehaviorSaving;
 }
 
 async function refreshHostBehaviors() {
+  if (state.hostBehaviorDraft || state.hostBehaviorSaving) return;
+  const revision = state.hostBehaviorLoadRevision = (state.hostBehaviorLoadRevision || 0) + 1;
   const payload = await api("/v1/admin/host-behaviors", {}, true);
+  if (revision !== state.hostBehaviorLoadRevision || state.hostBehaviorDraft || state.hostBehaviorSaving) return;
   state.hostBehaviors = payload.items;
+  state.hostBehaviorRevision = payload.revision;
   state.hostBehaviorSnapshot = JSON.stringify(state.hostBehaviors);
   renderHostBehaviors();
 }
 
+function editHostBehaviors() {
+  if (!Number.isInteger(state.hostBehaviorRevision) || state.hostBehaviorDraft || state.hostBehaviorSaving) return;
+  state.hostBehaviorLoadRevision = (state.hostBehaviorLoadRevision || 0) + 1;
+  state.hostBehaviorDraft = JSON.parse(JSON.stringify(state.hostBehaviors));
+  renderHostBehaviors();
+}
+
+function cancelHostBehaviorEdit() {
+  if (state.hostBehaviorSaving) return;
+  state.hostBehaviorDraft = null;
+  renderHostBehaviors();
+}
+
 function addHostBehavior() {
-  const id = "behavior-" + Date.now();
-  state.hostBehaviors.push({
+  if (!Number.isInteger(state.hostBehaviorRevision) || state.hostBehaviorSaving) return;
+  if (!state.hostBehaviorDraft) editHostBehaviors();
+  const id = "behavior-" + Date.now() + "-" + state.hostBehaviorDraft.length;
+  state.hostBehaviorDraft.push({
     id,
     name: "New Behavior",
     instruction: "Describe the behavior.",
@@ -436,19 +503,25 @@ function addHostBehavior() {
 }
 
 async function saveHostBehaviors() {
+  updateBehaviorSaveState();
+  if (el.saveHostBehaviors.disabled) return;
+  state.hostBehaviorSaving = true;
+  renderHostBehaviors();
   try {
     const payload = await api("/v1/admin/host-behaviors", {
       method: "PUT",
-      body: JSON.stringify({ items: state.hostBehaviors }),
+      body: JSON.stringify({ items: state.hostBehaviorDraft, expected_revision: state.hostBehaviorRevision }),
     }, true);
     state.hostBehaviors = payload.items;
+    state.hostBehaviorRevision = payload.revision;
+    state.hostBehaviorDraft = null;
     state.hostBehaviorSnapshot = JSON.stringify(state.hostBehaviors);
     renderHostBehaviors();
     await refreshTaskModelAssignments();
     toast("Behaviors saved");
   } catch (error) {
     toast(error.message, true);
-  }
+  } finally { state.hostBehaviorSaving = false; renderHostBehaviors(); }
 }
 
 const taskModelLabels = {
@@ -537,7 +610,8 @@ function renderTaskProfileEndpointOptions() {
     option.value = endpoint.id;
     option.textContent = endpoint.name || endpoint.base_url || "Unnamed endpoint";
     option.classList.toggle("credential-loaded", !!(endpoint.has_api_key || endpoint.api_key));
-    if (endpoint.has_api_key || endpoint.api_key) option.textContent += " · Key loaded";
+    option.textContent += endpoint.has_api_key || endpoint.api_key ? " · Key loaded" : " · Needs API key";
+    if (!endpoint.model) option.textContent += " · Needs model";
     select.append(option);
   }
   for (const preset of COMMON_ENDPOINT_PRESETS) {
@@ -609,6 +683,13 @@ function taskProfileConfiguration() {
   return JSON.stringify(assignment || {});
 }
 
+function syncTaskProviderRotation() {
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (!assignment) return;
+  assignment.provider_rotation = el.taskProviderRotation.value;
+  updateTaskSaveState();
+}
+
 function updateTaskSaveState() {
   if (!el.saveTaskProfile) return;
   const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
@@ -630,9 +711,6 @@ function renderTaskBehaviorSelection() {
   const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
   const selected = new Set(selectedTaskBehaviorIds(state.activeTaskProfile, assignment));
   const catalog = taskBehaviorCatalog();
-  if (state.activeTaskProfile === "reasoning") {
-    catalog.filter(item => item.protected).forEach(item => selected.add(item.id));
-  }
   container.replaceChildren();
   if (!catalog.length) container.textContent = "Add and save behaviors on the Behaviors form first.";
   for (const behavior of catalog) {
@@ -640,9 +718,8 @@ function renderTaskBehaviorSelection() {
     label.className = "task-behavior-option";
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    const required = state.activeTaskProfile === "reasoning" && behavior.protected;
-    checkbox.checked = required || selected.has(behavior.id);
-    checkbox.disabled = required;
+    checkbox.checked = selected.has(behavior.id);
+    checkbox.disabled = false;
     checkbox.addEventListener("change", () => {
       if (checkbox.checked) selected.add(behavior.id); else selected.delete(behavior.id);
       assignment.behavior_ids = [...selected];
@@ -650,7 +727,7 @@ function renderTaskBehaviorSelection() {
     });
     const text = document.createElement("span");
     const title = document.createElement("strong");
-    title.textContent = behavior.name + (required ? " · Protected" : "") + (!behavior.enabled ? " · Disabled in library" : "");
+    title.textContent = behavior.name + (!behavior.enabled ? " · Disabled in library" : "");
     const instruction = document.createElement("small");
     instruction.textContent = behavior.instruction;
     text.append(title, instruction);
@@ -751,6 +828,14 @@ function renderEndpointModelStatus(endpoint) {
   el.endpointModelStatus.textContent = model
     ? `${model}${capabilities.length ? " · " + capabilities.join(" · ") : " · No capability metadata reported"}`
     : `${endpoint.models?.length || 0} discovered models`;
+  if (!endpoint.has_api_key && !endpoint.api_key) el.endpointModelStatus.append(document.createTextNode(" · Needs API key"));
+  if (!model) el.endpointModelStatus.append(document.createTextNode(" · Needs model selection"));
+  const probe = state.endpointProbe;
+  if (probe?.endpointId === endpoint.id && probe.model === model && probe.baseUrl === endpoint.base_url) {
+    el.endpointModelStatus.append(document.createTextNode(" · " + probe.message));
+  } else {
+    el.endpointModelStatus.append(document.createTextNode(" · Tool calling has not been tested"));
+  }
   if (source === "provider_metadata") {
     el.endpointModelStatus.append(document.createTextNode(" · Provider metadata"));
   } else if (/^https:\/\/developers\.openai\.com\/api\/docs\/models\//.test(source)) {
@@ -771,6 +856,7 @@ function endpointFormIsValid(endpoint) {
 function syncEndpointDraft() {
   const endpoint = state.endpointDraft;
   if (!endpoint) return;
+  state.endpointProbe = null;
   endpoint.name = el.taskProfileEndpointName.value.trim();
   endpoint.provider_name = el.taskProfileProviderName.value.trim();
   endpoint.base_url = el.taskProfileBaseUrl.value.trim();
@@ -783,28 +869,38 @@ function syncEndpointDraft() {
 function updateEndpointEditorState() {
   const editing = !!state.endpointDraft;
   const saved = selectedEndpoint();
-  const busy = Boolean(state.integrationSaving || state.endpointDiscovering);
+  const busy = Boolean(state.integrationSaving || state.endpointDiscovering || state.endpointProbing);
+  const preparing = Boolean(state.providerSetupDraft);
+  const revisionKnown = Number.isInteger(state.providerEndpointRevision);
   const endpoint = state.endpointDraft || saved;
   const adding = editing && !state.providerEndpoints.some(item => item.id === state.endpointDraft.id);
   [el.taskProfileEndpointName, el.taskProfileProviderName, el.taskProfileBaseUrl, el.taskProfileApiKey,
     el.endpointModelSelect, el.endpointModelId].forEach(input => { input.disabled = !editing || busy; });
-  el.taskProfileEndpointSelect.disabled = editing || busy;
-  el.taskProfileAddEndpoint.disabled = editing || busy;
+  el.taskProfileEndpointSelect.disabled = editing || busy || preparing || !revisionKnown;
+  el.taskProfileAddEndpoint.disabled = editing || busy || preparing || !revisionKnown;
+  if (el.prepareProviderConnections) el.prepareProviderConnections.disabled = editing || busy || preparing;
   el.endpointTemplateField.classList.toggle("hidden", !adding);
   el.endpointTemplateSelect.disabled = !adding || busy;
   el.endpointApiKeyVisibility.disabled = !editing || busy;
-  el.endpointEditButton.disabled = !saved || editing || busy;
-  el.endpointRemoveButton.disabled = !saved || editing || busy;
+  el.endpointEditButton.disabled = !saved || editing || busy || preparing;
+  el.endpointRemoveButton.disabled = !saved || editing || busy || preparing || !revisionKnown;
   el.endpointCancelButton.disabled = !editing || busy;
-  el.taskProfileDiscover.disabled = busy || !/^https?:\/\/\S+$/i.test(endpoint?.base_url || "");
+  el.taskProfileDiscover.disabled = busy || preparing || !/^https?:\/\/\S+$/i.test(endpoint?.base_url || "");
   el.taskProfileDiscover.textContent = state.endpointDiscovering ? "Discovering…" : "Discover Models";
-  el.saveProviderEndpoints.disabled = !editing || busy || !endpointFormIsValid(state.endpointDraft)
+  if (el.endpointProbeButton) {
+    el.endpointProbeButton.disabled = busy || preparing || !endpoint?.model || !/^https?:\/\/\S+$/i.test(endpoint?.base_url || "");
+    el.endpointProbeButton.textContent = state.endpointProbing ? "Testing tool calling…" : "Test tool calling";
+  }
+  if (el.saveProviderConnections) el.saveProviderConnections.disabled = busy || !state.providerSetupDraft?.length;
+  if (el.cancelProviderConnections) el.cancelProviderConnections.disabled = busy || !preparing;
+  el.saveProviderEndpoints.disabled = !editing || busy || !revisionKnown || !endpointFormIsValid(state.endpointDraft)
     || JSON.stringify(state.endpointDraft) === state.endpointEditBaseline;
 }
 
 function editEndpoint() {
   const endpoint = selectedEndpoint();
   if (!endpoint) return;
+  state.providerEndpointLoadRevision = (state.providerEndpointLoadRevision || 0) + 1;
   state.endpointDraft = JSON.parse(JSON.stringify(endpoint));
   state.endpointEditBaseline = JSON.stringify(state.endpointDraft);
   state.activeEndpointOriginalName = endpoint.name;
@@ -821,15 +917,18 @@ function cancelEndpointEdit() {
 }
 
 function openTaskProfile(task) {
+  if (state.taskFoundationSaving) return;
+  if (state.taskFoundationDraft?.task !== task) cancelTaskFoundationEdit();
   if (state.activeTaskProfile && state.activeTaskProfile !== task) discardTaskProfileChanges();
   state.activeTaskProfile = task;
   let assignment = state.taskModelAssignments.find(item => item.task === task);
   if (!assignment) {
-    assignment = { task, provider: "", model: "", fallbacks: [], behavior_ids: null, voice_reference_id: "", notes: "" };
+    assignment = { task, provider: "", model: "", fallbacks: [], provider_rotation: "ordered", behavior_ids: null, voice_reference_id: "", notes: "" };
     state.taskModelAssignments.push(assignment);
   }
   const behavior = state.taskBehaviors.find(item => item.task === task) || {};
   taskEndpointOptions(el.taskProviderSelect, assignment.provider, task);
+  if (el.taskProviderRotation) el.taskProviderRotation.value = assignment.provider_rotation || "ordered";
   el.taskProfileAssignmentSection.classList.remove("hidden");
   el.taskProfileStandardModelField.classList.add("hidden");
   el.taskProfileVoiceModelField.classList.add("hidden");
@@ -844,7 +943,8 @@ function openTaskProfile(task) {
     else detailIcon.textContent = "◆";
   }
   if (el.taskProfileRevision) el.taskProfileRevision.textContent = "";
-  el.taskProfileFoundation.value = state.taskFoundations[task] || "";
+  if (!state.taskFoundationDraft) el.taskProfileFoundation.value = state.taskFoundations[task] ?? "";
+  updateTaskFoundationEditor();
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
   el.taskProfileVoiceReferenceId.value = assignment.voice_reference_id || "";
@@ -858,6 +958,8 @@ function openTaskProfile(task) {
 }
 
 function closeTaskProfile() {
+  if (state.taskFoundationSaving) return;
+  cancelTaskFoundationEdit();
   discardTaskProfileChanges();
   state.activeTaskProfile = null;
   el.taskProfileEditor.classList.add("hidden");
@@ -878,9 +980,12 @@ function selectedEndpoint() {
 }
 
 async function refreshProviderEndpoints() {
-  if (state.endpointDraft) return;
+  if (state.endpointDraft || state.endpointProbing || state.integrationSaving) return;
+  const revision = state.providerEndpointLoadRevision = (state.providerEndpointLoadRevision || 0) + 1;
   const payload = await api("/v1/admin/provider-endpoints", {}, true);
+  if (revision !== state.providerEndpointLoadRevision || state.endpointDraft || state.endpointProbing || state.integrationSaving) return;
   state.providerEndpoints = payload.items || [];
+  state.providerEndpointRevision = payload.revision ?? 0;
   if (!selectedEndpoint()) state.activeEndpointId = state.providerEndpoints[0]?.id || null;
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
@@ -910,9 +1015,10 @@ async function saveProviderEndpoints() {
   try {
     const items = state.providerEndpoints.filter(item => item.id !== endpoint.id).concat(endpoint);
     const payload = await api("/v1/admin/provider-endpoints", {
-      method: "PUT", body: JSON.stringify({ items }),
+      method: "PUT", body: JSON.stringify({ items, expected_revision: state.providerEndpointRevision }),
     }, true);
     state.providerEndpoints = payload.items || [];
+    state.providerEndpointRevision = payload.revision ?? state.providerEndpointRevision;
     for (const item of state.taskModelAssignments) {
       if (item.provider === endpoint.id || (previousName && item.provider === previousName)) {
         item.provider = endpoint.id;
@@ -935,7 +1041,7 @@ async function saveProviderEndpoints() {
     loadEndpointIntoForm();
     renderTaskProfiles();
     toast("Saved endpoint and model");
-  } catch (error) { toast(error.message, true); }
+  } catch (error) { toast(error.status === 409 ? "Connections changed. Your draft is preserved. Cancel, refresh and review the latest connections before editing again." : error.message, true); }
   finally {
     state.integrationSaving = false;
     updateEndpointEditorState();
@@ -950,9 +1056,10 @@ async function removeEndpoint() {
   try {
     const payload = await api("/v1/admin/provider-endpoints", {
       method: "PUT",
-      body: JSON.stringify({ items: state.providerEndpoints.filter(item => item.id !== endpoint.id) }),
+      body: JSON.stringify({ items: state.providerEndpoints.filter(item => item.id !== endpoint.id), expected_revision: state.providerEndpointRevision }),
     }, true);
     state.providerEndpoints = payload.items || [];
+    state.providerEndpointRevision = payload.revision ?? state.providerEndpointRevision;
     const matches = provider => provider === endpoint.id || provider === endpoint.name;
     const items = state.taskModelAssignments.map(item => ({
       ...item,
@@ -968,7 +1075,7 @@ async function removeEndpoint() {
     loadEndpointIntoForm();
     renderTaskProfiles();
     toast("Removed endpoint");
-  } catch (error) { toast(error.message, true); }
+  } catch (error) { toast(error.status === 409 ? "Connections changed. Refresh and review the latest connections before removing an endpoint." : error.message, true); }
   finally {
     state.integrationSaving = false;
     updateEndpointEditorState();
@@ -1007,7 +1114,7 @@ async function saveTaskProfile() {
 }
 
 async function discoverTaskProfileModels() {
-  if (state.integrationSaving || state.endpointDiscovering) return;
+  if (state.integrationSaving || state.endpointDiscovering || state.endpointProbing || state.providerSetupDraft) return;
   if (!state.endpointDraft && selectedEndpoint()) editEndpoint();
   syncEndpointDraft();
   const endpoint = state.endpointDraft;
@@ -1040,6 +1147,41 @@ async function discoverTaskProfileModels() {
   }
 }
 
+async function probeEndpointToolCalling() {
+  if (state.integrationSaving || state.endpointDiscovering || state.endpointProbing || state.providerSetupDraft) return;
+  if (state.endpointDraft) syncEndpointDraft();
+  const endpoint = state.endpointDraft || selectedEndpoint();
+  if (!endpoint?.model || !/^https?:\/\/\S+$/i.test(endpoint?.base_url || "")) {
+    toast("Choose a provider and model before testing tool calling", true);
+    return;
+  }
+  const requestBody = JSON.stringify(endpoint);
+  const isCurrent = () => JSON.stringify(state.endpointDraft || selectedEndpoint()) === requestBody;
+  state.endpointProbing = true;
+  updateEndpointEditorState();
+  updateMcpEditorState();
+  try {
+    const result = await api("/v1/admin/provider-endpoints/probe", {
+      method: "POST", body: requestBody,
+    }, true);
+    if (!isCurrent()) return;
+    state.endpointProbe = {
+      endpointId: endpoint.id, model: endpoint.model, baseUrl: endpoint.base_url,
+      message: result.tool_calling_verified ? "Tool calling verified in current test" : (result.message || "Tool calling test failed"),
+    };
+    toast(state.endpointProbe.message, !result.tool_calling_verified);
+  } catch (error) {
+    if (!isCurrent()) return;
+    state.endpointProbe = { endpointId: endpoint.id, model: endpoint.model, baseUrl: endpoint.base_url, message: "Tool calling test failed: " + error.message };
+    toast(error.message, true);
+  } finally {
+    state.endpointProbing = false;
+    renderEndpointModelStatus(state.endpointDraft || selectedEndpoint());
+    updateEndpointEditorState();
+    updateMcpEditorState();
+  }
+}
+
 const COMMON_ENDPOINT_PRESETS = [
   { id: "openai", name: "OpenAI", base_url: "https://api.openai.com/v1" },
   { id: "openrouter", name: "OpenRouter", base_url: "https://openrouter.ai/api/v1" },
@@ -1050,17 +1192,83 @@ const COMMON_ENDPOINT_PRESETS = [
   { id: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com" },
   { id: "mistral", name: "Mistral AI", base_url: "https://api.mistral.ai/v1" },
   { id: "cerebras", name: "Cerebras", base_url: "https://api.cerebras.ai/v1" },
+  { id: "sambanova", name: "SambaNova", base_url: "https://api.sambanova.ai/v1" },
   { id: "ollama", name: "Ollama (local)", base_url: "http://localhost:11434/v1" },
   { id: "lm-studio", name: "LM Studio (local)", base_url: "http://localhost:1234/v1" },
   { id: "vllm", name: "vLLM (local/self-hosted)", base_url: "http://localhost:8000/v1" },
   { id: "localai", name: "LocalAI (local/self-hosted)", base_url: "http://localhost:8080/v1" },
 ];
+
+function prepareProviderConnections() {
+  if (state.endpointDraft || state.providerSetupDraft || state.integrationSaving || state.endpointDiscovering || state.endpointProbing) return;
+  const providers = ["cerebras", "google-gemini", "mistral", "openrouter", "sambanova"];
+  const baseUrls = new Set(state.providerEndpoints.map(item => item.base_url.replace(/\/$/, "")));
+  state.providerSetupDraft = COMMON_ENDPOINT_PRESETS.filter(item => providers.includes(item.id) && !baseUrls.has(item.base_url))
+    .map(preset => ({ id: crypto.randomUUID(), name: preset.name, provider_name: preset.name,
+      base_url: preset.base_url, api_key: "", model: "", models: [], model_capabilities: {}, model_capability_sources: {} }));
+  if (!state.providerSetupDraft.length) {
+    state.providerSetupDraft = null;
+    toast("All five provider profiles are already present. Edit each connection to finish its setup.");
+    return;
+  }
+  el.providerSetupList.replaceChildren();
+  for (const endpoint of state.providerSetupDraft) {
+    const row = document.createElement("p");
+    row.className = "record-empty";
+    row.textContent = `${endpoint.name} · Needs API key · Needs model · Tool calling has not been tested`;
+    el.providerSetupList.append(row);
+  }
+  el.providerSetupPanel.classList.remove("hidden");
+  updateEndpointEditorState();
+}
+
+function cancelProviderConnections() {
+  if (state.integrationSaving) return;
+  state.providerSetupDraft = null;
+  el.providerSetupPanel.classList.add("hidden");
+  el.providerSetupList.replaceChildren();
+  updateEndpointEditorState();
+}
+
+async function saveProviderConnections() {
+  if (!state.providerSetupDraft?.length || state.integrationSaving || state.endpointDraft) return;
+  state.integrationSaving = true;
+  updateEndpointEditorState();
+  updateMcpEditorState();
+  try {
+    const latest = await api("/v1/admin/provider-endpoints", {}, true);
+    const existing = latest.items || [];
+    const baseUrls = new Set(existing.map(item => item.base_url.replace(/\/$/, "")));
+    const additions = state.providerSetupDraft.filter(item => !baseUrls.has(item.base_url));
+    const payload = additions.length ? await api("/v1/admin/provider-endpoints", {
+      method: "PUT", body: JSON.stringify({ items: existing.concat(additions), expected_revision: latest.revision ?? 0 }),
+    }, true) : latest;
+    state.providerEndpoints = payload.items || [];
+    state.providerEndpointRevision = payload.revision ?? latest.revision ?? 0;
+    state.activeEndpointId = additions[0]?.id || state.activeEndpointId;
+    state.providerSetupDraft = null;
+    el.providerSetupPanel.classList.add("hidden");
+    el.providerSetupList.replaceChildren();
+    renderTaskProfileEndpointOptions();
+    loadEndpointIntoForm();
+    renderTaskProfiles();
+    toast(`Saved ${additions.length} new connection profile(s). Add keys, choose models and test tool calling before assigning tasks.`);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    state.integrationSaving = false;
+    updateEndpointEditorState();
+    updateMcpEditorState();
+  }
+}
+
 function addTaskProfileEndpointFromPreset(presetId) {
   const preset = COMMON_ENDPOINT_PRESETS.find(item => item.id === presetId);
   if (!preset) {
     toast("Choose an endpoint preset first", true);
     return;
   }
+  state.providerEndpointLoadRevision = (state.providerEndpointLoadRevision || 0) + 1;
   const endpoint = {
     id: crypto.randomUUID(),
     name: preset.name,
@@ -1085,6 +1293,7 @@ function addTaskProfileEndpointFromPreset(presetId) {
 }
 
 function addTaskProfileEndpoint() {
+  state.providerEndpointLoadRevision = (state.providerEndpointLoadRevision || 0) + 1;
   const endpoint = {
     id: crypto.randomUUID(),
     name: "",
@@ -2129,6 +2338,8 @@ refresh();
 
 if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBehavior);
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
+if (el.editHostBehaviors) el.editHostBehaviors.addEventListener("click", editHostBehaviors);
+if (el.cancelHostBehaviors) el.cancelHostBehaviors.addEventListener("click", cancelHostBehaviorEdit);
 if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
 
 let diagnosticsRevision = 0;
@@ -2231,6 +2442,7 @@ const adminSectionIds = {
   memories: "memoriesSection",
   journals: "journalsSection",
   overview: "overviewSection",
+  foundations: "foundationsSection",
   devices: "devicesSection",
   voice: "voiceSection",
 };
@@ -2259,6 +2471,7 @@ document.getElementById("continuityRefreshButton")?.addEventListener("click", re
 
 async function refreshAdmin() {
   const updates = [refresh()];
+  if (document.getElementById("foundationsSection")?.classList.contains("hidden") === false) updates.push(refreshFoundations());
   if (document.getElementById("skillsSection")?.classList.contains("hidden") === false) {
     updates.push(refreshSkillDrafts());
   }
@@ -2367,7 +2580,7 @@ function syncMcpServerForm() {
 function updateMcpEditorState() {
   const editing = !!state.mcpServerDraft;
   const saved = state.mcpServers.some(server => server.id === state.activeMcpServerId);
-  const busy = Boolean(state.integrationSaving || state.endpointDiscovering);
+  const busy = Boolean(state.integrationSaving || state.endpointDiscovering || state.endpointProbing);
   [el.mcpServerName, el.mcpServerUrl, el.mcpServerToken, el.mcpServerEnabled].forEach(input => {
     input.disabled = !editing || busy;
   });
@@ -2629,6 +2842,7 @@ async function refreshIntegrations() {
 }
 
 function showAdminSection(sectionName) {
+  if (sectionName !== "mcp" && state.providerSetupDraft) cancelProviderConnections();
   for (const [name, id] of Object.entries(adminSectionIds)) {
     const panel = document.getElementById(id);
     if (panel) panel.classList.toggle("hidden", name !== sectionName);
@@ -2642,6 +2856,7 @@ function showAdminSection(sectionName) {
   if (sectionName === "tasks") renderTaskProfiles();
   if (sectionName === "devices") refreshDeviceInventory();
   if (sectionName === "skills") refreshSkillDrafts();
+  if (sectionName === "foundations") refreshFoundations();
   if (sectionName === "overview") refreshDiagnostics();
   if (sectionName === "mcp" && state.adminAuthorized) refreshIntegrations();
 }
@@ -2677,6 +2892,9 @@ if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener(
   loadEndpointIntoForm();
 });
 if (el.taskProfileAddEndpoint) el.taskProfileAddEndpoint.addEventListener("click", addTaskProfileEndpoint);
+if (el.prepareProviderConnections) el.prepareProviderConnections.addEventListener("click", prepareProviderConnections);
+if (el.saveProviderConnections) el.saveProviderConnections.addEventListener("click", saveProviderConnections);
+if (el.cancelProviderConnections) el.cancelProviderConnections.addEventListener("click", cancelProviderConnections);
 if (el.endpointTemplateSelect) el.endpointTemplateSelect.addEventListener("change", applyEndpointTemplate);
 if (el.endpointApiKeyVisibility) el.endpointApiKeyVisibility.addEventListener("click", toggleEndpointApiKeyVisibility);
 if (el.endpointEditButton) el.endpointEditButton.addEventListener("click", editEndpoint);
@@ -2706,6 +2924,8 @@ el.taskProviderSelect.addEventListener("change", () => {
   updateTaskSaveState();
 });
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
+if (el.endpointProbeButton) el.endpointProbeButton.addEventListener("click", probeEndpointToolCalling);
+if (el.taskProviderRotation) el.taskProviderRotation.addEventListener("change", syncTaskProviderRotation);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
 if (el.saveTaskEndpoints) el.saveTaskEndpoints.addEventListener("click", saveTaskProfile);
 if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", () => {
@@ -2840,43 +3060,322 @@ if (navigator.mediaDevices?.addEventListener) {
 renderTaskProfiles();
 refresh();
 
+function identityFormElements() {
+  return Object.fromEntries(["SelfName", "Pronouns", "Development", "Values", "Commitments", "Relationships"]
+    .map(name => [name, document.getElementById("foundation" + name)]));
+}
+
+function renderIdentityConfiguration() {
+  const form = identityFormElements();
+  const saved = state.foundationIdentity;
+  const draft = state.foundationIdentityDraft;
+  const value = draft || saved;
+  const identity = value?.identity || {};
+  form.SelfName.value = identity.self_name || "";
+  form.Pronouns.value = identity.pronouns || "";
+  form.Development.value = value?.developmental_state || "";
+  form.Values.value = (identity.foundational_values || []).join("\n");
+  form.Commitments.value = (identity.commitments || []).join("\n");
+  form.Relationships.value = JSON.stringify(identity.relationships || [], null, 2);
+  updateIdentityEditorState();
+}
+
+function identityFormPayload() {
+  const form = identityFormElements();
+  const relationships = JSON.parse(form.Relationships.value || "[]");
+  if (!Array.isArray(relationships) || relationships.some(item => !item || typeof item !== "object" || Array.isArray(item))) {
+    throw new Error("Relationships must be an array of relationship records.");
+  }
+  if (!form.Pronouns.value.trim() || !form.Development.value.trim()) throw new Error("Enter pronouns and a developmental state.");
+  return {
+    identity: {
+      self_name: form.SelfName.value.trim() || null,
+      pronouns: form.Pronouns.value.trim(),
+      foundational_values: form.Values.value.split("\n").map(value => value.trim()).filter(Boolean),
+      commitments: form.Commitments.value.split("\n").map(value => value.trim()).filter(Boolean),
+      relationships,
+    },
+    developmental_state: form.Development.value.trim(),
+  };
+}
+
+function updateIdentityEditorState() {
+  const editing = Boolean(state.foundationIdentityDraft);
+  const busy = state.foundationIdentitySaving === true;
+  Object.values(identityFormElements()).forEach(input => { input.readOnly = !editing || busy; });
+  let valid = false;
+  let dirty = false;
+  if (editing) {
+    try {
+      const payload = identityFormPayload();
+      valid = true;
+      dirty = JSON.stringify(payload) !== state.foundationIdentityDraft.baseline;
+    } catch (error) { document.getElementById("foundationStatus").textContent = error.message; }
+  }
+  document.getElementById("foundationEdit").disabled = !state.foundationIdentity || editing || busy;
+  document.getElementById("foundationCancel").disabled = !editing || busy;
+  document.getElementById("foundationSave").disabled = !editing || busy || !valid || !dirty;
+}
+
+async function refreshIdentityConfiguration() {
+  if (state.foundationIdentityDraft || state.foundationIdentitySaving) return;
+  const revision = state.identityConfigurationLoadRevision = (state.identityConfigurationLoadRevision || 0) + 1;
+  try {
+    const result = await api("/v1/admin/identity", {}, true);
+    if (revision !== state.identityConfigurationLoadRevision || state.foundationIdentityDraft || state.foundationIdentitySaving) return;
+    state.foundationIdentity = result;
+    renderIdentityConfiguration();
+    document.getElementById("foundationStatus").textContent = "Identity loaded.";
+  } catch (error) {
+    if (revision === state.identityConfigurationLoadRevision && !state.foundationIdentityDraft && !state.foundationIdentitySaving) document.getElementById("foundationStatus").textContent = error.message;
+  }
+}
+
+function editIdentityConfiguration() {
+  if (!state.foundationIdentity || state.foundationIdentityDraft || state.foundationIdentitySaving) return;
+  state.identityConfigurationLoadRevision = (state.identityConfigurationLoadRevision || 0) + 1;
+  state.foundationIdentityDraft = JSON.parse(JSON.stringify(state.foundationIdentity));
+  renderIdentityConfiguration();
+  state.foundationIdentityDraft.baseline = JSON.stringify(identityFormPayload());
+  document.getElementById("foundationStatus").textContent = "Editing identity.";
+  updateIdentityEditorState();
+}
+
+function cancelIdentityConfiguration() {
+  if (state.foundationIdentitySaving) return;
+  state.foundationIdentityDraft = null;
+  renderIdentityConfiguration();
+  document.getElementById("foundationStatus").textContent = "Changes cancelled.";
+}
+
+async function saveIdentityConfiguration() {
+  updateIdentityEditorState();
+  if (document.getElementById("foundationSave").disabled) return;
+  const payload = { expected_revision: state.foundationIdentityDraft.revision, ...identityFormPayload() };
+  state.foundationIdentitySaving = true;
+  updateIdentityEditorState();
+  try {
+    state.foundationIdentity = await api("/v1/admin/identity", { method: "PUT", body: JSON.stringify(payload) }, true);
+    state.foundationIdentityDraft = null;
+    renderIdentityConfiguration();
+    document.getElementById("foundationStatus").textContent = "Identity saved for this Mind.";
+    try { await refreshStatus(); } catch (error) { toast("Identity saved; status refresh failed: " + error.message, true); }
+  } catch (error) { document.getElementById("foundationStatus").textContent = error.message; }
+  finally { state.foundationIdentitySaving = false; updateIdentityEditorState(); }
+}
+
+function renderStartupConfiguration() {
+  const value = state.cognitiveDraft || state.cognitiveConfiguration;
+  document.getElementById("foundationContract").value = value?.base_contract ?? "";
+  document.getElementById("foundationStartup").value = value?.startup_instructions ?? "";
+  updateStartupEditorState();
+}
+
+function updateStartupEditorState() {
+  const editing = Boolean(state.cognitiveDraft);
+  const busy = state.cognitiveSaving === true;
+  const payload = {
+    base_contract: document.getElementById("foundationContract").value,
+    startup_instructions: document.getElementById("foundationStartup").value,
+  };
+  for (const id of ["foundationContract", "foundationStartup"]) document.getElementById(id).readOnly = !editing || busy;
+  document.getElementById("startupEdit").disabled = !state.cognitiveConfiguration || editing || busy;
+  document.getElementById("startupCancel").disabled = !editing || busy;
+  document.getElementById("startupSave").disabled = !editing || busy || JSON.stringify(payload) === state.cognitiveDraft?.baseline;
+}
+
+async function refreshStartupConfiguration() {
+  if (state.cognitiveDraft || state.cognitiveSaving) return;
+  const revision = state.startupConfigurationLoadRevision = (state.startupConfigurationLoadRevision || 0) + 1;
+  try {
+    const result = await api("/v1/admin/cognitive-configuration", {}, true);
+    if (revision !== state.startupConfigurationLoadRevision || state.cognitiveDraft || state.cognitiveSaving) return;
+    state.cognitiveConfiguration = result;
+    state.taskFoundations = state.cognitiveConfiguration.task_foundations || {};
+    renderStartupConfiguration();
+    document.getElementById("startupStatus").textContent = "Startup configuration loaded.";
+  } catch (error) {
+    if (revision === state.startupConfigurationLoadRevision && !state.cognitiveDraft && !state.cognitiveSaving) document.getElementById("startupStatus").textContent = error.message;
+  }
+}
+
+function editStartupConfiguration() {
+  if (!state.cognitiveConfiguration || state.cognitiveDraft || state.cognitiveSaving) return;
+  state.startupConfigurationLoadRevision = (state.startupConfigurationLoadRevision || 0) + 1;
+  const { base_contract, startup_instructions, revision } = state.cognitiveConfiguration;
+  state.cognitiveDraft = { base_contract, startup_instructions, revision, baseline: JSON.stringify({ base_contract, startup_instructions }) };
+  renderStartupConfiguration();
+  document.getElementById("startupStatus").textContent = "Editing startup configuration.";
+}
+
+function cancelStartupConfiguration() {
+  if (state.cognitiveSaving) return;
+  state.cognitiveDraft = null;
+  renderStartupConfiguration();
+  document.getElementById("startupStatus").textContent = "Changes cancelled.";
+}
+
+async function saveStartupConfiguration() {
+  updateStartupEditorState();
+  if (document.getElementById("startupSave").disabled) return;
+  const payload = {
+    expected_revision: state.cognitiveDraft.revision,
+    base_contract: document.getElementById("foundationContract").value,
+    startup_instructions: document.getElementById("foundationStartup").value,
+  };
+  state.cognitiveSaving = true;
+  updateStartupEditorState();
+  try {
+    state.cognitiveConfiguration = await api("/v1/admin/cognitive-configuration", { method: "PUT", body: JSON.stringify(payload) }, true);
+    state.cognitiveDraft = null;
+    renderStartupConfiguration();
+    document.getElementById("startupStatus").textContent = "Startup configuration saved for this Mind.";
+  } catch (error) { document.getElementById("startupStatus").textContent = error.message; }
+  finally { state.cognitiveSaving = false; updateStartupEditorState(); }
+}
+
+async function refreshFoundations() {
+  await Promise.all([refreshIdentityConfiguration(), refreshStartupConfiguration()]);
+}
+
+function updateTaskFoundationEditor() {
+  const draft = state.taskFoundationDraft;
+  const editing = draft?.task === state.activeTaskProfile;
+  const busy = state.taskFoundationSaving === true;
+  el.taskProfileFoundation.readOnly = !editing || busy;
+  if (el.taskFoundationEdit) el.taskFoundationEdit.disabled = !state.activeTaskProfile || editing || busy;
+  if (el.taskFoundationCancel) el.taskFoundationCancel.disabled = !editing || busy;
+  if (el.taskFoundationSave) el.taskFoundationSave.disabled = !editing || busy || el.taskProfileFoundation.value === draft.original;
+}
+
+async function editTaskFoundation() {
+  const task = state.activeTaskProfile;
+  if (!task || state.taskFoundationDraft || state.taskFoundationSaving) return;
+  state.taskFoundationSaving = true;
+  updateTaskFoundationEditor();
+  try {
+    const configuration = await api("/v1/admin/cognitive-configuration", {}, true);
+    if (state.activeTaskProfile !== task) return;
+    const value = configuration.task_foundations?.[task] ?? "";
+    state.taskFoundationDraft = { task, revision: configuration.revision, original: value };
+    state.taskFoundations[task] = value;
+    el.taskProfileFoundation.value = value;
+    if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = "Editing task foundation.";
+  } catch (error) { if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = error.message; }
+  finally { state.taskFoundationSaving = false; updateTaskFoundationEditor(); }
+}
+
+function cancelTaskFoundationEdit() {
+  if (state.taskFoundationSaving) return;
+  const draft = state.taskFoundationDraft;
+  if (draft) el.taskProfileFoundation.value = draft.original;
+  state.taskFoundationDraft = null;
+  updateTaskFoundationEditor();
+}
+
+async function saveTaskFoundation() {
+  updateTaskFoundationEditor();
+  if (el.taskFoundationSave.disabled) return;
+  const draft = state.taskFoundationDraft;
+  const payload = { expected_revision: draft.revision, task_foundations: { [draft.task]: el.taskProfileFoundation.value } };
+  state.taskFoundationSaving = true;
+  updateTaskFoundationEditor();
+  try {
+    const configuration = await api("/v1/admin/cognitive-configuration", { method: "PUT", body: JSON.stringify(payload) }, true);
+    state.taskFoundations = configuration.task_foundations || {};
+    state.taskFoundationDraft = null;
+    el.taskProfileFoundation.value = state.taskFoundations[draft.task] ?? "";
+    if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = "Task foundation saved.";
+  } catch (error) { if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = error.message; }
+  finally { state.taskFoundationSaving = false; updateTaskFoundationEditor(); }
+}
+
+for (const input of Object.values(identityFormElements())) input?.addEventListener("input", updateIdentityEditorState);
+for (const id of ["foundationContract", "foundationStartup"]) document.getElementById(id)?.addEventListener("input", updateStartupEditorState);
+document.getElementById("foundationEdit")?.addEventListener("click", editIdentityConfiguration);
+document.getElementById("foundationCancel")?.addEventListener("click", cancelIdentityConfiguration);
+document.getElementById("foundationSave")?.addEventListener("click", saveIdentityConfiguration);
+document.getElementById("startupEdit")?.addEventListener("click", editStartupConfiguration);
+document.getElementById("startupCancel")?.addEventListener("click", cancelStartupConfiguration);
+document.getElementById("startupSave")?.addEventListener("click", saveStartupConfiguration);
+el.taskFoundationEdit?.addEventListener("click", editTaskFoundation);
+el.taskFoundationCancel?.addEventListener("click", cancelTaskFoundationEdit);
+el.taskFoundationSave?.addEventListener("click", saveTaskFoundation);
+el.taskProfileFoundation?.addEventListener("input", updateTaskFoundationEditor);
+
 let skillDraftSha = null;
 let skillCatalog = [];
 let skillDraftsAvailable = false;
-let skillSelectionReadOnly = false;
 let skillLoadFailed = false;
 let skillLoadRevision = 0;
-function updateSkillEditorState() {
-  const slug = document.getElementById("skillsSlug");
-  const content = document.getElementById("skillsContent");
-  const reserved = skillCatalog.some(item => item.slug === slug.value.trim() && (item.required || item.read_only));
-  const locked = skillSelectionReadOnly || skillLoadFailed || !skillDraftsAvailable;
-  slug.readOnly = locked;
-  content.readOnly = locked;
-  document.getElementById("skillsSave").disabled = locked || reserved || !/^[a-z0-9-]{1,64}$/.test(slug.value.trim()) || !content.value.trim();
-  document.getElementById("skillsValidate").disabled = skillLoadFailed || !slug.value.trim() || !content.value.trim();
-  document.getElementById("skillsPrepare").disabled = skillLoadFailed || !slug.value.trim() || !content.value.trim();
+let skillSavedItem = null;
+let skillSelectionKind = "mind";
+let skillEditing = false;
+let skillSaving = false;
+let skillFormBaseline = "";
+function skillPayload() {
+  const payload = {
+    slug: document.getElementById("skillsSlug").value.trim(),
+    content: document.getElementById("skillsContent").value,
+  };
+  if (skillSelectionKind === "github") return { ...payload, sha: skillDraftSha };
+  return {
+    ...payload,
+    name: document.getElementById("skillsName").value.trim(),
+    enabled: document.getElementById("skillsEnabled").checked,
+    required: document.getElementById("skillsRequired").checked,
+    protected: document.getElementById("skillsProtected").checked,
+    revision: skillSavedItem?.revision ?? 0,
+  };
 }
-async function loadSkillSelection(slug) {
+function updateSkillEditorState() {
+  const payload = skillPayload();
+  const mind = skillSelectionKind === "mind";
+  const locked = !skillEditing || skillLoadFailed || skillSaving || (!mind && !skillDraftsAvailable);
+  document.getElementById("skillsSlug").readOnly = locked || Boolean(skillSavedItem);
+  document.getElementById("skillsContent").readOnly = locked;
+  document.getElementById("skillsName").readOnly = locked;
+  for (const id of ["skillsEnabled", "skillsRequired", "skillsProtected"]) document.getElementById(id).disabled = locked;
+  document.getElementById("skillsNameField").classList.toggle("hidden", !mind);
+  document.getElementById("skillsConfigurationFlags").classList.toggle("hidden", !mind);
+  document.getElementById("skillsList").disabled = skillEditing || skillSaving;
+  document.getElementById("skillsEdit").disabled = !skillSavedItem || skillEditing || skillSaving || skillLoadFailed;
+  document.getElementById("skillsCancel").disabled = !skillEditing || skillSaving;
+  const valid = /^[a-z0-9][a-z0-9-]{0,63}$/.test(payload.slug) && (mind ? payload.name : payload.content.trim());
+  document.getElementById("skillsSave").disabled = locked || !valid || JSON.stringify(payload) === skillFormBaseline;
+  document.getElementById("skillsSave").textContent = mind ? "Save Mind Skill" : "Save Draft to GitHub";
+  document.getElementById("skillsValidate").disabled = skillLoadFailed || skillSaving || !payload.slug || !payload.content.trim();
+  document.getElementById("skillsPrepare").disabled = skillLoadFailed || skillSaving || !payload.slug || !payload.content.trim();
+}
+function fillSkillForm(item) {
+  document.getElementById("skillsSlug").value = item?.slug || "";
+  document.getElementById("skillsContent").value = item?.content || "";
+  document.getElementById("skillsName").value = item?.name || "";
+  document.getElementById("skillsEnabled").checked = item?.enabled !== false;
+  document.getElementById("skillsRequired").checked = item?.required === true;
+  document.getElementById("skillsProtected").checked = item?.protected === true;
+}
+async function loadSkillSelection(value) {
   const revision = ++skillLoadRevision;
   skillDraftSha = null;
   skillLoadFailed = false;
-  const selected = skillCatalog.find(item => item.slug === slug);
-  skillSelectionReadOnly = Boolean(selected?.required || selected?.read_only);
-  document.getElementById("skillsSlug").value = slug;
-  document.getElementById("skillsContent").value = "";
-  document.getElementById("skillsSource").textContent = skillSelectionReadOnly
-    ? "Required skill — always active. Its installed instructions are read-only here."
-    : skillDraftsAvailable ? "Custom draft. Saving does not publish it to ChatGPT." : "Custom drafts are unavailable.";
+  skillSavedItem = null;
+  const selected = skillCatalog.find(item => item.selection === value);
+  skillSelectionKind = selected?.kind || (value === "new:github" ? "github" : "mind");
+  skillEditing = !selected;
+  fillSkillForm(null);
+  document.getElementById("skillsSource").textContent = skillSelectionKind === "mind"
+    ? "Mind configuration. Enabled skills marked Load at startup are applied to this Mind's interactions."
+    : "GitHub draft. Saving a draft does not change this Mind or publish to ChatGPT.";
   updateSkillEditorState();
-  if (!slug) return;
+  if (!selected) { skillFormBaseline = ""; return; }
   try {
-    const item = await api("/v1/admin/skills/" + encodeURIComponent(slug), {}, true);
+    const item = selected.kind === "mind" ? selected : await api("/v1/admin/skills/" + encodeURIComponent(selected.slug) + "?source=github_draft", {}, true);
     if (revision !== skillLoadRevision) return;
-    skillDraftSha = item.sha;
-    skillSelectionReadOnly = skillSelectionReadOnly || Boolean(item.required || item.read_only);
-    document.getElementById("skillsContent").value = item.content;
-    if (skillSelectionReadOnly) document.getElementById("skillsSource").textContent = "Required skill — always active. Its installed instructions are read-only here.";
+    skillSavedItem = JSON.parse(JSON.stringify({ ...selected, ...item }));
+    skillDraftSha = item.sha ?? null;
+    fillSkillForm(skillSavedItem);
+    skillFormBaseline = JSON.stringify(skillPayload());
   } catch (error) {
     if (revision !== skillLoadRevision) return;
     skillLoadFailed = true;
@@ -2885,37 +3384,58 @@ async function loadSkillSelection(slug) {
   updateSkillEditorState();
 }
 async function refreshSkillDrafts() {
+  if (skillEditing || skillSaving) return;
+  const revision = ++skillLoadRevision;
   const list = document.getElementById("skillsList");
   try {
-    const data = await api("/v1/admin/skills", {}, true);
+    const [configuration, data] = await Promise.all([
+      api("/v1/admin/skill-configurations", {}, true), api("/v1/admin/skills", {}, true),
+    ]);
+    if (revision !== skillLoadRevision || skillEditing || skillSaving) return;
     const previous = list.value;
-    skillCatalog = data.items;
+    skillCatalog = [
+      ...configuration.items.map(item => ({ ...item, kind: "mind", selection: "mind:" + item.slug })),
+      ...data.items.filter(item => !configuration.items.some(config => config.slug === item.slug && item.source !== "github_draft" && !item.path?.startsWith("skills/drafts/")))
+        .map(item => ({ ...item, kind: "github", selection: "github:" + item.slug })),
+    ];
     skillDraftsAvailable = data.drafts_available !== false;
-    const newSkill = new Option("New skill", "");
-    newSkill.disabled = !skillDraftsAvailable;
-    list.replaceChildren(newSkill);
-    for (const item of skillCatalog) list.add(new Option((item.name || item.slug) + (item.required ? " (required)" : ""), item.slug));
-    const retained = skillCatalog.some(item => item.slug === previous) ? previous : "";
-    const initial = !document.getElementById("skillsContent").value || !skillDraftsAvailable;
-    list.value = retained || (initial ? skillCatalog.find(item => item.required)?.slug || "" : "");
-    const requiredStatus = skillCatalog.some(item => item.required) ? "Required skills available. " : "";
-    const message = skillDraftsAvailable ? requiredStatus + "Drafts loaded from GitHub."
-      : requiredStatus + "Custom drafts unavailable: " + (data.drafts_error || "Draft access is unavailable.");
+    const newDraft = new Option("New GitHub draft", "new:github");
+    newDraft.disabled = !skillDraftsAvailable;
+    list.replaceChildren(new Option("New Mind skill", "new:mind"), newDraft);
+    for (const item of skillCatalog) list.add(new Option((item.name || item.slug) + (item.kind === "mind" ? " · Mind" : " · GitHub draft"), item.selection));
+    list.value = skillCatalog.some(item => item.selection === previous) ? previous : skillCatalog[0]?.selection || "new:mind";
+    const message = skillDraftsAvailable ? "Mind skills and GitHub drafts loaded."
+      : "Mind skills available. Custom drafts unavailable: " + (data.drafts_error || "Draft access is unavailable.");
     document.getElementById("skillsStatus").textContent = message;
-    if (list.value !== previous || !document.getElementById("skillsContent").value) await loadSkillSelection(list.value);
-    else updateSkillEditorState();
+    await loadSkillSelection(list.value);
   } catch (error) {
-    skillDraftsAvailable = false;
+    if (revision !== skillLoadRevision || skillEditing || skillSaving) return;
+    skillLoadFailed = true;
     updateSkillEditorState();
     document.getElementById("skillsStatus").textContent = error.message;
   }
 }
 document.getElementById("skillsList")?.addEventListener("change", event => loadSkillSelection(event.target.value));
-document.getElementById("skillsSlug")?.addEventListener("input", updateSkillEditorState);
-document.getElementById("skillsContent")?.addEventListener("input", updateSkillEditorState);
-function skillPayload() {
-  return { slug: document.getElementById("skillsSlug").value.trim(), content: document.getElementById("skillsContent").value, sha: skillDraftSha };
+for (const id of ["skillsSlug", "skillsContent", "skillsName", "skillsEnabled", "skillsRequired", "skillsProtected"]) {
+  document.getElementById(id)?.addEventListener("input", updateSkillEditorState);
+  document.getElementById(id)?.addEventListener("change", updateSkillEditorState);
 }
+document.getElementById("skillsEdit")?.addEventListener("click", () => {
+  if (!skillSavedItem || skillSaving || skillLoadFailed) return;
+  skillLoadRevision += 1;
+  skillEditing = true;
+  updateSkillEditorState();
+});
+document.getElementById("skillsCancel")?.addEventListener("click", async () => {
+  if (skillSaving) return;
+  skillEditing = false;
+  if (skillSavedItem) {
+    fillSkillForm(skillSavedItem);
+    skillDraftSha = skillSavedItem.sha ?? null;
+    skillFormBaseline = JSON.stringify(skillPayload());
+    updateSkillEditorState();
+  } else await loadSkillSelection(skillCatalog[0]?.selection || "new:mind");
+});
 document.getElementById("skillsValidate")?.addEventListener("click", async () => {
   const status = document.getElementById("skillsStatus");
   try {
@@ -2927,14 +3447,25 @@ document.getElementById("skillsSave")?.addEventListener("click", async () => {
   const status = document.getElementById("skillsStatus");
   updateSkillEditorState();
   if (document.getElementById("skillsSave").disabled) return;
+  const payload = skillPayload();
+  const kind = skillSelectionKind;
+  skillSaving = true;
+  updateSkillEditorState();
   try {
-    const payload = skillPayload();
-    const result = await api("/v1/admin/skills/" + encodeURIComponent(payload.slug), {method:"PUT",body:JSON.stringify(payload)}, true);
-    skillDraftSha = result.sha;
+    const url = kind === "mind" ? "/v1/admin/skill-configurations/" : "/v1/admin/skills/";
+    const result = await api(url + encodeURIComponent(payload.slug) + (kind === "github" ? "?source=github_draft" : ""), {method:"PUT",body:JSON.stringify(payload)}, true);
+    skillEditing = false;
+    skillSaving = false;
+    document.getElementById("skillsList").value = kind + ":" + payload.slug;
     await refreshSkillDrafts();
-    document.getElementById("skillsList").value = payload.slug;
-    status.textContent = "Saved draft to GitHub commit " + result.commit.slice(0,8) + ". Not published to ChatGPT.";
+    if (skillCatalog.some(item => item.selection === kind + ":" + payload.slug)) {
+      document.getElementById("skillsList").value = kind + ":" + payload.slug;
+      await loadSkillSelection(kind + ":" + payload.slug);
+    }
+    status.textContent = kind === "mind" ? "Skill configuration saved for this Mind."
+      : "Saved draft to GitHub commit " + result.commit.slice(0,8) + ". Not published to ChatGPT.";
   } catch (error) { status.textContent = error.message; }
+  finally { skillSaving = false; updateSkillEditorState(); }
 });
 document.getElementById("skillsPrepare")?.addEventListener("click", async () => {
   const status = document.getElementById("skillsStatus");

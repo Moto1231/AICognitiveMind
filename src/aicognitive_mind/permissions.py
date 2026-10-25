@@ -23,6 +23,12 @@ class PermissionPolicy:
     """Cognitive authority, independent from MongoDB access mechanics."""
 
     _allowed: dict[CognitiveActor, frozenset[CognitiveOperation]] = {
+        CognitiveActor.ADMINISTRATOR: frozenset(
+            {
+                CognitiveOperation.RECORD_JOURNAL,
+                CognitiveOperation.APPROVE_IDENTITY_REVISION,
+            }
+        ),
         CognitiveActor.HUMAN: frozenset(
             {
                 CognitiveOperation.PROPOSE_MEMORY,

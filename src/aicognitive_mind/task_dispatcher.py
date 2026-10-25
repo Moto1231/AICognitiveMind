@@ -6,7 +6,8 @@ import binascii
 import json
 import logging
 import math
-from typing import Any
+from datetime import datetime
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 import httpx
@@ -14,6 +15,7 @@ import httpx
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
 
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
+from aicognitive_mind.provider_routing import ProviderRoutingRegistry
 from aicognitive_mind.task_model_assignments import TaskKind, TaskModelAssignment, TaskModelAssignmentRegistry
 from aicognitive_mind.task_behaviors import (
     TaskBehaviorRegistry,
@@ -38,11 +40,15 @@ class TaskModelDispatcher:
 
     supports_steward_action_tools = True
 
-    def __init__(self, records: Any, *, timeout: float = 90.0, client: Any | None = None) -> None:
+    def __init__(
+        self, records: Any, *, timeout: float = 90.0, client: Any | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self.assignments = TaskModelAssignmentRegistry(records)
         self.endpoints = ProviderEndpointRegistry(records)
         self.behaviors = TaskBehaviorRegistry(records)
         self.prompt_assembler = TaskPromptAssembler(self.behaviors)
+        self.routing = ProviderRoutingRegistry(records, clock=clock)
         self.timeout = timeout
         self.client = client
 
@@ -104,12 +110,20 @@ class TaskModelDispatcher:
 
     async def is_configured(self, task: TaskKind) -> bool:
         try:
-            return bool(await self._candidate_assignments(task))
+            return bool(await self._candidate_assignments(task, include_cooling=True))
         except TaskDispatchError:
             return False
 
-    async def _candidate_assignments(self, task: TaskKind) -> list[TaskModelAssignment]:
-        """Return distinct, complete task-primary then task-fallback choices."""
+    async def _candidate_assignments(
+        self, task: TaskKind, *, include_cooling: bool = False,
+    ) -> list[TaskModelAssignment]:
+        """Order the saved pool, advancing its first candidate each UTC day.
+
+        Ordered routing retains the primary/fallback order. Daily round robin
+        rotates that same pool by UTC date, so all requests on a day start at the
+        same position, including after a restart. Availability is checked after
+        rotation; unavailable choices keep their place and return after expiry.
+        """
         saved = await self.assignment(task)
         candidates: list[TaskModelAssignment] = []
         if saved.provider and saved.model:
@@ -134,7 +148,79 @@ class TaskModelDispatcher:
             raise TaskDispatchError(
                 f"Task '{task}' has no complete provider/model assignment or fallback."
             )
-        return candidates
+        endpoints = await self.endpoints.list()
+        unique: list[TaskModelAssignment] = []
+        seen: set[tuple[str, str]] = set()
+        for candidate in candidates:
+            endpoint = self._matching_endpoint(candidate.provider, endpoints)
+            key = ((endpoint.id if endpoint else candidate.provider).casefold(),
+                   candidate.model.casefold())
+            if key not in seen:
+                unique.append(candidate)
+                seen.add(key)
+        if saved.provider_rotation == "daily_round_robin":
+            offset = self.routing.now().date().toordinal() % len(unique)
+            unique = unique[offset:] + unique[:offset]
+        if include_cooling:
+            return unique
+        available: list[TaskModelAssignment] = []
+        cooling: list[dict[str, Any]] = []
+        for candidate in unique:
+            endpoint = self._matching_endpoint(candidate.provider, endpoints)
+            cooldown = await self.routing.cooldown(endpoint, candidate.model) if endpoint else None
+            if cooldown:
+                cooling.append(cooldown)
+            else:
+                available.append(candidate)
+        if not available:
+            retry_at = min(item["cooldown_until"] for item in cooling)
+            raise TaskDispatchError(
+                f"All configured providers for task '{task}' are cooling down; retry after {retry_at}."
+            )
+        return available
+
+    @staticmethod
+    def _matching_endpoint(
+        provider: str, endpoints: list[ProviderEndpoint],
+    ) -> ProviderEndpoint | None:
+        return next((item for item in endpoints if provider.casefold() in {
+            item.id.casefold(), item.name.casefold(), item.base_url.casefold(),
+        }), None)
+
+    async def routing_status(self) -> dict[str, Any]:
+        """Report saved task pools and availability without keys or endpoint URLs."""
+        tasks: list[dict[str, Any]] = []
+        endpoints = await self.endpoints.list()
+        for saved in await self.assignments.list():
+            try:
+                candidates = await self._candidate_assignments(saved.task, include_cooling=True)
+            except TaskDispatchError:
+                candidates = []
+            pool = []
+            for candidate in candidates:
+                endpoint = self._matching_endpoint(candidate.provider, endpoints)
+                cooldown = await self.routing.cooldown(endpoint, candidate.model) if endpoint else None
+                pool.append({
+                    "endpoint_id": endpoint.id if endpoint else None,
+                    "provider": (endpoint.provider_name or endpoint.name) if endpoint else None,
+                    "model": candidate.model,
+                    "configured": endpoint is not None,
+                    "credential_configured": bool(endpoint and endpoint.api_key),
+                    "cooldown_until": cooldown["cooldown_until"] if cooldown else None,
+                    "cooldown_reason": cooldown["reason"] if cooldown else None,
+                })
+            tasks.append({"task": saved.task, "provider_rotation": saved.provider_rotation,
+                          "candidates": pool})
+        return {
+            "rotation_timezone": "UTC", "as_of": self.routing.now().isoformat(),
+            "endpoints": [{
+                "endpoint_id": endpoint.id, "name": endpoint.name,
+                "provider": endpoint.provider_name or endpoint.name,
+                "model": endpoint.model,
+                "credential_configured": bool(endpoint.api_key),
+            } for endpoint in endpoints],
+            "tasks": tasks,
+        }
 
     async def synthesize_voice(
         self, text: str, *, speed: float = 1.0, volume: float = 0.0
@@ -170,15 +256,7 @@ class TaskModelDispatcher:
                 f"Task '{task}' has an incomplete provider/model assignment."
             )
         endpoints = await self.endpoints.list()
-        endpoint = next(
-            (
-                item for item in endpoints
-                if assignment.provider.casefold() in {
-                    item.id.casefold(), item.name.casefold(), item.base_url.casefold()
-                }
-            ),
-            None,
-        )
+        endpoint = self._matching_endpoint(assignment.provider, endpoints)
         if endpoint is None:
             raise TaskDispatchError(
                 f"Provider endpoint '{assignment.provider}' for task '{task}' is not configured."
@@ -214,7 +292,7 @@ class TaskModelDispatcher:
         # Providers may expose an OpenAI-compatible API under /v1 or a
         # provider-specific API version such as Eden AI's /v3. Preserve an
         # explicit version prefix instead of incorrectly creating /v3/v1/....
-        if prefix.endswith(("/v1", "/v3")):
+        if prefix.endswith(("/v1", "/v3", "/v1beta/openai")):
             return base + "/" + path.lstrip("/")
         return base + "/v1/" + path.lstrip("/")
 
@@ -239,6 +317,8 @@ class TaskModelDispatcher:
         if extra_headers:
             headers.update(extra_headers)
         request_url = self._url(endpoint, path)
+        model = str((json_body or data or {}).get("model")
+                    or (extra_headers or {}).get("model") or endpoint.model)
         try:
             if self.client is not None:
                 response = await self.client.request(
@@ -252,6 +332,10 @@ class TaskModelDispatcher:
                         json=json_body, data=data, files=files,
                     )
         except httpx.HTTPError as exc:
+            try:
+                await self.routing.record_transport_failure(endpoint, model)
+            except Exception:
+                logger.exception("task_provider_cooldown_save_failed endpoint=%s", endpoint.name)
             logger.exception(
                 "task_provider_transport_error endpoint=%s url=%s operation=%s",
                 endpoint.name, request_url, path,
@@ -272,6 +356,12 @@ class TaskModelDispatcher:
                     extra_headers=extra_headers,
                 )
         if response.is_error:
+            try:
+                await self.routing.record_http_failure(
+                    endpoint, model, response.status_code, getattr(response, "headers", {}),
+                )
+            except Exception:
+                logger.exception("task_provider_cooldown_save_failed endpoint=%s", endpoint.name)
             excerpt = response.text[:1200]
             logger.error(
                 "task_provider_http_error endpoint=%s url=%s operation=%s status=%s response=%r",
@@ -362,13 +452,15 @@ class TaskModelDispatcher:
         ):
             raise TaskDispatchError("Only Memory Recall supports the JSON object response format.")
         last_error: TaskDispatchError | None = None
-        for assignment in await self._candidate_assignments(task):
+        candidates = await self._candidate_assignments(task)
+        for assignment in candidates:
             try:
                 return await self._complete_chat_with_assignment(
                     task, messages, assignment=assignment,
                     temperature=temperature, context=context, response_format=response_format,
                     steward_action_phase=steward_action_phase,
                     steward_finish_only=steward_finish_only,
+                    retry_steward_rate_limit=len(candidates) == 1,
                 )
             except TaskDispatchError as exc:
                 last_error = exc
@@ -390,6 +482,7 @@ class TaskModelDispatcher:
         response_format: dict[str, str] | None = None,
         steward_action_phase: str | None = None,
         steward_finish_only: bool = False,
+        retry_steward_rate_limit: bool = True,
     ) -> str:
         assignment, endpoint = await self._resolve(task, assignment)
         profile = next(item for item in await self.behaviors.list() if item.task == task)
@@ -433,7 +526,7 @@ class TaskModelDispatcher:
             )
         payload = await self._request(
             endpoint, "chat/completions", json_body=body,
-            retry_steward_rate_limit=steward_action_phase is not None,
+            retry_steward_rate_limit=steward_action_phase is not None and retry_steward_rate_limit,
         )
         try:
             message = payload["choices"][0]["message"]

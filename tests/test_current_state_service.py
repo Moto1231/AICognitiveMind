@@ -104,7 +104,7 @@ class CurrentStateServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("host plugin or catalog refresh is not verified", skills["note"])
         for item in skills["value"]:
             if item.get("required"):
-                self.assertEqual(item["source"], "packaged_core")
+                self.assertEqual(item["source"], "packaged_default")
                 self.assertNotIn("content", item)
                 self.assertEqual(begun["conscious_workspace_contract"].count(load_required_skill(item["slug"])), 1)
 
@@ -117,7 +117,7 @@ class CurrentStateServiceTests(unittest.IsolatedAsyncioTestCase):
         begun = await self.service.begin_interaction("Continue with this legacy ledger.")
         skills = begun["current_state"]["fields"]["skills"]
         self.assertEqual(skills["status"], "current")
-        self.assertEqual({item["slug"] for item in skills["value"]}, set(REQUIRED_SKILLS))
+        self.assertEqual({item["slug"] for item in skills["value"] if item.get("required")}, set(REQUIRED_SKILLS))
 
     async def test_unknown_resolution_notes_survive_unchanged_begins_until_real_events(self):
         fields = ("locality", "current_scene")

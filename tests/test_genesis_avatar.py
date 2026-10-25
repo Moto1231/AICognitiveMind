@@ -80,7 +80,7 @@ class GenesisAvatarV01Tests(unittest.TestCase):
         self.assertEqual(aa_bind["weight"], 1.0)
 
     def test_body_exposes_default_genesis_avatar_route(self) -> None:
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in app.routes if hasattr(route, "path")}
         self.assertIn("/v1/body/face/avatar", paths)
 
 
