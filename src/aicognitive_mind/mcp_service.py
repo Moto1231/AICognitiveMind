@@ -497,10 +497,6 @@ class CognitiveMcpService:
             ledger.answer("pending_work", working["unresolved_references"], source="host_working_context")
         elif ledger.fields["pending_work"].status == "unknown":
             ledger.answer("pending_work", [], source="initial_state")
-        if ledger.fields["locality"].status == "unknown":
-            ledger.invalidate("locality", event="locality_not_grounded")
-        if ledger.fields["current_scene"].status == "unknown":
-            ledger.invalidate("current_scene", event="scene_not_grounded")
         if first_context:
             # A connected conversation does not establish physical presence or mood.
             # Preserve grounded evidence already in the ledger when upgrading.
