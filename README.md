@@ -4,6 +4,14 @@ A working prototype of the Digital Genesis Cognitive Core: one persistent cognit
 
 > A reasoning engine produces thought. It must not own identity.
 
+## User Manual
+
+Start with the [Axiom User Manual](docs/user-manual/README.md) for current user and
+Administrator workflows, exact navigation, provider/task configuration, Body access
+limits, troubleshooting and recovery. Its chapters record the source revision reviewed
+and distinguish implemented behavior from unverified browser/device outcomes. Older
+architecture and milestone notes below remain historical context where they differ.
+
 ## Project journey and current usage milestone
 
 The full development path is documented in
