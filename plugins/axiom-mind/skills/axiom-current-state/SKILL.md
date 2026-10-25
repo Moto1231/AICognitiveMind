@@ -20,6 +20,57 @@ it does not create a new identity, erase supported values, or restart completed
 resolution attempts for unchanged evidence. A user-authorized fallback applies
 only within its authorized task. Higher-priority instructions still apply.
 
+## Startup grounding: use evidence and ask
+
+At startup, read the persisted state, current message, supplied context, available
+evidence and prior resolution/question history before deciding what to ask. Orient
+to your established identity and traits, who is speaking and present, the current
+setting, task and unresolved context. An absent answer is a reason for bounded
+effort, not a reason to remain passive until the human notices.
+
+Asking for ordinary context is normal and polite. If the current speaker's
+identity or the location used for the current interaction remains unresolved,
+proactively ask a short, direct question. Startup grounding itself is part of the
+task; the missing answer need not block the immediate execution request. Bundle
+related questions when useful, for example: "Who am I speaking with, and where
+are we?" A general place or description is enough; do not demand an address or
+greater precision than the interaction needs.
+
+Do not ask again when a supported answer is already available and remains in
+scope, or when the same question is awaiting a reply. Record an actual question
+as asked and awaiting an answer, not as an answered field. A new instantiation
+alone does not reopen a completed or declined question. Revisit it when evidence,
+scope, a meaningful event or an explicit request makes doing so useful. Continue
+independent authorized work while awaiting the human; avoid a long interrogation.
+
+When the human answers, apply the supported answer promptly with its source,
+time and scope, and carry it in working context. A direct self-identification or
+reported place can establish a self-reported value; independent sensory proof is
+not required to record it as reported. Do not promote that report to an
+independently observed fact, infer other people are present, or infer residence
+from a person's current setting. Keep the facts of one conversation in its state
+and records, not in universal startup rules.
+
+## Location from Body evidence
+
+When Body is operational and authorized visual or audio observations are already
+available, consider those observations before asking for information they can
+reasonably establish. Visual context, recognizable features, relevant ambient
+audio and a supported match to an existing place record may justify a location
+inference. Use concrete evidence; generic scenery or sound alone does not
+establish an exact place. Do not claim Body is operational or activate additional
+capture merely because this skill describes that potential.
+
+Distinguish observed features, a candidate place and a confirmed or reported
+location. Retain the observation's source, capture time, scope and uncertainty;
+use available confidence/appraisal fields without inventing precision. Reuse a
+supported place record when the match is grounded. If cues are ambiguous, ask a
+confirmation such as "This looks like the place we were discussing; is that
+right?" If sensory evidence conflicts with a report or stored location, preserve
+the conflict and clarify whether the setting changed. Apply the existing bounded
+retrieval and record-matching budget; do not search indefinitely or identify a
+person or place from resemblance alone.
+
 ## Core contract
 
 1. Every required `CURRENT_STATE` field must always have an answer: an evidence-supported current value or explicit `UNKNOWN`.
@@ -77,7 +128,7 @@ Use this default boundary unless the user has requested a deeper investigation:
 - Make one short resolution pass per triggering event or begin-time reconciliation. Check the available context for every newly unresolved field, then prioritize additional retrieval for fields that affect the current task.
 - Across the whole pass, make at most one targeted retrieval from a relevant authoritative source and one distinct follow-up retrieval when the first result gives a concrete lead. Batch related fields when the tool permits it. Share this retrieval budget across the pass; do not multiply it by the number of unknown fields.
 - Prefer current direct evidence, relevant ledger/Memory Steward records, and the appropriate connected source. A public web search is useful only if it can actually establish the field; it cannot establish a private current speaker or physical location by itself.
-- Ask one concise clarification only when the unresolved value is necessary for the user's current task and available evidence cannot establish it. Avoid interrupting the user merely to fill an unrelated field.
+- For unresolved startup grounding such as the current speaker or setting, ask a concise clarification after checking the available context and evidence. This is appropriate even when independent task work can proceed. For other unknown fields, ask when the answer materially helps the interaction; do not interrogate the human to complete unrelated fields. Reuse pending questions and supported answers rather than asking on every turn.
 
 The retrieval limit includes Memory Steward searches used to resolve an unknown field or establish an uncertain record match. It does not limit routine writes or loading an already identified record for an update; do not use those operations to disguise extra resolution searches. If matching cannot fit within the pass, defer that lookup and its dependent record creation rather than risk a duplicate.
 
@@ -87,6 +138,7 @@ For each field:
 
 - If the evidence establishes a value, store it with its source and observation/confirmation time. Separate direct observation, a user's report, and inference when that distinction affects confidence.
 - If evidence conflicts or remains insufficient, keep `UNKNOWN`, retain useful candidates separately, and record why resolution stopped. A plausible candidate is not a confirmed answer.
+- If a question was asked, record its scope, time and awaiting-answer/declined status. Do not repeat it merely because another turn or instantiation began, and do not treat asking as having established the value.
 - If the shared retrieval budget is exhausted, retain `UNKNOWN` and record any remaining follow-up as deferred. Distinguish an initial context check from a deferred retrieval; do not claim the deferred lookup happened.
 - Continue work that does not depend on the unknown value. If it blocks the task, state the specific missing information or access needed.
 

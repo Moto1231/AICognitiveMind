@@ -40,7 +40,8 @@ def compose_required_skills() -> str:
         "REQUIRED AXIOM SKILLS (code-owned; active for every Axiom interaction):\n"
         "Both full protocols below are supplied at activation. Apply both through follow-ups, "
         "host/model changes and other connector work. They do not depend on optional task "
-        "memberships or another user reminder."
+        "memberships or another user reminder. Apply their startup orientation and standing "
+        "traits before substantive work, including evidence-grounded questions for missing context."
     ]
     sections.extend(
         f"## {REQUIRED_SKILL_NAMES[slug]}\n\n{load_required_skill(slug)}"
