@@ -77,6 +77,14 @@ class ReviewAction(Step):
     decision: Annotated[Search | ReviewFinish, Field(discriminator="action")]
 
 
+class RecallFinishAction(Step):
+    decision: RecallFinish
+
+
+class ReviewFinishAction(Step):
+    decision: ReviewFinish
+
+
 def inline_action_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Inline local schema references without exposing model labels to the provider."""
     def walk(node: Any, active: tuple[str, ...] = ()) -> Any:
@@ -137,14 +145,20 @@ def inline_action_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return walk(schema)
 
 
-def steward_action_tools(phase: str) -> list[dict[str, Any]]:
+def steward_action_tools(phase: str, *, finish_only: bool = False) -> list[dict[str, Any]]:
     """Expose one fixed provider function containing the existing phase decision."""
     if phase not in {"recall", "review"}:
         raise ValueError("Unknown Memory Steward phase")
-    wrapper = RecallAction if phase == "recall" else ReviewAction
+    if finish_only:
+        wrapper = RecallFinishAction if phase == "recall" else ReviewFinishAction
+    else:
+        wrapper = RecallAction if phase == "recall" else ReviewAction
     return [{"type": "function", "function": {
         "name": "steward_action",
-        "description": "Submit one validated search or finish decision for this assessment.",
+        "description": (
+            "Finish this assessment with one validated decision; no search calls remain."
+            if finish_only else "Submit one validated search or finish decision for this assessment."
+        ),
         "parameters": inline_action_schema(wrapper.model_json_schema()),
     }}]
 
@@ -166,6 +180,7 @@ class ModelMemorySteward(MemoryStewardTool):
         *, validate_finish: Callable[[Any], None] | None = None,
     ) -> Any:
         adapter = RECALL_STEPS if phase == "recall" else REVIEW_STEPS
+        finish_adapter = TypeAdapter(RecallFinish if phase == "recall" else ReviewFinish)
         native_actions = getattr(self.runtime, "supports_steward_action_tools", False) is True
         skill = files("aicognitive_mind").joinpath("skills/memory-steward/SKILL.md").read_text()
         context = {
@@ -189,12 +204,29 @@ class ModelMemorySteward(MemoryStewardTool):
         self._validation_corrections = 0
         try:
             async with asyncio.timeout(60):
-                for _ in range(4):
+                for round_index in range(4):
+                    final_round = round_index == 3
+                    round_adapter = finish_adapter if final_round else adapter
+                    context["assessment_budget"] = {
+                        "model_calls_remaining": 4 - round_index,
+                        "search_allowed": not final_round,
+                        "searches_completed": self._search_count,
+                        "review_corrections_remaining": (
+                            min(1 - self._validation_corrections, 3 - round_index)
+                            if phase == "review" else 0
+                        ),
+                    }
+                    messages[1]["content"] = json.dumps(context, default=str)
+                    if not native_actions:
+                        messages[0]["content"] = (
+                            skill + "\n\nPHASE SCHEMA:\n" + json.dumps(round_adapter.json_schema())
+                        )
                     payload: dict[str, Any] = {
                         "operation": "chat", "messages": messages, "temperature": 0,
                     }
                     if native_actions:
                         payload["steward_action_phase"] = phase
+                        payload["steward_finish_only"] = final_round
                     else:
                         payload["response_format"] = {"type": "json_object"}
                     raw = await self.runtime.execute(
@@ -206,7 +238,7 @@ class ModelMemorySteward(MemoryStewardTool):
                     if text.startswith("```") and text.endswith("```"):
                         text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
                     try:
-                        step = adapter.validate_json(text)
+                        step = round_adapter.validate_json(text)
                         if not isinstance(step, Search) and validate_finish is not None:
                             validate_finish(step)
                     except (ValidationError, StewardProtocolError) as exc:
@@ -218,9 +250,10 @@ class ModelMemorySteward(MemoryStewardTool):
                             )[:1000]
                         else:
                             detail = str(exc)
-                        if phase != "review" or self._validation_corrections:
+                        if phase != "review" or self._validation_corrections or final_round:
                             raise StewardProtocolError(
-                                f"Memory Steward {phase} validation failed: {detail}"
+                                f"Memory Steward {phase} validation failed"
+                                f"{' on final call' if final_round else ''}: {detail}"
                             ) from exc
                         self._validation_corrections += 1
                         messages.extend([

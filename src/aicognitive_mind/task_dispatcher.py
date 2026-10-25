@@ -59,6 +59,7 @@ class TaskModelDispatcher:
                 context.task, messages, temperature=payload.get("temperature"), context=context,
                 response_format=payload.get("response_format"),
                 steward_action_phase=payload.get("steward_action_phase"),
+                steward_finish_only=payload.get("steward_finish_only", False),
             )
         if operation == "transcribe":
             filename = payload.get("filename")
@@ -345,7 +346,12 @@ class TaskModelDispatcher:
         context: TaskExecutionContext | None = None,
         response_format: dict[str, str] | None = None,
         steward_action_phase: str | None = None,
+        steward_finish_only: bool = False,
     ) -> str:
+        if not isinstance(steward_finish_only, bool) or (
+            steward_finish_only and steward_action_phase is None
+        ):
+            raise TaskDispatchError("Finish-only decisions require a registered Steward phase.")
         if steward_action_phase is not None and (
             task != "memory_recall" or steward_action_phase not in ("recall", "review")
             or response_format is not None
@@ -362,6 +368,7 @@ class TaskModelDispatcher:
                     task, messages, assignment=assignment,
                     temperature=temperature, context=context, response_format=response_format,
                     steward_action_phase=steward_action_phase,
+                    steward_finish_only=steward_finish_only,
                 )
             except TaskDispatchError as exc:
                 last_error = exc
@@ -382,6 +389,7 @@ class TaskModelDispatcher:
         context: TaskExecutionContext | None = None,
         response_format: dict[str, str] | None = None,
         steward_action_phase: str | None = None,
+        steward_finish_only: bool = False,
     ) -> str:
         assignment, endpoint = await self._resolve(task, assignment)
         profile = next(item for item in await self.behaviors.list() if item.task == task)
@@ -419,7 +427,7 @@ class TaskModelDispatcher:
             from aicognitive_mind.steward_agent import steward_action_tools
 
             body.update(
-                tools=steward_action_tools(steward_action_phase),
+                tools=steward_action_tools(steward_action_phase, finish_only=steward_finish_only),
                 tool_choice={"type": "function", "function": {"name": "steward_action"}},
                 parallel_tool_calls=False,
             )
