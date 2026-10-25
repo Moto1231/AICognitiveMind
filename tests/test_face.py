@@ -80,7 +80,7 @@ class FaceV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("VRM", status.detail or "")
 
     def test_face_routes_and_vrm_runtime_exist(self) -> None:
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in app.routes if hasattr(route, "path")}
         self.assertIn("/body/face", paths)
         self.assertIn("/v1/body/face/expression", paths)
         self.assertIn("/v1/body/face/status", paths)

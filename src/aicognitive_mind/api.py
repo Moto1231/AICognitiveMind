@@ -28,9 +28,10 @@ from typing import Any, cast
 from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from aicognitive_mind.accounts import AccountService
+from aicognitive_mind.admin_configuration import create_admin_configuration_router
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.backup import (
     backup_filename,
@@ -62,9 +63,10 @@ from aicognitive_mind.config import (
     get_settings,
     set_body_allow_standalone_fallback_override,
 )
+from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
-from aicognitive_mind.core_skills import REQUIRED_SKILLS, required_skill_catalog
+from aicognitive_mind.effective_skills import EffectiveSkillRegistry, SkillConfiguration, SkillRevisionConflict
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -82,14 +84,18 @@ from aicognitive_mind.embodiment import (
 )
 from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
-from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
+from aicognitive_mind.host_behaviors import BehaviorRevisionConflict, HostBehavior, HostBehaviorRegistry
 from aicognitive_mind.task_behaviors import (
     TASK_FOUNDATIONS,
     TaskBehavior,
     TaskBehaviorRegistry,
     TaskExecutionContext,
 )
-from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry, discover_endpoint_model_details
+from aicognitive_mind.provider_endpoints import (
+    ProviderEndpoint, ProviderEndpointRegistry, ProviderEndpointRevisionConflict,
+    discover_endpoint_model_details,
+)
+from aicognitive_mind.provider_probe import probe_endpoint_tools
 from aicognitive_mind.task_model_assignments import (
     TaskModelAssignment,
     TaskModelAssignmentRegistry,
@@ -135,6 +141,7 @@ class InteractionRequest(BaseModel):
 
 class HostBehaviorListRequest(BaseModel):
     items: list[HostBehavior]
+    expected_revision: int = Field(ge=0, strict=True)
 
 
 class TaskModelAssignmentListRequest(BaseModel):
@@ -147,6 +154,7 @@ class TaskBehaviorListRequest(BaseModel):
 
 class ProviderEndpointListRequest(BaseModel):
     items: list[ProviderEndpoint]
+    expected_revision: int | None = Field(default=None, ge=0, strict=True)
 
 
 class MCPServerListRequest(BaseModel):
@@ -661,6 +669,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
+app.include_router(create_admin_configuration_router(require_admin, _request_runtime))
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 performance_samples = deque(maxlen=200)
 
@@ -789,20 +798,10 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
         # Until they have account-scoped implementations, do not silently run
         # them against another Mind's resources. Explicit root admin access is
         # unchanged; the cognitive and scoped configuration routes remain usable.
-        skill_path = request.url.path
-        packaged_skill_access = (
-            (request.method == "GET" and skill_path == "/v1/admin/skills")
-            or (request.method == "POST" and skill_path == "/v1/admin/skills/validate")
-            or any(
-                (request.method == "GET" and skill_path == f"/v1/admin/skills/{slug}")
-                or (request.method == "POST" and skill_path == f"/v1/admin/skills/{slug}/prepare")
-                for slug in REQUIRED_SKILLS
-            )
-        )
         if request.url.path == "/v1/admin/backup" or request.url.path.startswith((
             "/body/", "/v1/body/", "/v1/mind/body/",
             "/v1/admin/body/",
-        )) or (skill_path.startswith("/v1/admin/skills") and not packaged_skill_access):
+        )):
             return JSONResponse(
                 {"detail": "This endpoint is not available for account-scoped sessions."},
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -1713,8 +1712,64 @@ async def admin_backup(request: Request) -> Response:
 
 class SkillDraftPayload(BaseModel):
     slug: str = Field(min_length=1, max_length=64)
-    content: str = Field(min_length=1, max_length=200000)
+    content: str = Field(max_length=200000)
     sha: str | None = None
+    revision: int | None = Field(default=None, ge=0, strict=True)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    enabled: bool | None = None
+    required: bool | None = None
+    protected: bool | None = None
+
+
+class SkillConfigurationPayload(SkillConfiguration):
+    revision: int = Field(ge=0, strict=True)
+
+
+def _skill_registry(request: Request) -> EffectiveSkillRegistry:
+    return EffectiveSkillRegistry(_request_runtime(request).runtime_records)
+
+
+def _require_root_skill_drafts(request: Request) -> None:
+    # GitHub credentials and drafts are deployment-wide; local Mind settings
+    # never grant an account access to those shared resources.
+    if getattr(request.state, "tenant_storage", None) is not None:
+        raise HTTPException(status_code=403, detail="Custom GitHub drafts are not available for account-scoped sessions.")
+
+
+def _validate_skill_slug(slug: str) -> None:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
+        raise HTTPException(status_code=400, detail="Invalid skill slug")
+
+
+@app.get("/v1/admin/skill-configurations")
+async def list_skill_configurations(request: Request) -> dict[str, Any]:
+    require_admin(request)
+    return {"items": await _skill_registry(request).list()}
+
+
+@app.get("/v1/admin/skill-configurations/{slug}")
+async def get_skill_configuration(slug: str, request: Request) -> dict[str, Any]:
+    require_admin(request)
+    _validate_skill_slug(slug)
+    item = await _skill_registry(request).get(slug)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Skill configuration not found")
+    return item
+
+
+@app.put("/v1/admin/skill-configurations/{slug}")
+async def save_skill_configuration(
+    slug: str, payload: SkillConfigurationPayload, request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    if slug != payload.slug:
+        raise HTTPException(status_code=400, detail="Invalid skill slug")
+    try:
+        return await _skill_registry(request).save(
+            slug, payload.model_dump(exclude={"revision"}), expected_revision=payload.revision,
+        )
+    except SkillRevisionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _skill_github_call(path: str, method: str = "GET", payload: dict[str, Any] | None = None) -> dict[str, Any] | list[Any]:
@@ -1764,7 +1819,7 @@ async def list_admin_skills(request: Request) -> dict[str, Any]:
     require_admin(request)
     core = [
         {key: value for key, value in item.items() if key != "content"}
-        for item in required_skill_catalog()
+        for item in await _skill_registry(request).list()
     ]
     if getattr(request.state, "tenant_storage", None) is not None:
         return {
@@ -1779,9 +1834,9 @@ async def list_admin_skills(request: Request) -> dict[str, Any]:
         else:
             return {"items": core, "drafts_available": False, "drafts_error": str(exc.detail)}
     drafts = [
-        {"slug": item["name"], "path": item["path"], "required": False, "read_only": False}
+        {"slug": item["name"], "path": item["path"], "required": False, "read_only": False,
+         "source": "github_draft"}
         for item in result if isinstance(item, dict) and item.get("type") == "dir"
-        and item.get("name") not in REQUIRED_SKILLS
     ]
     return {"items": [*core, *drafts], "drafts_available": True, "drafts_error": None}
 
@@ -1789,13 +1844,14 @@ async def list_admin_skills(request: Request) -> dict[str, Any]:
 @app.get("/v1/admin/skills/{slug}")
 async def get_admin_skill(slug: str, request: Request) -> dict[str, Any]:
     require_admin(request)
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
-        raise HTTPException(status_code=400, detail="Skill ID must start with a lowercase letter or digit and contain only lowercase letters, digits, or hyphens (maximum 64 characters)")
-    if slug in REQUIRED_SKILLS:
-        item = next(item for item in required_skill_catalog() if item["slug"] == slug)
+    _validate_skill_slug(slug)
+    item = await _skill_registry(request).get(slug)
+    if item is not None and request.query_params.get("source") != "github_draft":
         return {**item, "sha": None}
+    _require_root_skill_drafts(request)
     result = await asyncio.to_thread(_skill_github_call, f"contents/skills/drafts/{slug}/SKILL.md")
-    return {"slug": slug, "sha": result["sha"], "content": base64.b64decode(result["content"]).decode("utf-8")}
+    return {"slug": slug, "sha": result["sha"], "content": base64.b64decode(result["content"]).decode("utf-8"),
+            "source": "github_draft"}
 
 
 @app.post("/v1/admin/skills/validate")
@@ -1812,8 +1868,20 @@ async def save_admin_skill(slug: str, payload: SkillDraftPayload, request: Reque
     require_admin(request)
     if slug != payload.slug or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
         raise HTTPException(status_code=400, detail="Invalid skill slug")
-    if slug in REQUIRED_SKILLS:
-        raise HTTPException(status_code=403, detail="Required Axiom skills are read-only and cannot be replaced by drafts.")
+    item = await _skill_registry(request).get(slug)
+    if item is not None and request.query_params.get("source") != "github_draft":
+        if payload.revision is None:
+            raise HTTPException(status_code=409, detail="Refresh the skill configuration and supply its revision before saving.")
+        try:
+            return await _skill_registry(request).save(
+                slug, payload.model_dump(exclude_unset=True, exclude={"sha", "revision"}),
+                expected_revision=payload.revision,
+            )
+        except SkillRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _require_root_skill_drafts(request)
     errors = _validate_skill_content(payload.content)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
@@ -1830,13 +1898,13 @@ async def save_admin_skill(slug: str, payload: SkillDraftPayload, request: Reque
 @app.post("/v1/admin/skills/{slug}/prepare")
 async def prepare_admin_skill(slug: str, request: Request) -> Response:
     require_admin(request)
-    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
-        raise HTTPException(status_code=400, detail="Invalid skill slug")
-    if slug in REQUIRED_SKILLS:
-        item = next(item for item in required_skill_catalog() if item["slug"] == slug)
+    _validate_skill_slug(slug)
+    item = await _skill_registry(request).get(slug)
+    if item is not None and request.query_params.get("source") != "github_draft":
         return Response(content=item["content"], media_type="text/markdown", headers={
             "Content-Disposition": f'attachment; filename="{slug}-SKILL.md"', "Cache-Control": "no-store",
         })
+    _require_root_skill_drafts(request)
     result = await asyncio.to_thread(_skill_github_call, f"contents/skills/drafts/{slug}/SKILL.md")
     content = base64.b64decode(result["content"])
     errors = _validate_skill_content(content.decode("utf-8"))
@@ -1893,15 +1961,15 @@ async def update_admin_body_fallback_settings(
 @app.get("/v1/admin/host-behaviors")
 async def admin_host_behaviors(request: Request) -> dict[str, Any]:
     require_admin(request)
-    items = await _request_runtime(request).host_behaviors.list()
-    return {"items": [item.model_dump(mode="json") for item in items]}
+    items, revision = await _request_runtime(request).host_behaviors.snapshot()
+    return {"items": [item.model_dump(mode="json") for item in items], "revision": revision}
 
 
 @app.get("/v1/admin/provider-endpoints")
 async def admin_provider_endpoints(request: Request) -> dict[str, Any]:
     require_admin(request)
-    items = await _request_runtime(request).provider_endpoints.list()
-    return {"items": [item.model_dump(mode="json") for item in items]}
+    items, revision = await _request_runtime(request).provider_endpoints.snapshot()
+    return {"items": [item.model_dump(mode="json") for item in items], "revision": revision}
 
 
 @app.put("/v1/admin/provider-endpoints")
@@ -1911,10 +1979,14 @@ async def replace_admin_provider_endpoints(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        items = await _request_runtime(request).provider_endpoints.replace(payload.items)
+        registry = _request_runtime(request).provider_endpoints
+        await registry.replace(payload.items, expected_revision=payload.expected_revision)
+        items, revision = await registry.snapshot()
+    except ProviderEndpointRevisionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"items": [item.model_dump(mode="json") for item in items]}
+    return {"items": [item.model_dump(mode="json") for item in items], "revision": revision}
 
 
 @app.post("/v1/admin/provider-endpoints/discover")
@@ -1929,6 +2001,18 @@ async def discover_admin_provider_endpoint_models(
         logger.info("Provider model discovery failed for %s: %s", payload.name, exc)
         raise HTTPException(status_code=502, detail=f"Model discovery failed: {exc}") from exc
     return details
+
+
+@app.post("/v1/admin/provider-endpoints/probe")
+async def probe_admin_provider_endpoint_tools(
+    payload: ProviderEndpoint,
+    request: Request,
+) -> dict[str, Any]:
+    require_admin(request)
+    try:
+        return await probe_endpoint_tools(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/v1/admin/mcp/servers")
@@ -1995,10 +2079,13 @@ async def call_admin_mcp_tool(
 @app.get("/v1/admin/task-behaviors")
 async def admin_task_behaviors(request: Request) -> dict[str, Any]:
     require_admin(request)
-    items = await _request_runtime(request).task_behaviors.list()
+    runtime = _request_runtime(request)
+    items = await runtime.task_behaviors.list()
+    configuration = await CognitiveConfigurationRegistry(runtime.runtime_records).effective()
     return {
         "items": [item.model_dump(mode="json") for item in items],
-        "foundations": TASK_FOUNDATIONS,
+        "foundations": configuration["task_foundations"],
+        "foundation_defaults": TASK_FOUNDATIONS,
     }
 
 
@@ -2042,10 +2129,14 @@ async def replace_admin_host_behaviors(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        items = await _request_runtime(request).host_behaviors.replace(payload.items)
+        registry = _request_runtime(request).host_behaviors
+        await registry.replace(payload.items, expected_revision=payload.expected_revision)
+        items, revision = await registry.snapshot()
+    except BehaviorRevisionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"items": [item.model_dump(mode="json") for item in items]}
+    return {"items": [item.model_dump(mode="json") for item in items], "revision": revision}
 
 
 @app.put("/v1/admin/memory", response_model=DurableMemory)

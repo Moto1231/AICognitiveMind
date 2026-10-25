@@ -178,7 +178,7 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("window.setInterval(pollBodyMouth", live_markup)
 
     def test_mouth_routes_and_browser_speech_surface_exist(self) -> None:
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in app.routes if hasattr(route, "path")}
         self.assertIn("/body/mouth", paths)
         self.assertIn("/v1/body/mouth/speak", paths)
         self.assertIn("/v1/body/mouth/status", paths)

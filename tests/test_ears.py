@@ -84,7 +84,7 @@ class EarsV01Tests(unittest.IsolatedAsyncioTestCase):
             )
 
     def test_browser_ears_routes_and_page_exist(self) -> None:
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in app.routes if hasattr(route, "path")}
         self.assertIn("/body/ears", paths)
         self.assertIn("/v1/body/ears/observe", paths)
         self.assertIn("/v1/body/ears/status", paths)

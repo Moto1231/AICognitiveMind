@@ -1,4 +1,6 @@
+import json
 import unittest
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -29,10 +31,11 @@ class FakeRecords:
 
 
 class FakeResponse:
-    def __init__(self, payload, status_code=200, text=""):
+    def __init__(self, payload, status_code=200, text="", headers=None):
         self._payload = payload
         self.status_code = status_code
         self.text = text
+        self.headers = headers or {}
 
     @property
     def is_error(self):
@@ -63,6 +66,179 @@ class SequencedFakeClient:
 
 
 class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
+    async def configured_pool(self, *, task="vision", rotation="ordered", count=6):
+        records = FakeRecords()
+        await ProviderEndpointRegistry(records).replace([
+            ProviderEndpoint(
+                id=f"provider-{index}", name=f"Provider {index}",
+                provider_name=f"Independent provider {index}",
+                base_url=f"https://provider-{index}.example/v1",
+                api_key=f"private-test-key-{index}", model=f"model-{index}",
+            ) for index in range(count)
+        ])
+        registry = TaskModelAssignmentRegistry(records)
+        await registry.replace([
+            item.model_copy(update={
+                "provider": "provider-0", "provider_rotation": rotation,
+                "fallbacks": [TaskFallbackAssignment(provider=f"provider-{index}")
+                              for index in range(1, count)],
+            }) if item.task == task else item for item in await registry.list()
+        ])
+        return records
+
+    async def test_daily_rotation_advances_six_provider_pool_once_per_utc_day(self):
+        records = await self.configured_pool(rotation="daily_round_robin")
+        now = datetime(2026, 10, 25, 23, 59, tzinfo=UTC)
+        dispatcher = TaskModelDispatcher(records, clock=lambda: now)
+        first = await dispatcher._candidate_assignments("vision")
+        expected = now.date().toordinal() % 6
+        self.assertEqual(first[0].provider, f"provider-{expected}")
+        restarted = TaskModelDispatcher(records, clock=lambda: now)
+        self.assertEqual(await restarted._candidate_assignments("vision"), first)
+        now += timedelta(minutes=1)
+        tomorrow = await dispatcher._candidate_assignments("vision")
+        self.assertEqual(tomorrow, first[1:] + first[:1])
+
+    async def test_ordered_rotation_preserves_primary_and_fallbacks_across_dates(self):
+        records = await self.configured_pool()
+        for day in (25, 26):
+            dispatcher = TaskModelDispatcher(
+                records, clock=lambda: datetime(2026, 10, day, tzinfo=UTC),
+            )
+            self.assertEqual(
+                [item.provider for item in await dispatcher._candidate_assignments("vision")],
+                [f"provider-{index}" for index in range(6)],
+            )
+
+    async def test_rate_limit_falls_back_and_survives_new_dispatcher_until_expiry(self):
+        records = await self.configured_pool(count=2)
+        now = datetime(2026, 10, 25, 12, tzinfo=UTC)
+        client = SequencedFakeClient([
+            FakeResponse({}, 429, "Quota reached", {"retry-after": "3600"}),
+            FakeResponse({"choices": [{"message": {"content": "Backup result"}}]}),
+        ])
+        dispatcher = TaskModelDispatcher(records, client=client, clock=lambda: now)
+        self.assertEqual(await dispatcher.complete_chat("vision", []), "Backup result")
+        self.assertEqual([call[1] for call in client.calls], [
+            "https://provider-0.example/v1/chat/completions",
+            "https://provider-1.example/v1/chat/completions",
+        ])
+        restarted_client = FakeClient(FakeResponse({
+            "choices": [{"message": {"content": "Still backup"}}],
+        }))
+        restarted = TaskModelDispatcher(records, client=restarted_client, clock=lambda: now)
+        self.assertTrue(await restarted.is_configured("vision"))
+        await restarted.complete_chat("vision", [])
+        self.assertIn("provider-1.example", restarted_client.calls[0][1])
+        now += timedelta(hours=1)
+        await restarted.complete_chat("vision", [])
+        self.assertIn("provider-0.example", restarted_client.calls[1][1])
+
+    async def test_multi_provider_steward_uses_immediate_fallback_without_sleep(self):
+        records = await self.configured_pool(task="memory_recall", count=2)
+        client = SequencedFakeClient([
+            FakeResponse({}, 429, "TPM", {"retry-after": "2"}),
+            FakeResponse({"choices": [{"message": {"content": '{"action":"finish"}'}}]}),
+        ])
+        dispatcher = TaskModelDispatcher(records, client=client)
+        with patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            result = await dispatcher.complete_chat("memory_recall", [], steward_action_phase="recall")
+        self.assertEqual(result, '{"action":"finish"}')
+        self.assertEqual(len(client.calls), 2)
+        sleep.assert_not_awaited()
+
+    async def test_all_cooled_providers_report_retry_time_without_new_calls(self):
+        records = await self.configured_pool(count=2)
+        now = datetime(2026, 10, 25, 12, tzinfo=UTC)
+        client = FakeClient(FakeResponse({}, 429, "Quota reached", {"retry-after": "3600"}))
+        dispatcher = TaskModelDispatcher(records, client=client, clock=lambda: now)
+        with self.assertRaisesRegex(TaskDispatchError, "HTTP 429"):
+            await dispatcher.complete_chat("vision", [])
+        self.assertEqual(len(client.calls), 2)
+        self.assertTrue(await dispatcher.is_configured("vision"))
+        with self.assertRaisesRegex(TaskDispatchError, "cooling down.*2026-10-25T13:00:00"):
+            await TaskModelDispatcher(records, client=client, clock=lambda: now).complete_chat("vision", [])
+        self.assertEqual(len(client.calls), 2)
+
+    async def test_server_cooldown_is_short_and_new_credentials_clear_auth_cooldown(self):
+        records = await self.configured_pool(count=2)
+        now = datetime(2026, 10, 25, 12, tzinfo=UTC)
+        dispatcher = TaskModelDispatcher(records, clock=lambda: now)
+        endpoints = await dispatcher.endpoints.list()
+        await dispatcher.routing.record_http_failure(endpoints[0], "model-0", 503, {})
+        self.assertEqual([item.provider for item in await dispatcher._candidate_assignments("vision")],
+                         ["provider-1"])
+        now += timedelta(seconds=30)
+        self.assertEqual(len(await dispatcher._candidate_assignments("vision")), 2)
+        await dispatcher.routing.record_http_failure(endpoints[0], "model-0", 401, {})
+        self.assertEqual(len(await dispatcher._candidate_assignments("vision")), 1)
+        await dispatcher.endpoints.replace([
+            endpoints[0].model_copy(update={"api_key": "new-private-key"}), endpoints[1],
+        ])
+        self.assertEqual(len(await dispatcher._candidate_assignments("vision")), 2)
+
+    async def test_transport_failure_falls_back_and_is_skipped_on_next_request(self):
+        records = await self.configured_pool(count=2)
+        calls = []
+
+        def handle(request):
+            calls.append(request)
+            if request.url.host == "provider-0.example":
+                raise httpx.ConnectError("Offline", request=request)
+            return httpx.Response(200, json={"choices": [{"message": {"content": "Backup"}}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            dispatcher = TaskModelDispatcher(records, client=client)
+            self.assertEqual(await dispatcher.complete_chat("vision", []), "Backup")
+            restarted = TaskModelDispatcher(records, client=client)
+            self.assertEqual(await restarted.complete_chat("vision", []), "Backup")
+        self.assertEqual([request.url.host for request in calls], [
+            "provider-0.example", "provider-1.example", "provider-1.example",
+        ])
+
+    async def test_provider_reset_hints_accept_http_date_and_duration_with_finite_cap(self):
+        dispatcher = TaskModelDispatcher(FakeRecords(), clock=lambda: datetime(2026, 10, 25, 12, tzinfo=UTC))
+        hints = [
+            ({"Retry-After": "Sun, 25 Oct 2026 14:00:00 GMT"}, 7200),
+            ({"x-ratelimit-reset-tokens": "1h2m3.5s"}, 3723.5),
+            ({"retry-after": "2000000"}, 86400),
+            ({"retry-after": "nan"}, 60),
+            ({"retry-after": "-1"}, 60),
+        ]
+        for headers, expected in hints:
+            with self.subTest(headers=headers):
+                self.assertEqual(dispatcher.routing.rate_limit_delay(headers), expected)
+
+    async def test_routing_status_redacts_urls_and_keys_and_reports_cooldown(self):
+        records = await self.configured_pool(count=2)
+        dispatcher = TaskModelDispatcher(records)
+        endpoint = (await dispatcher.endpoints.list())[0]
+        await dispatcher.routing.record_http_failure(endpoint, "model-0", 429, {})
+        status = await dispatcher.routing_status()
+        encoded = json.dumps(status)
+        self.assertNotIn("private-test-key", encoded)
+        self.assertNotIn("https://", encoded)
+        pool = next(item for item in status["tasks"] if item["task"] == "vision")["candidates"]
+        self.assertEqual(pool[0]["endpoint_id"], "provider-0")
+        self.assertEqual(pool[0]["cooldown_reason"], "rate_limited")
+        self.assertTrue(pool[0]["credential_configured"])
+        self.assertIsNone(pool[1]["cooldown_until"])
+        self.assertEqual(status["rotation_timezone"], "UTC")
+        self.assertEqual(len(status["endpoints"]), 2)
+        self.assertEqual(status["endpoints"][0]["endpoint_id"], "provider-0")
+
+    async def test_gemini_compatible_base_preserves_v1beta_openai_path(self):
+        records = await self.configured_pool(count=1)
+        registry = ProviderEndpointRegistry(records)
+        endpoint = (await registry.list())[0]
+        await registry.replace([endpoint.model_copy(update={
+            "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        })])
+        client = FakeClient(FakeResponse({"choices": [{"message": {"content": "Ready"}}]}))
+        await TaskModelDispatcher(records, client=client).complete_chat("vision", [])
+        self.assertEqual(client.calls[0][1],
+                         "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+
     async def configured(self, *, model="vision-arbitrary-model", provider="Local endpoint"):
         records = FakeRecords()
         await ProviderEndpointRegistry(records).replace([
@@ -104,7 +280,7 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(url, "http://localhost:8000/v1/chat/completions")
         self.assertEqual(kwargs["json"]["model"], "vision-arbitrary-model")
         self.assertEqual(kwargs["json"]["messages"][0]["role"], "system")
-        self.assertIn("IMMUTABLE AXIOM TASK FOUNDATION", kwargs["json"]["messages"][0]["content"])
+        self.assertIn("AXIOM TASK FOUNDATION", kwargs["json"]["messages"][0]["content"])
         self.assertIn("vision-arbitrary-model", kwargs["json"]["messages"][0]["content"])
         self.assertIn("image_url", str(kwargs["json"]["messages"]))
         self.assertEqual(set(kwargs["json"]), {"model", "messages"})
@@ -299,7 +475,7 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "Hello there")
         self.assertEqual(client.calls[0][1], "http://localhost:8000/v1/audio/transcriptions")
         self.assertEqual(client.calls[0][2]["data"]["model"], "my-audio-model")
-        self.assertIn("IMMUTABLE AXIOM TASK FOUNDATION", client.calls[0][2]["data"]["prompt"])
+        self.assertIn("AXIOM TASK FOUNDATION", client.calls[0][2]["data"]["prompt"])
         self.assertIn("my-audio-model", client.calls[0][2]["data"]["prompt"])
 
     async def test_v3_provider_base_url_does_not_duplicate_v1_prefix(self):

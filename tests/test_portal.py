@@ -85,6 +85,9 @@ class PortalTests(unittest.TestCase):
             "taskProfileFallbackList",
             "taskProfileAddFallback",
             "taskProfileFoundation",
+            "taskFoundationEdit",
+            "taskFoundationSave",
+            "taskFoundationCancel",
             "taskProfileBehaviorName",
             "taskProfileInstructions",
             "taskProfileEnabled",
@@ -103,7 +106,7 @@ class PortalTests(unittest.TestCase):
                 )
         self.assertIn("function renderTaskProfiles()", script)
         self.assertIn("renderTaskProfiles();", script)
-        self.assertIn("el.taskProfileFoundation.value = state.taskFoundations[task] || \"\";", script)
+        self.assertRegex(markup, r'<textarea id="taskProfileFoundation"[^>]*readonly')
         self.assertIn("el.taskProfileInstructions.value = behavior.instructions || \"\";", script)
         self.assertIn("el.taskProfileEnabled.checked = behavior.enabled !== false;", script)
         self.assertIn('audio_voice: "Audio/Voice"', script)
@@ -182,7 +185,7 @@ class PortalTests(unittest.TestCase):
         self.assertIn("loadMoreJournals", script_text)
         self.assertIn("journalPageSize: 25", script_text)
 
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in app.routes if hasattr(route, "path")}
         self.assertIn("/", paths)
         self.assertIn("/v1/portal/status", paths)
         self.assertIn("/v1/portal/memory", paths)

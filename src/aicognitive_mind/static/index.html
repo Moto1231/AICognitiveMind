@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261017-endpoint-editor">
+  <link rel="stylesheet" href="/static/portal.css?v=20261025-admin-provider">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -152,6 +152,7 @@
 
         <nav class="admin-section-nav" aria-label="Administration sections">
           <button class="admin-section-button active" type="button" data-admin-section="overview"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-overview.svg" alt="" width="48" height="52"></span><span>System Overview</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.4"><path d="m4 15 20-10 20 10-20 10Z M4 24l20 10 20-10 M4 33l20 10 20-10"/></svg></span><span>Foundations</span></button>
           <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-behavior.svg" alt="" width="48" height="52"></span><span>Behavior</span></button>
           <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-devices.svg" alt="" width="48" height="52"></span><span>Devices</span></button>
           <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-speech.svg" alt="" width="48" height="52"></span><span>Speech Settings</span></button>
@@ -164,6 +165,26 @@
         </nav>
 
         <div class="admin-grid">
+          <article id="foundationsSection" class="panel hidden">
+            <div class="panel-heading"><div><p class="eyebrow">MIND CONFIGURATION</p><h3>Foundations</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
+            <p class="muted-copy">Identity, foundational values and the startup operating contract for this Mind.</p>
+            <section class="overview-group"><h4>Identity</h4><div class="host-behavior-fields">
+              <label class="host-behavior-field">Self-name<input id="foundationSelfName" maxlength="120" readonly></label>
+              <label class="host-behavior-field">Pronouns<input id="foundationPronouns" maxlength="80" readonly></label>
+              <label class="host-behavior-field">Developmental state<input id="foundationDevelopment" maxlength="120" readonly></label>
+              <label class="host-behavior-field host-behavior-instruction">Foundational values<textarea id="foundationValues" rows="5" readonly placeholder="One value per line"></textarea></label>
+              <label class="host-behavior-field host-behavior-instruction">Commitments<textarea id="foundationCommitments" rows="5" readonly placeholder="One commitment per line"></textarea></label>
+              <label class="host-behavior-field host-behavior-instruction">Relationships<textarea id="foundationRelationships" rows="7" readonly spellcheck="false"></textarea></label>
+            </div>
+            <div class="edit-actions"><button id="foundationEdit" class="secondary-button" type="button" aria-label="Edit identity" title="Edit identity" disabled>Edit</button><button id="foundationSave" class="primary-button" type="button" aria-label="Save identity" title="Save identity" disabled>Save Identity</button><button id="foundationCancel" class="secondary-button" type="button" aria-label="Cancel identity changes" title="Cancel identity changes" disabled>Cancel</button></div>
+            <p id="foundationStatus" role="status" aria-live="polite"></p></section>
+            <section class="overview-group"><h4>Startup</h4><div class="host-behavior-fields">
+              <label class="host-behavior-field host-behavior-instruction">Base operating contract<textarea id="foundationContract" rows="18" readonly spellcheck="false"></textarea></label>
+              <label class="host-behavior-field host-behavior-instruction">Startup instructions<textarea id="foundationStartup" rows="12" readonly spellcheck="false"></textarea></label>
+            </div>
+            <div class="edit-actions"><button id="startupEdit" class="secondary-button" type="button" aria-label="Edit startup instructions" title="Edit startup instructions" disabled>Edit</button><button id="startupSave" class="primary-button" type="button" aria-label="Save startup instructions" title="Save startup instructions" disabled>Save Startup</button><button id="startupCancel" class="secondary-button" type="button" aria-label="Cancel startup changes" title="Cancel startup changes" disabled>Cancel</button></div>
+            <p id="startupStatus" role="status" aria-live="polite"></p></section>
+          </article>
           <article id="skillsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
             <section class="overview-group">
@@ -171,8 +192,10 @@
               <label class="host-behavior-field">Available skills<select id="skillsList"><option value="">New skill</option></select></label>
               <p id="skillsSource" class="record-empty"></p>
               <label class="host-behavior-field">Skill ID<input id="skillsSlug" placeholder="my-skill" pattern="[a-z0-9-]+" maxlength="64"></label>
+              <label class="host-behavior-field" id="skillsNameField">Display name<input id="skillsName" maxlength="120" readonly></label>
+              <div id="skillsConfigurationFlags" class="host-behavior-controls"><label class="host-behavior-enabled"><input id="skillsEnabled" type="checkbox" disabled> Enabled</label><label class="host-behavior-enabled"><input id="skillsRequired" type="checkbox" disabled> Load at startup</label><label class="host-behavior-enabled"><input id="skillsProtected" type="checkbox" disabled> Protected</label></div>
               <label class="host-behavior-field">SKILL.md<textarea id="skillsContent" rows="18" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What the skill does&#10;---&#10;&#10;# Instructions"></textarea></label>
-              <div class="edit-actions"><button id="skillsValidate" type="button" class="secondary-button" aria-label="Validate skill" title="Validate skill">Check</button><button id="skillsSave" type="button" class="primary-button">Save Draft to GitHub</button></div>
+              <div class="edit-actions"><button id="skillsEdit" type="button" class="secondary-button" aria-label="Edit skill" title="Edit skill" disabled>Edit</button><button id="skillsValidate" type="button" class="secondary-button" aria-label="Validate skill" title="Validate skill">Check</button><button id="skillsSave" type="button" class="primary-button">Save</button><button id="skillsCancel" type="button" class="secondary-button" aria-label="Cancel skill changes" title="Cancel skill changes" disabled>Cancel</button></div>
             </section>
             <section class="overview-group">
               <h4>Prepare ChatGPT Release</h4>
@@ -189,7 +212,9 @@
             
             <div id="hostBehaviorList" class="record-list"></div>
             <div class="edit-actions">
-              <button id="saveHostBehaviors" class="primary-button" type="button">Save</button>
+              <button id="editHostBehaviors" class="secondary-button" type="button" disabled>Edit</button>
+              <button id="saveHostBehaviors" class="primary-button" type="button" disabled>Save</button>
+              <button id="cancelHostBehaviors" class="secondary-button" type="button" disabled>Cancel</button>
             </div>
           </article>
 
@@ -210,6 +235,10 @@
               <section id="taskProfileAssignmentSection" class="task-profile-section">
                 <h4>Endpoints</h4>
                 <label class="host-behavior-field">Primary endpoint<select id="taskProviderSelect"></select></label>
+                <label class="host-behavior-field">Provider order
+                  <select id="taskProviderRotation"><option value="ordered">Primary, then fallbacks</option><option value="daily_round_robin">Daily round-robin</option></select>
+                  <small>Daily round-robin advances the first provider each day at midnight UTC. Unavailable providers fall through to the next configured connection.</small>
+                </label>
                 <div class="task-model-fields">
                   <label id="taskProfileStandardModelField" class="host-behavior-field hidden">Model ID
                     <select id="taskProfileModel" aria-label="Model ID"><option value="">Discover models or choose a model</option></select>
@@ -228,8 +257,10 @@
                 <div class="edit-actions"><button id="saveTaskEndpoints" class="primary-button" type="button" disabled>Save</button></div>
               </section>
               <section class="task-profile-section task-profile-foundation-section">
-                <h4>Immutable Foundation</h4>
-                <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Immutable task foundation"></textarea>
+                <h4>Task Foundation</h4>
+                <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Task foundation"></textarea>
+                <div class="edit-actions"><button id="taskFoundationEdit" class="secondary-button" type="button" aria-label="Edit task foundation" title="Edit task foundation">Edit</button><button id="taskFoundationSave" class="primary-button" type="button" aria-label="Save task foundation" title="Save task foundation" disabled>Save</button><button id="taskFoundationCancel" class="secondary-button" type="button" aria-label="Cancel task foundation changes" title="Cancel task foundation changes" disabled>Cancel</button></div>
+                <p id="taskFoundationStatus" role="status" aria-live="polite"></p>
               </section>
               <section class="task-profile-section task-profile-behaviors-section">
                  <div class="panel-heading task-profile-behavior-heading"><h4>Behaviors</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
@@ -256,6 +287,16 @@
             </div>
             <section id="taskProfileEndpointSection" class="task-profile-section integration-editor" aria-labelledby="endpointsHeading">
               <h4 id="endpointsHeading">Endpoints</h4>
+              <div class="provider-setup-actions">
+                <button id="prepareProviderConnections" class="secondary-button" type="button" aria-label="Prepare five provider connections" title="Prepare five provider connections">Prepare five provider connections</button>
+                <p class="muted-copy">Prepare Cerebras, Google Gemini, Mistral AI, OpenRouter and SambaNova. Add each provider's key securely, discover a model and test tool calling before assigning it to a task.</p>
+              </div>
+              <section id="providerSetupPanel" class="integration-subsection hidden" aria-label="New provider connection drafts">
+                <h5>New connection profiles</h5>
+                <div id="providerSetupList" class="record-list"></div>
+                <p class="muted-copy">These profiles have no API keys or selected models. Save adds the profiles to Endpoints. Existing connections and task assignments are preserved.</p>
+                <div class="edit-actions"><button id="saveProviderConnections" class="primary-button" type="button" aria-label="Save new connection profiles" title="Save new connection profiles">Save</button><button id="cancelProviderConnections" class="secondary-button" type="button" aria-label="Cancel new connection profiles" title="Cancel new connection profiles">Cancel</button></div>
+              </section>
               <div class="task-profile-endpoint-picker">
                 <label class="host-behavior-field">Endpoint
                   <select id="taskProfileEndpointSelect"><option value="">Choose an endpoint</option></select>
@@ -286,7 +327,7 @@
                 </div>
               </div>
               <section class="integration-subsection model-catalog" aria-labelledby="endpointModelsHeading">
-                <div class="panel-heading"><h5 id="endpointModelsHeading">Models</h5><button id="taskProfileDiscover" class="secondary-button" type="button" disabled>Discover Models</button></div>
+                <div class="panel-heading"><h5 id="endpointModelsHeading">Models</h5><button id="taskProfileDiscover" class="secondary-button" type="button" disabled>Discover Models</button><button id="endpointProbeButton" class="secondary-button" type="button" aria-label="Test tool calling" title="Test tool calling" disabled>Test tool calling</button></div>
                 <div class="task-model-fields">
                   <label class="host-behavior-field">Discovered Model
                     <select id="endpointModelSelect" disabled><option value="">Choose a discovered model</option></select>
@@ -296,6 +337,7 @@
                   </label>
                 </div>
                 <p id="endpointModelStatus" class="muted-copy" role="status">Select an endpoint, then Edit to configure its model.</p>
+                <p class="muted-copy">Test tool calling sends two small test requests to the selected provider. Discovery lists models; the test checks the response format needed for recall and review.</p>
               </section>
               <div class="editor-actions">
                 <button id="endpointEditButton" class="secondary-button" type="button" disabled>Edit</button>
@@ -669,6 +711,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261023-clear-task-assignments"></script>
+  <script src="/static/portal.js?v=20261025-admin-provider"></script>
 </body>
 </html>

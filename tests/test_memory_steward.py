@@ -2,6 +2,7 @@ import unittest
 from typing import Any, cast
 
 from aicognitive_mind.core import CognitiveCore
+from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -16,7 +17,8 @@ from aicognitive_mind.memory_steward import (
     MemoryStewardNotConsultedError,
     MemoryStewardTool,
 )
-from aicognitive_mind.prompts import CONSCIOUS_WORKSPACE_SYSTEM_PROMPT
+from aicognitive_mind.prompts import CONSCIOUS_WORKSPACE_SYSTEM_PROMPT, DEFAULT_STARTUP_INSTRUCTIONS
+from aicognitive_mind.task_behaviors import TASK_FOUNDATIONS
 from aicognitive_mind.storage import (
     InMemoryDiagnosticStore,
     InMemoryJournalStore,
@@ -138,7 +140,12 @@ class MemoryStewardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNotNone(engine.request)
         request = cast(ReasoningRequest, engine.request)
-        self.assertEqual(request.system_prompt, CONSCIOUS_WORKSPACE_SYSTEM_PROMPT)
+        self.assertIn(CONSCIOUS_WORKSPACE_SYSTEM_PROMPT, request.system_prompt)
+        self.assertIn(DEFAULT_STARTUP_INSTRUCTIONS, request.system_prompt)
+        self.assertIn(TASK_FOUNDATIONS["reasoning"], request.system_prompt)
+        for slug in REQUIRED_SKILLS:
+            self.assertIn(load_required_skill(slug), request.system_prompt)
+        self.assertIn("CURRENT ASSIGNMENT:\nTask: reasoning", request.system_prompt)
         self.assertIn("memory_steward", request.system_prompt)
         memories = await core.read_memory()
         self.assertEqual(len(memories), 1)

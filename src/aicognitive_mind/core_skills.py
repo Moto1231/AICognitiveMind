@@ -1,4 +1,4 @@
-"""Canonical required Axiom protocols shared by runtime, Administration and plugins."""
+"""Packaged Axiom skill defaults; runtime settings belong to EffectiveSkillRegistry."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ def load_required_skill(slug: str) -> str:
 
 
 def required_skill_catalog() -> list[dict[str, object]]:
+    """Factory metadata only. Read EffectiveSkillRegistry for an active Mind."""
     result = []
     for slug in REQUIRED_SKILLS:
         content = load_required_skill(slug)
@@ -28,16 +29,22 @@ def required_skill_catalog() -> list[dict[str, object]]:
             "name": REQUIRED_SKILL_NAMES[slug],
             "content": content,
             "required": True,
-            "read_only": True,
-            "source": "packaged_core",
+            "enabled": True,
+            "protected": True,
+            "read_only": False,
+            "source": "packaged_default",
             "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
         })
     return result
 
 
 def compose_required_skills() -> str:
+    """Factory bootstrap only; never replace saved Administrator settings with this."""
     sections = [
-        "REQUIRED AXIOM SKILLS (code-owned; active for every Axiom interaction):\n"
+        "DEFAULT AXIOM STARTUP SKILLS (Administrator configurable):\n"
+        "Saved effective skill text, enabled/required flags, and cognitive configuration "
+        "take precedence over these package defaults. Do not reapply a disabled or "
+        "edited default over an explicit Administrator setting. "
         "Both full protocols below are supplied at activation. Apply both through follow-ups, "
         "host/model changes and other connector work. They do not depend on optional task "
         "memberships or another user reminder. Apply their startup orientation and standing "

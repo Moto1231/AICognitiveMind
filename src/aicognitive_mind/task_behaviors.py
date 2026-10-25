@@ -1,7 +1,7 @@
 """Per-task behavior profiles and runtime-neutral prompt assembly.
 
-The immutable foundations live in this module. Persisted profiles can customize a
-task, but cannot replace or edit its code-owned foundation. Runtime context is
+The factory foundations live in this module. Administrator overrides can replace
+them independently of optional task behavior profiles. Runtime context is
 explicit and deliberately contains references/current state, not an entire host
 conversation history.
 """
@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from aicognitive_mind.task_model_assignments import TASK_LABELS
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
-from aicognitive_mind.core_skills import compose_required_skills
+from aicognitive_mind.effective_skills import EffectiveSkillRegistry
 
 TaskBehaviorKind = Literal[
     "vision", "audio", "audio_voice", "coding", "image_generation", "summarization",
@@ -22,7 +22,7 @@ TaskBehaviorKind = Literal[
 ]
 
 
-# This mapping is code-owned. It is never loaded from records or accepted from an API.
+# Factory defaults remain available when no Administrator override is saved.
 TASK_FOUNDATIONS: dict[TaskBehaviorKind, str] = {
     "reasoning": (
         "You are Axiom's reasoning task. "
@@ -73,7 +73,7 @@ TASK_FOUNDATIONS: dict[TaskBehaviorKind, str] = {
 
 
 class TaskBehavior(BaseModel):
-    """Externally editable behavior layer; immutable foundation is intentionally absent."""
+    """Optional behavior profile; foundation overrides have a separate revisioned editor."""
 
     task: TaskBehaviorKind
     name: str = Field(min_length=1, max_length=120)
@@ -169,15 +169,18 @@ class TaskPromptAssembler:
         self.registry = registry
 
     async def system_prompt(self, context: TaskExecutionContext) -> str:
+        from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
+
         profile = next(
             item for item in await self.registry.list() if item.task == context.task
         )
+        configuration = await CognitiveConfigurationRegistry(self.registry.records).effective()
         layers = [
-            "IMMUTABLE AXIOM TASK FOUNDATION (code-owned):",
-            TASK_FOUNDATIONS[context.task],
+            "AXIOM TASK FOUNDATION (Administrator configurable):",
+            configuration["task_foundations"][context.task],
         ]
         if context.task == "reasoning":
-            layers.extend(["", compose_required_skills()])
+            layers.extend(["", await EffectiveSkillRegistry(self.registry.records).startup_contract()])
         selected = await HostBehaviorRegistry(self.registry.records).selected(context.task)
         if selected:
             layers.extend([

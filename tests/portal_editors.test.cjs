@@ -9,15 +9,21 @@ const editorFunctions = [
   'selectedEndpoint', 'renderTaskProfileEndpointOptions', 'fillSelect', 'modelCapabilityLabel',
   'loadEndpointIntoForm', 'renderEndpointModelStatus', 'endpointFormIsValid', 'syncEndpointDraft',
   'updateEndpointEditorState', 'editEndpoint', 'cancelEndpointEdit', 'saveProviderEndpoints',
+  'refreshProviderEndpoints',
   'removeEndpoint', 'discoverTaskProfileModels', 'addTaskProfileEndpoint', 'applyEndpointTemplate',
+  'prepareProviderConnections', 'saveProviderConnections', 'cancelProviderConnections', 'probeEndpointToolCalling',
   'selectedMcpServer', 'syncMcpServerForm', 'updateMcpEditorState', 'editMcpServer',
   'cancelMcpEdit', 'renderMcpServerOptions', 'loadMcpServerIntoForm', 'renderMcpTools',
   'addMcpServer', 'saveMcpServers', 'removeMcpServer', 'discoverMcpTools',
   'allTaskNames', 'renderTaskProfiles', 'taskEndpointOptions', 'selectedTaskBehaviorIds',
   'taskBehaviorCatalog',
   'taskProfileConfiguration', 'updateTaskSaveState', 'renderTaskBehaviorSelection',
+  'syncTaskProviderRotation',
   'renderFallbackSelectors', 'openTaskProfile', 'closeTaskProfile', 'discardTaskProfileChanges',
   'saveTaskProfile',
+  'updateTaskFoundationEditor', 'cancelTaskFoundationEdit', 'editTaskFoundation', 'saveTaskFoundation',
+  'renderHostBehaviors', 'updateBehaviorSaveState', 'refreshHostBehaviors', 'editHostBehaviors',
+  'cancelHostBehaviorEdit', 'addHostBehavior', 'saveHostBehaviors',
 ];
 
 class Element {
@@ -48,22 +54,26 @@ class Element {
 }
 
 function editor({ apiHandler } = {}) {
+  let endpointSequence = 0;
   const el = new Proxy({}, { get: (target, name) => target[name] ||= new Element() });
   const state = {
     providerEndpoints: [{ id: 'openai', name: 'OpenAI - GPT', provider_name: 'OpenAI', model: 'gpt-test',
       base_url: 'https://provider.example/v1', api_key: 'test-key', models: ['gpt-test'], model_capabilities: {} }],
     activeEndpointId: 'openai', endpointDraft: null, endpointEditBaseline: '', endpointDiscovering: false,
+    providerEndpointRevision: 0,
     mcpServers: [{ id: 'tools', name: 'Tools', url: 'https://tools.example/mcp', bearer_token: '',
       enabled: true, tools: [{ name: 'lookup', enabled: true }] }],
     activeMcpServerId: 'tools', mcpServerDraft: null, mcpEditBaseline: '', integrationSaving: false,
     taskModelAssignments: [{ task: 'vision', provider: 'openai', model: 'gpt-test',
       fallbacks: [{ provider: 'OpenAI - GPT', model: 'gpt-test' }] }],
     taskBehaviors: [], taskFoundations: {}, hostBehaviors: [], activeTaskProfile: null,
+    taskFoundationDraft: null, taskFoundationSaving: false,
+    hostBehaviorDraft: null, hostBehaviorSaving: false, hostBehaviorRevision: 0,
   };
   const calls = [];
   const toasts = [];
   const context = vm.createContext({
-    state, el, COMMON_ENDPOINT_PRESETS: [], crypto: { randomUUID: () => 'new-id' },
+    state, el, COMMON_ENDPOINT_PRESETS: [], crypto: { randomUUID: () => ++endpointSequence === 1 ? 'new-id' : `new-id-${endpointSequence}` },
     taskModelLabels: { reasoning: 'Reasoning', vision: 'Vision', audio_voice: 'Audio/Voice' },
     displayLabel: value => value,
     Option: class extends Element {
@@ -72,23 +82,26 @@ function editor({ apiHandler } = {}) {
     document: { createElement: tag => new Element(tag), createTextNode: value => value },
     renderTaskProfiles() {}, toast: (...args) => toasts.push(args),
     resetEndpointApiKeyVisibility() {}, toggleEndpointApiKeyVisibility() {},
-    api: async (url, options) => {
-      const body = JSON.parse(options.body);
+    api: async (url, options = {}) => {
+      const body = options.body ? JSON.parse(options.body) : undefined;
       calls.push({ url, body });
       if (apiHandler) return apiHandler(url, body, options);
       return body;
     },
   });
+  const presetsStart = source.indexOf('const COMMON_ENDPOINT_PRESETS = [');
+  const presetsEnd = source.indexOf('\n];', presetsStart);
+  vm.runInContext(source.slice(presetsStart, presetsEnd + 3), context);
   for (const name of editorFunctions) {
     const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
     assert.ok(start >= 0, `${name} exists`);
-    const next = source.slice(start + 1).search(/^(?:async )?function |^const /m);
+    const next = source.slice(start + 1).search(/^(?:async )?function |^const |^let |^for |^document\.|^el\.|^if \(/m);
     vm.runInContext(source.slice(start, next < 0 ? source.length : start + 1 + next), context);
   }
   for (const name of ['resetEndpointApiKeyVisibility', 'toggleEndpointApiKeyVisibility']) {
     const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
     if (start < 0) continue;
-    const next = source.slice(start + 1).search(/^(?:async )?function |^const /m);
+    const next = source.slice(start + 1).search(/^(?:async )?function |^const |^let |^for |^document\.|^el\.|^if \(/m);
     vm.runInContext(source.slice(start, next < 0 ? source.length : start + 1 + next), context);
   }
   const primaryHandler = source.indexOf('el.taskProviderSelect.addEventListener("change", () => {');
@@ -116,6 +129,192 @@ test('endpoint fields stay locked until Edit and Save requires a valid changed d
   ui.cancelEndpointEdit();
   assert.equal(ui.el.taskProfileEndpointName.value, 'OpenAI - GPT');
   assert.equal(ui.el.taskProfileEndpointName.disabled, true);
+});
+
+test('five provider connections remain drafts until Save and Cancel preserves saved connections', () => {
+  const ui = editor();
+  const before = JSON.stringify(ui.state.providerEndpoints);
+  const assignments = JSON.stringify(ui.state.taskModelAssignments);
+  ui.prepareProviderConnections();
+  assert.equal(ui.state.providerSetupDraft.length, 5);
+  assert.equal(new Set(ui.state.providerSetupDraft.map(item => item.id)).size, 5);
+  assert.deepEqual(Array.from(ui.state.providerSetupDraft, item => item.provider_name).sort(),
+    ['Cerebras', 'Google Gemini (OpenAI-compatible)', 'Mistral AI', 'OpenRouter', 'SambaNova'].sort());
+  assert.ok(ui.state.providerSetupDraft.every(item => !item.api_key && !item.model && !item.models.length));
+  assert.equal(JSON.stringify(ui.state.providerEndpoints), before);
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
+  assert.equal(ui.el.endpointEditButton.disabled, true);
+  assert.equal(ui.el.providerSetupList.children.length, 5);
+  assert.ok(ui.el.providerSetupList.children.every(item => item.textContent.includes('Tool calling has not been tested')));
+  assert.equal(ui.calls.length, 0);
+  ui.cancelProviderConnections();
+  assert.equal(ui.state.providerSetupDraft, null);
+  assert.equal(ui.el.providerSetupPanel.classes.has('hidden'), true);
+  assert.equal(JSON.stringify(ui.state.providerEndpoints), before);
+  assert.equal(ui.el.endpointEditButton.disabled, false);
+});
+
+test('saving new provider profiles preserves fresh server connections and avoids duplicate providers', async () => {
+  const existing = { id: 'cerebras-existing', name: 'My Cerebras', provider_name: 'Cerebras',
+    base_url: 'https://api.cerebras.ai/v1', api_key: 'existing-key', model: 'my-model', models: [] };
+  const ui = editor({ apiHandler: async (url, body, options) =>
+    options.method === 'PUT' ? { ...body, revision: 24 } : { items: [existing], revision: 23 } });
+  const assignments = JSON.stringify(ui.state.taskModelAssignments);
+  ui.prepareProviderConnections();
+  await ui.saveProviderConnections();
+  assert.equal(ui.calls.length, 2);
+  assert.equal(ui.calls[1].url, '/v1/admin/provider-endpoints');
+  assert.equal(ui.calls[1].body.items.length, 5);
+  assert.equal(ui.calls[1].body.expected_revision, 23);
+  assert.equal(ui.state.providerEndpointRevision, 24);
+  assert.deepEqual(ui.calls[1].body.items.find(item => item.id === existing.id), existing);
+  assert.equal(ui.calls[1].body.items.filter(item => item.base_url === existing.base_url).length, 1);
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
+  assert.equal(ui.state.providerSetupDraft, null);
+  assert.equal(ui.el.taskProfileApiKey.disabled, true);
+  assert.equal(ui.state.providerEndpoints.filter(item => !item.api_key && !item.model).length, 4);
+});
+
+test('failed provider profile save keeps the isolated batch available to retry or cancel', async () => {
+  const ui = editor({ apiHandler: async (_url, _body, options) => {
+    if (options.method === 'PUT') throw new Error('Save failed');
+    return { items: [] };
+  } });
+  const before = JSON.stringify(ui.state.providerEndpoints);
+  ui.prepareProviderConnections();
+  const draft = JSON.stringify(ui.state.providerSetupDraft);
+  await ui.saveProviderConnections();
+  assert.equal(JSON.stringify(ui.state.providerSetupDraft), draft);
+  assert.equal(JSON.stringify(ui.state.providerEndpoints), before);
+  assert.equal(ui.el.saveProviderConnections.disabled, false);
+  assert.equal(ui.el.cancelProviderConnections.disabled, false);
+  assert.equal(ui.state.integrationSaving, false);
+});
+
+test('daily provider rotation is a saved task setting and Return rolls back an unsaved selection', async () => {
+  const ui = editor();
+  ui.openTaskProfile('vision');
+  assert.equal(ui.el.taskProviderRotation.value, 'ordered');
+  ui.el.taskProviderRotation.value = 'daily_round_robin';
+  ui.syncTaskProviderRotation();
+  assert.equal(ui.el.saveTaskProfile.disabled, false);
+  ui.discardTaskProfileChanges();
+  assert.equal(ui.state.taskModelAssignments[0].provider_rotation, undefined);
+  ui.openTaskProfile('vision');
+  ui.el.taskProviderRotation.value = 'daily_round_robin';
+  ui.syncTaskProviderRotation();
+  await ui.saveTaskProfile();
+  assert.equal(ui.calls[0].body.items[0].provider_rotation, 'daily_round_robin');
+  assert.equal(ui.state.taskModelAssignments[0].provider_rotation, 'daily_round_robin');
+  assert.equal(ui.el.taskProviderRotation.value, 'daily_round_robin');
+});
+
+test('tool-calling probe reports its actual result and editing invalidates the earlier result', async () => {
+  const ui = editor({ apiHandler: async () => ({ tool_calling_verified: true }) });
+  ui.editEndpoint();
+  await ui.probeEndpointToolCalling();
+  assert.equal(ui.calls[0].url, '/v1/admin/provider-endpoints/probe');
+  assert.equal(ui.calls[0].body.model, 'gpt-test');
+  assert.equal(ui.calls[0].body.api_key, 'test-key');
+  assert.equal(ui.state.endpointProbe.message, 'Tool calling verified in current test');
+  assert.equal(ui.state.endpointProbing, false);
+  assert.equal(ui.state.providerEndpoints[0].model, 'gpt-test');
+  ui.el.endpointModelId.value = 'different-model';
+  ui.syncEndpointDraft();
+  assert.equal(ui.state.endpointProbe, null);
+  assert.ok(ui.el.endpointModelStatus.children.some(text => String(text).includes('Tool calling has not been tested')));
+});
+
+test('a failed tool-calling probe reports failure without converting it into verified readiness', async () => {
+  const ui = editor({ apiHandler: async () => ({ tool_calling_verified: false, message: 'Provider returned text instead of a tool call' }) });
+  await ui.probeEndpointToolCalling();
+  assert.equal(ui.state.endpointProbe.message, 'Provider returned text instead of a tool call');
+  assert.equal(ui.toasts[0][1], true);
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.state.endpointDraft, null);
+  assert.equal(ui.state.endpointProbing, false);
+});
+
+test('a pending tool-calling probe locks provider and MCP changes and never displays premature proof', async () => {
+  let resolveProbe;
+  const ui = editor({ apiHandler: () => new Promise(resolve => { resolveProbe = resolve; }) });
+  ui.editEndpoint();
+  ui.editMcpServer();
+  const request = ui.probeEndpointToolCalling();
+  assert.equal(ui.state.endpointProbing, true);
+  assert.equal(ui.state.endpointProbe, null);
+  assert.equal(ui.el.endpointProbeButton.disabled, true);
+  assert.equal(ui.el.taskProfileDiscover.disabled, true);
+  assert.equal(ui.el.taskProfileApiKey.disabled, true);
+  assert.equal(ui.el.saveProviderEndpoints.disabled, true);
+  assert.equal(ui.el.mcpServerName.disabled, true);
+  assert.equal(ui.el.saveMcpServers.disabled, true);
+  await ui.probeEndpointToolCalling();
+  assert.equal(ui.calls.length, 1);
+  resolveProbe({ tool_calling_verified: true });
+  await request;
+  assert.equal(ui.state.endpointProbing, false);
+  assert.equal(ui.el.taskProfileApiKey.disabled, false);
+  assert.equal(ui.el.mcpServerName.disabled, false);
+  assert.equal(ui.state.endpointProbe.message, 'Tool calling verified in current test');
+});
+
+test('a tool-calling response for superseded credentials or model cannot mark the new draft verified', async () => {
+  let resolveProbe;
+  const ui = editor({ apiHandler: () => new Promise(resolve => { resolveProbe = resolve; }) });
+  ui.editEndpoint();
+  const request = ui.probeEndpointToolCalling();
+  // A background update can replace state even while the form is locked.
+  ui.state.endpointDraft = { ...ui.state.endpointDraft, api_key: 'new-key', model: 'new-model' };
+  resolveProbe({ tool_calling_verified: true });
+  await request;
+  assert.equal(ui.state.endpointProbe, null);
+  assert.equal(ui.state.endpointProbing, false);
+  assert.equal(ui.state.endpointDraft.model, 'new-model');
+  assert.equal(ui.toasts.length, 0);
+  assert.ok(ui.el.endpointModelStatus.children.some(text => String(text).includes('Tool calling has not been tested')));
+});
+
+test('endpoint saves send the loaded revision and preserve a stale draft instead of retrying', async () => {
+  const ui = editor({ apiHandler: () => { throw Object.assign(new Error('Conflict'), { status: 409 }); } });
+  ui.state.providerEndpointRevision = 9;
+  const original = JSON.stringify(ui.state.providerEndpoints);
+  ui.editEndpoint();
+  ui.el.taskProfileEndpointName.value = 'My edited endpoint';
+  ui.syncEndpointDraft();
+  await ui.saveProviderEndpoints();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].body.expected_revision, 9);
+  assert.equal(JSON.stringify(ui.state.providerEndpoints), original);
+  assert.equal(ui.state.endpointDraft.name, 'My edited endpoint');
+  assert.equal(ui.state.providerEndpointRevision, 9);
+  assert.equal(ui.el.saveProviderEndpoints.disabled, false);
+  assert.match(ui.toasts[0][0], /Cancel, refresh and review/);
+});
+
+test('endpoint removal supplies the loaded revision and preserves saved records after a conflict', async () => {
+  const ui = editor({ apiHandler: () => { throw Object.assign(new Error('Conflict'), { status: 409 }); } });
+  ui.state.providerEndpointRevision = 11;
+  const original = JSON.stringify(ui.state.providerEndpoints);
+  await ui.removeEndpoint();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].body.expected_revision, 11);
+  assert.equal(JSON.stringify(ui.state.providerEndpoints), original);
+  assert.match(ui.toasts[0][0], /Refresh and review/);
+});
+
+test('endpoint refresh cannot replace the revision or values after an edit begins', async () => {
+  let resolveRefresh;
+  const ui = editor({ apiHandler: () => new Promise(resolve => { resolveRefresh = resolve; }) });
+  const pending = ui.refreshProviderEndpoints();
+  ui.editEndpoint();
+  ui.el.taskProfileEndpointName.value = 'Draft endpoint';
+  ui.syncEndpointDraft();
+  resolveRefresh({ items: [{ ...ui.state.providerEndpoints[0], name: 'Concurrent endpoint' }], revision: 8 });
+  await pending;
+  assert.equal(ui.state.providerEndpointRevision, 0);
+  assert.equal(ui.state.providerEndpoints[0].name, 'OpenAI - GPT');
+  assert.equal(ui.el.taskProfileEndpointName.value, 'Draft endpoint');
 });
 
 test('adding an endpoint creates an isolated draft and Cancel discards it', () => {
@@ -460,7 +659,7 @@ test('key-loaded endpoint options and selected value use a distinct class', () =
   assert.equal(ui.el.taskProfileEndpointSelect.classes.has('credential-loaded'), true);
 });
 
-test('Reasoning exposes endpoint and fallbacks, saves selected behaviors, and locks protected behaviors', async () => {
+test('Reasoning honors explicit Administrator behavior selections including protected rows', async () => {
   const ui = editor();
   ui.state.hostBehaviors = [
     { id: 'protected', name: 'Protected', instruction: 'Required', protected: true, enabled: true },
@@ -475,15 +674,15 @@ test('Reasoning exposes endpoint and fallbacks, saves selected behaviors, and lo
   assert.equal(ui.el.taskProviderSelect.options.find(option => option.value === 'openai').textContent, 'OpenAI - GPT');
   assert.equal(ui.el.saveTaskProfile.disabled, true);
   const protectedToggle = ui.el.taskProfileBehaviorSelection.children[0].children[0];
-  assert.equal(protectedToggle.checked, true);
-  assert.equal(protectedToggle.disabled, true);
+  assert.equal(protectedToggle.checked, false);
+  assert.equal(protectedToggle.disabled, false);
   const optionalToggle = ui.el.taskProfileBehaviorSelection.children[1].children[0];
   optionalToggle.checked = true;
   optionalToggle.listeners.change();
   assert.equal(ui.el.saveTaskProfile.disabled, false);
   await ui.saveTaskProfile();
   const assignment = ui.calls.at(-1).body.items.find(item => item.task === 'reasoning');
-  assert.deepEqual([...assignment.behavior_ids].sort(), ['optional', 'protected']);
+  assert.deepEqual([...assignment.behavior_ids].sort(), ['optional']);
   assert.equal(ui.el.saveTaskProfile.disabled, true);
 });
 
@@ -604,6 +803,100 @@ test('Task selection only offers behaviors saved in the library', () => {
   assert.equal(labels[0].children[1].children[0].textContent, 'Saved');
 });
 
+test('protected behavior settings are editable only in an isolated Administrator draft with a revisioned Save', async () => {
+  const ui = editor({ apiHandler: (url, body) => url === '/v1/admin/host-behaviors'
+    ? { items: body.items, revision: 8 } : { items: [] } });
+  ui.state.hostBehaviors = [{ id: 'core', name: 'Core', instruction: 'Default instruction', enabled: true,
+    required: true, protected: true, priority: 1 }];
+  ui.state.hostBehaviorRevision = 7;
+  ui.state.hostBehaviorSnapshot = JSON.stringify(ui.state.hostBehaviors);
+  ui.renderHostBehaviors();
+  assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[0].children[1].readOnly, true);
+  assert.equal(ui.el.saveHostBehaviors.disabled, true);
+  ui.editHostBehaviors();
+  let row = ui.el.hostBehaviorList.children[0];
+  const name = row.children[0].children[0].children[1];
+  const instruction = row.children[0].children[2].children[1];
+  assert.equal(name.readOnly, false);
+  assert.equal(row.children[1].children[0].children[0].disabled, false);
+  name.value = 'Administrator Core'; name.listeners.input();
+  instruction.value = 'New instruction'; instruction.listeners.input();
+  row.children[1].children[0].children[0].checked = false;
+  row.children[1].children[0].children[0].listeners.change();
+  assert.equal(ui.state.hostBehaviors[0].name, 'Core');
+  assert.equal(ui.state.hostBehaviors[0].enabled, true);
+  ui.cancelHostBehaviorEdit();
+  assert.equal(ui.state.hostBehaviorDraft, null);
+  assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[0].children[1].value, 'Core');
+  ui.editHostBehaviors();
+  row = ui.el.hostBehaviorList.children[0];
+  const protectedFlag = row.children[1].children[2].children[0];
+  protectedFlag.checked = false; protectedFlag.listeners.change();
+  row.children[1].children[0].children[0].checked = false;
+  row.children[1].children[0].children[0].listeners.change();
+  await ui.saveHostBehaviors();
+  const saved = ui.calls.find(call => call.url === '/v1/admin/host-behaviors').body;
+  assert.equal(saved.expected_revision, 7);
+  assert.equal(saved.items[0].protected, false);
+  assert.equal(saved.items[0].enabled, false);
+  assert.equal(ui.state.hostBehaviorDraft, null);
+  assert.equal(ui.state.hostBehaviorRevision, 8);
+  assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[0].children[1].readOnly, true);
+});
+
+test('task foundations use independent revisioned drafts, preserve blanks, and cancel on Return', async () => {
+  let foundations = { vision: 'Original foundation', reasoning: 'Keep reasoning' };
+  const ui = editor({ apiHandler: (url, body) => {
+    assert.equal(url, '/v1/admin/cognitive-configuration');
+    if (body) foundations = { ...foundations, ...body.task_foundations };
+    return { revision: body ? 4 : 3, task_foundations: foundations };
+  } });
+  ui.state.taskFoundations = { ...foundations };
+  const assignments = JSON.stringify(ui.state.taskModelAssignments);
+  ui.openTaskProfile('vision');
+  assert.equal(ui.el.taskProfileFoundation.readOnly, true);
+  await ui.editTaskFoundation();
+  assert.equal(ui.el.taskProfileFoundation.readOnly, false);
+  assert.equal(ui.el.taskFoundationSave.disabled, true);
+  ui.el.taskProfileFoundation.value = 'Unsaved';
+  ui.updateTaskFoundationEditor();
+  ui.closeTaskProfile();
+  assert.equal(ui.state.taskFoundationDraft, null);
+  assert.equal(foundations.vision, 'Original foundation');
+  ui.openTaskProfile('vision');
+  await ui.editTaskFoundation();
+  ui.el.taskProfileFoundation.value = '';
+  ui.updateTaskFoundationEditor();
+  assert.equal(ui.el.taskFoundationSave.disabled, false);
+  await ui.saveTaskFoundation();
+  const saved = ui.calls.find(call => call.body).body;
+  assert.equal(saved.expected_revision, 3);
+  assert.deepEqual(Object.keys(saved.task_foundations), ['vision']);
+  assert.equal(saved.task_foundations.vision, '');
+  assert.equal(foundations.reasoning, 'Keep reasoning');
+  assert.equal(ui.state.taskFoundations.vision, '');
+  assert.equal(ui.el.taskProfileFoundation.readOnly, true);
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
+});
+
+test('a pending behavior refresh cannot promote an old draft to a newer catalog revision', async () => {
+  let resolveRefresh;
+  const ui = editor({ apiHandler: () => new Promise(resolve => { resolveRefresh = resolve; }) });
+  const original = { id: 'behavior', name: 'Original', instruction: 'Original instruction', priority: 10, enabled: true };
+  ui.state.hostBehaviors = [original];
+  ui.state.hostBehaviorSnapshot = JSON.stringify([original]);
+  ui.state.hostBehaviorRevision = 7;
+  const pending = ui.refreshHostBehaviors();
+  ui.editHostBehaviors();
+  ui.state.hostBehaviorDraft[0].name = 'Draft name';
+  resolveRefresh({ items: [{ ...original, name: 'Concurrent name' }], revision: 8 });
+  await pending;
+  assert.equal(ui.state.hostBehaviorRevision, 7);
+  assert.equal(ui.state.hostBehaviors[0].name, 'Original');
+  assert.equal(ui.state.hostBehaviorDraft[0].name, 'Draft name');
+  assert.equal(JSON.parse(ui.state.hostBehaviorSnapshot)[0].name, 'Original');
+});
+
 function skillsEditor(apiHandler) {
   const elements = {};
   const calls = [];
@@ -633,24 +926,31 @@ function skillsEditor(apiHandler) {
 }
 
 const requiredSkills = [
-  { slug: 'axiom-continuity', name: 'Axiom Continuity', required: true, read_only: true },
-  { slug: 'axiom-current-state', name: 'Axiom Current State', required: true, read_only: true },
+  { slug: 'axiom-continuity', name: 'Axiom Continuity', required: true, protected: true, enabled: true, content: 'Continuity instructions.', revision: 4 },
+  { slug: 'axiom-current-state', name: 'Axiom Current State', required: true, protected: true, enabled: true, content: 'Current-state instructions.', revision: 2 },
 ];
 
-test('Skills shows named required instructions when custom drafts are unavailable and blocks saving them', async () => {
-  const ui = skillsEditor(async url => {
+test('Administrator edits required Mind skills in an isolated revisioned draft even when GitHub is unavailable', async () => {
+  const configurations = requiredSkills.map(item => ({ ...item }));
+  const ui = skillsEditor(async (url, options) => {
+    if (url === '/v1/admin/skill-configurations') return { items: configurations };
     if (url === '/v1/admin/skills') return { items: requiredSkills, drafts_available: false, drafts_error: 'GitHub access is unavailable.' };
     if (url.endsWith('/validate')) return { valid: true };
-    return { ...requiredSkills.find(item => url.endsWith(item.slug)), content: 'Required instructions.', sha: null };
+    if (options.method === 'PUT') {
+      const payload = JSON.parse(options.body);
+      const index = configurations.findIndex(item => url.endsWith(item.slug));
+      configurations[index] = { ...payload, revision: payload.revision + 1 };
+      return configurations[index];
+    }
   });
   await ui.refreshSkillDrafts();
   const el = ui.elements;
   assert.deepEqual(el.skillsList.options.map(option => option.textContent), [
-    'New skill', 'Axiom Continuity (required)', 'Axiom Current State (required)',
+    'New Mind skill', 'New GitHub draft', 'Axiom Continuity · Mind', 'Axiom Current State · Mind',
   ]);
-  assert.equal(el.skillsList.options[0].disabled, true);
-  assert.equal(el.skillsList.value, 'axiom-continuity');
-  assert.equal(el.skillsContent.value, 'Required instructions.');
+  assert.equal(el.skillsList.options[1].disabled, true);
+  assert.equal(el.skillsList.value, 'mind:axiom-continuity');
+  assert.equal(el.skillsContent.value, 'Continuity instructions.');
   assert.equal(el.skillsContent.readOnly, true);
   assert.equal(el.skillsSlug.readOnly, true);
   assert.equal(el.skillsSave.disabled, true);
@@ -659,15 +959,43 @@ test('Skills shows named required instructions when custom drafts are unavailabl
   assert.doesNotMatch(el.skillsStatus.textContent, /Drafts loaded/);
   await el.skillsSave.listeners.click();
   assert.equal(ui.calls.some(call => call.method === 'PUT'), false);
+  el.skillsEdit.listeners.click();
+  assert.equal(el.skillsContent.readOnly, false);
+  assert.equal(el.skillsEnabled.disabled, false);
+  assert.equal(el.skillsSave.disabled, true);
+  el.skillsContent.value = 'Unsaved content.';
+  el.skillsRequired.checked = false;
+  ui.updateSkillEditorState();
+  assert.equal(el.skillsSave.disabled, false);
+  assert.equal(configurations[0].required, true);
+  await el.skillsCancel.listeners.click();
+  assert.equal(el.skillsContent.value, 'Continuity instructions.');
+  assert.equal(el.skillsRequired.checked, true);
+  el.skillsEdit.listeners.click();
+  el.skillsName.value = 'My Continuity';
+  el.skillsContent.value = 'Administrator instructions.';
+  el.skillsEnabled.checked = false;
+  el.skillsRequired.checked = false;
+  el.skillsProtected.checked = false;
+  await el.skillsSave.listeners.click();
+  const saved = ui.calls.find(call => call.method === 'PUT');
+  assert.equal(saved.url, '/v1/admin/skill-configurations/axiom-continuity');
+  assert.equal(saved.body.revision, 4);
+  assert.equal(saved.body.enabled, false);
+  assert.equal(saved.body.required, false);
+  assert.equal(saved.body.protected, false);
+  assert.equal(el.skillsName.value, 'My Continuity');
+  assert.equal(el.skillsContent.readOnly, true);
   await el.skillsPrepare.listeners.click();
   assert.equal(ui.downloads.length, 1);
   assert.equal(ui.downloads[0].download, 'axiom-continuity-SKILL.md');
 });
 
-test('Skills preserves custom draft editing and prevents a new draft from replacing a required skill', async () => {
+test('GitHub drafts retain their SHA save workflow separately from effective Mind settings', async () => {
   const ui = skillsEditor(async (url, options) => {
+    if (url === '/v1/admin/skill-configurations') return { items: requiredSkills };
     if (url === '/v1/admin/skills') return {
-      items: [...requiredSkills, { slug: 'custom-skill', required: false, read_only: false }],
+      items: [...requiredSkills, { slug: 'custom-skill', path: 'skills/drafts/custom-skill/SKILL.md', source: 'github_draft' }],
       drafts_available: true, drafts_error: null,
     };
     if (options.method === 'PUT') return { sha: 'new-sha', commit: '123456789' };
@@ -675,42 +1003,241 @@ test('Skills preserves custom draft editing and prevents a new draft from replac
   });
   await ui.refreshSkillDrafts();
   const el = ui.elements;
-  el.skillsList.value = 'custom-skill';
-  await ui.loadSkillSelection('custom-skill');
+  el.skillsList.value = 'github:custom-skill';
+  await ui.loadSkillSelection('github:custom-skill');
+  assert.equal(el.skillsContent.readOnly, true);
+  el.skillsEdit.listeners.click();
   assert.equal(el.skillsContent.readOnly, false);
-  assert.equal(el.skillsSlug.readOnly, false);
+  assert.equal(el.skillsSlug.readOnly, true);
   el.skillsContent.value = 'Updated instructions.';
   await el.skillsSave.listeners.click();
   const saved = ui.calls.find(call => call.method === 'PUT');
-  assert.equal(saved.url, '/v1/admin/skills/custom-skill');
+  assert.equal(saved.url, '/v1/admin/skills/custom-skill?source=github_draft');
   assert.equal(saved.body.content, 'Updated instructions.');
   assert.equal(saved.body.sha, 'old-sha');
-  await ui.loadSkillSelection('');
-  el.skillsSlug.value = 'axiom-continuity';
-  el.skillsContent.value = 'Replacement instructions.';
-  ui.updateSkillEditorState();
-  assert.equal(el.skillsSlug.readOnly, false);
-  assert.equal(el.skillsSave.disabled, true);
-  await el.skillsSave.listeners.click();
   assert.equal(ui.calls.filter(call => call.method === 'PUT').length, 1);
+  assert.match(el.skillsStatus.textContent, /Saved draft to GitHub/);
 });
 
 test('A slow skill read cannot overwrite the selection made after it', async () => {
   let finishFirst;
   const ui = skillsEditor(async url => {
-    if (url === '/v1/admin/skills') return { items: requiredSkills, drafts_available: true };
-    if (url.endsWith('axiom-continuity')) return new Promise(resolve => { finishFirst = resolve; });
-    return { ...requiredSkills[1], content: 'Current-state instructions.', sha: null };
+    if (url === '/v1/admin/skill-configurations') return { items: requiredSkills };
+    if (url === '/v1/admin/skills') return { items: [
+      { slug: 'first-draft', path: 'skills/drafts/first-draft/SKILL.md' },
+      { slug: 'second-draft', path: 'skills/drafts/second-draft/SKILL.md' },
+    ], drafts_available: true };
+    if (url.includes('/first-draft?')) return new Promise(resolve => { finishFirst = resolve; });
+    return { content: 'Second draft instructions.', sha: 'second-sha' };
   });
-  const first = ui.refreshSkillDrafts();
-  await new Promise(resolve => setImmediate(resolve));
-  ui.elements.skillsList.value = 'axiom-current-state';
-  await ui.loadSkillSelection('axiom-current-state');
-  finishFirst({ ...requiredSkills[0], content: 'Old selection instructions.', sha: null });
+  await ui.refreshSkillDrafts();
+  const first = ui.loadSkillSelection('github:first-draft');
+  ui.elements.skillsList.value = 'github:second-draft';
+  await ui.loadSkillSelection('github:second-draft');
+  finishFirst({ content: 'Old selection instructions.', sha: 'first-sha' });
   await first;
-  assert.equal(ui.elements.skillsSlug.value, 'axiom-current-state');
-  assert.equal(ui.elements.skillsContent.value, 'Current-state instructions.');
+  assert.equal(ui.elements.skillsSlug.value, 'second-draft');
+  assert.equal(ui.elements.skillsContent.value, 'Second draft instructions.');
   assert.equal(ui.elements.skillsSave.disabled, true);
+});
+
+test('a pending skill catalog refresh cannot overwrite an Administrator draft', async () => {
+  let reads = 0;
+  let resolveRefresh;
+  const ui = skillsEditor(async url => {
+    if (url === '/v1/admin/skill-configurations') {
+      if (++reads > 1) return new Promise(resolve => { resolveRefresh = resolve; });
+      return { items: requiredSkills };
+    }
+    return { items: requiredSkills, drafts_available: false };
+  });
+  await ui.refreshSkillDrafts();
+  const pending = ui.refreshSkillDrafts();
+  ui.elements.skillsEdit.listeners.click();
+  ui.elements.skillsContent.value = 'Draft typed while refresh was pending';
+  resolveRefresh({ items: requiredSkills.map(item => ({ ...item, revision: item.revision + 1, content: 'Concurrent content' })) });
+  await pending;
+  assert.equal(ui.elements.skillsContent.value, 'Draft typed while refresh was pending');
+  assert.equal(ui.elements.skillsContent.readOnly, false);
+  assert.equal(ui.skillPayload().revision, 4);
+});
+
+test('Administrator can save an intentionally blank Mind skill while GitHub still requires content', async () => {
+  let configurations = requiredSkills.map(item => ({ ...item }));
+  const ui = skillsEditor(async (url, options) => {
+    if (options.method === 'PUT') {
+      const body = JSON.parse(options.body);
+      configurations = configurations.map(item => item.slug === body.slug ? { ...body, revision: body.revision + 1 } : item);
+      return configurations[0];
+    }
+    if (url === '/v1/admin/skill-configurations') return { items: configurations };
+    return { items: configurations, drafts_available: true };
+  });
+  await ui.refreshSkillDrafts();
+  ui.elements.skillsEdit.listeners.click();
+  ui.elements.skillsContent.value = '';
+  ui.updateSkillEditorState();
+  assert.equal(ui.elements.skillsSave.disabled, false);
+  await ui.elements.skillsSave.listeners.click();
+  assert.equal(ui.calls.find(call => call.method === 'PUT').body.content, '');
+  assert.equal(ui.elements.skillsContent.value, '');
+  await ui.loadSkillSelection('new:github');
+  ui.elements.skillsSlug.value = 'new-draft';
+  ui.updateSkillEditorState();
+  assert.equal(ui.elements.skillsSave.disabled, true);
+});
+
+function foundationsEditor(apiHandler) {
+  const elements = new Proxy({}, { get: (target, id) => target[id] ||= new Element() });
+  const calls = [];
+  const state = { foundationIdentity: null, foundationIdentityDraft: null, foundationIdentitySaving: false,
+    cognitiveConfiguration: null, cognitiveDraft: null, cognitiveSaving: false, taskFoundations: {} };
+  const context = vm.createContext({
+    state, document: { getElementById: id => elements[id] }, toast() {}, refreshStatus: async () => {},
+    api: async (url, options = {}) => {
+      const body = options.body && JSON.parse(options.body);
+      calls.push({ url, body });
+      return JSON.parse(JSON.stringify(await apiHandler(url, body)));
+    },
+  });
+  for (const name of ['identityFormElements', 'renderIdentityConfiguration', 'identityFormPayload',
+    'updateIdentityEditorState', 'refreshIdentityConfiguration', 'editIdentityConfiguration',
+    'cancelIdentityConfiguration', 'saveIdentityConfiguration', 'renderStartupConfiguration',
+    'updateStartupEditorState', 'refreshStartupConfiguration', 'editStartupConfiguration',
+    'cancelStartupConfiguration', 'saveStartupConfiguration', 'refreshFoundations']) {
+    const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
+    assert.ok(start >= 0, `${name} exists`);
+    const next = source.slice(start + 1).search(/^(?:async )?function |^const |^let |^for |^document\.|^el\.|^if \(/m);
+    vm.runInContext(source.slice(start, next < 0 ? source.length : start + 1 + next), context);
+  }
+  return { ...context, elements, calls };
+}
+
+test('identity changes require Edit and valid dirty Save, preserve records and roll back with Cancel', async () => {
+  let identity = { revision: 'original-token', identity: { self_name: 'Original', pronouns: 'she/her',
+    foundational_values: ['Care'], commitments: ['Listen'], relationships: [{ label: 'A relationship', facts: ['Known fact'] }] },
+    developmental_state: 'genesis', created_at: '2026-01-01T00:00:00Z' };
+  const ui = foundationsEditor((url, body) => {
+    assert.equal(url, '/v1/admin/identity');
+    if (body) identity = { ...identity, identity: body.identity, developmental_state: body.developmental_state, revision: 'saved-token' };
+    return identity;
+  });
+  await ui.refreshIdentityConfiguration();
+  const el = ui.elements;
+  assert.equal(el.foundationSelfName.readOnly, true);
+  ui.editIdentityConfiguration();
+  assert.equal(el.foundationSelfName.readOnly, false);
+  assert.equal(el.foundationSave.disabled, true);
+  el.foundationRelationships.value = 'invalid';
+  ui.updateIdentityEditorState();
+  assert.equal(el.foundationSave.disabled, true);
+  ui.cancelIdentityConfiguration();
+  assert.deepEqual(JSON.parse(el.foundationRelationships.value), identity.identity.relationships);
+  ui.editIdentityConfiguration();
+  el.foundationSelfName.value = 'Unsaved';
+  ui.updateIdentityEditorState();
+  assert.equal(el.foundationSave.disabled, false);
+  assert.equal(identity.identity.self_name, 'Original');
+  ui.cancelIdentityConfiguration();
+  assert.equal(el.foundationSelfName.value, 'Original');
+  ui.editIdentityConfiguration();
+  el.foundationSelfName.value = '';
+  el.foundationValues.value = 'Care\nCuriosity';
+  await ui.saveIdentityConfiguration();
+  const saved = ui.calls.find(call => call.body).body;
+  assert.equal(saved.expected_revision, 'original-token');
+  assert.equal(saved.identity.self_name, null);
+  assert.deepEqual(saved.identity.foundational_values, ['Care', 'Curiosity']);
+  assert.deepEqual(saved.identity.relationships, [{ label: 'A relationship', facts: ['Known fact'] }]);
+  assert.equal(el.foundationSelfName.readOnly, true);
+  assert.equal(ui.state.foundationIdentity.revision, 'saved-token');
+});
+
+test('startup saves are revisioned separately from identity and preserve explicit blank overrides', async () => {
+  let configuration = { revision: 6, base_contract: 'Base contract', startup_instructions: 'Startup',
+    task_foundations: { reasoning: 'Preserve reasoning' } };
+  const ui = foundationsEditor((url, body) => {
+    assert.equal(url, '/v1/admin/cognitive-configuration');
+    if (body) configuration = { ...configuration, base_contract: body.base_contract,
+      startup_instructions: body.startup_instructions, revision: 7 };
+    return configuration;
+  });
+  await ui.refreshStartupConfiguration();
+  const el = ui.elements;
+  assert.equal(el.foundationContract.readOnly, true);
+  ui.editStartupConfiguration();
+  assert.equal(el.startupSave.disabled, true);
+  el.foundationContract.value = 'Unsaved';
+  ui.cancelStartupConfiguration();
+  assert.equal(el.foundationContract.value, 'Base contract');
+  ui.editStartupConfiguration();
+  el.foundationContract.value = '';
+  el.foundationStartup.value = 'New startup';
+  await ui.saveStartupConfiguration();
+  const saved = ui.calls.find(call => call.body).body;
+  assert.deepEqual(saved, { expected_revision: 6, base_contract: '', startup_instructions: 'New startup' });
+  assert.equal(configuration.task_foundations.reasoning, 'Preserve reasoning');
+  assert.equal(ui.state.cognitiveConfiguration.base_contract, '');
+  assert.equal(el.foundationContract.readOnly, true);
+});
+
+test('a stale identity Save retains its isolated draft and does not claim success or retry', async () => {
+  const identity = { revision: 'old-token', identity: { self_name: null, pronouns: 'she/her',
+    foundational_values: [], commitments: [], relationships: [] }, developmental_state: 'genesis' };
+  const ui = foundationsEditor((url, body) => {
+    if (body) throw new Error('Configuration changed; refresh and retry.');
+    return identity;
+  });
+  await ui.refreshIdentityConfiguration();
+  ui.editIdentityConfiguration();
+  ui.elements.foundationSelfName.value = 'Draft name';
+  await ui.saveIdentityConfiguration();
+  assert.equal(ui.calls.filter(call => call.body).length, 1);
+  assert.equal(ui.state.foundationIdentity.identity.self_name, null);
+  assert.equal(ui.elements.foundationSelfName.value, 'Draft name');
+  assert.equal(ui.elements.foundationSelfName.readOnly, false);
+  assert.equal(ui.elements.foundationSave.disabled, false);
+  assert.match(ui.elements.foundationStatus.textContent, /Configuration changed/);
+  ui.cancelIdentityConfiguration();
+  assert.equal(ui.elements.foundationSelfName.value, '');
+});
+
+test('identity refresh cannot erase typing begun after its request started', async () => {
+  let reads = 0;
+  let resolveRefresh;
+  const original = { revision: 'old-token', identity: { self_name: 'Original', pronouns: 'she/her',
+    foundational_values: [], commitments: [], relationships: [] }, developmental_state: 'genesis' };
+  const ui = foundationsEditor(() => ++reads === 1 ? original : new Promise(resolve => { resolveRefresh = resolve; }));
+  await ui.refreshIdentityConfiguration();
+  const pending = ui.refreshIdentityConfiguration();
+  ui.editIdentityConfiguration();
+  ui.elements.foundationSelfName.value = 'Typed name';
+  resolveRefresh({ ...original, revision: 'new-token', identity: { ...original.identity, self_name: 'Concurrent name' } });
+  await pending;
+  assert.equal(ui.state.foundationIdentity.revision, 'old-token');
+  assert.equal(ui.state.foundationIdentityDraft.revision, 'old-token');
+  assert.equal(ui.elements.foundationSelfName.value, 'Typed name');
+});
+
+test('an older startup refresh cannot replace a configuration saved after Edit began', async () => {
+  let reads = 0;
+  let resolveRefresh;
+  const original = { revision: 6, base_contract: 'Base', startup_instructions: 'Startup', task_foundations: {} };
+  const ui = foundationsEditor((_url, body) => {
+    if (body) return { ...original, ...body, revision: 7 };
+    if (++reads === 1) return original;
+    return new Promise(resolve => { resolveRefresh = resolve; });
+  });
+  await ui.refreshStartupConfiguration();
+  const pending = ui.refreshStartupConfiguration();
+  ui.editStartupConfiguration();
+  ui.elements.foundationStartup.value = 'Saved after refresh began';
+  await ui.saveStartupConfiguration();
+  resolveRefresh(original);
+  await pending;
+  assert.equal(ui.state.cognitiveConfiguration.revision, 7);
+  assert.equal(ui.elements.foundationStartup.value, 'Saved after refresh began');
+  assert.equal(ui.state.cognitiveDraft, null);
 });
 
 function currentStatePortal({ diagnosticsHandler } = {}) {
@@ -740,7 +1267,7 @@ function currentStatePortal({ diagnosticsHandler } = {}) {
     validateAdmin: async () => { state.adminAuthorized = true; return true; },
     refreshMemory() {}, refreshJournal() {}, refreshHostBehaviors() {}, refreshTaskModelAssignments() {},
     refreshTaskBehaviors() {}, refreshProviderEndpoints() {}, refreshMcpServers() {}, loadVoiceSettings() {},
-    refreshBodyFallbackSettings() {}, refreshSkillDrafts() {}, refreshDeviceInventory() {}, toast() {},
+    refreshBodyFallbackSettings() {}, refreshSkillDrafts() {}, refreshDeviceInventory() {}, refreshFoundations() {}, toast() {},
     api: async url => {
       calls.push(url);
       if (url === '/v1/portal/status') return status;

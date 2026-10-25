@@ -47,6 +47,7 @@ class TaskModelAssignment(BaseModel):
     provider: str = Field(default="", max_length=120)
     model: str = Field(default="", max_length=160)
     fallbacks: list[TaskFallbackAssignment] = Field(default_factory=list)
+    provider_rotation: Literal["ordered", "daily_round_robin"] = "ordered"
     voice_reference_id: str = Field(default="", max_length=200)
     notes: str = Field(default="", max_length=500)
     # None preserves membership from configurations predating the shared catalog.
@@ -107,7 +108,6 @@ class TaskModelAssignmentRegistry:
 
         catalog = await HostBehaviorRegistry(self.records).list()
         catalog_ids = {behavior.id for behavior in catalog}
-        protected_ids = [behavior.id for behavior in catalog if behavior.protected]
         for item in ordered:
             if item.behavior_ids is None:
                 item.behavior_ids = [behavior.id for behavior in catalog if (
@@ -116,8 +116,6 @@ class TaskModelAssignmentRegistry:
                 )]
             else:
                 item.behavior_ids = [value for value in item.behavior_ids if value in catalog_ids]
-            if item.task == "reasoning":
-                item.behavior_ids = list(dict.fromkeys([*protected_ids, *item.behavior_ids]))
         return ordered
 
     async def replace(
@@ -140,7 +138,6 @@ class TaskModelAssignmentRegistry:
         from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 
         catalog = {item.id: item for item in await HostBehaviorRegistry(self.records).list()}
-        protected = {item.id for item in catalog.values() if item.protected}
         current = {item.task: item for item in await self.list()}
         for item in ordered:
             if item.behavior_ids is None:
@@ -160,8 +157,6 @@ class TaskModelAssignmentRegistry:
             unknown = set(item.behavior_ids or []) - set(catalog)
             if unknown:
                 raise ValueError("Unknown behavior IDs: " + ", ".join(sorted(unknown)))
-            if item.task == "reasoning" and protected - set(item.behavior_ids or []):
-                raise ValueError("Protected reasoning behaviors cannot be deselected")
         # Materialize promoted inline instructions before explicit memberships
         # replace their old implicit selection. No task loses its existing text.
         catalog_before = await self.records.get("host_behaviors")

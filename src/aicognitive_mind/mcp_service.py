@@ -24,14 +24,12 @@ from aicognitive_mind.memory_steward import (
     ResearchObservation,
     SemanticScope,
 )
-from aicognitive_mind.prompts import (
-    CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
-)
+from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
+from aicognitive_mind.effective_skills import EffectiveSkillRegistry
 from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
 from aicognitive_mind.steward_agent import ModelMemorySteward
 from aicognitive_mind.task_dispatcher import TaskModelDispatcher
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
-from aicognitive_mind.core_skills import REQUIRED_SKILLS, required_skill_catalog
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.state_context import CurrentStateLedger, CurrentStateLedgerRepository
 from aicognitive_mind.timing import StageTimer, emit
@@ -80,28 +78,22 @@ class CognitiveMcpService:
         self._journal = journal
         self._memory = memory
         records = RuntimeRecords(mind)
+        self._records = records
         self._steward_factory = steward_factory
         self._steward_runtime = TaskModelDispatcher(records, timeout=30)
         self._host_behaviors = HostBehaviorRegistry(records)
         self._task_prompt_assembler = TaskPromptAssembler(TaskBehaviorRegistry(records))
 
     async def _compose_reasoning_contract(self) -> str:
+        configuration = await CognitiveConfigurationRegistry(self._records).effective()
         task_layers = await self._task_prompt_assembler.system_prompt(TaskExecutionContext(
             task="reasoning",
             provider="connected-host",
             model="host-selected",
         ))
-        speaker_grounding = (
-            "\n\nSPEAKER GROUNDING RULE (mandatory): If current_state.fields."
-            "who_is_speaking is unknown, do not address the current human by a "
-            "name recalled from history or account metadata. Ask 'Who am I speaking "
-            "with?' before personalized attribution. A remembered name is not "
-            "evidence of the current speaker. Explicit self-identification may "
-            "be represented as self-reported; camera/voice inference remains "
-            "provisional until validated. Unknown physical presence must remain "
-            "unknown without actual presence evidence."
-        )
-        return CONSCIOUS_WORKSPACE_SYSTEM_PROMPT + speaker_grounding + "\n\n" + task_layers
+        return "\n\n".join([
+            configuration["base_contract"], configuration["startup_instructions"], task_layers,
+        ])
 
     @atomic
     async def initialize(
@@ -142,6 +134,7 @@ class CognitiveMcpService:
             "mind": mind.model_dump(mode="json"),
             "durable_memory_count": memory_count,
             "journal_experience_count": journal_count,
+            "provider_routing": await TaskModelDispatcher(self._records).routing_status(),
             "naming": {
                 "status": (
                     "prohibited" if journal_count < 1000
@@ -181,6 +174,8 @@ class CognitiveMcpService:
             current_state=state_context.as_context(),
             runtime=self._steward_runtime,
         )
+        if isinstance(steward, ModelMemorySteward):
+            steward.skill_records = self._records
         with timer.stage("recall"):
             recalled = await steward.invoke(
                 {
@@ -261,6 +256,8 @@ class CognitiveMcpService:
             current_state=state_context.as_context(),
             runtime=self._steward_runtime,
         )
+        if isinstance(steward, ModelMemorySteward):
+            steward.skill_records = self._records
         with timer.stage("review"):
             review = await steward.review_interaction(
                 response_text, proposed_memories, current_evidence,
@@ -402,9 +399,11 @@ class CognitiveMcpService:
         ledger.answer("behaviors", {"rules": behaviors, "contract_loaded": bool(contract)},
                       source="runtime_behavior_assembler")
         previous_skills = ledger.fields.get("skills")
+        effective_skills = await EffectiveSkillRegistry(self._records).list()
+        configured_slugs = {item["slug"] for item in effective_skills}
         remembered_skills = (
             [item for item in previous_skills.value if not (
-                isinstance(item, dict) and item.get("slug") in REQUIRED_SKILLS
+                isinstance(item, dict) and item.get("slug") in configured_slugs
             )]
             if previous_skills is not None and previous_skills.status == "current"
             and isinstance(previous_skills.value, list)
@@ -417,13 +416,14 @@ class CognitiveMcpService:
                 for m in recalled.get("durable_memory", [])
                 if m.get("memory_class") == MemoryClass.PROCEDURAL.value
             ][:12]
-        packaged_skills = [
-            {key: value for key, value in item.items() if key != "content"}
-            for item in required_skill_catalog()
+        configured_skills = [
+            {**{key: value for key, value in item.items() if key != "content"},
+             "loaded_in_reasoning_contract": bool(item["enabled"] and item["required"])}
+            for item in effective_skills
         ]
-        ledger.answer("skills", [*packaged_skills, *remembered_skills],
-                      source="packaged_runtime_protocols_and_grounded_procedures",
-                      note="Required server protocols are loaded in the reasoning contract; "
+        ledger.answer("skills", [*configured_skills, *remembered_skills],
+                      source="effective_administrator_skills_and_grounded_procedures",
+                      note="Enabled required skills are loaded from effective Administrator settings; "
                            "host plugin or catalog refresh is not verified.")
         if first_context:
             ledger.answer("mood", None, status="unknown",

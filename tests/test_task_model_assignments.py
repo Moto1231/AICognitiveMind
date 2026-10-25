@@ -44,13 +44,14 @@ class TaskModelAssignmentRegistryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reasoning.model, "gpt-6-sol")
         self.assertNotIn("provider_endpoints", records.values)
 
-    async def test_protected_reasoning_behavior_cannot_be_deselected(self):
+    async def test_administrator_can_deselect_protected_reasoning_behavior(self):
         registry = TaskModelAssignmentRegistry(FakeRecords())
         assignments = await registry.list()
         assignments = [item.model_copy(update={"behavior_ids": []})
                        if item.task == "reasoning" else item for item in assignments]
-        with self.assertRaisesRegex(ValueError, "Protected reasoning"):
-            await registry.replace(assignments)
+        await registry.replace(assignments)
+        reasoning = next(item for item in await registry.list() if item.task == "reasoning")
+        self.assertEqual(reasoning.behavior_ids, [])
 
     async def test_assignments_persist_and_round_trip(self):
         records = FakeRecords()

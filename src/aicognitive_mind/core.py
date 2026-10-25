@@ -19,7 +19,9 @@ from aicognitive_mind.engines import ReasoningEngine
 from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
-from aicognitive_mind.prompts import CONSCIOUS_WORKSPACE_SYSTEM_PROMPT
+from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
+from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.task_behaviors import TaskBehaviorRegistry, TaskExecutionContext, TaskPromptAssembler
 from aicognitive_mind.storage import DiagnosticStore, JournalStore, MemoryStore, MindStore
 from aicognitive_mind.tooling import ReasoningTool
 
@@ -106,11 +108,18 @@ class CognitiveCore:
             CognitiveActor.REASONING_ENGINE,
             CognitiveOperation.PROPOSE_RESPONSE,
         )
+        records = RuntimeRecords(self._mind)
+        configuration = await CognitiveConfigurationRegistry(records).effective()
+        task_prompt = await TaskPromptAssembler(TaskBehaviorRegistry(records)).system_prompt(
+            TaskExecutionContext(task="reasoning"),
+        )
         proposal = await self._engine.propose(
             ReasoningRequest(
                 mind=mind,
                 input_text=input_text,
-                system_prompt=CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
+                system_prompt="\n\n".join([
+                    configuration["base_contract"], configuration["startup_instructions"], task_prompt,
+                ]),
             ),
             tools=(memory_steward, governance_steward, *self._reasoning_tools),
         )
