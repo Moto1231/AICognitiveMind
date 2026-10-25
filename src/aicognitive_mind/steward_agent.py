@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable
 from importlib.resources import files
 from typing import Annotated, Any, Literal
+from urllib.parse import unquote
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -76,6 +77,66 @@ class ReviewAction(Step):
     decision: Annotated[Search | ReviewFinish, Field(discriminator="action")]
 
 
+def inline_action_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Inline local schema references without exposing model labels to the provider."""
+    def walk(node: Any, active: tuple[str, ...] = ()) -> Any:
+        if isinstance(node, bool):
+            return node
+        if not isinstance(node, dict):
+            raise StewardProtocolError("Memory Steward provider schema contains an invalid node.")
+        result = {
+            key: value for key, value in node.items()
+            if key not in {"$ref", "$defs", "definitions", "title", "discriminator"}
+        }
+        for key in ("properties", "patternProperties", "dependentSchemas"):
+            if key in result:
+                result[key] = {name: walk(value, active) for name, value in result[key].items()}
+        for key in (
+            "additionalProperties", "unevaluatedProperties", "propertyNames", "contains",
+            "items", "additionalItems", "unevaluatedItems", "not", "if", "then", "else",
+            "contentSchema",
+        ):
+            if key in result:
+                value = result[key]
+                result[key] = (
+                    [walk(item, active) for item in value] if isinstance(value, list)
+                    else walk(value, active)
+                )
+        for key in ("allOf", "anyOf", "oneOf", "prefixItems"):
+            if key in result:
+                result[key] = [walk(value, active) for value in result[key]]
+        if "dependencies" in result:
+            result["dependencies"] = {
+                name: walk(value, active) if isinstance(value, (dict, bool)) else value
+                for name, value in result["dependencies"].items()
+            }
+        if "$ref" not in node:
+            return result
+        reference = node["$ref"]
+        if not isinstance(reference, str) or not (reference == "#" or reference.startswith("#/")):
+            raise StewardProtocolError("Memory Steward provider schema requires local references.")
+        if reference in active:
+            raise StewardProtocolError("Memory Steward provider schema has a cyclic reference.")
+        target: Any = schema
+        try:
+            for part in unquote(reference[2:]).split("/") if reference != "#" else ():
+                part = part.replace("~1", "/").replace("~0", "~")
+                if isinstance(target, list):
+                    if not part.isdigit() or str(int(part)) != part:
+                        raise ValueError("Invalid schema array pointer")
+                    target = target[int(part)]
+                else:
+                    target = target[part]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise StewardProtocolError(
+                "Memory Steward provider schema has an unresolvable reference."
+            ) from exc
+        resolved = walk(target, (*active, reference))
+        return {**result, "allOf": [resolved, *result.get("allOf", [])]} if result else resolved
+
+    return walk(schema)
+
+
 def steward_action_tools(phase: str) -> list[dict[str, Any]]:
     """Expose one fixed provider function containing the existing phase decision."""
     if phase not in {"recall", "review"}:
@@ -84,7 +145,7 @@ def steward_action_tools(phase: str) -> list[dict[str, Any]]:
     return [{"type": "function", "function": {
         "name": "steward_action",
         "description": "Submit one validated search or finish decision for this assessment.",
-        "parameters": wrapper.model_json_schema(),
+        "parameters": inline_action_schema(wrapper.model_json_schema()),
     }}]
 
 

@@ -5,6 +5,8 @@ import unittest
 from unittest.mock import AsyncMock, call, patch
 
 import httpx
+from jsonschema import Draft202012Validator
+from pydantic import ValidationError
 
 from aicognitive_mind.domain import (
     CognitiveActor,
@@ -18,9 +20,14 @@ from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.retrieval import candidates
 from aicognitive_mind.steward_agent import (
+    RECALL_STEPS,
     REVIEW_STEPS,
     ModelMemorySteward,
+    RecallAction,
+    ReviewAction,
     StewardProtocolError,
+    inline_action_schema,
+    steward_action_tools,
 )
 from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore, InMemoryMindStore
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
@@ -64,6 +71,96 @@ def native_message(action):
 
 
 class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
+    def test_provider_schema_preserves_phase_validation_without_model_labels(self):
+        arbitrary = self.learning(artifacts=[{
+            "kind": "project", "payload": {"title": "Keep data", "nested": {"anything": [1, True]}},
+        }])
+        decisions = [
+            SEARCH, {**SEARCH, "limit": 1}, {**SEARCH, "limit": 8},
+            {**SEARCH, "limit": 0}, {**SEARCH, "limit": 9},
+            {**SEARCH, "query": "x" * 1001}, {**SEARCH, "source": "other"},
+            {**SEARCH, "extra": True}, {key: value for key, value in SEARCH.items() if key != "action"},
+            SKIP, BRIEF, NOTHING, arbitrary, {**SKIP, "reason": ""},
+            {"action": "finish"}, self.learning(memory_class="unknown"),
+        ]
+        for phase, model, adapter in (
+            ("recall", RecallAction, RECALL_STEPS), ("review", ReviewAction, REVIEW_STEPS),
+        ):
+            original = model.model_json_schema()
+            provider = steward_action_tools(phase)[0]["function"]["parameters"]
+            Draft202012Validator.check_schema(provider)
+            before, after = Draft202012Validator(original), Draft202012Validator(provider)
+            for label in ("$ref", "$defs", '"title"', "discriminator", "RecallFinish", "ReviewFinish"):
+                self.assertNotIn(label, json.dumps(provider))
+            for decision in decisions:
+                with self.subTest(phase=phase, decision=decision):
+                    try:
+                        adapter.validate_python(decision)
+                        valid = True
+                    except ValidationError:
+                        valid = False
+                    wrapped = {"decision": decision}
+                    self.assertEqual(before.is_valid(wrapped), valid)
+                    self.assertEqual(after.is_valid(wrapped), valid)
+            for wrapped in ({}, {"decision": SEARCH, "extra": True}, {"decision": []}):
+                self.assertFalse(before.is_valid(wrapped))
+                self.assertFalse(after.is_valid(wrapped))
+
+    def test_schema_inlining_preserves_property_names_data_and_reference_siblings(self):
+        data = {"title": "Keep", "$ref": "literal", "$defs": {"title": 1}, "discriminator": False}
+        schema = {
+            "type": "object", "title": "Remove this annotation",
+            "properties": {
+                "title": {"type": "string", "title": "Remove this annotation too"},
+                "discriminator": {"const": data}, "$defs": {"type": "boolean"},
+            },
+            "required": ["title", "discriminator", "$defs"], "additionalProperties": False,
+            "default": data, "examples": [data],
+        }
+        provider = inline_action_schema(schema)
+        self.assertEqual(set(provider["properties"]), {"title", "discriminator", "$defs"})
+        self.assertEqual(provider["properties"]["discriminator"]["const"], data)
+        self.assertEqual(provider["default"], data)
+        self.assertEqual(provider["examples"], [data])
+        self.assertNotIn("title", provider)
+        self.assertNotIn("title", provider["properties"]["title"])
+        self.assertIn("title", schema)
+        self.assertTrue(Draft202012Validator(provider).is_valid({
+            "title": "Value", "discriminator": data, "$defs": True,
+        }))
+
+        sibling_schema = {
+            "$defs": {"Thing": {
+                "type": "object", "properties": {"value": {"type": "integer", "minimum": 0, "maximum": 10}},
+            }},
+            "$ref": "#/$defs/Thing", "properties": {"value": {"minimum": -5, "maximum": 20}},
+            "allOf": [{"required": ["value"]}], "unevaluatedProperties": False,
+        }
+        nested_schema = {
+            "$defs": {"Outer": {"$defs": {"Inner": {"type": "integer", "minimum": 2}}}},
+            "type": "array", "items": {"$ref": "#/$defs/Outer/$defs/Inner"},
+        }
+        legacy_schema = {"definitions": {"Legacy": {"type": "number", "minimum": 0}}, "$ref": "#/definitions/Legacy"}
+        for original, values in (
+            (sibling_schema, [{"value": 0}, {"value": 10}, {"value": -1}, {"value": 11}, {}, {"value": 1, "extra": 0}]),
+            (nested_schema, [[2], [1], ["wrong"]]),
+            (legacy_schema, [0, -1, "wrong"]),
+        ):
+            provider = inline_action_schema(original)
+            self.assertNotIn("definitions", provider)
+            before, after = Draft202012Validator(original), Draft202012Validator(provider)
+            for value in values:
+                self.assertEqual(before.is_valid(value), after.is_valid(value))
+
+    def test_schema_inlining_fails_on_unresolvable_or_cyclic_references(self):
+        for schema, error in (
+            ({"$ref": "#/$defs/missing"}, "unresolvable"),
+            ({"$defs": {"A": {"$ref": "#/$defs/B"}, "B": {"$ref": "#/$defs/A"}}, "$ref": "#/$defs/A"}, "cyclic"),
+            ({"$ref": "https://external.example/schema"}, "local references"),
+        ):
+            with self.subTest(error=error), self.assertRaisesRegex(StewardProtocolError, error):
+                inline_action_schema(schema)
+
     def agent(self, model, message="Please format the supplied text.", working=None):
         return ModelMemorySteward(
             mind=CognitiveMind(identity=MindIdentity(self_name="Axiom")),
@@ -432,19 +529,24 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(parameters["required"], ["decision"])
             self.assertEqual(set(parameters["properties"]), {"decision"})
             self.assertIs(parameters["additionalProperties"], False)
-            self.assertEqual(parameters["properties"]["decision"]["discriminator"]["propertyName"], "action")
+            self.assertEqual({
+                branch["properties"]["action"]["const"]
+                for branch in parameters["properties"]["decision"]["oneOf"]
+            }, {"search", "finish"})
             self.assertNotIn("PHASE SCHEMA", call["messages"][0]["content"])
             self.assertTrue(all(
                 "tool_calls" not in message and "tool_call_id" not in message
                 for message in call["messages"]
             ))
-        recall_defs = calls[0]["tools"][0]["function"]["parameters"]["$defs"]
-        review_defs = calls[2]["tools"][0]["function"]["parameters"]["$defs"]
-        self.assertIn("outcome", recall_defs["RecallFinish"]["properties"])
-        self.assertNotIn("ReviewFinish", recall_defs)
-        self.assertIn("memories", review_defs["ReviewFinish"]["properties"])
-        self.assertNotIn("RecallFinish", review_defs)
-        artifact = review_defs["MemoryArtifactProposal"]
+        recall_branches = calls[0]["tools"][0]["function"]["parameters"]["properties"]["decision"]["oneOf"]
+        review_branches = calls[2]["tools"][0]["function"]["parameters"]["properties"]["decision"]["oneOf"]
+        recall_finish = next(branch for branch in recall_branches if branch["properties"]["action"]["const"] == "finish")
+        review_finish = next(branch for branch in review_branches if branch["properties"]["action"]["const"] == "finish")
+        self.assertIn("outcome", recall_finish["properties"])
+        self.assertNotIn("memories", recall_finish["properties"])
+        self.assertIn("memories", review_finish["properties"])
+        self.assertNotIn("outcome", review_finish["properties"])
+        artifact = review_finish["properties"]["memories"]["items"]["properties"]["artifacts"]["items"]
         self.assertIs(artifact["properties"]["payload"]["additionalProperties"], True)
         phases = [json.loads(call["messages"][1]["content"])["phase"] for call in calls]
         self.assertEqual(phases, ["recall", "recall", "review"])
@@ -587,6 +689,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         invalid = []
         for name, value in (
             ("name", "json"), ("name", "search"), ("name", "finish"),
+            ("name", "RecallFinish"), ("name", "ReviewFinish"),
             ("arguments", "not json"),
             ("arguments", json.dumps({"decision": {**SEARCH, "action": "json"}})),
             ("arguments", json.dumps({"decision": {key: value for key, value in SEARCH.items() if key != "action"}})),
