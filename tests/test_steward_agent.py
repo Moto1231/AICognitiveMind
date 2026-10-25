@@ -16,6 +16,7 @@ from aicognitive_mind.domain import (
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
+from aicognitive_mind.retrieval import candidates
 from aicognitive_mind.steward_agent import (
     REVIEW_STEPS,
     ModelMemorySteward,
@@ -347,6 +348,117 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         await service.initialize("Axiom")
         with self.assertRaisesRegex(TaskDispatchError, "memory_recall"):
             await service.begin_interaction("Hello")
+
+    async def configured_recall_records(self, service):
+        records = RuntimeRecords(service._mind)
+        await ProviderEndpointRegistry(records).replace([
+            ProviderEndpoint(
+                id="recall", name="Recall", base_url="https://recall.example/v1",
+                model="configured-recall-model",
+            ),
+        ])
+        assignments = TaskModelAssignmentRegistry(records)
+        await assignments.replace([
+            item.model_copy(update={"provider": "recall", "model": "configured-recall-model"})
+            if item.task == "memory_recall" else item
+            for item in await assignments.list()
+        ])
+        return records
+
+    async def test_http_json_actions_search_then_finish_and_review_without_native_tools(self):
+        service, journal, memory = await self.service(None)
+        await memory.remember(DurableMemory(
+            memory_class=MemoryClass.SEMANTIC, content="Atlas uses SurrealDB.",
+            grounding=("Earlier project decision",),
+        ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+        records = await self.configured_recall_records(service)
+        calls = []
+        steps = iter([SEARCH, BRIEF, NOTHING])
+
+        def handle(request):
+            calls.append(json.loads(request.content))
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": json.dumps(next(steps))}}],
+            })
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            with patch("aicognitive_mind.steward_agent.candidates", wraps=candidates) as search:
+                begun = await service.begin_interaction("What database does Atlas use?")
+                args = {
+                    "user_message": "What database does Atlas use?",
+                    "response_text": "Atlas uses SurrealDB.",
+                    "idempotency_key": begun["idempotency_key"],
+                }
+                completed = await service.complete_interaction(**args)
+                retried = await service.complete_interaction(**args)
+
+        self.assertEqual(begun["recalled_context"]["summary"], "Atlas uses SurrealDB.")
+        search.assert_awaited_once()
+        self.assertEqual(search.await_args.args[1], {"atlas"})
+        self.assertEqual(search.await_args.kwargs["limit"], SEARCH["limit"] * 2)
+        results = json.loads(calls[1]["messages"][-1]["content"])["search_results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["record"]["content"], "Atlas uses SurrealDB.")
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(completed, retried)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(completed["memory_decisions"], [])
+        self.assertEqual(len(await memory.read()), 1)
+        self.assertEqual(len([e for e in await journal.read() if e.kind == "interaction"]), 1)
+        for call in calls:
+            self.assertEqual(call["model"], "configured-recall-model")
+            self.assertEqual(call["response_format"], {"type": "json_object"})
+            self.assertNotIn("tools", call)
+            self.assertNotIn("tool_choice", call)
+            self.assertIn("Never emit a tool call or function call", call["messages"][0]["content"])
+        phases = [json.loads(call["messages"][1]["content"])["phase"] for call in calls]
+        self.assertEqual(phases, ["recall", "recall", "review"])
+
+    async def test_http_native_tools_and_tool_use_failure_abort_without_search_or_state_changes(self):
+        native_call = {"name": "search", "arguments": json.dumps(SEARCH)}
+        scenarios = [
+            (200, {"choices": [{"message": {
+                "content": json.dumps(SEARCH),
+                "tool_calls": [{"type": "function", "function": native_call}],
+            }}]}, "native tool calls"),
+            (200, {"choices": [{"message": {
+                "content": json.dumps(SEARCH), "function_call": native_call,
+            }}]}, "native tool calls"),
+            (400, {"error": {
+                "message": "Tool choice is none, but model called a tool",
+                "code": "tool_use_failed", "failed_generation": json.dumps(native_call),
+            }}, "HTTP 400"),
+        ]
+        for phase in ("recall", "review"):
+            for status, payload, expected in scenarios:
+                with self.subTest(phase=phase, status=status, expected=expected):
+                    service, journal, memory = await self.service(None)
+                    records = await self.configured_recall_records(service)
+                    original = await service._mind.load()
+                    before = await journal.read()
+                    calls = []
+
+                    def handle(request):
+                        calls.append(json.loads(request.content))
+                        return httpx.Response(status, json=payload)
+
+                    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                        service._steward_runtime = TaskModelDispatcher(records, client=client)
+                        with (
+                            patch("aicognitive_mind.steward_agent.candidates", new_callable=AsyncMock) as search,
+                            self.assertRaisesRegex(TaskDispatchError, expected),
+                        ):
+                            if phase == "recall":
+                                await service.begin_interaction("What database does Atlas use?")
+                            else:
+                                await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+                    search.assert_not_awaited()
+                    self.assertEqual(len(calls), 1)
+                    self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+                    self.assertEqual(await service._mind.load(), original)
+                    self.assertEqual(await journal.read(), before)
+                    self.assertEqual(await memory.read(), [])
 
     async def test_real_dispatcher_uses_memory_profile_fallback_and_passes_skill(self):
         service, _, _ = await self.service(None)

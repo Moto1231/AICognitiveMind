@@ -51,7 +51,8 @@ class TaskModelDispatcher:
             if not isinstance(messages, list) or not all(isinstance(item, dict) for item in messages):
                 raise TaskDispatchError("Chat runtime payload requires a messages list.")
             return await self.complete_chat(
-                context.task, messages, temperature=payload.get("temperature"), context=context
+                context.task, messages, temperature=payload.get("temperature"), context=context,
+                response_format=payload.get("response_format"),
             )
         if operation == "transcribe":
             filename = payload.get("filename")
@@ -323,13 +324,18 @@ class TaskModelDispatcher:
         *,
         temperature: float | None = None,
         context: TaskExecutionContext | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> str:
+        if response_format is not None and (
+            task != "memory_recall" or response_format != {"type": "json_object"}
+        ):
+            raise TaskDispatchError("Only Memory Recall supports the JSON object response format.")
         last_error: TaskDispatchError | None = None
         for assignment in await self._candidate_assignments(task):
             try:
                 return await self._complete_chat_with_assignment(
                     task, messages, assignment=assignment,
-                    temperature=temperature, context=context,
+                    temperature=temperature, context=context, response_format=response_format,
                 )
             except TaskDispatchError as exc:
                 last_error = exc
@@ -348,6 +354,7 @@ class TaskModelDispatcher:
         assignment: TaskModelAssignment,
         temperature: float | None = None,
         context: TaskExecutionContext | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> str:
         assignment, endpoint = await self._resolve(task, assignment)
         profile = next(item for item in await self.behaviors.list() if item.task == task)
@@ -378,9 +385,21 @@ class TaskModelDispatcher:
         body: dict[str, Any] = {"model": assignment.model, "messages": request_messages}
         if temperature is not None:
             body["temperature"] = temperature
+        if response_format is not None:
+            body["response_format"] = {"type": "json_object"}
         payload = await self._request(endpoint, "chat/completions", json_body=body)
         try:
-            content = payload["choices"][0]["message"]["content"]
+            message = payload["choices"][0]["message"]
+            if not isinstance(message, dict):
+                raise TypeError("Chat completion message must be an object")
+            if response_format is not None and (
+                message.get("tool_calls") or message.get("function_call")
+            ):
+                raise TaskDispatchError(
+                    f"Provider endpoint '{endpoint.name}' returned native tool calls "
+                    "instead of JSON action content."
+                )
+            content = message["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise TaskDispatchError(
                 f"Provider endpoint '{endpoint.name}' response has no chat completion content."

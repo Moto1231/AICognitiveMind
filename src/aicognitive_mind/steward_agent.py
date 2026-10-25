@@ -107,7 +107,10 @@ class ModelMemorySteward(MemoryStewardTool):
                 for _ in range(4):
                     raw = await self.runtime.execute(
                         TaskExecutionContext(task="memory_recall"),
-                        {"operation": "chat", "messages": messages, "temperature": 0},
+                        {
+                            "operation": "chat", "messages": messages, "temperature": 0,
+                            "response_format": {"type": "json_object"},
+                        },
                     )
                     if not isinstance(raw, str):
                         raise StewardProtocolError("Memory Steward returned non-text content.")
