@@ -263,7 +263,7 @@ class TaskModelDispatcher:
                 delay = float(getattr(response, "headers", {}).get("retry-after", ""))
             except (TypeError, ValueError):
                 delay = -1.0
-            if math.isfinite(delay) and 0 <= delay <= 30:
+            if math.isfinite(delay) and 0 <= delay <= 45:
                 logger.info("task_provider_rate_limit_retry endpoint=%s wait=%.3f", endpoint.name, delay)
                 await asyncio.sleep(delay)
                 return await self._request(

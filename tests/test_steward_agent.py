@@ -447,7 +447,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
             grounding=("Earlier project decision",),
         ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
         records = await self.configured_recall_records(service)
-        steps, delays = iter([SEARCH, BRIEF, NOTHING]), iter(["0", "2.9625", "30"])
+        steps, delays = iter([SEARCH, BRIEF, NOTHING]), iter(["0", "31.35", "45"])
         calls = []
 
         def handle(request):
@@ -469,7 +469,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
                     "What database does Atlas use?", "Atlas uses SurrealDB.",
                     idempotency_key=begun["idempotency_key"],
                 )
-        self.assertEqual(sleep.await_args_list, [call(0.0), call(2.9625), call(30.0)])
+        self.assertEqual(sleep.await_args_list, [call(0.0), call(31.35), call(45.0)])
         self.assertEqual(len(calls), 6)
         for index in (0, 2, 4):
             self.assertEqual(calls[index], calls[index + 1])
@@ -479,7 +479,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_http_steward_retry_hints_are_bounded_and_failures_are_atomic(self):
         cases = [(hint, 429, 1) for hint in (
-            None, "", "tomorrow", "-0.01", "30.01", "nan", "inf", "-inf",
+            None, "", "tomorrow", "-0.01", "45.01", "nan", "inf", "-inf",
             "Wed, 21 Oct 2026 07:28:00 GMT",
         )] + [("2.9625", 429, 2), ("1", 400, 1), ("1", 503, 1), ("1", None, 1)]
         for phase in ("recall", "review"):
