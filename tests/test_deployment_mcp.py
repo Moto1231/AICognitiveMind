@@ -20,6 +20,8 @@ from aicognitive_mind.config import Settings
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.mcp_events import MessageEvents
 from aicognitive_mind.persistence import create_storage
+from aicognitive_mind.chatgpt_mcp import HOST_INSTRUCTIONS
+from aicognitive_mind.core_skills import REQUIRED_SKILLS, REQUIRED_SKILL_NAMES, load_required_skill
 
 
 def deployment_running(test):
@@ -134,6 +136,11 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(initialized.status_code, 200, initialized.text)
         self.assertNotIn("location", initialized.headers)
         self.assertEqual(initialized.json()["result"]["serverInfo"]["name"], "Axiom")
+        instructions = initialized.json()["result"]["instructions"]
+        self.assertEqual(instructions, HOST_INSTRUCTIONS)
+        for slug in REQUIRED_SKILLS:
+            self.assertIn(REQUIRED_SKILL_NAMES[slug], instructions)
+            self.assertNotIn(load_required_skill(slug), instructions)
         listed = await self.rpc(token)
         self.assertEqual(listed.status_code, 200, listed.text)
         tools = {item["name"]: item for item in listed.json()["result"]["tools"]}
