@@ -35,6 +35,7 @@ class Element {
     this.classList = {
       toggle: (name, on) => on ? this.classes.add(name) : this.classes.delete(name),
       add: name => this.classes.add(name), remove: name => this.classes.delete(name),
+      contains: name => this.classes.has(name),
     };
   }
   get options() { return this.children; }
@@ -710,4 +711,148 @@ test('A slow skill read cannot overwrite the selection made after it', async () 
   assert.equal(ui.elements.skillsSlug.value, 'axiom-current-state');
   assert.equal(ui.elements.skillsContent.value, 'Current-state instructions.');
   assert.equal(ui.elements.skillsSave.disabled, true);
+});
+
+function currentStatePortal({ diagnosticsHandler } = {}) {
+  const elements = new Proxy({}, { get: (target, id) => {
+    if (!target[id]) {
+      target[id] = new Element();
+      target[id].appendChild = child => target[id].append(child);
+    }
+    return target[id];
+  } });
+  const calls = [];
+  const failures = { diagnostics: null };
+  const state = { mode: 'mind', adminAuthorized: false, activeTaskProfile: null };
+  const identity = { self_name: null, pronouns: 'she/her', developmental_state: 'genesis' };
+  const fields = {
+    identity: { value: identity, status: 'current', source: 'persistent_mind_identity', observed_at: '2026-10-25T20:00:00Z' },
+    mood: { value: null, status: 'unknown' }, locality: { value: null, status: 'unknown' },
+    who_is_present: { value: null, status: 'unknown' }, who_is_speaking: { value: null, status: 'unknown' },
+    current_context: { value: 'Current interaction', status: 'current' },
+  };
+  const status = { mind: { identity, developmental_state: 'genesis', created_at: '2026-10-25T00:00:00Z' },
+    integration: {}, durable_memory_count: 1, journal_experience_count: 2 };
+  const context = vm.createContext({
+    state, el: elements, filters: { admin: {}, mind: {} },
+    document: { getElementById: id => elements[id], createElement: tag => new Element(tag) },
+    displayLabel: value => value, formatBrowserDateTime: value => value,
+    validateAdmin: async () => { state.adminAuthorized = true; return true; },
+    refreshMemory() {}, refreshJournal() {}, refreshHostBehaviors() {}, refreshTaskModelAssignments() {},
+    refreshTaskBehaviors() {}, refreshProviderEndpoints() {}, refreshMcpServers() {}, loadVoiceSettings() {},
+    refreshBodyFallbackSettings() {}, refreshSkillDrafts() {}, refreshDeviceInventory() {}, toast() {},
+    api: async url => {
+      calls.push(url);
+      if (url === '/v1/portal/status') return status;
+      if (url === '/v1/admin/diagnostics') {
+        if (diagnosticsHandler) return diagnosticsHandler();
+        if (failures.diagnostics) throw failures.diagnostics;
+        return { current_state: { fields }, performance: { samples: [
+          { status: 200, duration_ms: 5, time: '2026-10-25T20:00:00Z', operation: 'State read' },
+        ] } };
+      }
+      throw new Error('Unexpected API request: ' + url);
+    },
+  });
+  vm.runInContext(source.match(/^let diagnosticsRevision = .*;$/m)[0], context);
+  for (const name of ['setMode', 'enterAdminMode', 'renderStatus', 'refreshStatus', 'refresh',
+    'formatCurrentIdentity', 'refreshDiagnostics', 'refreshAdmin']) {
+    const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
+    assert.ok(start >= 0, `${name} exists`);
+    const next = source.slice(start + 1).search(/^(?:async )?function |^const |^let |^document\.|^if \(|^refresh\(\);/m);
+    vm.runInContext(source.slice(start, next < 0 ? source.length : start + 1 + next), context);
+  }
+  return { ...context, elements, calls, fields, status, failures };
+}
+
+test('entering Administration again loads current diagnostics instead of retaining earlier state', async () => {
+  const ui = currentStatePortal();
+  await ui.enterAdminMode();
+  assert.equal(ui.calls.filter(url => url === '/v1/admin/diagnostics').length, 1);
+  ui.setMode('mind');
+  ui.fields.current_context.value = 'New interaction';
+  await ui.enterAdminMode();
+  assert.equal(ui.calls.filter(url => url === '/v1/admin/diagnostics').length, 2);
+  const rows = ui.elements.cognitiveStateSummary.children;
+  assert.equal(rows.at(-1).children[1].textContent, 'New interaction');
+});
+
+test('Refresh loads diagnostics once while in Administration and does not request them in Mind view', async () => {
+  const ui = currentStatePortal();
+  await ui.refresh();
+  assert.equal(ui.calls.includes('/v1/admin/diagnostics'), false);
+  await ui.enterAdminMode();
+  ui.calls.length = 0;
+  await ui.refresh();
+  assert.equal(ui.calls.filter(url => url === '/v1/admin/diagnostics').length, 1);
+  ui.calls.length = 0;
+  await ui.refreshAdmin();
+  assert.equal(ui.calls.filter(url => url === '/v1/admin/diagnostics').length, 1);
+});
+
+test('an unchosen self-name leaves explicit headings and a useful identity summary without guessing physical state', async () => {
+  const ui = currentStatePortal();
+  const original = JSON.stringify(ui.status);
+  ui.renderStatus(ui.status);
+  for (const id of ['mindName', 'selfName', 'adminMindName']) {
+    assert.equal(ui.elements[id].textContent, 'Self-name not set');
+  }
+  ui.state.adminAuthorized = true;
+  await ui.refreshDiagnostics();
+  const rows = ui.elements.cognitiveStateSummary.children;
+  assert.match(rows[0].children[1].textContent, /Persistent cognitive Mind; self-name not set/);
+  assert.match(rows[0].children[1].textContent, /pronouns: she\/her/);
+  assert.equal(rows[0].children[1].title, 'current | persistent_mind_identity | 2026-10-25T20:00:00Z');
+  for (const row of rows.slice(1, 5)) assert.equal(row.children[1].textContent, 'Unknown');
+  assert.equal(JSON.parse(ui.elements.currentStateDiagnostics.textContent).fields.identity.value.self_name, null);
+  assert.equal(JSON.stringify(ui.status), original);
+  ui.status.mind.identity.self_name = 'Chosen Name';
+  ui.renderStatus(ui.status);
+  for (const id of ['mindName', 'selfName', 'adminMindName']) {
+    assert.equal(ui.elements[id].textContent, 'Chosen Name');
+  }
+  assert.match(ui.formatCurrentIdentity(ui.status.mind.identity), /self-name: Chosen Name/);
+  assert.equal(ui.formatCurrentIdentity(null), 'Unknown');
+});
+
+test('a failed diagnostics refresh replaces earlier state rows with the current load failure', async () => {
+  const ui = currentStatePortal();
+  ui.state.adminAuthorized = true;
+  await ui.refreshDiagnostics();
+  assert.equal(ui.elements.cognitiveStateSummary.children.length, 6);
+  assert.equal(ui.elements.apiActivityList.children.length, 1);
+  ui.failures.diagnostics = new Error('Service unavailable');
+  await ui.refreshDiagnostics();
+  assert.equal(ui.elements.cognitiveStateSummary.children.length, 0);
+  assert.equal(ui.elements.cognitiveStateSummary.textContent, 'Cannot load current state: Service unavailable');
+  assert.equal(ui.elements.currentStateDiagnostics.textContent, 'Cannot load state: Service unavailable');
+  assert.equal(ui.elements.apiActivityList.children.length, 0);
+  assert.equal(ui.elements.apiActivitySummary.textContent, 'API activity unavailable.');
+  assert.equal(ui.elements.apiActivityList.textContent, 'Cannot load API activity: Service unavailable');
+  ui.failures.diagnostics = null;
+  await ui.refreshDiagnostics();
+  assert.equal(ui.elements.cognitiveStateSummary.children.length, 6);
+  assert.equal(JSON.parse(ui.elements.currentStateDiagnostics.textContent).fields.identity.source, 'persistent_mind_identity');
+});
+
+test('an older diagnostics success or failure cannot replace a newer refresh result', async () => {
+  for (const olderFails of [false, true]) {
+    const pending = [];
+    const ui = currentStatePortal({ diagnosticsHandler: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) });
+    ui.state.adminAuthorized = true;
+    const older = ui.refreshDiagnostics();
+    const newer = ui.refreshDiagnostics();
+    const payload = context => ({ current_state: { fields: {
+      ...ui.fields, current_context: { status: 'current', value: context },
+    } }, performance: { samples: [] } });
+    pending[1].resolve(payload('Latest interaction'));
+    await newer;
+    const latest = ui.elements.currentStateDiagnostics.textContent;
+    if (olderFails) pending[0].reject(new Error('Older request failed'));
+    else pending[0].resolve(payload('Older interaction'));
+    await older;
+    assert.equal(ui.elements.currentStateDiagnostics.textContent, latest);
+    assert.equal(ui.elements.cognitiveStateSummary.children.at(-1).children[1].textContent, 'Latest interaction');
+    assert.equal(ui.calls.length, 2);
+  }
 });

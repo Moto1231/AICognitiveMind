@@ -1204,6 +1204,7 @@ async function enterAdminMode() {
     if (!allowed) return;
     setMode("admin");
     await Promise.all([
+      refreshDiagnostics(),
       refreshMemory(filters.admin, true),
       refreshJournal(true),
       refreshHostBehaviors(),
@@ -1223,11 +1224,13 @@ function renderStatus(status) {
   state.status = status;
   const mind = status.mind;
   const integration = status.integration;
+  const selfName = typeof mind.identity.self_name === "string" && mind.identity.self_name.trim()
+    ? mind.identity.self_name : "Self-name not set";
 
   el.connectionLabel.textContent = "MCP - Axiom Online";
-  el.mindName.textContent = mind.identity.self_name;
+  el.mindName.textContent = selfName;
   el.continuityLabel.textContent = "Persistent";
-  el.selfName.textContent = mind.identity.self_name;
+  el.selfName.textContent = selfName;
   el.developmentState.textContent = displayLabel(mind.developmental_state);
   el.createdAt.textContent = formatBrowserDateTime(mind.created_at);
   el.memoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
@@ -1244,7 +1247,7 @@ function renderStatus(status) {
   }
   if (el.identityOwner) el.identityOwner.textContent = integration.identity_owner;
   if (el.memoryOwner) el.memoryOwner.textContent = integration.memory_owner;
-  el.adminMindName.textContent = mind.identity.self_name;
+  el.adminMindName.textContent = selfName;
   el.adminCreatedAt.textContent = formatBrowserDateTime(mind.created_at);
   el.adminMemoryCount.textContent = Number(status.durable_memory_count).toLocaleString();
   el.adminJournalCount.textContent = Number(status.journal_experience_count).toLocaleString();
@@ -2005,6 +2008,7 @@ async function refresh() {
       refreshMemory(admin ? filters.admin : filters.mind, true),
       refreshJournal(true),
       ...(admin ? [
+        refreshDiagnostics(),
         refreshBodyFallbackSettings(),
         refreshHostBehaviors(),
         refreshTaskModelAssignments(),
@@ -2127,12 +2131,29 @@ if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBeha
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
 if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
 
+let diagnosticsRevision = 0;
+function formatCurrentIdentity(value) {
+  if (value == null) return "Unknown";
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return typeof value === "string" ? value : JSON.stringify(value);
+  }
+  const name = typeof value.self_name === "string" ? value.self_name.trim() : "";
+  const parts = ["Persistent cognitive Mind", name ? "self-name: " + name : "self-name not set"];
+  if (typeof value.pronouns === "string" && value.pronouns.trim()) parts.push("pronouns: " + value.pronouns);
+  if (typeof value.developmental_state === "string" && value.developmental_state.trim()) {
+    parts.push("developmental state: " + displayLabel(value.developmental_state));
+  }
+  return parts.join("; ");
+}
+
 async function refreshDiagnostics() {
   const context = document.getElementById("currentStateDiagnostics");
   const performance = document.getElementById("performanceDiagnostics");
   if (!state.adminAuthorized || !context || !performance) return;
+  const revision = ++diagnosticsRevision;
   try {
     const result = await api("/v1/admin/diagnostics", {}, true);
+    if (revision !== diagnosticsRevision) return;
     context.textContent = JSON.stringify(result.current_state, null, 2);
     const cognitive = document.getElementById("cognitiveStateSummary");
     if (cognitive) {
@@ -2152,7 +2173,7 @@ async function refreshDiagnostics() {
         title.textContent = label;
         const detail = document.createElement("strong");
         const value = item.value;
-        detail.textContent = value == null ? "Unknown" :
+        detail.textContent = key === "identity" ? formatCurrentIdentity(value) : value == null ? "Unknown" :
           typeof value === "string" ? value : JSON.stringify(value);
         detail.title = [item.status, item.source, item.observed_at].filter(Boolean).join(" | ");
         row.append(title, detail);
@@ -2183,8 +2204,21 @@ async function refreshDiagnostics() {
     }
     performance.textContent = "";
   } catch (error) {
+    if (revision !== diagnosticsRevision) return;
     context.textContent = "Cannot load state: " + error.message;
     performance.textContent = "Cannot load timings: " + error.message;
+    const cognitive = document.getElementById("cognitiveStateSummary");
+    if (cognitive) {
+      cognitive.replaceChildren();
+      cognitive.textContent = "Cannot load current state: " + error.message;
+    }
+    const summary = document.getElementById("apiActivitySummary");
+    if (summary) summary.textContent = "API activity unavailable.";
+    const list = document.getElementById("apiActivityList");
+    if (list) {
+      list.replaceChildren();
+      list.textContent = "Cannot load API activity: " + error.message;
+    }
   }
 }
 document.getElementById("apiActivityFilter")?.addEventListener("change", refreshDiagnostics);
@@ -2224,7 +2258,7 @@ document.getElementById("portalReturnButton")?.addEventListener("click", event =
 document.getElementById("continuityRefreshButton")?.addEventListener("click", refresh);
 
 async function refreshAdmin() {
-  const updates = [refresh(), refreshDiagnostics()];
+  const updates = [refresh()];
   if (document.getElementById("skillsSection")?.classList.contains("hidden") === false) {
     updates.push(refreshSkillDrafts());
   }
