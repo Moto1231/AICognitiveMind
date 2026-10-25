@@ -55,6 +55,28 @@ class RuntimeAdministratorSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("memory_recall", {item["task"] for item in tasks})
         self.service._steward_runtime.execute.assert_not_awaited()
 
+    async def test_disabled_skill_is_not_reasserted_by_a_persisted_old_factory_marker(self):
+        legacy_text = (
+            "Axiom Continuity is required for every Axiom reasoning interaction. "
+            "Apply its full packaged protocol supplied in the mandatory reasoning contract, "
+            "including fresh instances and follow-ups. Optional task memberships cannot disable it."
+        )
+        legacy = {"id": "axiom-continuity", "name": "Axiom Continuity", "instruction": legacy_text,
+                  "enabled": True, "priority": 0, "protected": True, "required": True}
+        custom = {"id": "custom", "name": "Custom", "instruction": "Preserve this unrelated authored rule."}
+        original_record = {"items": [legacy, custom], "task_profiles_migrated": True}
+        await self.records.create("host_behaviors", original_record)
+        await EffectiveSkillRegistry(self.records).save("axiom-continuity", {
+            "enabled": False, "required": False,
+        }, expected_revision=0)
+        begun = await self.new_service().begin_interaction("Use the effective Administrator settings.")
+        prompt = begun["conscious_workspace_contract"]
+        self.assertNotIn(legacy_text, prompt)
+        self.assertNotIn(load_required_skill("axiom-continuity"), prompt)
+        self.assertIn("effective Mind skill configuration", prompt)
+        self.assertIn(custom["instruction"], prompt)
+        self.assertEqual(await self.records.get("host_behaviors"), original_record)
+
     async def test_saved_foundations_and_skill_text_reach_fresh_begin_then_disable(self):
         await CognitiveConfigurationRegistry(self.records).save({
             "base_contract": "Administrator base contract marker.",

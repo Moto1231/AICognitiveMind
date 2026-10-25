@@ -24,6 +24,43 @@ class FakeRecords:
 
 
 class HostBehaviorRegistryTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def legacy_factory_marker():
+        return HostBehavior(
+            id="axiom-continuity", name="Axiom Continuity", priority=0, protected=True, required=True,
+            instruction=(
+                "Axiom Continuity is required for every Axiom reasoning interaction. "
+                "Apply its full packaged protocol supplied in the mandatory reasoning contract, "
+                "including fresh instances and follow-ups. Optional task memberships cannot disable it."
+            ),
+        )
+
+    async def test_only_exact_old_factory_markers_are_reconciled_without_writing_storage(self):
+        records = FakeRecords()
+        legacy = self.legacy_factory_marker()
+        custom = HostBehavior(id="custom", name="Custom", instruction="Keep this authored instruction.")
+        records.value = {"items": [legacy.model_dump(), custom.model_dump()], "task_profiles_migrated": True}
+        before = deepcopy(records.value)
+        items, revision = await HostBehaviorRegistry(records).snapshot()
+        self.assertEqual(revision, 0)
+        self.assertIn("effective Mind skill configuration", items[0].instruction)
+        self.assertNotIn("Optional task memberships cannot disable it", items[0].instruction)
+        self.assertEqual(items[1], custom)
+        self.assertEqual(records.value, before)
+
+    async def test_admin_saved_or_edited_legacy_marker_text_is_never_migrated(self):
+        for metadata, changes in (
+            ({"revision": 1, "updated_by": "administrator"}, {}),
+            ({}, {"instruction": "My intentional custom rule."}),
+            ({}, {"name": "My marker name"}),
+            ({}, {"enabled": False}),
+        ):
+            records = FakeRecords()
+            marker = self.legacy_factory_marker().model_copy(update=changes)
+            records.value = {"items": [marker.model_dump()], "task_profiles_migrated": True, **metadata}
+            with self.subTest(metadata=metadata, changes=changes):
+                self.assertEqual(await HostBehaviorRegistry(records).list(), [marker])
+
     async def test_saved_legacy_catalog_is_authoritative_without_inserting_package_rows(self):
         records = FakeRecords()
         custom = HostBehavior(id="custom", name="My custom behavior", instruction="Keep this exact instruction.")

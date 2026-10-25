@@ -61,6 +61,24 @@ REQUIRED_HOST_BEHAVIORS = tuple(
 )
 
 
+def _upgrade_legacy_factory_markers(items: list[HostBehavior]) -> list[HostBehavior]:
+    """Replace only the exact formerly read-only generated marker rows."""
+    legacy = {
+        slug: HostBehavior(
+            id=slug, name=REQUIRED_SKILL_NAMES[slug],
+            instruction=(
+                f"{REQUIRED_SKILL_NAMES[slug]} is required for every Axiom reasoning interaction. "
+                "Apply its full packaged protocol supplied in the mandatory reasoning contract, "
+                "including fresh instances and follow-ups. Optional task memberships cannot disable it."
+            ),
+            priority=index, protected=True, required=True,
+        ) for index, slug in enumerate(REQUIRED_SKILLS)
+    }
+    replacements = {item.id: item for item in REQUIRED_HOST_BEHAVIORS}
+    return [replacements[item.id].model_copy(deep=True) if item == legacy.get(item.id) else item
+            for item in items]
+
+
 class HostBehaviorRegistry:
     RECORD_KEY = "host_behaviors"
 
@@ -79,6 +97,12 @@ class HostBehaviorRegistry:
             )]
         )
         revision = (record or {}).get("revision", 0)
+        if record is not None and not any(key in record for key in ("revision", "updated_by", "updated_at")):
+            # These markers were forced by old code, not authored through the
+            # new Administrator editor. Reconcile their exact defaults on read;
+            # a later explicit Save persists them. Never reinsert missing rows
+            # or rewrite an Administrator-owned revision or custom instruction.
+            items = _upgrade_legacy_factory_markers(items)
         if record and record.get("task_profiles_migrated"):
             return items, revision
         # Promote the former inline task instructions into the shared catalog
