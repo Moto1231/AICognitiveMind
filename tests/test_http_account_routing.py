@@ -14,6 +14,7 @@ from aicognitive_mind import api
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.config import Settings
 from aicognitive_mind.domain import DiagnosticObservation, ReasoningProposal
+from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
 
 
 PASSWORD = "synthetic-http-account-password"
@@ -227,6 +228,31 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         without_pin.headers.pop("X-Admin-Pin")
         without_pin.cookies.update(self.alpha_client.cookies)
         self.assertEqual((await without_pin.get("/v1/admin/provider-endpoints")).status_code, 401)
+
+    async def test_account_can_read_required_skills_without_access_to_root_custom_drafts(self):
+        with patch("aicognitive_mind.api._skill_github_call", side_effect=AssertionError("No shared GitHub access")) as github:
+            listing = await self.get_json(self.alpha_client, "/v1/admin/skills")
+            self.assertFalse(listing["drafts_available"])
+            self.assertEqual({item["slug"] for item in listing["items"]}, set(REQUIRED_SKILLS))
+            for slug in REQUIRED_SKILLS:
+                item = await self.get_json(self.alpha_client, "/v1/admin/skills/" + slug)
+                self.assertEqual(item["content"], load_required_skill(slug))
+                self.assertTrue(item["read_only"])
+                prepared = await self.alpha_client.post(f"/v1/admin/skills/{slug}/prepare")
+                self.assertEqual(prepared.status_code, 200, prepared.text)
+                self.assertEqual(prepared.text, item["content"])
+                denied = await self.alpha_client.put(f"/v1/admin/skills/{slug}", json={"slug": slug, "content": "Skip the rule"})
+                self.assertEqual(denied.status_code, 403)
+            for method, path in (
+                ("GET", "/v1/admin/skills/custom"), ("PUT", "/v1/admin/skills/custom"),
+                ("POST", "/v1/admin/skills/custom/prepare"),
+            ):
+                self.assertEqual((await self.alpha_client.request(method, path)).status_code, 403)
+            github.assert_not_called()
+        without_pin = await self.client()
+        without_pin.cookies.update(self.alpha_client.cookies)
+        without_pin.headers.pop("X-Admin-Pin")
+        self.assertEqual((await without_pin.get("/v1/admin/skills")).status_code, 401)
 
     async def test_sessions_and_tenant_cognition_survive_runtime_restart(self):
         before = await self.get_json(self.alpha_client, "/v1/mind")

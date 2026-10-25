@@ -9,6 +9,7 @@ from aicognitive_mind.task_behaviors import (
 from aicognitive_mind.task_behaviors import TASK_BEHAVIOR_LABELS
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
 from aicognitive_mind.task_model_assignments import TaskModelAssignmentRegistry
+from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
 
 
 class FakeRecords:
@@ -29,6 +30,22 @@ class FakeRecords:
 
 
 class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_required_full_protocols_load_once_for_reasoning_despite_empty_membership(self):
+        records = FakeRecords()
+        records.values["host_behaviors"] = {"items": [], "task_profiles_migrated": True}
+        records.values["task_model_assignments"] = {"items": [{"task": "reasoning", "behavior_ids": []}]}
+        assembler = TaskPromptAssembler(TaskBehaviorRegistry(records))
+        prompt = await assembler.system_prompt(TaskExecutionContext(task="reasoning"))
+        for slug in REQUIRED_SKILLS:
+            self.assertEqual(prompt.count(load_required_skill(slug)), 1)
+        for task in ("memory_recall", "vision", "coding"):
+            other = await assembler.system_prompt(TaskExecutionContext(task=task))
+            for slug in REQUIRED_SKILLS:
+                self.assertNotIn(load_required_skill(slug), other)
+        assignments = await TaskModelAssignmentRegistry(records).list()
+        reasoning = next(item for item in assignments if item.task == "reasoning")
+        self.assertTrue(set(REQUIRED_SKILLS) <= set(reasoning.behavior_ids))
+
     async def test_every_task_has_code_owned_foundation_and_mutable_profile(self):
         registry = TaskBehaviorRegistry(FakeRecords())
         profiles = await registry.list()

@@ -10,6 +10,7 @@ from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.domain import CognitiveActor, JournalEntry, JournalKind
 from aicognitive_mind.mcp_service import CognitiveMcpService as ProductionMcpService
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
+from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
 from aicognitive_mind.host_runtime import HostAwareCore, RuntimeRecords
 from aicognitive_mind.state_context import apply_current_state_event
 from aicognitive_mind.task_model_assignments import TaskModelAssignment, TaskModelAssignmentRegistry
@@ -81,10 +82,42 @@ class CurrentStateServiceTests(unittest.IsolatedAsyncioTestCase):
         begun = await self.service.begin_interaction("Hello.")
         rules = begun["current_state"]["fields"]["behaviors"]["value"]["rules"]
         self.assertEqual({item["id"] for item in rules}, {
-            "ground-recalled-context", "verify-capabilities",
+            "ground-recalled-context", "verify-capabilities", *REQUIRED_SKILLS,
         })
         self.assertNotIn("Coding marker rule.", begun["conscious_workspace_contract"])
         self.assertNotIn("Disabled marker rule.", begun["conscious_workspace_contract"])
+
+    async def test_skipped_recall_keeps_grounded_procedures_and_records_packaged_protocols(self):
+        procedure = {"memory_class": "procedural", "content": "Preserve this grounded procedure."}
+        await self.service.update_current_state("state_refreshed", {"values": {"skills": {
+            "value": [procedure], "source": "previous_grounded_recall",
+        }}})
+        service = ProductionMcpService(self.mind, self.journal, self.memory)
+        service._steward_runtime = SimpleNamespace(execute=AsyncMock(return_value=json.dumps({
+            "action": "finish", "outcome": "no_recall_needed", "reason": "Current context suffices.",
+        })))
+        begun = await service.begin_interaction("Continue with the supplied context.")
+        skills = begun["current_state"]["fields"]["skills"]
+        self.assertEqual(skills["status"], "current")
+        self.assertEqual({item.get("slug") for item in skills["value"] if item.get("required")}, set(REQUIRED_SKILLS))
+        self.assertIn(procedure, skills["value"])
+        self.assertIn("host plugin or catalog refresh is not verified", skills["note"])
+        for item in skills["value"]:
+            if item.get("required"):
+                self.assertEqual(item["source"], "packaged_core")
+                self.assertNotIn("content", item)
+                self.assertEqual(begun["conscious_workspace_contract"].count(load_required_skill(item["slug"])), 1)
+
+    async def test_legacy_ledger_missing_skills_field_is_upgraded_with_packaged_protocols(self):
+        ledger = await self.service.read_current_state()
+        ledger["fields"].pop("skills")
+        await self.journal.append(JournalEntry(kind=JournalKind.CHECKPOINT, experience={
+            "checkpoint_type": "current_state_ledger", "state_ledger": ledger,
+        }), recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE)
+        begun = await self.service.begin_interaction("Continue with this legacy ledger.")
+        skills = begun["current_state"]["fields"]["skills"]
+        self.assertEqual(skills["status"], "current")
+        self.assertEqual({item["slug"] for item in skills["value"]}, set(REQUIRED_SKILLS))
 
     async def test_body_endpoint_preserves_sensory_provenance_without_inventing_human_presence(self) -> None:
         dispatcher = SimpleNamespace(

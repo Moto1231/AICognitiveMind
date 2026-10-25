@@ -377,6 +377,7 @@ function renderHostBehaviors() {
     priority.min = "0";
     priority.max = "10000";
     priority.value = behavior.priority;
+    priority.disabled = behavior.required === true;
     priority.setAttribute("aria-label", "Priority");
     priority.addEventListener("change", () => { behavior.priority = Number(priority.value); updateBehaviorSaveState(); });
     priorityField.append(priority);
@@ -2806,27 +2807,78 @@ renderTaskProfiles();
 refresh();
 
 let skillDraftSha = null;
+let skillCatalog = [];
+let skillDraftsAvailable = false;
+let skillSelectionReadOnly = false;
+let skillLoadFailed = false;
+let skillLoadRevision = 0;
+function updateSkillEditorState() {
+  const slug = document.getElementById("skillsSlug");
+  const content = document.getElementById("skillsContent");
+  const reserved = skillCatalog.some(item => item.slug === slug.value.trim() && (item.required || item.read_only));
+  const locked = skillSelectionReadOnly || skillLoadFailed || !skillDraftsAvailable;
+  slug.readOnly = locked;
+  content.readOnly = locked;
+  document.getElementById("skillsSave").disabled = locked || reserved || !/^[a-z0-9-]{1,64}$/.test(slug.value.trim()) || !content.value.trim();
+  document.getElementById("skillsValidate").disabled = skillLoadFailed || !slug.value.trim() || !content.value.trim();
+  document.getElementById("skillsPrepare").disabled = skillLoadFailed || !slug.value.trim() || !content.value.trim();
+}
+async function loadSkillSelection(slug) {
+  const revision = ++skillLoadRevision;
+  skillDraftSha = null;
+  skillLoadFailed = false;
+  const selected = skillCatalog.find(item => item.slug === slug);
+  skillSelectionReadOnly = Boolean(selected?.required || selected?.read_only);
+  document.getElementById("skillsSlug").value = slug;
+  document.getElementById("skillsContent").value = "";
+  document.getElementById("skillsSource").textContent = skillSelectionReadOnly
+    ? "Required skill — always active. Its installed instructions are read-only here."
+    : skillDraftsAvailable ? "Custom draft. Saving does not publish it to ChatGPT." : "Custom drafts are unavailable.";
+  updateSkillEditorState();
+  if (!slug) return;
+  try {
+    const item = await api("/v1/admin/skills/" + encodeURIComponent(slug), {}, true);
+    if (revision !== skillLoadRevision) return;
+    skillDraftSha = item.sha;
+    skillSelectionReadOnly = skillSelectionReadOnly || Boolean(item.required || item.read_only);
+    document.getElementById("skillsContent").value = item.content;
+    if (skillSelectionReadOnly) document.getElementById("skillsSource").textContent = "Required skill — always active. Its installed instructions are read-only here.";
+  } catch (error) {
+    if (revision !== skillLoadRevision) return;
+    skillLoadFailed = true;
+    document.getElementById("skillsStatus").textContent = error.message;
+  }
+  updateSkillEditorState();
+}
 async function refreshSkillDrafts() {
   const list = document.getElementById("skillsList");
   try {
     const data = await api("/v1/admin/skills", {}, true);
-    list.replaceChildren(new Option("New skill", ""));
-    for (const item of data.items) list.add(new Option(item.slug, item.slug));
-    document.getElementById("skillsStatus").textContent = "Drafts loaded from GitHub.";
-  } catch (error) { document.getElementById("skillsStatus").textContent = error.message; }
+    const previous = list.value;
+    skillCatalog = data.items;
+    skillDraftsAvailable = data.drafts_available !== false;
+    const newSkill = new Option("New skill", "");
+    newSkill.disabled = !skillDraftsAvailable;
+    list.replaceChildren(newSkill);
+    for (const item of skillCatalog) list.add(new Option((item.name || item.slug) + (item.required ? " (required)" : ""), item.slug));
+    const retained = skillCatalog.some(item => item.slug === previous) ? previous : "";
+    const initial = !document.getElementById("skillsContent").value || !skillDraftsAvailable;
+    list.value = retained || (initial ? skillCatalog.find(item => item.required)?.slug || "" : "");
+    const requiredStatus = skillCatalog.some(item => item.required) ? "Required skills available. " : "";
+    const message = skillDraftsAvailable ? requiredStatus + "Drafts loaded from GitHub."
+      : requiredStatus + "Custom drafts unavailable: " + (data.drafts_error || "Draft access is unavailable.");
+    document.getElementById("skillsStatus").textContent = message;
+    if (list.value !== previous || !document.getElementById("skillsContent").value) await loadSkillSelection(list.value);
+    else updateSkillEditorState();
+  } catch (error) {
+    skillDraftsAvailable = false;
+    updateSkillEditorState();
+    document.getElementById("skillsStatus").textContent = error.message;
+  }
 }
-document.getElementById("skillsList")?.addEventListener("change", async event => {
-  const slug = event.target.value;
-  skillDraftSha = null;
-  document.getElementById("skillsSlug").value = slug;
-  document.getElementById("skillsContent").value = "";
-  if (!slug) return;
-  try {
-    const item = await api("/v1/admin/skills/" + encodeURIComponent(slug), {}, true);
-    skillDraftSha = item.sha;
-    document.getElementById("skillsContent").value = item.content;
-  } catch (error) { document.getElementById("skillsStatus").textContent = error.message; }
-});
+document.getElementById("skillsList")?.addEventListener("change", event => loadSkillSelection(event.target.value));
+document.getElementById("skillsSlug")?.addEventListener("input", updateSkillEditorState);
+document.getElementById("skillsContent")?.addEventListener("input", updateSkillEditorState);
 function skillPayload() {
   return { slug: document.getElementById("skillsSlug").value.trim(), content: document.getElementById("skillsContent").value, sha: skillDraftSha };
 }
@@ -2839,13 +2891,15 @@ document.getElementById("skillsValidate")?.addEventListener("click", async () =>
 });
 document.getElementById("skillsSave")?.addEventListener("click", async () => {
   const status = document.getElementById("skillsStatus");
+  updateSkillEditorState();
+  if (document.getElementById("skillsSave").disabled) return;
   try {
     const payload = skillPayload();
     const result = await api("/v1/admin/skills/" + encodeURIComponent(payload.slug), {method:"PUT",body:JSON.stringify(payload)}, true);
     skillDraftSha = result.sha;
-    status.textContent = "Saved draft to GitHub commit " + result.commit.slice(0,8) + ". Not published to ChatGPT.";
     await refreshSkillDrafts();
     document.getElementById("skillsList").value = payload.slug;
+    status.textContent = "Saved draft to GitHub commit " + result.commit.slice(0,8) + ". Not published to ChatGPT.";
   } catch (error) { status.textContent = error.message; }
 });
 document.getElementById("skillsPrepare")?.addEventListener("click", async () => {

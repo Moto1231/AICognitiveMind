@@ -602,3 +602,112 @@ test('Task selection only offers behaviors saved in the library', () => {
   assert.equal(labels.length, 1);
   assert.equal(labels[0].children[1].children[0].textContent, 'Saved');
 });
+
+function skillsEditor(apiHandler) {
+  const elements = {};
+  const calls = [];
+  const downloads = [];
+  const context = vm.createContext({
+    document: {
+      getElementById: id => {
+        if (!elements[id]) {
+          elements[id] = new Element();
+          elements[id].add = option => elements[id].append(option);
+        }
+        return elements[id];
+      },
+      createElement: () => ({ click() { downloads.push(this); } }),
+    },
+    Option: class extends Element {
+      constructor(label, value) { super('option'); this.textContent = label; this.value = value; }
+    },
+    Blob, URL: { createObjectURL: () => 'blob:skill', revokeObjectURL() {} },
+    api: async (url, options = {}) => {
+      calls.push({ url, method: options.method || 'GET', body: options.body && JSON.parse(options.body) });
+      return apiHandler(url, options);
+    },
+  });
+  vm.runInContext(source.slice(source.indexOf('let skillDraftSha = null;')), context);
+  return { ...context, elements, calls, downloads };
+}
+
+const requiredSkills = [
+  { slug: 'axiom-continuity', name: 'Axiom Continuity', required: true, read_only: true },
+  { slug: 'axiom-current-state', name: 'Axiom Current State', required: true, read_only: true },
+];
+
+test('Skills shows named required instructions when custom drafts are unavailable and blocks saving them', async () => {
+  const ui = skillsEditor(async url => {
+    if (url === '/v1/admin/skills') return { items: requiredSkills, drafts_available: false, drafts_error: 'GitHub access is unavailable.' };
+    if (url.endsWith('/validate')) return { valid: true };
+    return { ...requiredSkills.find(item => url.endsWith(item.slug)), content: 'Required instructions.', sha: null };
+  });
+  await ui.refreshSkillDrafts();
+  const el = ui.elements;
+  assert.deepEqual(el.skillsList.options.map(option => option.textContent), [
+    'New skill', 'Axiom Continuity (required)', 'Axiom Current State (required)',
+  ]);
+  assert.equal(el.skillsList.options[0].disabled, true);
+  assert.equal(el.skillsList.value, 'axiom-continuity');
+  assert.equal(el.skillsContent.value, 'Required instructions.');
+  assert.equal(el.skillsContent.readOnly, true);
+  assert.equal(el.skillsSlug.readOnly, true);
+  assert.equal(el.skillsSave.disabled, true);
+  assert.equal(el.skillsPrepare.disabled, false);
+  assert.match(el.skillsStatus.textContent, /Custom drafts unavailable.*GitHub/);
+  assert.doesNotMatch(el.skillsStatus.textContent, /Drafts loaded/);
+  await el.skillsSave.listeners.click();
+  assert.equal(ui.calls.some(call => call.method === 'PUT'), false);
+  await el.skillsPrepare.listeners.click();
+  assert.equal(ui.downloads.length, 1);
+  assert.equal(ui.downloads[0].download, 'axiom-continuity-SKILL.md');
+});
+
+test('Skills preserves custom draft editing and prevents a new draft from replacing a required skill', async () => {
+  const ui = skillsEditor(async (url, options) => {
+    if (url === '/v1/admin/skills') return {
+      items: [...requiredSkills, { slug: 'custom-skill', required: false, read_only: false }],
+      drafts_available: true, drafts_error: null,
+    };
+    if (options.method === 'PUT') return { sha: 'new-sha', commit: '123456789' };
+    return { content: 'Custom instructions.', sha: 'old-sha' };
+  });
+  await ui.refreshSkillDrafts();
+  const el = ui.elements;
+  el.skillsList.value = 'custom-skill';
+  await ui.loadSkillSelection('custom-skill');
+  assert.equal(el.skillsContent.readOnly, false);
+  assert.equal(el.skillsSlug.readOnly, false);
+  el.skillsContent.value = 'Updated instructions.';
+  await el.skillsSave.listeners.click();
+  const saved = ui.calls.find(call => call.method === 'PUT');
+  assert.equal(saved.url, '/v1/admin/skills/custom-skill');
+  assert.equal(saved.body.content, 'Updated instructions.');
+  assert.equal(saved.body.sha, 'old-sha');
+  await ui.loadSkillSelection('');
+  el.skillsSlug.value = 'axiom-continuity';
+  el.skillsContent.value = 'Replacement instructions.';
+  ui.updateSkillEditorState();
+  assert.equal(el.skillsSlug.readOnly, false);
+  assert.equal(el.skillsSave.disabled, true);
+  await el.skillsSave.listeners.click();
+  assert.equal(ui.calls.filter(call => call.method === 'PUT').length, 1);
+});
+
+test('A slow skill read cannot overwrite the selection made after it', async () => {
+  let finishFirst;
+  const ui = skillsEditor(async url => {
+    if (url === '/v1/admin/skills') return { items: requiredSkills, drafts_available: true };
+    if (url.endsWith('axiom-continuity')) return new Promise(resolve => { finishFirst = resolve; });
+    return { ...requiredSkills[1], content: 'Current-state instructions.', sha: null };
+  });
+  const first = ui.refreshSkillDrafts();
+  await new Promise(resolve => setImmediate(resolve));
+  ui.elements.skillsList.value = 'axiom-current-state';
+  await ui.loadSkillSelection('axiom-current-state');
+  finishFirst({ ...requiredSkills[0], content: 'Old selection instructions.', sha: null });
+  await first;
+  assert.equal(ui.elements.skillsSlug.value, 'axiom-current-state');
+  assert.equal(ui.elements.skillsContent.value, 'Current-state instructions.');
+  assert.equal(ui.elements.skillsSave.disabled, true);
+});
