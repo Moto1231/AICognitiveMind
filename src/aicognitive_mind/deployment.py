@@ -35,6 +35,7 @@ from aicognitive_mind.chatgpt_oauth import (
     oauth_signup_post,
 )
 from aicognitive_mind.config import get_settings
+from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.mcp_events import MessageEvents
 
 
@@ -304,6 +305,18 @@ async def _realtime_body_session(request: Request) -> Response:
     session = await read_portal_session(portal_app, session_token)
     if not session or float(session.get("expires_at", 0)) <= time.time():
         return JSONResponse({"detail": "Sign in to Axiom before starting voice."}, status_code=401)
+
+    accounts = oauth_provider.accounts
+    try:
+        account = await accounts.resolve_subject(session["mind_id"]) if accounts is not None else None
+    except (ValueError, CommitConflict):
+        account = None
+    if account is None:
+        return JSONResponse({"detail": "Sign in to Axiom before starting voice."}, status_code=401)
+    if account.mind_id != "__legacy__":
+        return JSONResponse(
+            {"detail": "This endpoint is not available for account-scoped sessions."}, status_code=403,
+        )
 
     if not settings.openai_api_key:
         return JSONResponse({"detail": "OPENAI_API_KEY is not configured."}, status_code=503)

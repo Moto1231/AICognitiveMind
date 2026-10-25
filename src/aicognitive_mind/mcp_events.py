@@ -174,8 +174,8 @@ async def post_webhook(
 
 def event_owner(provider: Any, mind_id: str) -> dict[str, str]:
     token = get_access_token()
-    # Current MCP tools operate on the configured persistent mind. Never expose that
-    # mind's events to OAuth subjects belonging to another account.
+    # Event protocol handlers still use the configured root registry. Never expose
+    # that registry to OAuth subjects belonging to another account.
     if token is None or token.subject not in {provider.username, mind_id, "__legacy__"}:
         raise MCPError(code=-32001, message="This account cannot access this mind's events")
     if provider.required_scope not in token.scopes or token.resource != provider.resource_url:
@@ -455,12 +455,19 @@ class MessageEvents:
 
 def register_message_events(server: Any, provider: Any) -> None:
     from aicognitive_mind.config import get_settings
+    from aicognitive_mind.account_mcp import authorized_account
+
+    async def root_owner(mind_id: str) -> dict[str, str]:
+        account = await authorized_account(provider, get_access_token())
+        if account is not None and account.mind_id != "__legacy__":
+            raise MCPError(code=-32001, message="This account cannot access this mind's events")
+        return event_owner(provider, mind_id)
 
     async def advertise(ctx: Any, call_next: Any) -> Any:
         result = await call_next(ctx)
         if ctx.method == "server/discover":
             try:
-                event_owner(provider, get_settings().axiom_mind_id)
+                await root_owner(get_settings().axiom_mind_id)
             except MCPError:
                 return result
             result = result.model_dump(by_alias=True, exclude_none=True) if isinstance(result, BaseModel) else dict(result)
@@ -471,14 +478,14 @@ def register_message_events(server: Any, provider: Any) -> None:
 
     async def list_events(ctx: Any, params: PaginatedRequestParams) -> dict:
         try:
-            event_owner(provider, get_settings().axiom_mind_id)
+            await root_owner(get_settings().axiom_mind_id)
         except MCPError:
             return {"events": []}
         return {"events": [deepcopy(EVENT_DEFINITION)]}
 
     async def subscribe(ctx: Any, params: SubscribeParams) -> dict:
         records = ctx.lifespan_context.hosts.records
-        owner = event_owner(provider, records.mind_id)
+        owner = await root_owner(records.mind_id)
         try:
             return await MessageEvents(records).subscribe(owner, params)
         except ValueError as exc:
@@ -486,7 +493,7 @@ def register_message_events(server: Any, provider: Any) -> None:
 
     async def unsubscribe(ctx: Any, params: UnsubscribeParams) -> dict:
         records = ctx.lifespan_context.hosts.records
-        owner = event_owner(provider, records.mind_id)
+        owner = await root_owner(records.mind_id)
         return await MessageEvents(records).unsubscribe(owner, params)
 
     # The draft Events methods are additive custom MCP methods in the 2.x SDK.

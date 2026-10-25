@@ -167,25 +167,44 @@ or merge existing records.
 
 - Signup directly initializes its tenant Mind and does not append the
   initialization journal entry written by explicit service initialization.
-- Portal provider/task setup uses root application registries; account tenant
-  services use their own registries. Account-scoped configuration is unproved.
-- ChatGPT MCP cognition uses the root lifespan service; OAuth-account subject to
-  tenant cognition routing has not been demonstrated end to end.
-- The cognitive API's `get_core` also returns root application state, despite
-  middleware attaching tenant storage. Consistent account-scoped cognition is
-  a remaining source-level routing gap, not part of this signup/login repair.
+- Memory Recall requires a saved endpoint/model or complete fallback. Steward
+  recall and review both use that task; environment API keys alone do not
+  populate account task/provider registries. Configuring a model is separate
+  from creating an account or opening storage.
+- Body communication, root backup and Skills operational paths still need an
+  account-scoped implementation. Modern account sessions fail closed with 403
+  on those HTTP paths rather than using another Mind's root resources.
 
-Accordingly, root initialization and signup/login work locally; complete
-per-account model setup and account-scoped MCP cognition remain unproved.
+## Account routing repair
+
+Authenticated MCP tools and cognitive HTTP handlers select the existing Mind
+owned by the verified OAuth subject or portal session. A unique active account
+must still own that selector; missing, inactive or ambiguous identity is rejected.
+Caller-supplied tenant IDs do not authorize a selection. Explicit configured
+operator/local-stdio access and uniquely resolved historical accounts retain
+their existing root behavior.
+
+Account views share the already-owned database connection and store policies.
+Routing neither creates another Mind nor initializes/migrates a second storage
+connection. Current state, interaction receipts, traces, task dispatch and the
+portal's task/provider/behavior registries follow the same account scope.
+Request-local state is reset after success, failure or cancellation; concurrent
+accounts never replace the shared lifespan state. Root event protocol handlers
+remain unavailable to modern account subjects until communication is scoped.
+
+Synthetic regressions exercise two accounts through status, begin, completion,
+restart and HTTP cognition with an empty root Mind. These tests use deterministic
+reasoning/Steward adapters and do not establish real-provider inference or quota.
+Production validation must use read-only account metadata before a separately
+authorized normal interaction; do not initialize a second root Mind to hide a
+routing failure.
 
 ## Smallest next setup slice
 
-The dedicated database-scoped Editor `axiom_runtime` is now configured for the
-bounded Cloud check; the separate reader remains unchanged. The two authorized
-Cloud checks authenticated successfully but stopped at missing-table reads.
-The next step is approval to publish/merge this local bootstrap repair and run
-the [same bounded check](SURREAL_RUNTIME_CHECK.md) once against its exact repaired
-source pin. No new user, permission expansion, import or reset is required.
+The bounded Cloud bootstrap check passed and the clean Surreal deployment is
+live. The separate reader remains unchanged. The next core step is to configure
+one account's Memory Recall endpoint/model, then prove one normal interaction.
+No new database user, permission expansion, import or reset is required.
 
 Storage success does not resolve the routing/model gaps above. Subsequently prove
 one account reaches its own initialized Mind and configured Memory Recall task

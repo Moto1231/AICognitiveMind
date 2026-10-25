@@ -19,6 +19,7 @@ from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body_sessions import BodyQueue, body_session
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
+from aicognitive_mind.account_mcp import account_tools, request_state
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.domain import DiagnosticObservation
 from aicognitive_mind.github_capability import GitHubCapability
@@ -195,15 +196,16 @@ def build_chatgpt_mcp(
     )
 
     register_message_events(server, provider)
+    account_tool = account_tools(server, provider)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    @account_tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def mind_status(ctx: Context[AppState]) -> dict[str, Any]:
         """Read Axiom's persistent identity and continuity status.
 
         This is diagnostic/read-only. It demonstrates that the Mind persists independently
         of whichever reasoning host or model is currently connected.
         """
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         result = await state.mind_service.status()
         event_state = await state.hosts.records.get(STATE_KEY) or {}
         result["message_events"] = {
@@ -227,17 +229,18 @@ def build_chatgpt_mcp(
                 else "unknown"
             ),
             "runtime_class": type(state.runtime).__name__,
+            "mind_id": state.storage.mind_id,
         }
         return result
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def read_incoming_message(request_id: str, ctx: Context[AppState]) -> dict[str, Any]:
         """Read the full human message identified by a message.created event."""
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         event_owner(provider, state.hosts.records.mind_id)
         return await state.hosts.read_incoming_message(request_id)
 
-    @server.tool(annotations=ToolAnnotations(
+    @account_tool(annotations=ToolAnnotations(
         read_only_hint=False, destructive_hint=False, open_world_hint=False,
     ))
     async def claim_incoming_message(request_id: str, ctx: Context[AppState]) -> dict[str, Any]:
@@ -247,11 +250,11 @@ def build_chatgpt_mcp(
         call begin_interaction with user_message, reason, then complete_incoming_message.
         Do nothing on already_complete or in_progress. Release the claim if processing fails.
         """
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         event_owner(provider, state.hosts.records.mind_id)
         return await state.hosts.claim_incoming_message(request_id)
 
-    @server.tool(annotations=ToolAnnotations(
+    @account_tool(annotations=ToolAnnotations(
         read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False,
     ))
     async def complete_incoming_message(
@@ -263,27 +266,27 @@ def build_chatgpt_mcp(
         This completes the interaction; do not also call complete_interaction or speak_body_text.
         Retry an interrupted completion with the identical response and claim token.
         """
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         event_owner(provider, state.hosts.records.mind_id)
         return await state.hosts.complete_incoming_message(
             claim_token, request_id, response_text, tuple(proposed_memories or ()),
         )
 
-    @server.tool(annotations=ToolAnnotations(
+    @account_tool(annotations=ToolAnnotations(
         read_only_hint=False, destructive_hint=False, open_world_hint=False,
     ))
     async def release_incoming_message(
         claim_token: str, request_id: str, ctx: Context[AppState],
     ) -> dict[str, Any]:
         """Release this event task's uncompleted claim after a failed processing attempt."""
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         event_owner(provider, state.hosts.records.mind_id)
         return await state.hosts.release_incoming_message(claim_token, request_id)
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def interaction_trace(interaction_id: str, ctx: Context[AppState]) -> dict[str, Any]:
         """Return the server-observed transport trace for exactly one Axiom interaction."""
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         events = [
             observation for observation in await state.storage.diagnostics.read()
             if observation.component == "chatgpt_mcp"
@@ -299,22 +302,22 @@ def build_chatgpt_mcp(
             "events": [item.model_dump(mode="json") for item in events],
         }
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def get_body_voice_settings(ctx: Context[AppState]) -> dict[str, Any]:
         """Read the phone Body's shared voice, speaking rate, pitch, and volume.
 
         The browser chooses from voices installed on that device. This does not start its mic.
         """
-        storage = ctx.request_context.lifespan_context.storage
+        storage = request_state(ctx).storage
         return await VoiceSettings(storage.mind).read()
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def get_body_reasoning_status(ctx: Context[AppState]) -> dict[str, Any]:
         """Read the phone Body's external host and configured fallback provider/model.
 
         This reports configuration; it does not guarantee provider quota or availability.
         """
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         settings = get_settings()
         provider_name = settings.effective_standalone_reasoning_provider
         requested_model = (
@@ -330,7 +333,7 @@ def build_chatgpt_mcp(
             "fallback_requested_model": requested_model,
         }
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -353,7 +356,7 @@ def build_chatgpt_mcp(
         name falls back to the browser's default voice. This cannot remotely turn on
         a microphone or override the browser's permission requirement.
         """
-        storage = ctx.request_context.lifespan_context.storage
+        storage = request_state(ctx).storage
         return await VoiceSettings(storage.mind).update(
             expected_revision=expected_revision,
             voice_name=voice_name,
@@ -362,7 +365,7 @@ def build_chatgpt_mcp(
             volume=volume,
         )
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -388,7 +391,7 @@ def build_chatgpt_mcp(
         if not speech_text:
             raise ValueError("Speech text cannot be empty")
 
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         records = RuntimeRecords(state.storage.mind)
         active = await records.get("active_body_session")
         if not active:
@@ -429,7 +432,7 @@ def build_chatgpt_mcp(
             "volume": intent.metadata["volume"],
         }
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     def open_live_body() -> dict[str, str]:
         """Return the canonical URL for handing off to Axiom's live Body.
 
@@ -442,7 +445,7 @@ def build_chatgpt_mcp(
             "ui_control_limit": "The caller must open this URL; the MCP server cannot dismiss the current chat pane.",
         }
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -460,9 +463,9 @@ def build_chatgpt_mcp(
         The returned lease token is private capability state. Keep it out of user-facing
         responses and use it only with the Body handoff tools below.
         """
-        return await ctx.request_context.lifespan_context.hosts.attach(name, model)
+        return await request_state(ctx).hosts.attach(name, model)
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -476,11 +479,11 @@ def build_chatgpt_mcp(
         detach: bool = False,
     ) -> dict[str, Any]:
         """Renew the live Body reasoning lease, or detach before handing off hosts."""
-        return await ctx.request_context.lifespan_context.hosts.renew(
+        return await request_state(ctx).hosts.renew(
             lease_token, detach
         )
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def peek_pending_body_message(ctx: Context[AppState]) -> dict[str, Any]:
         """Read the next unclaimed Body human message without claiming or consuming it.
 
@@ -488,7 +491,7 @@ def build_chatgpt_mcp(
         next_body_interaction / complete_body_interaction. Sensory work is not
         surfaced here. Only the authenticated Mind's own pending queue is read.
         """
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         requests = await HostRuntime(state.storage.mind, state.mind_service).records.pending()
         now = time.time()
         candidates = []
@@ -525,7 +528,7 @@ def build_chatgpt_mcp(
             "claimed": False,
         }
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def next_body_interaction(
         lease_token: str,
         ctx: Context[AppState],
@@ -534,9 +537,9 @@ def build_chatgpt_mcp(
 
         The returned context already includes Axiom identity and memory for that Body input.
         """
-        return await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
+        return await request_state(ctx).hosts.next_request(lease_token)
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -555,29 +558,29 @@ def build_chatgpt_mcp(
 
         Retry with the same response if delivery is interrupted.
         """
-        return await ctx.request_context.lifespan_context.hosts.complete(
+        return await request_state(ctx).hosts.complete(
             lease_token,
             request_id,
             response_text,
             tuple(proposed_memories or ()),
         )
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
     def github_status() -> dict[str, Any]:
         """Read status for Axiom's configured GitHub repository."""
         return GitHubCapability.from_env().status()
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
     def github_list_path(path: str = "", ref: str | None = None) -> dict[str, Any]:
         """List files/directories in Axiom's configured GitHub repository."""
         return GitHubCapability.from_env().list_path(path=path, ref=ref)
 
-    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
+    @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
     def github_read_file(path: str, ref: str | None = None) -> dict[str, Any]:
         """Read a UTF-8 text file from Axiom's configured GitHub repository."""
         return GitHubCapability.from_env().read_file(path=path, ref=ref)
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -595,7 +598,7 @@ def build_chatgpt_mcp(
             base_ref=base_ref,
         )
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -619,7 +622,7 @@ def build_chatgpt_mcp(
             draft=draft,
         )
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -641,7 +644,7 @@ def build_chatgpt_mcp(
             branch=branch,
         )
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -688,7 +691,7 @@ def build_chatgpt_mcp(
             text=text,
         )
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -702,14 +705,14 @@ def build_chatgpt_mcp(
         Reviews the current journal and durable memory, records recurring grounded
         patterns, and appends the normal sleep-consolidation checkpoint.
         """
-        storage = ctx.request_context.lifespan_context.storage
+        storage = request_state(ctx).storage
         report = await SleepConsolidator(
             journal=storage.journal,
             memory=storage.memory,
         ).sleep()
         return report.model_dump(mode="json")
 
-    @server.tool(annotations=ToolAnnotations(
+    @account_tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, openWorldHint=False,
     ))
     async def begin_interaction(
@@ -728,7 +731,7 @@ def build_chatgpt_mcp(
             with timer.stage("context"):
                 if host_working_context is None:
                     host_working_context = HostWorkingContext()
-                state = ctx.request_context.lifespan_context
+                state = request_state(ctx)
                 context_json = host_working_context.model_dump(mode="json")
             with timer.stage("service"):
                 result = await state.mind_service.begin_interaction(user_message, context_json)
@@ -773,7 +776,7 @@ def build_chatgpt_mcp(
         finally:
             timer.log()
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
+    @account_tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     async def complete_interaction(
         user_message: str,
         response_text: str,
@@ -794,7 +797,7 @@ def build_chatgpt_mcp(
         timer = StageTimer("mcp.complete_interaction")
         try:
             with timer.stage("context"):
-                state = ctx.request_context.lifespan_context
+                state = request_state(ctx)
                 context_json = host_working_context.model_dump(mode="json")
                 request_payload = {
                     "user_message": user_message,
@@ -841,12 +844,12 @@ def build_chatgpt_mcp(
         finally:
             timer.log()
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    @account_tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def read_current_state(ctx: Context[AppState]) -> dict[str, Any]:
         """Read Axiom's persistent current-state ledger with grounding and explicit unknowns."""
-        return await ctx.request_context.lifespan_context.mind_service.read_current_state()
+        return await request_state(ctx).mind_service.read_current_state()
 
-    @server.tool(annotations=ToolAnnotations(
+    @account_tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, openWorldHint=False,
     ))
     async def update_current_state(
@@ -864,12 +867,12 @@ def build_chatgpt_mcp(
         updates accepts values={field: value or {value, source, status, note}} and
         invalidate=[field, ...]. Only event-affected answers are invalidated.
         """
-        return await ctx.request_context.lifespan_context.mind_service.update_current_state(
+        return await request_state(ctx).mind_service.update_current_state(
             event=event, updates=updates, source=source,
         )
 
 
-    @server.tool(
+    @account_tool(
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
@@ -886,7 +889,7 @@ def build_chatgpt_mcp(
         The Body owns camera permission and capture. This host-facing tool requests a
         1–30 second observation and returns the resulting JPEG as native MCP image content.
         """
-        state = ctx.request_context.lifespan_context
+        state = request_state(ctx)
         result = await CameraRequestRuntime(state.storage.mind).request(seconds)
         header, payload = result["image_data_url"].split(",", 1)
         media_type = header.removeprefix("data:").split(";", 1)[0]
@@ -911,7 +914,7 @@ def build_chatgpt_mcp(
             },
         )
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    @account_tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def read_sensory_evidence(
         sha256: str,
         captured_at: str,
@@ -924,7 +927,7 @@ def build_chatgpt_mcp(
         """
         from datetime import datetime
 
-        storage = ctx.request_context.lifespan_context.storage
+        storage = request_state(ctx).storage
         artifact = await storage.evidence.find_exact(
             sha256=sha256,
             captured_at=datetime.fromisoformat(captured_at),
@@ -962,14 +965,14 @@ def build_chatgpt_mcp(
             },
         )
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    @account_tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def list_mcp_tools(ctx: Context[AppState]) -> dict[str, Any]:
         """List administrator-configured MCP servers and their available tool schemas.
 
         Only enabled server/tool records are callable. Inspect this catalogue before calling
         an external tool; the schema describes the arguments expected by the remote server.
         """
-        storage = ctx.request_context.lifespan_context.storage
+        storage = request_state(ctx).storage
         registry = MCPServerRegistry(RuntimeRecords(storage.mind))
         servers = await registry.list()
         return {
@@ -993,7 +996,7 @@ def build_chatgpt_mcp(
             ]
         }
 
-    @server.tool(annotations=ToolAnnotations(openWorldHint=True, destructiveHint=True))
+    @account_tool(annotations=ToolAnnotations(openWorldHint=True, destructiveHint=True))
     async def call_mcp_tool(
         server_id: str,
         tool_name: str,
@@ -1006,7 +1009,7 @@ def build_chatgpt_mcp(
         Only explicitly enabled servers and tools can be called. Tool effects occur on the
         external server and are governed by that server's own permissions.
         """
-        storage = ctx.request_context.lifespan_context.storage
+        storage = request_state(ctx).storage
         registry = MCPServerRegistry(RuntimeRecords(storage.mind))
         servers = await registry.list()
         external_server = next((item for item in servers if item.id == server_id), None)

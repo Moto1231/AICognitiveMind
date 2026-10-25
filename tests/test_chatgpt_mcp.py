@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlparse
 
 from pydantic import AnyUrl
 
-from mcp.server.auth.provider import AuthorizationParams
+from mcp.server.auth.provider import AccessToken, AuthorizationParams
 from mcp.shared.auth import OAuthClientInformationFull
 
 from aicognitive_mind.chatgpt_mcp import (
@@ -116,6 +116,16 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.provider = AxiomAuthorizationServerProvider(
             self.base, username="mind", password="secret",
         )
+        # Direct function fixtures still represent an authenticated request.
+        # The independent routing regressions exercise missing/invalid tokens.
+        access = AccessToken(
+            token="synthetic-surface-access", client_id="surface-client",
+            subject="mind", scopes=[self.provider.required_scope],
+            resource=self.provider.resource_url,
+        )
+        token_patch = patch("aicognitive_mind.account_mcp.get_access_token", return_value=access)
+        token_patch.start()
+        self.addCleanup(token_patch.stop)
 
     def test_begin_interaction_surfaces_queue_and_preserves_human_priority(self):
         summary = _summarize_body_work(

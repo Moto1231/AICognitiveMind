@@ -9,6 +9,7 @@ import binascii
 import hashlib
 import hmac
 import logging
+import math
 import os
 import secrets
 import json
@@ -21,6 +22,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Query, Request, status
@@ -100,7 +102,7 @@ from aicognitive_mind.host_runtime import (
 )
 from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.mcp_registry import MCPServerRecord, MCPServerRegistry
-from aicognitive_mind.persistence import create_storage
+from aicognitive_mind.persistence import create_storage, scope_storage
 from aicognitive_mind.presence_resolver import PresenceResolver
 from aicognitive_mind.standalone import ProviderUnavailable, StandaloneRuntime
 from aicognitive_mind.storage import (
@@ -441,8 +443,50 @@ def require_admin(request: Request) -> None:
         )
 
 
+def _request_runtime(request: Request) -> Any:
+    """Bind cognition and its configuration to the verified session's Mind.
+
+    The middleware owns identity resolution. This helper never accepts a Mind
+    selector from query parameters, headers or request bodies, and never mutates
+    the shared application state while requests run concurrently.
+    """
+    tenant = getattr(request.state, "tenant_storage", None)
+    if tenant is None:
+        return request.app.state
+    context = getattr(request.state, "tenant_runtime", None)
+    if context is not None:
+        return context
+    settings = get_settings()
+    records = RuntimeRecords(tenant.mind)
+    service = CognitiveMcpService(mind=tenant.mind, journal=tenant.journal, memory=tenant.memory)
+    fallback = StandaloneRuntime(settings, records)
+    hosts = HostRuntime(tenant.mind, service, settings.reasoning_timeout_seconds)
+    interpreter = HostAwareInterpreter(fallback, hosts)
+    evidence_review = SensoryEvidenceReviewTool(
+        evidence=tenant.evidence, journal=tenant.journal, interpreter=interpreter,
+    )
+    core = HostAwareCore(CognitiveCore(
+        mind=tenant.mind, journal=tenant.journal, memory=tenant.memory,
+        diagnostics=tenant.diagnostics, engine=fallback, reasoning_tools=(evidence_review,),
+    ), hosts)
+    context = SimpleNamespace(
+        core=core, mcp_service=service, hosts=hosts, standalone=fallback,
+        standalone_reasoning_provider=settings.effective_standalone_reasoning_provider,
+        runtime_records=records, diagnostics=tenant.diagnostics,
+        mind_store=tenant.mind, journal_store=tenant.journal,
+        memory_store=tenant.memory, evidence_store=tenant.evidence,
+        host_behaviors=HostBehaviorRegistry(records),
+        provider_endpoints=ProviderEndpointRegistry(records),
+        task_behaviors=TaskBehaviorRegistry(records),
+        task_model_assignments=TaskModelAssignmentRegistry(records),
+        mcp_servers=MCPServerRegistry(records),
+    )
+    request.state.tenant_runtime = context
+    return context
+
+
 def get_core(request: Request) -> CognitiveCore:
-    return cast(CognitiveCore, request.app.state.core)
+    return cast(CognitiveCore, _request_runtime(request).core)
 
 
 def _effective_standalone_reasoning_provider(settings: Any) -> str:
@@ -540,6 +584,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     provider = settings.effective_standalone_reasoning_provider
     app.state.standalone_reasoning_provider = provider
     storage = await create_storage(settings)
+    app.state.storage = storage
     app.state.runtime = storage.runtime
     app.state.diagnostics = storage.diagnostics
     app.state.evidence_store = storage.evidence
@@ -671,7 +716,7 @@ async def read_portal_session(app: FastAPI, token: str) -> dict[str, Any] | None
         mind_id = str(stored.get("account_mind_id", ""))
     except (TypeError, ValueError):
         return None
-    if not mind_id or expires_at <= time_module.time():
+    if not mind_id or not math.isfinite(expires_at) or expires_at <= time_module.time():
         return None
     return {"mind_id": mind_id, "expires_at": expires_at}
 
@@ -721,24 +766,41 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
         or request.url.path == "/v1/portal/login"
         or request.url.path.startswith("/static/")
     )
-    if public_path or app_access_authorized(authorization):
+    if public_path:
         return await call_next(request)
 
     session_token = request.cookies.get("axiom_portal_session", "")
-    session = await read_portal_session(request.app, session_token)
-    if session and session["expires_at"] > time_module.time():
-        # The original pre-multi-user account owns the unscoped Mind that was
-        # created before tenant ids existed. Keep using the app's canonical
-        # storage for that account instead of opening an empty derived tenant.
-        if session["mind_id"] == "__legacy__":
-            return await call_next(request)
-
-        tenant = await create_storage(get_settings(), mind_id=session["mind_id"])
-        request.state.tenant_storage = tenant
+    if session_token:
+        session = await read_portal_session(request.app, session_token)
+        if session is None:
+            return Response(status_code=status.HTTP_401_UNAUTHORIZED)
         try:
+            account = await request.app.state.accounts.resolve_subject(session["mind_id"])
+        except (ValueError, CommitConflict):
+            return Response(status_code=status.HTTP_401_UNAUTHORIZED)
+        if account is None:
+            return Response(status_code=status.HTTP_401_UNAUTHORIZED)
+        # Explicit historical accounts retain the canonical storage, but an
+        # unknown, expired or ambiguous cookie never falls back to that Mind.
+        if account.mind_id == "__legacy__":
             return await call_next(request)
-        finally:
-            await tenant.runtime.close()
+        # These handlers still use deployment-wide Body/backup/GitHub state.
+        # Until they have account-scoped implementations, do not silently run
+        # them against another Mind's resources. Explicit root admin access is
+        # unchanged; the cognitive and scoped configuration routes remain usable.
+        if request.url.path == "/v1/admin/backup" or request.url.path.startswith((
+            "/body/", "/v1/body/", "/v1/mind/body/",
+            "/v1/admin/body/", "/v1/admin/skills",
+        )):
+            return JSONResponse(
+                {"detail": "This endpoint is not available for account-scoped sessions."},
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        request.state.tenant_storage = scope_storage(request.app.state.storage, account.mind_id)
+        return await call_next(request)
+
+    if app_access_authorized(authorization):
+        return await call_next(request)
 
     return Response(status_code=status.HTTP_401_UNAUTHORIZED)
 
@@ -944,7 +1006,7 @@ async def sensory_evidence_metadata(
     captured_at: datetime,
     request: Request,
 ) -> SensoryEvidenceReference:
-    evidence_store = cast(EvidenceStore, request.app.state.evidence_store)
+    evidence_store = cast(EvidenceStore, _request_runtime(request).evidence_store)
     artifact = await evidence_store.find_exact(
         sha256=sha256,
         captured_at=captured_at,
@@ -963,7 +1025,7 @@ async def sensory_evidence_media(
     captured_at: datetime,
     request: Request,
 ) -> Response:
-    evidence_store = cast(EvidenceStore, request.app.state.evidence_store)
+    evidence_store = cast(EvidenceStore, _request_runtime(request).evidence_store)
     artifact = await evidence_store.find_exact(
         sha256=sha256,
         captured_at=captured_at,
@@ -1379,26 +1441,22 @@ async def health(request: Request) -> dict[str, str]:
 
 @app.get("/v1/portal/status")
 async def portal_status(request: Request) -> dict[str, Any]:
-    tenant = getattr(request.state, "tenant_storage", None)
-    service = (
-        CognitiveMcpService(mind=tenant.mind, journal=tenant.journal, memory=tenant.memory)
-        if tenant is not None
-        else cast(CognitiveMcpService, request.app.state.mcp_service)
-    )
+    context = _request_runtime(request)
+    service = cast(CognitiveMcpService, context.mcp_service)
     try:
         result = await service.status()
         runtime_settings = get_settings()
         provider = str(
             getattr(
-                request.app.state,
+                context,
                 "standalone_reasoning_provider",
                 runtime_settings.effective_standalone_reasoning_provider,
             )
         ).strip().lower()
         model = getattr(
-            request.app.state,
+            context,
             "reasoning_model",
-            getattr(getattr(request.app.state, "standalone", None), "model", "not started"),
+            getattr(getattr(context, "standalone", None), "model", "not started"),
         )
         requested_model = (
             runtime_settings.gemini_model
@@ -1413,7 +1471,7 @@ async def portal_status(request: Request) -> dict[str, Any]:
         # reason when no external host is driving the interaction.
         result["reasoning"] = {
             "primary_mode": "external_host",
-            "active_host": await request.app.state.hosts.active() if hasattr(request.app.state, "hosts") else None,
+            "active_host": await context.hosts.active() if hasattr(context, "hosts") else None,
             "fallback_enabled": provider != "disabled",
             "external_host_protocol": "MCP",
             "external_host_reasoning_owner": "connected MCP host",
@@ -1762,9 +1820,7 @@ async def admin_status(request: Request) -> dict[str, bool]:
 @app.get("/v1/admin/diagnostics")
 async def admin_diagnostics(request: Request) -> dict[str, Any]:
     require_admin(request)
-    tenant = getattr(request.state, "tenant_storage", None)
-    service = (CognitiveMcpService(mind=tenant.mind, journal=tenant.journal, memory=tenant.memory)
-               if tenant is not None else cast(CognitiveMcpService, request.app.state.mcp_service))
+    service = cast(CognitiveMcpService, _request_runtime(request).mcp_service)
     return {
         "current_state": await service.read_current_state(),
         "performance": {
@@ -1802,14 +1858,14 @@ async def update_admin_body_fallback_settings(
 @app.get("/v1/admin/host-behaviors")
 async def admin_host_behaviors(request: Request) -> dict[str, Any]:
     require_admin(request)
-    items = await request.app.state.host_behaviors.list()
+    items = await _request_runtime(request).host_behaviors.list()
     return {"items": [item.model_dump(mode="json") for item in items]}
 
 
 @app.get("/v1/admin/provider-endpoints")
 async def admin_provider_endpoints(request: Request) -> dict[str, Any]:
     require_admin(request)
-    items = await request.app.state.provider_endpoints.list()
+    items = await _request_runtime(request).provider_endpoints.list()
     return {"items": [item.model_dump(mode="json") for item in items]}
 
 
@@ -1820,7 +1876,7 @@ async def replace_admin_provider_endpoints(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        items = await request.app.state.provider_endpoints.replace(payload.items)
+        items = await _request_runtime(request).provider_endpoints.replace(payload.items)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"items": [item.model_dump(mode="json") for item in items]}
@@ -1843,7 +1899,7 @@ async def discover_admin_provider_endpoint_models(
 @app.get("/v1/admin/mcp/servers")
 async def admin_mcp_servers(request: Request) -> dict[str, Any]:
     require_admin(request)
-    items = await request.app.state.mcp_servers.list()
+    items = await _request_runtime(request).mcp_servers.list()
     return {"items": [item.model_dump(mode="json", by_alias=True) for item in items]}
 
 
@@ -1854,7 +1910,7 @@ async def replace_admin_mcp_servers(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        items = await request.app.state.mcp_servers.replace(payload.items)
+        items = await _request_runtime(request).mcp_servers.replace(payload.items)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"items": [item.model_dump(mode="json", by_alias=True) for item in items]}
@@ -1867,7 +1923,7 @@ async def discover_admin_mcp_server(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        tools = await request.app.state.mcp_servers.discover(payload)
+        tools = await _request_runtime(request).mcp_servers.discover(payload)
     except Exception as exc:
         logger.info("MCP tool discovery failed for %s: %s", payload.name, exc)
         raise HTTPException(status_code=502, detail=f"MCP tool discovery failed: {exc}") from exc
@@ -1883,12 +1939,12 @@ async def call_admin_mcp_tool(
     request: Request,
 ) -> dict[str, Any]:
     require_admin(request)
-    servers = await request.app.state.mcp_servers.list()
+    servers = await _request_runtime(request).mcp_servers.list()
     server = next((item for item in servers if item.id == payload.server_id), None)
     if server is None:
         raise HTTPException(status_code=404, detail="MCP server not found")
     try:
-        result = await request.app.state.mcp_servers.call_tool(
+        result = await _request_runtime(request).mcp_servers.call_tool(
             server,
             payload.tool_name,
             payload.arguments,
@@ -1904,7 +1960,7 @@ async def call_admin_mcp_tool(
 @app.get("/v1/admin/task-behaviors")
 async def admin_task_behaviors(request: Request) -> dict[str, Any]:
     require_admin(request)
-    items = await request.app.state.task_behaviors.list()
+    items = await _request_runtime(request).task_behaviors.list()
     return {
         "items": [item.model_dump(mode="json") for item in items],
         "foundations": TASK_FOUNDATIONS,
@@ -1918,7 +1974,7 @@ async def replace_admin_task_behaviors(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        items = await request.app.state.task_behaviors.replace(payload.items)
+        items = await _request_runtime(request).task_behaviors.replace(payload.items)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"items": [item.model_dump(mode="json") for item in items]}
@@ -1927,7 +1983,7 @@ async def replace_admin_task_behaviors(
 @app.get("/v1/admin/task-model-assignments")
 async def admin_task_model_assignments(request: Request) -> dict[str, Any]:
     require_admin(request)
-    items = await request.app.state.task_model_assignments.list()
+    items = await _request_runtime(request).task_model_assignments.list()
     return {"items": [item.model_dump(mode="json") for item in items]}
 
 
@@ -1938,7 +1994,7 @@ async def replace_admin_task_model_assignments(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        items = await request.app.state.task_model_assignments.replace(payload.items)
+        items = await _request_runtime(request).task_model_assignments.replace(payload.items)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"items": [item.model_dump(mode="json") for item in items]}
@@ -1951,7 +2007,7 @@ async def replace_admin_host_behaviors(
 ) -> dict[str, Any]:
     require_admin(request)
     try:
-        items = await request.app.state.host_behaviors.replace(payload.items)
+        items = await _request_runtime(request).host_behaviors.replace(payload.items)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"items": [item.model_dump(mode="json") for item in items]}
@@ -1966,8 +2022,8 @@ async def revise_memory(
     return await _apply_admin_memory_revision(
         original=body.original,
         replacement=body.replacement,
-        memory_store=cast(MemoryStore, request.app.state.memory_store),
-        journal_store=cast(JournalStore, request.app.state.journal_store),
+        memory_store=cast(MemoryStore, _request_runtime(request).memory_store),
+        journal_store=cast(JournalStore, _request_runtime(request).journal_store),
         channel="portal",
     )
 
@@ -1978,8 +2034,8 @@ async def revise_desktop_memory(
     request: Request,
 ) -> DurableMemory:
     require_admin(request)
-    memory_store = cast(MemoryStore, request.app.state.memory_store)
-    journal_store = cast(JournalStore, request.app.state.journal_store)
+    memory_store = cast(MemoryStore, _request_runtime(request).memory_store)
+    journal_store = cast(JournalStore, _request_runtime(request).journal_store)
 
     candidates = [
         memory
@@ -2122,5 +2178,5 @@ async def read_memory(request: Request) -> list[DurableMemory]:
 
 @app.get("/debug/diagnostics", response_model=list[DiagnosticObservation])
 async def read_diagnostics(request: Request) -> list[DiagnosticObservation]:
-    diagnostics = cast(DiagnosticStore, request.app.state.diagnostics)
+    diagnostics = cast(DiagnosticStore, _request_runtime(request).diagnostics)
     return await diagnostics.read()
