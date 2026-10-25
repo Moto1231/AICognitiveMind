@@ -31,6 +31,7 @@ from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
 from aicognitive_mind.steward_agent import ModelMemorySteward
 from aicognitive_mind.task_dispatcher import TaskModelDispatcher
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
+from aicognitive_mind.core_skills import REQUIRED_SKILLS, required_skill_catalog
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.state_context import CurrentStateLedger, CurrentStateLedgerRepository
 from aicognitive_mind.timing import StageTimer, emit
@@ -400,13 +401,30 @@ class CognitiveMcpService:
         }, source="persistent_mind_identity")
         ledger.answer("behaviors", {"rules": behaviors, "contract_loaded": bool(contract)},
                       source="runtime_behavior_assembler")
+        previous_skills = ledger.fields.get("skills")
+        remembered_skills = (
+            [item for item in previous_skills.value if not (
+                isinstance(item, dict) and item.get("slug") in REQUIRED_SKILLS
+            )]
+            if previous_skills is not None and previous_skills.status == "current"
+            and isinstance(previous_skills.value, list)
+            else []
+        )
         if recalled.get("recall_outcome") not in {"no_recall_needed", "no_relevant_memory"}:
-            ledger.answer("skills", [
+            remembered_skills = [
                 {"memory_class": m.get("memory_class"), "content": m.get("content"),
                  "associations": m.get("associations", [])}
                 for m in recalled.get("durable_memory", [])
                 if m.get("memory_class") == MemoryClass.PROCEDURAL.value
-            ][:12], source="memory_steward_recall")
+            ][:12]
+        packaged_skills = [
+            {key: value for key, value in item.items() if key != "content"}
+            for item in required_skill_catalog()
+        ]
+        ledger.answer("skills", [*packaged_skills, *remembered_skills],
+                      source="packaged_runtime_protocols_and_grounded_procedures",
+                      note="Required server protocols are loaded in the reasoning contract; "
+                           "host plugin or catalog refresh is not verified.")
         if first_context:
             ledger.answer("mood", None, status="unknown",
                           source="memory_steward_no_grounded_mood",

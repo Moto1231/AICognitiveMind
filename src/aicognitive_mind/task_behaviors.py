@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from aicognitive_mind.task_model_assignments import TASK_LABELS
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
+from aicognitive_mind.core_skills import compose_required_skills
 
 TaskBehaviorKind = Literal[
     "vision", "audio", "audio_voice", "coding", "image_generation", "summarization",
@@ -175,6 +176,8 @@ class TaskPromptAssembler:
             "IMMUTABLE AXIOM TASK FOUNDATION (code-owned):",
             TASK_FOUNDATIONS[context.task],
         ]
+        if context.task == "reasoning":
+            layers.extend(["", compose_required_skills()])
         selected = await HostBehaviorRegistry(self.registry.records).selected(context.task)
         if selected:
             layers.extend([

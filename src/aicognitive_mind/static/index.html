@@ -167,8 +167,9 @@
           <article id="skillsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
             <section class="overview-group">
-              <h4>Skill Drafts</h4>
-              <label class="host-behavior-field">Existing drafts<select id="skillsList"><option value="">New skill</option></select></label>
+              <h4>Required Skills and Drafts</h4>
+              <label class="host-behavior-field">Available skills<select id="skillsList"><option value="">New skill</option></select></label>
+              <p id="skillsSource" class="record-empty"></p>
               <label class="host-behavior-field">Skill ID<input id="skillsSlug" placeholder="my-skill" pattern="[a-z0-9-]+" maxlength="64"></label>
               <label class="host-behavior-field">SKILL.md<textarea id="skillsContent" rows="18" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What the skill does&#10;---&#10;&#10;# Instructions"></textarea></label>
               <div class="edit-actions"><button id="skillsValidate" type="button" class="secondary-button" aria-label="Validate skill" title="Validate skill">Check</button><button id="skillsSave" type="button" class="primary-button">Save Draft to GitHub</button></div>

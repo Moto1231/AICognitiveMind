@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from aicognitive_mind.core_skills import REQUIRED_SKILLS, REQUIRED_SKILL_NAMES
+
 
 class HostBehavior(BaseModel):
     id: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]*$")
@@ -12,6 +14,7 @@ class HostBehavior(BaseModel):
     enabled: bool = True
     priority: int = Field(default=100, ge=0, le=10000)
     protected: bool = False
+    required: bool = False
 
 
 DEFAULT_HOST_BEHAVIORS = (
@@ -39,6 +42,20 @@ DEFAULT_HOST_BEHAVIORS = (
 )
 
 
+REQUIRED_HOST_BEHAVIORS = tuple(
+    HostBehavior(
+        id=slug, name=REQUIRED_SKILL_NAMES[slug],
+        instruction=(
+            f"{REQUIRED_SKILL_NAMES[slug]} is required for every Axiom reasoning interaction. "
+            "Apply its full packaged protocol supplied in the mandatory reasoning contract, "
+            "including fresh instances and follow-ups. Optional task memberships cannot disable it."
+        ),
+        priority=index, protected=True, required=True,
+    )
+    for index, slug in enumerate(REQUIRED_SKILLS)
+)
+
+
 class HostBehaviorRegistry:
     RECORD_KEY = "host_behaviors"
 
@@ -48,9 +65,14 @@ class HostBehaviorRegistry:
     async def list(self) -> list[HostBehavior]:
         record = await self.records.get(self.RECORD_KEY)
         items = (
-            [HostBehavior.model_validate(item) for item in record.get("items", [])]
-            if record else list(DEFAULT_HOST_BEHAVIORS)
+            [HostBehavior.model_validate(item) for item in record.get("items", [])
+             if item.get("id") not in REQUIRED_SKILLS]
+            if record else [item.model_copy(deep=True) for item in DEFAULT_HOST_BEHAVIORS]
         )
+        # Required protocols come from the installed package, including when an
+        # older or tampered saved catalog omits, disables or rewrites their rows.
+        # Preserve every other record and leave storage unchanged on this read.
+        items = [*(item.model_copy(deep=True) for item in REQUIRED_HOST_BEHAVIORS), *items]
         if record and record.get("task_profiles_migrated"):
             return items
         # Promote the former inline task instructions into the shared catalog
@@ -88,6 +110,8 @@ class HostBehaviorRegistry:
         incoming = {item.id: item for item in behaviors}
         for behavior_id, original in protected.items():
             candidate = incoming.get(behavior_id)
+            if behavior_id in REQUIRED_SKILLS and candidate != original:
+                raise ValueError(f"Required Axiom behavior cannot be changed: {behavior_id}")
             if candidate is None or not candidate.enabled or candidate.instruction != original.instruction:
                 raise ValueError(f"Protected host behavior cannot be removed, disabled, or rewritten: {behavior_id}")
             if not candidate.protected:

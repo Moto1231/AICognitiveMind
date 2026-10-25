@@ -64,6 +64,7 @@ from aicognitive_mind.config import (
 )
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.core import CognitiveCore, MindNotInitializedError
+from aicognitive_mind.core_skills import REQUIRED_SKILLS, required_skill_catalog
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -788,10 +789,20 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
         # Until they have account-scoped implementations, do not silently run
         # them against another Mind's resources. Explicit root admin access is
         # unchanged; the cognitive and scoped configuration routes remain usable.
+        skill_path = request.url.path
+        packaged_skill_access = (
+            (request.method == "GET" and skill_path == "/v1/admin/skills")
+            or (request.method == "POST" and skill_path == "/v1/admin/skills/validate")
+            or any(
+                (request.method == "GET" and skill_path == f"/v1/admin/skills/{slug}")
+                or (request.method == "POST" and skill_path == f"/v1/admin/skills/{slug}/prepare")
+                for slug in REQUIRED_SKILLS
+            )
+        )
         if request.url.path == "/v1/admin/backup" or request.url.path.startswith((
             "/body/", "/v1/body/", "/v1/mind/body/",
-            "/v1/admin/body/", "/v1/admin/skills",
-        )):
+            "/v1/admin/body/",
+        )) or (skill_path.startswith("/v1/admin/skills") and not packaged_skill_access):
             return JSONResponse(
                 {"detail": "This endpoint is not available for account-scoped sessions."},
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -1751,14 +1762,28 @@ def _validate_skill_content(content: str) -> list[str]:
 @app.get("/v1/admin/skills")
 async def list_admin_skills(request: Request) -> dict[str, Any]:
     require_admin(request)
+    core = [
+        {key: value for key, value in item.items() if key != "content"}
+        for item in required_skill_catalog()
+    ]
+    if getattr(request.state, "tenant_storage", None) is not None:
+        return {
+            "items": core, "drafts_available": False,
+            "drafts_error": "Custom GitHub drafts are not available for account-scoped sessions.",
+        }
     try:
         result = await asyncio.to_thread(_skill_github_call, "contents/skills/drafts")
     except HTTPException as exc:
         if exc.status_code == 404:
-            return {"items": []}
-        raise
-    return {"items": [{"slug": item["name"], "path": item["path"]} for item in result
-            if isinstance(item, dict) and item.get("type") == "dir"]}
+            result = []
+        else:
+            return {"items": core, "drafts_available": False, "drafts_error": str(exc.detail)}
+    drafts = [
+        {"slug": item["name"], "path": item["path"], "required": False, "read_only": False}
+        for item in result if isinstance(item, dict) and item.get("type") == "dir"
+        and item.get("name") not in REQUIRED_SKILLS
+    ]
+    return {"items": [*core, *drafts], "drafts_available": True, "drafts_error": None}
 
 
 @app.get("/v1/admin/skills/{slug}")
@@ -1766,6 +1791,9 @@ async def get_admin_skill(slug: str, request: Request) -> dict[str, Any]:
     require_admin(request)
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
         raise HTTPException(status_code=400, detail="Skill ID must start with a lowercase letter or digit and contain only lowercase letters, digits, or hyphens (maximum 64 characters)")
+    if slug in REQUIRED_SKILLS:
+        item = next(item for item in required_skill_catalog() if item["slug"] == slug)
+        return {**item, "sha": None}
     result = await asyncio.to_thread(_skill_github_call, f"contents/skills/drafts/{slug}/SKILL.md")
     return {"slug": slug, "sha": result["sha"], "content": base64.b64decode(result["content"]).decode("utf-8")}
 
@@ -1784,6 +1812,8 @@ async def save_admin_skill(slug: str, payload: SkillDraftPayload, request: Reque
     require_admin(request)
     if slug != payload.slug or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
         raise HTTPException(status_code=400, detail="Invalid skill slug")
+    if slug in REQUIRED_SKILLS:
+        raise HTTPException(status_code=403, detail="Required Axiom skills are read-only and cannot be replaced by drafts.")
     errors = _validate_skill_content(payload.content)
     if errors:
         raise HTTPException(status_code=422, detail=errors)
@@ -1802,6 +1832,11 @@ async def prepare_admin_skill(slug: str, request: Request) -> Response:
     require_admin(request)
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
         raise HTTPException(status_code=400, detail="Invalid skill slug")
+    if slug in REQUIRED_SKILLS:
+        item = next(item for item in required_skill_catalog() if item["slug"] == slug)
+        return Response(content=item["content"], media_type="text/markdown", headers={
+            "Content-Disposition": f'attachment; filename="{slug}-SKILL.md"', "Cache-Control": "no-store",
+        })
     result = await asyncio.to_thread(_skill_github_call, f"contents/skills/drafts/{slug}/SKILL.md")
     content = base64.b64decode(result["content"])
     errors = _validate_skill_content(content.decode("utf-8"))
