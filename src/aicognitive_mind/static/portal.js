@@ -1187,7 +1187,7 @@ const COMMON_ENDPOINT_PRESETS = [
   { id: "openrouter", name: "OpenRouter", base_url: "https://openrouter.ai/api/v1" },
   { id: "google-gemini", name: "Google Gemini (OpenAI-compatible)", base_url: "https://generativelanguage.googleapis.com/v1beta/openai" },
   { id: "groq", name: "Groq", base_url: "https://api.groq.com/openai/v1" },
-  { id: "together", name: "Together AI", base_url: "https://api.together.xyz/v1" },
+  { id: "together", name: "Together AI", base_url: "https://api.together.ai/v1" },
   { id: "fireworks", name: "Fireworks AI", base_url: "https://api.fireworks.ai/inference/v1" },
   { id: "deepseek", name: "DeepSeek", base_url: "https://api.deepseek.com" },
   { id: "mistral", name: "Mistral AI", base_url: "https://api.mistral.ai/v1" },
@@ -1201,7 +1201,7 @@ const COMMON_ENDPOINT_PRESETS = [
 
 function prepareProviderConnections() {
   if (state.endpointDraft || state.providerSetupDraft || state.integrationSaving || state.endpointDiscovering || state.endpointProbing) return;
-  const providers = ["cerebras", "google-gemini", "mistral", "openrouter", "sambanova"];
+  const providers = ["cerebras", "google-gemini", "openrouter", "sambanova", "together"];
   const baseUrls = new Set(state.providerEndpoints.map(item => item.base_url.replace(/\/$/, "")));
   state.providerSetupDraft = COMMON_ENDPOINT_PRESETS.filter(item => providers.includes(item.id) && !baseUrls.has(item.base_url))
     .map(preset => ({ id: crypto.randomUUID(), name: preset.name, provider_name: preset.name,

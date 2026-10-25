@@ -139,7 +139,7 @@ test('five provider connections remain drafts until Save and Cancel preserves sa
   assert.equal(ui.state.providerSetupDraft.length, 5);
   assert.equal(new Set(ui.state.providerSetupDraft.map(item => item.id)).size, 5);
   assert.deepEqual(Array.from(ui.state.providerSetupDraft, item => item.provider_name).sort(),
-    ['Cerebras', 'Google Gemini (OpenAI-compatible)', 'Mistral AI', 'OpenRouter', 'SambaNova'].sort());
+    ['Cerebras', 'Google Gemini (OpenAI-compatible)', 'OpenRouter', 'SambaNova', 'Together AI'].sort());
   assert.ok(ui.state.providerSetupDraft.every(item => !item.api_key && !item.model && !item.models.length));
   assert.equal(JSON.stringify(ui.state.providerEndpoints), before);
   assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
@@ -173,6 +173,36 @@ test('saving new provider profiles preserves fresh server connections and avoids
   assert.equal(ui.state.providerSetupDraft, null);
   assert.equal(ui.el.taskProfileApiKey.disabled, true);
   assert.equal(ui.state.providerEndpoints.filter(item => !item.api_key && !item.model).length, 4);
+});
+
+test('existing Groq and Mistral connections are preserved while five additional providers are prepared and saved', async () => {
+  const existing = [
+    { id: 'groq-saved', name: 'Existing Groq', provider_name: 'Groq',
+      base_url: 'https://api.groq.com/openai/v1', api_key: 'groq-test-key', model: 'groq-saved-model', models: ['groq-saved-model'] },
+    { id: 'mistral-saved', name: 'Existing Mistral', provider_name: 'Mistral AI',
+      base_url: 'https://api.mistral.ai/v1', api_key: 'mistral-test-key', model: 'mistral-saved-model', models: ['mistral-saved-model'] },
+  ];
+  const ui = editor({ apiHandler: async (_url, body, options) =>
+    options.method === 'PUT' ? { items: body.items, revision: 13 } : { items: existing, revision: 12 } });
+  ui.state.providerEndpoints = existing.map(item => ({ ...item, models: [...item.models] }));
+  ui.state.providerEndpointRevision = 12;
+  ui.state.activeEndpointId = 'groq-saved';
+  ui.state.taskModelAssignments = [{ task: 'memory_recall', provider: 'groq-saved', model: 'groq-saved-model', fallbacks: [] }];
+  const before = JSON.stringify(ui.state.providerEndpoints);
+  const assignments = JSON.stringify(ui.state.taskModelAssignments);
+  ui.prepareProviderConnections();
+  assert.equal(ui.state.providerSetupDraft.length, 5);
+  assert.equal(ui.state.providerSetupDraft.some(item => item.provider_name === 'Mistral AI'), false);
+  assert.equal(ui.state.providerSetupDraft.find(item => item.provider_name === 'Together AI').base_url, 'https://api.together.ai/v1');
+  assert.equal(JSON.stringify(ui.state.providerEndpoints), before);
+  await ui.saveProviderConnections();
+  assert.equal(ui.calls.length, 2);
+  assert.equal(ui.calls[1].body.expected_revision, 12);
+  assert.equal(ui.state.providerEndpoints.length, 7);
+  assert.deepEqual(JSON.parse(JSON.stringify(ui.state.providerEndpoints.slice(0, 2))), existing);
+  assert.equal(ui.state.providerEndpoints.filter(item => !item.api_key && !item.model).length, 5);
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
+  assert.equal(ui.state.providerEndpointRevision, 13);
 });
 
 test('failed provider profile save keeps the isolated batch available to retry or cancel', async () => {
