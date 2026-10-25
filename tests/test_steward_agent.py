@@ -71,6 +71,17 @@ def native_message(action):
 
 
 class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
+    def test_final_provider_decision_schema_permits_only_the_phase_finish(self):
+        for phase, finish in (("recall", BRIEF), ("review", NOTHING)):
+            tool = steward_action_tools(phase, finish_only=True)[0]["function"]
+            self.assertEqual(tool["name"], "steward_action")
+            schema = tool["parameters"]
+            Draft202012Validator.check_schema(schema)
+            validator = Draft202012Validator(schema)
+            self.assertTrue(validator.is_valid({"decision": finish}))
+            self.assertFalse(validator.is_valid({"decision": SEARCH}))
+            self.assertEqual(schema["properties"]["decision"]["properties"]["action"]["const"], "finish")
+
     def test_provider_schema_preserves_phase_validation_without_model_labels(self):
         arbitrary = self.learning(artifacts=[{
             "kind": "project", "payload": {"title": "Keep data", "nested": {"anything": [1, True]}},
@@ -472,6 +483,103 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
             for item in await assignments.list()
         ])
         return records
+
+    async def test_http_final_round_finishes_grounded_recall_and_corrects_review(self):
+        service, journal, memory = await self.service(None)
+        await memory.remember(DurableMemory(
+            memory_class=MemoryClass.SEMANTIC, content="Atlas uses SurrealDB.",
+            grounding=("Earlier project decision",),
+        ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+        records = await self.configured_recall_records(service)
+        steps = iter([
+            SEARCH, SEARCH, SEARCH, BRIEF,
+            SEARCH, SEARCH, self.learning(memory_class="unknown"), self.learning(),
+        ])
+        calls = []
+
+        def handle(request):
+            calls.append(json.loads(request.content))
+            return httpx.Response(200, json={"choices": [{"message": native_message(next(steps))}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            with patch("aicognitive_mind.steward_agent.candidates", wraps=candidates) as search:
+                begun = await service.begin_interaction("Atlas uses SurrealDB.")
+                args = {
+                    "user_message": "Atlas uses SurrealDB.", "response_text": "Understood.",
+                    "idempotency_key": begun["idempotency_key"],
+                }
+                completed = await service.complete_interaction(**args)
+                self.assertEqual(await service.complete_interaction(**args), completed)
+        self.assertEqual(search.await_count, 5)
+        self.assertEqual(len(calls), 8)
+        self.assertEqual(begun["recalled_context"]["summary"], "Atlas uses SurrealDB.")
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(completed["memory_review"]["validation_corrections"], 1)
+        self.assertEqual(len([entry for entry in await journal.read() if entry.kind == "interaction"]), 1)
+        budgets = [json.loads(call["messages"][1]["content"])["assessment_budget"] for call in calls]
+        self.assertEqual([budget["model_calls_remaining"] for budget in budgets], [4, 3, 2, 1] * 2)
+        self.assertEqual(budgets[7]["review_corrections_remaining"], 0)
+        for index, call in enumerate(calls):
+            final = index in (3, 7)
+            self.assertEqual(budgets[index]["search_allowed"], not final)
+            validator = Draft202012Validator(call["tools"][0]["function"]["parameters"])
+            self.assertEqual(validator.is_valid({"decision": SEARCH}), not final)
+
+    async def test_plain_runtime_final_schema_finishes_after_three_searches(self):
+        model = ScriptedModel(SEARCH, SEARCH, SEARCH, BRIEF, NOTHING)
+        service, _, memory = await self.service(model)
+        await memory.remember(DurableMemory(
+            memory_class=MemoryClass.SEMANTIC, content="Atlas uses SurrealDB.",
+            grounding=("Earlier project decision",),
+        ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+        begun = await service.begin_interaction("What database does Atlas use?")
+        completed = await service.complete_interaction(
+            "What database does Atlas use?", "Atlas uses SurrealDB.",
+            idempotency_key=begun["idempotency_key"],
+        )
+        self.assertEqual(begun["recalled_context"]["summary"], "Atlas uses SurrealDB.")
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(len(model.calls), 5)
+        payload = model.calls[3][1]
+        schema = json.loads(payload["messages"][0]["content"].split("PHASE SCHEMA:\n", 1)[1])
+        self.assertTrue(Draft202012Validator(schema).is_valid(BRIEF))
+        self.assertFalse(Draft202012Validator(schema).is_valid(SEARCH))
+        self.assertEqual(json.loads(payload["messages"][1]["content"])["assessment_budget"], {
+            "model_calls_remaining": 1, "search_allowed": False, "searches_completed": 3,
+            "review_corrections_remaining": 0,
+        })
+
+    async def test_fourth_search_is_rejected_before_lookup_without_state_changes(self):
+        for native in (False, True):
+            for phase in ("recall", "review"):
+                with self.subTest(native=native, phase=phase):
+                    model = ScriptedModel(SEARCH, SEARCH, SEARCH, SEARCH)
+                    service, journal, memory = await self.service(model)
+                    records = await self.configured_recall_records(service)
+                    before, original = await journal.read(), await service._mind.load()
+                    calls = []
+
+                    def handle(request):
+                        calls.append(json.loads(request.content))
+                        return httpx.Response(200, json={"choices": [{"message": native_message(SEARCH)}]})
+
+                    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                        if native:
+                            service._steward_runtime = TaskModelDispatcher(records, client=client)
+                        with (
+                            patch("aicognitive_mind.steward_agent.candidates", new_callable=AsyncMock, return_value=[]) as search,
+                            self.assertRaisesRegex(StewardProtocolError, "final call"),
+                        ):
+                            if phase == "recall":
+                                await service.begin_interaction("What database does Atlas use?")
+                            else:
+                                await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+                    self.assertEqual(search.await_count, 3)
+                    self.assertEqual(len(calls) if native else len(model.calls), 4)
+                    self.assertEqual(await journal.read(), before)
+                    self.assertEqual(await service._mind.load(), original)
+                    self.assertEqual(await memory.read(), [])
 
     async def test_http_native_search_finish_and_review_use_validated_normalized_transcript(self):
         service, journal, memory = await self.service(None)
