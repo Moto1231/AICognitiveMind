@@ -4,6 +4,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from mcp.server.auth.provider import AccessToken
+
 from aicognitive_mind.chatgpt_mcp import build_chatgpt_mcp
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.commit import atomic, commit, receipt, revision
@@ -23,6 +25,19 @@ class InteractionTimingTests(unittest.IsolatedAsyncioTestCase):
         self.enabled_patch.start()
         self.addCleanup(self.enabled_patch.stop)
         self.secret = "private-user-message-and-key"
+        provider = AxiomAuthorizationServerProvider(
+            "https://axiom.example", username="mind", password="secret",
+        )
+        self.access_patch = patch(
+            "aicognitive_mind.account_mcp.get_access_token",
+            return_value=AccessToken(
+                token="synthetic-timing-access", client_id="timing-fixture",
+                subject=provider.username, scopes=[provider.required_scope],
+                resource=provider.resource_url,
+            ),
+        )
+        self.access_patch.start()
+        self.addCleanup(self.access_patch.stop)
 
     def server(self):
         base = "https://axiom.example"

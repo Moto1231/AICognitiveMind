@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import re
 import secrets
 from dataclasses import dataclass
 from typing import Any
@@ -11,6 +12,7 @@ from uuid import uuid4
 from aicognitive_mind.domain import CognitiveMind, MindIdentity
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.config import Settings
+from aicognitive_mind.commit import CommitConflict
 
 
 logger = logging.getLogger("aicognitive_mind.auth_diagnostics")
@@ -34,6 +36,44 @@ class AccountService:
         salt = salt or secrets.token_bytes(16)
         digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 310_000)
         return salt.hex(), digest.hex()
+
+    async def resolve_subject(self, subject: str) -> Account | None:
+        """Resolve a verified OAuth/session subject, never an arbitrary tenant selector.
+
+        A live, unique account must still own the subject. This does not create
+        or initialize a Mind, and does not authenticate a supplied password.
+        """
+        if not isinstance(subject, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", subject):
+            return None
+        candidates = await self.registry_store.account_subject_records(subject)
+        if len(candidates) > 1:
+            raise CommitConflict("Ambiguous account subject")
+        if not candidates:
+            return None
+        username = candidates[0].get("username")
+        if not isinstance(username, str) or not 3 <= len(username.strip()) <= 120:
+            return None
+        username = username.strip().lower()
+        key = "account_" + hashlib.sha256(username.encode("utf-8")).hexdigest()
+        # The canonical lookup also rejects duplicate historical account keys.
+        # Never authorize solely from a query row's claimed username or selector.
+        record = await self.registry_store.get(key)
+        if (
+            not record or record.get("kind") != "account" or record.get("active") is not True
+            or not isinstance(record.get("username"), str)
+            or record["username"].strip().lower() != username
+        ):
+            return None
+        mind_id = record.get("account_mind_id")
+        if mind_id is None or mind_id == "":
+            mind_id = "__legacy__"
+        if (
+            not isinstance(mind_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", mind_id)
+            or mind_id != subject
+        ):
+            return None
+        return Account(username=username, mind_id=mind_id)
 
     async def _ensure_mind(self, mind_id: str) -> None:
         """Ensure an account's tenant has a Genesis mind.

@@ -15,9 +15,11 @@ import httpx
 from mcp.server.auth.provider import AccessToken
 from mcp.shared.auth import OAuthClientInformationFull
 
+from aicognitive_mind.accounts import AccountService
 from aicognitive_mind.config import Settings
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.mcp_events import MessageEvents
+from aicognitive_mind.persistence import create_storage
 
 
 def deployment_running(test):
@@ -223,23 +225,58 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
     async def test_oauth_token_does_not_bypass_portal_protection(self):
         tokens = await self.authorization_code_tokens()
         token = tokens["access_token"]
-        for path in ("/axiom-mcp/unregistered-child", "/axiom-mcp-extra"):
-            with self.subTest(path=path):
-                response = await self.client.get(path, headers={"Authorization": "Bearer " + token})
-                self.assertEqual(response.status_code, 401, response.text)
-                self.assertNotIn("WWW-Authenticate", response.headers)
-                basic = await self.client.get(path, auth=httpx.BasicAuth(
-                    self.settings.app_access_username, "test-password"
-                ))
-                self.assertEqual(basic.status_code, 404, basic.text)
-                session = {"mind_id": "__legacy__", "expires_at": time.time() + 3600}
-                with patch("aicognitive_mind.api.read_portal_session", return_value=session):
-                    self.client.cookies.set("axiom_portal_session", "test-portal-session")
-                    try:
-                        cookie = await self.client.get(path)
-                    finally:
-                        self.client.cookies.clear()
-                self.assertEqual(cookie.status_code, 404, cookie.text)
+        settings = self.settings.model_copy(update={
+            "storage_provider": "surreal", "surrealdb_uri": "mem://",
+            "surrealdb_namespace": "deployment_cookie", "surrealdb_database": "synthetic",
+            "surrealdb_username": None, "surrealdb_password": None,
+            "axiom_mind_id": "cookie-registry",
+        })
+        storage = await create_storage(settings)
+        try:
+            records = RuntimeRecords(storage.mind)
+            accounts = AccountService(settings, records)
+            account = await accounts.create("deployment-cookie-user", "synthetic-cookie-password")
+            async with AsyncExitStack() as account_context:
+                for name, value in (
+                    ("storage", storage), ("accounts", accounts), ("runtime_records", records),
+                ):
+                    account_context.enter_context(patch.object(
+                        self.deployment.portal_app.state, name, value, create=True,
+                    ))
+                await self.deployment.store_portal_session(
+                    self.deployment.portal_app, "test-portal-session", account.mind_id,
+                    time.time() + 3600,
+                )
+                # A persisted session still needs a real active account owner.
+                await self.deployment.store_portal_session(
+                    self.deployment.portal_app, "unowned-portal-session", "mind_unowned",
+                    time.time() + 3600,
+                )
+                for path in ("/axiom-mcp/unregistered-child", "/axiom-mcp-extra"):
+                    with self.subTest(path=path):
+                        response = await self.client.get(path, headers={"Authorization": "Bearer " + token})
+                        self.assertEqual(response.status_code, 401, response.text)
+                        self.assertNotIn("WWW-Authenticate", response.headers)
+                        basic_auth = httpx.BasicAuth(self.settings.app_access_username, "test-password")
+                        basic = await self.client.get(path, auth=basic_auth)
+                        self.assertEqual(basic.status_code, 404, basic.text)
+                        self.client.cookies.set("axiom_portal_session", "test-portal-session")
+                        try:
+                            cookie = await self.client.get(path)
+                        finally:
+                            self.client.cookies.clear()
+                        self.assertEqual(cookie.status_code, 404, cookie.text)
+                        for invalid_cookie in ("forged-portal-session", "unowned-portal-session"):
+                            with self.subTest(path=path, invalid_cookie=invalid_cookie):
+                                self.client.cookies.set("axiom_portal_session", invalid_cookie)
+                                try:
+                                    rejected = await self.client.get(path, auth=basic_auth)
+                                finally:
+                                    self.client.cookies.clear()
+                                self.assertEqual(rejected.status_code, 401, rejected.text)
+                self.assertIsNone(await storage.mind.load())
+        finally:
+            await storage.runtime.close()
 
     @deployment_running
     async def test_portal_credentials_do_not_authorize_mcp_path_forms(self):

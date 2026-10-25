@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from contextlib import AsyncExitStack
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -123,6 +123,24 @@ class PortalAccountTests(unittest.IsolatedAsyncioTestCase):
         rejected = await self.login(password="incorrect-synthetic-password")
         self.assertEqual(rejected.status_code, 401)
         self.assertNotIn("set-cookie", rejected.headers)
+
+    async def test_realtime_does_not_bypass_account_body_boundary_or_mint_tokens(self):
+        self.assertEqual((await self.signup()).status_code, 201)
+        self.assertEqual((await self.login()).status_code, 200)
+        mint = AsyncMock()
+        with patch.object(self.deployment.oauth_provider, "mint_service_access_token", mint):
+            denied = await self.client.post(
+                "/v1/body/realtime/session", content="synthetic-sdp",
+                headers={"content-type": "application/sdp"},
+            )
+            self.assertEqual(denied.status_code, 403, denied.text)
+            with patch.object(self.accounts, "resolve_subject", return_value=None):
+                unavailable = await self.client.post(
+                    "/v1/body/realtime/session", content="synthetic-sdp",
+                    headers={"content-type": "application/sdp"},
+                )
+                self.assertEqual(unavailable.status_code, 401, unavailable.text)
+        mint.assert_not_awaited()
 
     async def test_two_accounts_and_sessions_remain_distinct_after_restart(self):
         self.assertEqual((await self.signup()).status_code, 201)

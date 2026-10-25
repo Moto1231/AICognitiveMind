@@ -114,6 +114,67 @@ class RuntimeRecords:
             value = getattr(self.db, "_runtime_records", {}).get(key)
         return self._payload(key, value)
 
+    async def account_subject_records(self, subject: str) -> list[dict]:
+        """Read at most two account selectors, without credential/body payloads.
+
+        Accounts are global registry entries. The caller must revalidate the
+        canonical account key before treating a matching selector as identity.
+        """
+        fields = ("kind", "username", "active", "account_mind_id", "mind_id", "key")
+        unmapped = {"$or": [
+            {"account_mind_id": {"$exists": False}},
+            {"account_mind_id": None},
+            {"account_mind_id": ""},
+        ]}
+        if self.kind == "mongo":
+            match = unmapped if subject == "__legacy__" else {"$or": [
+                {"account_mind_id": subject},
+                {"$and": [unmapped, {"mind_id": subject}]},
+            ]}
+            cursor = self.db["runtime_records"].find(
+                {"kind": "account", "active": True, **match},
+                {"_id": 1, **{field: 1 for field in fields}},
+            ).limit(2)
+            rows = [row async for row in cursor]
+        elif self.kind == "surreal":
+            missing = "(account_mind_id = NONE OR account_mind_id = NULL OR account_mind_id = '')"
+            match = missing if subject == "__legacy__" else (
+                f"(account_mind_id = $subject OR ({missing} AND mind_id = $subject))"
+            )
+            results = await surreal_query(
+                self.db,
+                "SELECT id, key, kind, username, active, account_mind_id, mind_id "
+                f"FROM runtime_records WHERE kind = 'account' AND active = true AND {match} LIMIT 2;",
+                {"subject": subject},
+            )
+            rows = results[0] if results else []
+            if not isinstance(rows, list):
+                rows = []
+        else:
+            rows = []
+            for key, value in getattr(self.db, "_runtime_records", {}).items():
+                if value.get("kind") != "account" or value.get("active") is not True:
+                    continue
+                selector = value.get("account_mind_id")
+                missing = selector is None or selector == ""
+                if selector != subject and not (
+                    missing and (subject == "__legacy__" or value.get("mind_id") == subject)
+                ):
+                    continue
+                rows.append({"key": key, **{field: value[field] for field in fields if field in value}})
+                if len(rows) == 2:
+                    break
+        items = []
+        for row in rows:
+            username = row.get("username")
+            key = "account_" + hashlib.sha256(
+                username.strip().lower().encode("utf-8")
+            ).hexdigest() if isinstance(username, str) else "account_"
+            payload = self._payload(key, row)
+            if payload is not None:
+                items.append(payload)
+        return items
+
     async def create(self, key: str, value: dict) -> None:
         if self.kind == "mongo":
             await self.db["runtime_records"].insert_one(

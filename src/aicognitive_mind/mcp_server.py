@@ -12,6 +12,7 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import CallToolResult, ImageContent, AudioContent, TextContent
 
 from aicognitive_mind.config import get_settings
+from aicognitive_mind.account_mcp import request_state
 from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
@@ -130,7 +131,7 @@ async def execute_task(
     speech output. It returns base64 MP3 for playback by the current client, without
     a Body session. Optional compact context references are included in the task prompt.
     """
-    state = ctx.request_context.lifespan_context
+    state = request_state(ctx)
     dispatcher = state.task_dispatcher
     if dispatcher is None:
         raise RuntimeError("Task execution is not available in this MCP session.")
