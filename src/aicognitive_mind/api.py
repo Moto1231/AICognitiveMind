@@ -93,7 +93,7 @@ from aicognitive_mind.task_behaviors import (
 )
 from aicognitive_mind.provider_endpoints import (
     ProviderEndpoint, ProviderEndpointRegistry, ProviderEndpointRevisionConflict,
-    discover_endpoint_model_details,
+    discover_endpoint_model_details, enrich_endpoint_capabilities,
 )
 from aicognitive_mind.provider_probe import probe_endpoint_tools
 from aicognitive_mind.task_model_assignments import (
@@ -1969,7 +1969,7 @@ async def admin_host_behaviors(request: Request) -> dict[str, Any]:
 async def admin_provider_endpoints(request: Request) -> dict[str, Any]:
     require_admin(request)
     items, revision = await _request_runtime(request).provider_endpoints.snapshot()
-    return {"items": [item.model_dump(mode="json") for item in items], "revision": revision}
+    return {"items": [enrich_endpoint_capabilities(item).model_dump(mode="json") for item in items], "revision": revision}
 
 
 @app.put("/v1/admin/provider-endpoints")
@@ -1986,7 +1986,7 @@ async def replace_admin_provider_endpoints(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"items": [item.model_dump(mode="json") for item in items], "revision": revision}
+    return {"items": [enrich_endpoint_capabilities(item).model_dump(mode="json") for item in items], "revision": revision}
 
 
 @app.post("/v1/admin/provider-endpoints/discover")

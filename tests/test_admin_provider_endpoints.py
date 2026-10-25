@@ -10,7 +10,7 @@ from fastapi import FastAPI
 
 from aicognitive_mind import api
 from aicognitive_mind.host_runtime import RuntimeRecords
-from aicognitive_mind.provider_endpoints import ProviderEndpointRegistry
+from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 
 
 class AdminProviderEndpointRevisionTests(unittest.IsolatedAsyncioTestCase):
@@ -82,4 +82,23 @@ class AdminProviderEndpointRevisionTests(unittest.IsolatedAsyncioTestCase):
             result = await self.client.put("/endpoints", json={"items": [], "expected_revision": 0})
         self.assertEqual(result.status_code, 409, result.text)
         self.assertEqual(await self.records.get(self.registry.RECORD_KEY), winner)
+
+    async def test_saved_gpt_oss_capability_view_refreshes_without_storage_or_selection_changes(self):
+        endpoint = ProviderEndpoint(
+            id="cerebras", name="Cerebras - oss120b", base_url="https://api.cerebras.ai/v1",
+            model="gpt-oss-120b", api_key="synthetic-private-key", models=["gpt-oss-120b"],
+        )
+        await self.registry.replace([endpoint], expected_revision=0)
+        original = deepcopy(await self.records.get(self.registry.RECORD_KEY))
+        with patch("aicognitive_mind.provider_endpoints.httpx.AsyncClient", side_effect=AssertionError("No provider call on read")):
+            result = await self.client.get("/endpoints")
+        self.assertEqual(result.status_code, 200, result.text)
+        view = result.json()["items"][0]
+        self.assertIn("Text", view["model_capabilities"]["gpt-oss-120b"])
+        self.assertIn("Tools", view["model_capabilities"]["gpt-oss-120b"])
+        self.assertTrue(view["model_capability_sources"]["gpt-oss-120b"].startswith("https://"))
+        self.assertEqual(view["model"], endpoint.model)
+        self.assertEqual(view["api_key"], endpoint.api_key)
+        self.assertEqual(result.json()["revision"], 1)
+        self.assertEqual(await self.records.get(self.registry.RECORD_KEY), original)
 

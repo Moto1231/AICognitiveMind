@@ -628,7 +628,32 @@ function renderTaskProfileEndpointOptions() {
 
 function modelCapabilityLabel(model, capabilityMap) {
   const capabilities = capabilityMap?.[model];
-  return capabilities?.length ? `${model} · ${capabilities.join(" · ")}` : `${model} · Provider did not report capabilities`;
+  return capabilities?.length ? `${model} · ${capabilities.join(" · ")}` : `${model} · Capabilities not supplied; compatibility unverified`;
+}
+
+function capabilityDocumentationSource(source) {
+  if (typeof source !== "string") return null;
+  const includesProviderMetadata = source.startsWith("provider_metadata+");
+  const value = includesProviderMetadata ? source.slice("provider_metadata+".length) : source;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password || url.port || url.search) return null;
+    const paths = {
+      "developers.openai.com": /^\/api\/docs\/models\//,
+      "ai.google.dev": /^\/gemini-api\/docs(?:\/|$)/,
+      "docs.mistral.ai": /^\/(?:models|studio|capabilities|resources)(?:\/|$)/,
+      "openrouter.ai": /^\/(?:docs(?:\/|$)|[a-z0-9_.-]+\/[a-z0-9_.:-]+\/?$)/i,
+      "inference-docs.cerebras.ai": /^\/(?:models|capabilities|resources)(?:\/|$)/,
+      "docs.sambanova.ai": /^\/(?:docs|cloud)(?:\/|$)/,
+      "sambanova.ai": /^\/blog\//,
+      "www.sambanova.ai": /^\/blog\//,
+      "console.groq.com": /^\/docs(?:\/|$)/,
+      "docs.together.ai": /^\/docs(?:\/|$)/,
+    };
+    return paths[url.hostname]?.test(url.pathname) ? { url: url.href, includesProviderMetadata } : null;
+  } catch {
+    return null;
+  }
 }
 
 function fillSelect(select, values, selected, placeholder, capabilityMap = null) {
@@ -825,8 +850,9 @@ function renderEndpointModelStatus(endpoint) {
   const model = endpoint.model || "";
   const capabilities = endpoint.model_capabilities?.[model] || [];
   const source = endpoint.model_capability_sources?.[model] || "";
+  const documentation = capabilityDocumentationSource(source);
   el.endpointModelStatus.textContent = model
-    ? `${model}${capabilities.length ? " · " + capabilities.join(" · ") : " · No capability metadata reported"}`
+    ? `${model}${capabilities.length ? " · " + capabilities.join(" · ") : " · Capabilities not supplied; compatibility unverified"}`
     : `${endpoint.models?.length || 0} discovered models`;
   if (!endpoint.has_api_key && !endpoint.api_key) el.endpointModelStatus.append(document.createTextNode(" · Needs API key"));
   if (!model) el.endpointModelStatus.append(document.createTextNode(" · Needs model selection"));
@@ -838,12 +864,14 @@ function renderEndpointModelStatus(endpoint) {
   }
   if (source === "provider_metadata") {
     el.endpointModelStatus.append(document.createTextNode(" · Provider metadata"));
-  } else if (/^https:\/\/developers\.openai\.com\/api\/docs\/models\//.test(source)) {
+  } else if (capabilities.length && documentation) {
     const link = document.createElement("a");
-    link.href = source;
+    link.href = documentation.url;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
-    link.textContent = "Documented capabilities (not tested)";
+    link.textContent = documentation.includesProviderMetadata
+      ? "Provider metadata + documented capabilities (not tested)"
+      : "Documented capabilities (not tested)";
     el.endpointModelStatus.append(document.createTextNode(" · "), link);
   }
 }
@@ -1133,6 +1161,7 @@ async function discoverTaskProfileModels() {
     endpoint.models = payload.models || [];
     endpoint.model_capabilities = payload.model_capabilities || {};
     endpoint.model_capability_sources = payload.model_capability_sources || {};
+    endpoint.model_capability_exclusions = payload.model_capability_exclusions || {};
     if (!endpoint.model && endpoint.models.length === 1) endpoint.model = endpoint.models[0];
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
@@ -1205,7 +1234,7 @@ function prepareProviderConnections() {
   const baseUrls = new Set(state.providerEndpoints.map(item => item.base_url.replace(/\/$/, "")));
   state.providerSetupDraft = COMMON_ENDPOINT_PRESETS.filter(item => providers.includes(item.id) && !baseUrls.has(item.base_url))
     .map(preset => ({ id: crypto.randomUUID(), name: preset.name, provider_name: preset.name,
-      base_url: preset.base_url, api_key: "", model: "", models: [], model_capabilities: {}, model_capability_sources: {} }));
+      base_url: preset.base_url, api_key: "", model: "", models: [], model_capabilities: {}, model_capability_sources: {}, model_capability_exclusions: {} }));
   if (!state.providerSetupDraft.length) {
     state.providerSetupDraft = null;
     toast("All five provider profiles are already present. Edit each connection to finish its setup.");
@@ -1279,6 +1308,7 @@ function addTaskProfileEndpointFromPreset(presetId) {
     models: [],
     model_capabilities: {},
     model_capability_sources: {},
+    model_capability_exclusions: {},
   };
   state.endpointDraft = endpoint;
   state.endpointEditBaseline = "";
@@ -1304,6 +1334,7 @@ function addTaskProfileEndpoint() {
     models: [],
     model_capabilities: {},
     model_capability_sources: {},
+    model_capability_exclusions: {},
   };
   state.endpointDraft = endpoint;
   state.endpointEditBaseline = "";
@@ -1325,7 +1356,7 @@ function applyEndpointTemplate() {
     name: source.name.slice(0, 115) + " copy", model: "",
   } : {
     id, name: "", provider_name: "", base_url: "", api_key: "", model: "", models: [],
-    model_capabilities: {}, model_capability_sources: {},
+    model_capabilities: {}, model_capability_sources: {}, model_capability_exclusions: {},
   };
   renderTaskProfileEndpointOptions();
   loadEndpointIntoForm();
