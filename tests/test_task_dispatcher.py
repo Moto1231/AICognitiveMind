@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from aicognitive_mind.host_runtime import HostAwareCore, HostAwareInterpreter
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
+from aicognitive_mind.task_behaviors import TaskExecutionContext
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskFallbackAssignment, TaskModelAssignmentRegistry
 
@@ -104,7 +105,23 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("IMMUTABLE AXIOM TASK FOUNDATION", kwargs["json"]["messages"][0]["content"])
         self.assertIn("vision-arbitrary-model", kwargs["json"]["messages"][0]["content"])
         self.assertIn("image_url", str(kwargs["json"]["messages"]))
+        self.assertEqual(set(kwargs["json"]), {"model", "messages"})
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer admin-key")
+
+    async def test_json_response_option_rejects_other_tasks_and_unsupported_formats(self):
+        client = FakeClient(FakeResponse({}))
+        dispatcher = TaskModelDispatcher(FakeRecords(), client=client)
+        for task, response_format in (
+            ("vision", {"type": "json_object"}),
+            ("memory_recall", {"type": "json_schema"}),
+            ("memory_recall", {"type": "json_object", "extra": "ignored"}),
+        ):
+            with self.subTest(task=task, response_format=response_format):
+                with self.assertRaisesRegex(TaskDispatchError, "JSON object response format"):
+                    await dispatcher.execute(TaskExecutionContext(task=task), {
+                        "operation": "chat", "messages": [], "response_format": response_format,
+                    })
+        self.assertEqual(client.calls, [])
 
     async def test_endpoint_selected_model_overrides_old_task_model_and_covers_fallback(self):
         records = await self.configured(model="obsolete-task-model")
