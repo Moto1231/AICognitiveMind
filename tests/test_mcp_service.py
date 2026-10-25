@@ -1,7 +1,9 @@
 from functools import partial
+from datetime import datetime, timedelta
 from aicognitive_mind.memory_steward import MemoryStewardTool
 import json
 import unittest
+from unittest.mock import patch
 
 from aicognitive_mind.mcp_service import (
     BeliefReframeProposal,
@@ -54,18 +56,23 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"make it so"', contract)
 
     async def test_begin_interaction_reconstructs_context_for_antecedent_reference(self) -> None:
-        await self.service.complete_interaction(
-            user_message="We are designing Project Atlas around a SurrealDB event ledger.",
-            response_text="The Project Atlas design is centered on a SurrealDB event ledger.",
-            proposed_memories=(
-                MemoryProposal(
-                    memory_class=MemoryClass.SEMANTIC,
-                    content="Project Atlas uses a SurrealDB event ledger.",
-                    associations=("Project Atlas", "SurrealDB", "event ledger"),
-                    grounding=("direct project discussion",),
+        interaction_at = max(
+            entry.occurred_at for entry in await self.journal.read()
+        ) + timedelta(seconds=1)
+        with patch("aicognitive_mind.domain.datetime", wraps=datetime) as clock:
+            clock.now.return_value = interaction_at
+            await self.service.complete_interaction(
+                user_message="We are designing Project Atlas around a SurrealDB event ledger.",
+                response_text="The Project Atlas design is centered on a SurrealDB event ledger.",
+                proposed_memories=(
+                    MemoryProposal(
+                        memory_class=MemoryClass.SEMANTIC,
+                        content="Project Atlas uses a SurrealDB event ledger.",
+                        associations=("Project Atlas", "SurrealDB", "event ledger"),
+                        grounding=("direct project discussion",),
+                    ),
                 ),
-            ),
-        )
+            )
 
         begun = await self.service.begin_interaction("Develop it.")
 
@@ -81,12 +88,19 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_begin_interaction_keeps_recent_context_bounded(self) -> None:
-        for turn in range(10):
-            await self.service.complete_interaction(
-                user_message=f"Working context turn {turn}",
-                response_text=f"Completed working context turn {turn}.",
-                proposed_memories=(),
-            )
+        first_turn_at = max(
+            entry.occurred_at for entry in await self.journal.read()
+        ) + timedelta(seconds=1)
+        # Latest-event ordering needs distinct timestamps; fast turns can share
+        # one Windows clock tick and this test does not define tie ordering.
+        with patch("aicognitive_mind.domain.datetime", wraps=datetime) as clock:
+            for turn in range(10):
+                clock.now.return_value = first_turn_at + timedelta(seconds=turn)
+                await self.service.complete_interaction(
+                    user_message=f"Working context turn {turn}",
+                    response_text=f"Completed working context turn {turn}.",
+                    proposed_memories=(),
+                )
 
         begun = await self.service.begin_interaction("Continue.")
 
