@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
+import json
 import logging
+import math
 from typing import Any
 from urllib.parse import urlparse
 
@@ -33,6 +36,8 @@ class TaskModelDispatcher:
     endpoint's response, including errors, is authoritative.
     """
 
+    supports_steward_action_tools = True
+
     def __init__(self, records: Any, *, timeout: float = 90.0, client: Any | None = None) -> None:
         self.assignments = TaskModelAssignmentRegistry(records)
         self.endpoints = ProviderEndpointRegistry(records)
@@ -53,6 +58,7 @@ class TaskModelDispatcher:
             return await self.complete_chat(
                 context.task, messages, temperature=payload.get("temperature"), context=context,
                 response_format=payload.get("response_format"),
+                steward_action_phase=payload.get("steward_action_phase"),
             )
         if operation == "transcribe":
             filename = payload.get("filename")
@@ -226,6 +232,7 @@ class TaskModelDispatcher:
         data: dict[str, str] | None = None,
         files: dict[str, tuple[str, bytes, str]] | None = None,
         extra_headers: dict[str, str] | None = None,
+        retry_steward_rate_limit: bool = False,
     ) -> dict[str, Any]:
         headers = self._headers(endpoint)
         if extra_headers:
@@ -251,6 +258,18 @@ class TaskModelDispatcher:
             raise TaskDispatchError(
                 f"Provider endpoint '{endpoint.name}' could not complete {path}: {exc.__class__.__name__}"
             ) from exc
+        if retry_steward_rate_limit and response.status_code == 429:
+            try:
+                delay = float(getattr(response, "headers", {}).get("retry-after", ""))
+            except (TypeError, ValueError):
+                delay = -1.0
+            if math.isfinite(delay) and 0 <= delay <= 30:
+                logger.info("task_provider_rate_limit_retry endpoint=%s wait=%.3f", endpoint.name, delay)
+                await asyncio.sleep(delay)
+                return await self._request(
+                    endpoint, path, json_body=json_body, data=data, files=files,
+                    extra_headers=extra_headers,
+                )
         if response.is_error:
             excerpt = response.text[:1200]
             logger.error(
@@ -325,7 +344,13 @@ class TaskModelDispatcher:
         temperature: float | None = None,
         context: TaskExecutionContext | None = None,
         response_format: dict[str, str] | None = None,
+        steward_action_phase: str | None = None,
     ) -> str:
+        if steward_action_phase is not None and (
+            task != "memory_recall" or steward_action_phase not in ("recall", "review")
+            or response_format is not None
+        ):
+            raise TaskDispatchError("Only Memory Recall supports the Steward action phases.")
         if response_format is not None and (
             task != "memory_recall" or response_format != {"type": "json_object"}
         ):
@@ -336,6 +361,7 @@ class TaskModelDispatcher:
                 return await self._complete_chat_with_assignment(
                     task, messages, assignment=assignment,
                     temperature=temperature, context=context, response_format=response_format,
+                    steward_action_phase=steward_action_phase,
                 )
             except TaskDispatchError as exc:
                 last_error = exc
@@ -355,6 +381,7 @@ class TaskModelDispatcher:
         temperature: float | None = None,
         context: TaskExecutionContext | None = None,
         response_format: dict[str, str] | None = None,
+        steward_action_phase: str | None = None,
     ) -> str:
         assignment, endpoint = await self._resolve(task, assignment)
         profile = next(item for item in await self.behaviors.list() if item.task == task)
@@ -387,11 +414,26 @@ class TaskModelDispatcher:
             body["temperature"] = temperature
         if response_format is not None:
             body["response_format"] = {"type": "json_object"}
-        payload = await self._request(endpoint, "chat/completions", json_body=body)
+        if steward_action_phase is not None:
+            # Import at execution time: the Steward itself uses this dispatcher.
+            from aicognitive_mind.steward_agent import steward_action_tools
+
+            body.update(
+                tools=steward_action_tools(steward_action_phase),
+                tool_choice="auto", parallel_tool_calls=False,
+            )
+        payload = await self._request(
+            endpoint, "chat/completions", json_body=body,
+            retry_steward_rate_limit=steward_action_phase is not None,
+        )
         try:
             message = payload["choices"][0]["message"]
             if not isinstance(message, dict):
                 raise TypeError("Chat completion message must be an object")
+            if steward_action_phase is not None:
+                action = self._steward_action_content(message)
+                if action is not None:
+                    return action
             if response_format is not None and (
                 message.get("tool_calls") or message.get("function_call")
             ):
@@ -414,6 +456,39 @@ class TaskModelDispatcher:
             if text:
                 return text
         raise TaskDispatchError(f"Provider endpoint '{endpoint.name}' returned empty completion content.")
+
+    @staticmethod
+    def _steward_action_content(message: dict[str, Any]) -> str | None:
+        """Decode one declared function decision; the Steward validates its phase next."""
+        if message.get("function_call") is not None:
+            raise TaskDispatchError("Memory Steward does not accept legacy function calls.")
+        calls = message.get("tool_calls")
+        if calls is None or calls == []:
+            return None
+        if not isinstance(calls, list) or len(calls) != 1:
+            raise TaskDispatchError("Memory Steward requires exactly one action call.")
+        if message.get("content") not in (None, ""):
+            raise TaskDispatchError("Memory Steward cannot mix action calls and text content.")
+        call = calls[0]
+        if (
+            not isinstance(call, dict) or call.get("type") != "function"
+            or not isinstance(call.get("id"), str) or not call["id"].strip()
+            or call["id"] != call["id"].strip()
+        ):
+            raise TaskDispatchError("Memory Steward returned an invalid action call.")
+        function = call.get("function")
+        if not isinstance(function, dict) or function.get("name") not in ("search", "finish"):
+            raise TaskDispatchError("Memory Steward returned an unknown action function.")
+        arguments = function.get("arguments")
+        if not isinstance(arguments, str):
+            raise TaskDispatchError("Memory Steward action arguments must be JSON text.")
+        try:
+            action = json.loads(arguments)
+        except ValueError as exc:
+            raise TaskDispatchError("Memory Steward action arguments are not valid JSON.") from exc
+        if not isinstance(action, dict) or action.get("action") != function["name"]:
+            raise TaskDispatchError("Memory Steward action must match its function name.")
+        return json.dumps(action)
 
     async def transcribe(
         self,

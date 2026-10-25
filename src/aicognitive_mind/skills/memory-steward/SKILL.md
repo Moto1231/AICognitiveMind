@@ -82,10 +82,12 @@ the interaction journal, including explicit working and episodic dispositions.
 
 ## Protocol
 
-Return one JSON object in the assistant message content matching the supplied
-phase schema, without prose or hidden reasoning. These are JSON data actions,
-not provider-native tools or functions. Never emit a tool call or function call.
-For a lookup, return an object such as
+Return exactly one decision matching the current phase schema, without prose or
+hidden reasoning. When the runtime supplies `search` and `finish` functions,
+you may call exactly one with its matching JSON action object as arguments.
+Otherwise return that object in the assistant message content. Never mix a
+function call with text, call another function, or issue parallel decisions.
+The `action` field must match the chosen function name. For a lookup, use
 `{"action":"search","source":"memory","query":"project decision","limit":6}`.
 The server validates that object, performs one bounded search, and supplies its
 results in the next message. A `finish` object ends your assessment. The server

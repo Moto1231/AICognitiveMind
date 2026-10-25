@@ -68,6 +68,23 @@ RECALL_STEPS = TypeAdapter(Annotated[Search | RecallFinish, Field(discriminator=
 REVIEW_STEPS = TypeAdapter(Annotated[Search | ReviewFinish, Field(discriminator="action")])
 
 
+def steward_action_tools(phase: str) -> list[dict[str, Any]]:
+    """Expose only the existing phase decisions as local provider functions."""
+    if phase not in {"recall", "review"}:
+        raise ValueError("Unknown Memory Steward phase")
+    finish = RecallFinish if phase == "recall" else ReviewFinish
+    return [
+        {"type": "function", "function": {
+            "name": name, "description": description,
+            "parameters": model.model_json_schema(),
+        }}
+        for name, model, description in (
+            ("search", Search, "Request one bounded memory or journal search."),
+            ("finish", finish, "Finish the current Memory Steward assessment."),
+        )
+    ]
+
+
 class ModelMemorySteward(MemoryStewardTool):
     """Use the configured Memory Recall model and fallbacks for both lifecycle decisions."""
 
@@ -85,6 +102,7 @@ class ModelMemorySteward(MemoryStewardTool):
         *, validate_finish: Callable[[Any], None] | None = None,
     ) -> Any:
         adapter = RECALL_STEPS if phase == "recall" else REVIEW_STEPS
+        native_actions = getattr(self.runtime, "supports_steward_action_tools", False) is True
         skill = files("aicognitive_mind").joinpath("skills/memory-steward/SKILL.md").read_text()
         context = {
             "phase": phase,
@@ -97,7 +115,10 @@ class ModelMemorySteward(MemoryStewardTool):
         messages = [
             {
                 "role": "system",
-                "content": skill + "\n\nPHASE SCHEMA:\n" + json.dumps(adapter.json_schema()),
+                "content": skill + (
+                    "\n\nUse the supplied search and finish function parameter schemas."
+                    if native_actions else "\n\nPHASE SCHEMA:\n" + json.dumps(adapter.json_schema())
+                ),
             },
             {"role": "user", "content": json.dumps(context, default=str)},
         ]
@@ -105,12 +126,15 @@ class ModelMemorySteward(MemoryStewardTool):
         try:
             async with asyncio.timeout(60):
                 for _ in range(4):
+                    payload: dict[str, Any] = {
+                        "operation": "chat", "messages": messages, "temperature": 0,
+                    }
+                    if native_actions:
+                        payload["steward_action_phase"] = phase
+                    else:
+                        payload["response_format"] = {"type": "json_object"}
                     raw = await self.runtime.execute(
-                        TaskExecutionContext(task="memory_recall"),
-                        {
-                            "operation": "chat", "messages": messages, "temperature": 0,
-                            "response_format": {"type": "json_object"},
-                        },
+                        TaskExecutionContext(task="memory_recall"), payload,
                     )
                     if not isinstance(raw, str):
                         raise StewardProtocolError("Memory Steward returned non-text content.")
