@@ -40,9 +40,11 @@ the same base URL is skipped. The new profiles have no invented key or model.
 | --- | --- | --- |
 | Cerebras | `https://api.cerebras.ai/v1` | [Compatibility](https://inference-docs.cerebras.ai/resources/openai) |
 | Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | [Compatibility and function calling](https://ai.google.dev/gemini-api/docs/openai) |
-| Mistral AI | `https://api.mistral.ai/v1` | [Function calling](https://docs.mistral.ai/studio/conversations/function-calling) |
+| Together AI | `https://api.together.ai/v1` | [Compatibility](https://docs.together.ai/docs/inference/openai-compatibility) and [function calling](https://docs.together.ai/docs/inference/function-calling/overview) |
 | OpenRouter | `https://openrouter.ai/api/v1` | [Tool calling](https://openrouter.ai/docs/guides/features/tool-calling) |
 | SambaNova | `https://api.sambanova.ai/v1` | [Function calling](https://docs.sambanova.ai/docs/en/features/function-calling) |
+
+These five additions leave any existing Groq or Mistral connection in place.
 
 For each connection, choose Edit, enter its own API key in Administration,
 discover available models, select a model and choose **Test tool calling**.
