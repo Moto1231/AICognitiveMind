@@ -420,7 +420,8 @@ class TaskModelDispatcher:
 
             body.update(
                 tools=steward_action_tools(steward_action_phase),
-                tool_choice="auto", parallel_tool_calls=False,
+                tool_choice={"type": "function", "function": {"name": "steward_action"}},
+                parallel_tool_calls=False,
             )
         payload = await self._request(
             endpoint, "chat/completions", json_body=body,
@@ -477,18 +478,21 @@ class TaskModelDispatcher:
         ):
             raise TaskDispatchError("Memory Steward returned an invalid action call.")
         function = call.get("function")
-        if not isinstance(function, dict) or function.get("name") not in ("search", "finish"):
+        if not isinstance(function, dict) or function.get("name") != "steward_action":
             raise TaskDispatchError("Memory Steward returned an unknown action function.")
         arguments = function.get("arguments")
         if not isinstance(arguments, str):
             raise TaskDispatchError("Memory Steward action arguments must be JSON text.")
         try:
-            action = json.loads(arguments)
+            wrapper = json.loads(arguments)
         except ValueError as exc:
             raise TaskDispatchError("Memory Steward action arguments are not valid JSON.") from exc
-        if not isinstance(action, dict) or action.get("action") != function["name"]:
-            raise TaskDispatchError("Memory Steward action must match its function name.")
-        return json.dumps(action)
+        if not isinstance(wrapper, dict) or set(wrapper) != {"decision"}:
+            raise TaskDispatchError("Memory Steward action requires exactly one decision field.")
+        decision = wrapper["decision"]
+        if not isinstance(decision, dict) or decision.get("action") not in ("search", "finish"):
+            raise TaskDispatchError("Memory Steward decision requires a search or finish action.")
+        return json.dumps(decision)
 
     async def transcribe(
         self,

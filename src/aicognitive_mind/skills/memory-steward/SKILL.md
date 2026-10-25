@@ -83,11 +83,11 @@ the interaction journal, including explicit working and episodic dispositions.
 ## Protocol
 
 Return exactly one decision matching the current phase schema, without prose or
-hidden reasoning. When the runtime supplies `search` and `finish` functions,
-you may call exactly one with its matching JSON action object as arguments.
-Otherwise return that object in the assistant message content. Never mix a
-function call with text, call another function, or issue parallel decisions.
-The `action` field must match the chosen function name. For a lookup, use
+hidden reasoning. When the runtime supplies `steward_action`, call exactly that
+function with `{"decision": <one action object>}` as its arguments. The inner
+decision must match the current phase schema. Otherwise return the action object
+in the assistant message content. Never mix a function call with text, call
+another function, or issue parallel decisions. For a lookup, the decision is
 `{"action":"search","source":"memory","query":"project decision","limit":6}`.
 The server validates that object, performs one bounded search, and supplies its
 results in the next message. A `finish` object ends your assessment. The server

@@ -58,7 +58,7 @@ BRIEF = {
 def native_message(action):
     return {"content": None, "tool_calls": [{
         "id": "call_" + action["action"], "type": "function", "function": {
-            "name": action["action"], "arguments": json.dumps(action),
+            "name": "steward_action", "arguments": json.dumps({"decision": action}),
         },
     }]}
 
@@ -423,19 +423,28 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         for call in calls:
             self.assertEqual(call["model"], "configured-recall-model")
             self.assertNotIn("response_format", call)
-            self.assertEqual(call["tool_choice"], "auto")
+            self.assertEqual(call["tool_choice"], {
+                "type": "function", "function": {"name": "steward_action"},
+            })
             self.assertIs(call["parallel_tool_calls"], False)
-            self.assertEqual([tool["function"]["name"] for tool in call["tools"]], ["search", "finish"])
+            self.assertEqual([tool["function"]["name"] for tool in call["tools"]], ["steward_action"])
+            parameters = call["tools"][0]["function"]["parameters"]
+            self.assertEqual(parameters["required"], ["decision"])
+            self.assertEqual(set(parameters["properties"]), {"decision"})
+            self.assertIs(parameters["additionalProperties"], False)
+            self.assertEqual(parameters["properties"]["decision"]["discriminator"]["propertyName"], "action")
             self.assertNotIn("PHASE SCHEMA", call["messages"][0]["content"])
             self.assertTrue(all(
                 "tool_calls" not in message and "tool_call_id" not in message
                 for message in call["messages"]
             ))
-        self.assertIn("outcome", calls[0]["tools"][1]["function"]["parameters"]["properties"])
-        self.assertNotIn("memories", calls[0]["tools"][1]["function"]["parameters"]["properties"])
-        self.assertIn("memories", calls[2]["tools"][1]["function"]["parameters"]["properties"])
-        self.assertNotIn("outcome", calls[2]["tools"][1]["function"]["parameters"]["properties"])
-        artifact = calls[2]["tools"][1]["function"]["parameters"]["$defs"]["MemoryArtifactProposal"]
+        recall_defs = calls[0]["tools"][0]["function"]["parameters"]["$defs"]
+        review_defs = calls[2]["tools"][0]["function"]["parameters"]["$defs"]
+        self.assertIn("outcome", recall_defs["RecallFinish"]["properties"])
+        self.assertNotIn("ReviewFinish", recall_defs)
+        self.assertIn("memories", review_defs["ReviewFinish"]["properties"])
+        self.assertNotIn("RecallFinish", review_defs)
+        artifact = review_defs["MemoryArtifactProposal"]
         self.assertIs(artifact["properties"]["payload"]["additionalProperties"], True)
         phases = [json.loads(call["messages"][1]["content"])["phase"] for call in calls]
         self.assertEqual(phases, ["recall", "recall", "review"])
@@ -574,12 +583,17 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         ))
 
     async def test_http_invalid_native_calls_and_tool_failure_leave_no_state_changes(self):
-        native_call = {"name": "search", "arguments": json.dumps(SEARCH)}
+        native_call = {"name": "json", "arguments": json.dumps(SKIP)}
         invalid = []
         for name, value in (
-            ("name", "delete"), ("arguments", "not json"),
-            ("arguments", json.dumps({**SEARCH, "action": "finish"})),
-            ("arguments", json.dumps({key: value for key, value in SEARCH.items() if key != "action"})),
+            ("name", "json"), ("name", "search"), ("name", "finish"),
+            ("arguments", "not json"),
+            ("arguments", json.dumps({"decision": {**SEARCH, "action": "json"}})),
+            ("arguments", json.dumps({"decision": {key: value for key, value in SEARCH.items() if key != "action"}})),
+            ("arguments", json.dumps(SEARCH)),
+            ("arguments", json.dumps({"decision": SEARCH, "extra": "forbidden"})),
+            ("arguments", json.dumps({"decision": []})),
+            ("arguments", json.dumps({"wrong": SEARCH})),
             ("arguments", json.dumps([])), ("arguments", SEARCH),
         ):
             message = native_message(SEARCH)
@@ -634,7 +648,9 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
                     search.assert_not_awaited()
                     self.assertEqual(len(calls), 1)
                     self.assertNotIn("response_format", calls[0])
-                    self.assertEqual(calls[0]["tool_choice"], "auto")
+                    self.assertEqual(calls[0]["tool_choice"], {
+                        "type": "function", "function": {"name": "steward_action"},
+                    })
                     self.assertEqual(await service._mind.load(), original)
                     self.assertEqual(await journal.read(), before)
                     self.assertEqual(await memory.read(), [])
