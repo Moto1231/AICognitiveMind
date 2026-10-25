@@ -35,6 +35,10 @@ Finish with outcome `recalled`, a concise synthesized summary, and only supporti
 references actually returned by search. Include material contradictions, scoped
 beliefs, investigation questions and sensory evidence references when relevant.
 If searches found nothing useful, use `no_relevant_memory`, not `no_recall_needed`.
+Every finish decision includes `action: "finish"` and a nonempty `reason`.
+Both `no_recall_needed` and `no_relevant_memory` require `summary: ""` and
+`references: []`; only `recalled` carries a nonempty summary and actual source
+references. `no_relevant_memory` requires at least one completed search.
 Return no raw record dump. Never invent a source reference or fill gaps with guesses.
 
 ## After reasoning
