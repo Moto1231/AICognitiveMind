@@ -55,6 +55,14 @@ BRIEF = {
 }
 
 
+def native_message(action):
+    return {"content": None, "tool_calls": [{
+        "id": "call_" + action["action"], "type": "function", "function": {
+            "name": action["action"], "arguments": json.dumps(action),
+        },
+    }]}
+
+
 class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
     def agent(self, model, message="Please format the supplied text.", working=None):
         return ModelMemorySteward(
@@ -79,6 +87,9 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         context, payload = model.calls[0]
         self.assertEqual(context.task, "memory_recall")
         self.assertIn("name: memory-steward", payload["messages"][0]["content"])
+        self.assertIn("PHASE SCHEMA", payload["messages"][0]["content"])
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertNotIn("steward_action_phase", payload)
         supplied = json.loads(payload["messages"][1]["content"])
         self.assertEqual(
             supplied["host_working_context"]["summary"], agent._working_context["summary"]
@@ -365,7 +376,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         ])
         return records
 
-    async def test_http_json_actions_search_then_finish_and_review_without_native_tools(self):
+    async def test_http_native_search_finish_and_review_use_validated_normalized_transcript(self):
         service, journal, memory = await self.service(None)
         await memory.remember(DurableMemory(
             memory_class=MemoryClass.SEMANTIC, content="Atlas uses SurrealDB.",
@@ -378,7 +389,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         def handle(request):
             calls.append(json.loads(request.content))
             return httpx.Response(200, json={
-                "choices": [{"message": {"content": json.dumps(next(steps))}}],
+                "choices": [{"message": native_message(next(steps))}],
             })
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
@@ -398,6 +409,9 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(search.await_args.args[1], {"atlas"})
         self.assertEqual(search.await_args.kwargs["limit"], SEARCH["limit"] * 2)
         results = json.loads(calls[1]["messages"][-1]["content"])["search_results"]
+        self.assertEqual(calls[1]["messages"][-2], {
+            "role": "assistant", "content": json.dumps(SEARCH),
+        })
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["record"]["content"], "Atlas uses SurrealDB.")
         self.assertEqual(completed["status"], "interaction_committed")
@@ -408,23 +422,109 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len([e for e in await journal.read() if e.kind == "interaction"]), 1)
         for call in calls:
             self.assertEqual(call["model"], "configured-recall-model")
-            self.assertEqual(call["response_format"], {"type": "json_object"})
-            self.assertNotIn("tools", call)
-            self.assertNotIn("tool_choice", call)
-            self.assertIn("Never emit a tool call or function call", call["messages"][0]["content"])
+            self.assertNotIn("response_format", call)
+            self.assertEqual(call["tool_choice"], "auto")
+            self.assertIs(call["parallel_tool_calls"], False)
+            self.assertEqual([tool["function"]["name"] for tool in call["tools"]], ["search", "finish"])
+            self.assertNotIn("PHASE SCHEMA", call["messages"][0]["content"])
+            self.assertTrue(all(
+                "tool_calls" not in message and "tool_call_id" not in message
+                for message in call["messages"]
+            ))
+        self.assertIn("outcome", calls[0]["tools"][1]["function"]["parameters"]["properties"])
+        self.assertNotIn("memories", calls[0]["tools"][1]["function"]["parameters"]["properties"])
+        self.assertIn("memories", calls[2]["tools"][1]["function"]["parameters"]["properties"])
+        self.assertNotIn("outcome", calls[2]["tools"][1]["function"]["parameters"]["properties"])
+        artifact = calls[2]["tools"][1]["function"]["parameters"]["$defs"]["MemoryArtifactProposal"]
+        self.assertIs(artifact["properties"]["payload"]["additionalProperties"], True)
         phases = [json.loads(call["messages"][1]["content"])["phase"] for call in calls]
         self.assertEqual(phases, ["recall", "recall", "review"])
 
-    async def test_http_native_tools_and_tool_use_failure_abort_without_search_or_state_changes(self):
+    async def test_http_json_content_remains_valid_with_registered_action_tools(self):
+        service, journal, memory = await self.service(None)
+        records = await self.configured_recall_records(service)
+        steps = iter([SKIP, NOTHING])
+        calls = []
+
+        def handle(request):
+            calls.append(json.loads(request.content))
+            return httpx.Response(200, json={
+                "choices": [{"message": {"content": json.dumps(next(steps))}}],
+            })
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            with patch("aicognitive_mind.steward_agent.candidates", new_callable=AsyncMock) as search:
+                begun = await service.begin_interaction("Please format this text.")
+                completed = await service.complete_interaction(
+                    "Please format this text.", "Formatted.", idempotency_key=begun["idempotency_key"],
+                )
+        search.assert_not_awaited()
+        self.assertEqual(begun["memory_assessment"]["outcome"], "no_recall_needed")
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(await memory.read(), [])
+        self.assertEqual(len([e for e in await journal.read() if e.kind == "interaction"]), 1)
+
+    async def test_http_native_review_uses_phase_validation_and_bounded_correction(self):
+        service, _, memory = await self.service(None)
+        records = await self.configured_recall_records(service)
+        invalid = self.learning(memory_class="unknown")
+        steps = iter([invalid, self.learning()])
+        calls = []
+
+        def handle(request):
+            calls.append(json.loads(request.content))
+            return httpx.Response(200, json={
+                "choices": [{"message": native_message(next(steps))}],
+            })
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            completed = await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+        self.assertEqual(completed["memory_review"]["validation_corrections"], 1)
+        self.assertEqual(len(await memory.read()), 1)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[1]["messages"][-2], {
+            "role": "assistant", "content": json.dumps(invalid),
+        })
+        feedback = json.loads(calls[1]["messages"][-1]["content"])
+        self.assertIn("memories.0.memory_class", feedback["validation_error"])
+        self.assertTrue(all(
+            "tool_calls" not in message and "tool_call_id" not in message
+            for call in calls for message in call["messages"]
+        ))
+
+    async def test_http_invalid_native_calls_and_tool_failure_leave_no_state_changes(self):
         native_call = {"name": "search", "arguments": json.dumps(SEARCH)}
+        invalid = []
+        for name, value in (
+            ("name", "delete"), ("arguments", "not json"),
+            ("arguments", json.dumps({**SEARCH, "action": "finish"})),
+            ("arguments", json.dumps({key: value for key, value in SEARCH.items() if key != "action"})),
+            ("arguments", json.dumps([])), ("arguments", SEARCH),
+        ):
+            message = native_message(SEARCH)
+            message["tool_calls"][0]["function"][name] = value
+            invalid.append(message)
+        message = native_message(SEARCH)
+        message["tool_calls"].append(native_message(SKIP)["tool_calls"][0])
+        invalid.append(message)
+        message = native_message(SEARCH)
+        message["content"] = json.dumps(SEARCH)
+        invalid.append(message)
+        message = native_message(SEARCH)
+        message["tool_calls"][0].pop("id")
+        invalid.append(message)
+        message = native_message(SEARCH)
+        message["tool_calls"][0]["type"] = "custom"
+        invalid.append(message)
+        invalid.append({"content": None, "function_call": native_call})
+        invalid.append({"content": json.dumps(SKIP), "function_call": {}})
         scenarios = [
-            (200, {"choices": [{"message": {
-                "content": json.dumps(SEARCH),
-                "tool_calls": [{"type": "function", "function": native_call}],
-            }}]}, "native tool calls"),
-            (200, {"choices": [{"message": {
-                "content": json.dumps(SEARCH), "function_call": native_call,
-            }}]}, "native tool calls"),
+            (200, {"choices": [{"message": message}]}, "Memory Steward")
+            for message in invalid
+        ] + [
             (400, {"error": {
                 "message": "Tool choice is none, but model called a tool",
                 "code": "tool_use_failed", "failed_generation": json.dumps(native_call),
@@ -455,7 +555,8 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
                                 await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
                     search.assert_not_awaited()
                     self.assertEqual(len(calls), 1)
-                    self.assertEqual(calls[0]["response_format"], {"type": "json_object"})
+                    self.assertNotIn("response_format", calls[0])
+                    self.assertEqual(calls[0]["tool_choice"], "auto")
                     self.assertEqual(await service._mind.load(), original)
                     self.assertEqual(await journal.read(), before)
                     self.assertEqual(await memory.read(), [])

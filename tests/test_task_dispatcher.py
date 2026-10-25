@@ -123,6 +123,21 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
                     })
         self.assertEqual(client.calls, [])
 
+    async def test_steward_native_action_phase_is_only_accepted_for_memory_recall(self):
+        client = FakeClient(FakeResponse({}))
+        dispatcher = TaskModelDispatcher(FakeRecords(), client=client)
+        for task, phase, response_format in (
+            ("vision", "recall", None), ("memory_recall", "other", None),
+            ("memory_recall", "recall", {"type": "json_object"}),
+        ):
+            with self.subTest(task=task, phase=phase):
+                with self.assertRaisesRegex(TaskDispatchError, "Steward action phases"):
+                    await dispatcher.execute(TaskExecutionContext(task=task), {
+                        "operation": "chat", "messages": [], "steward_action_phase": phase,
+                        "response_format": response_format,
+                    })
+        self.assertEqual(client.calls, [])
+
     async def test_endpoint_selected_model_overrides_old_task_model_and_covers_fallback(self):
         records = await self.configured(model="obsolete-task-model")
         endpoint_registry = ProviderEndpointRegistry(records)
