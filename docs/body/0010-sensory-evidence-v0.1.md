@@ -101,6 +101,30 @@ The whole Render application remains protected by the existing application acces
 
 ## Live Body
 
+### Automatic interpretation routing
+
+Dedicated Vision and Audio/Transcription model endpoints are optional. When a specialist task is
+configured, automatic observations use that task's ordered provider/model routing. A specialist
+failure remains an interpretation error; it does not silently switch to a different route.
+
+When no specialist is configured, automatic observations use the attached reasoning host's queue.
+The preserved artifact's trusted hash and capture time accompany the request, including when the
+inline media is too large for the text handoff. The host retrieves the original evidence and may
+delegate independent interpretation to parallel workers. These workers share the existing reasoning
+owner and claim each request independently; they do not attach another reasoning owner.
+
+Automatic requests use the `sensory_interpretation` task context and remain lower priority than
+human text. Their completion returns an observation to the Body bridge, which writes the sensory
+interpretation and updates presence. It does not start a separate conscious conversation or speech
+for every frame or audio clip. The observation endpoint returns its normal result after the host
+completes interpretation; a queued request is never represented as an interpretation.
+
+An attached host still needs an active queue consumer. This default does not install a wake-up
+subscription or a persistent worker. If no host is available, admission fails promptly after
+preserving the artifact and its admitted journal record. A bounded host camera request delivers
+its native frame before awaiting automatic interpretation, so the requesting host can consume
+the sensory work instead of waiting on itself.
+
 After a completed See/Hear cycle, `/body/live` displays:
 
 - media type;

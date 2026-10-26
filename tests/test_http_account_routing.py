@@ -1,9 +1,12 @@
 """Authenticated HTTP cognition must use one account's existing Mind and stores."""
 
+import asyncio
 import base64
+import hashlib
 import json
 from contextlib import AsyncExitStack
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import time
 import unittest
@@ -16,7 +19,7 @@ from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.config import Settings
 from aicognitive_mind.domain import DiagnosticObservation, ReasoningProposal
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
-from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.persistence import scope_storage
 from aicognitive_mind.standalone import StandaloneRuntime
 
@@ -433,6 +436,163 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await api.app.state.memory_store.read(), [])
         self.assertEqual(await api.app.state.journal_store.read(), [])
         self.assertEqual(await api.app.state.evidence_store.read(), [])
+
+    async def test_automatic_senses_default_to_account_host_with_preserved_evidence(self):
+        storage = scope_storage(api.app.state.storage, self.alpha.mind_id)
+        service = SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock())
+        host = HostRuntime(storage.mind, service)
+        attached = await host.attach("Synthetic parallel host", "synthetic-multimodal")
+        token = attached["lease_token"]
+        headers = {"X-Body-Session": "parallel-senses"}
+        # Force the host handoff to rely on the preserved artifact rather than a
+        # large inline media prompt. The original bytes remain retrievable.
+        image = b"synthetic-alpha-image-" * 10_000
+        audio = b"synthetic-alpha-audio"
+        requests = [
+            ("vision", "/v1/body/eyes/observe", image, {
+                "image_data_url": "data:image/jpeg;base64," + base64.b64encode(image).decode(),
+                "width": 640, "height": 480,
+            }),
+            ("audio", "/v1/body/ears/observe", audio, {
+                "audio_data_url": "data:audio/webm;base64," + base64.b64encode(audio).decode(),
+                "duration_ms": 1_000,
+            }),
+        ]
+        waiting = [asyncio.create_task(self.alpha_client.post(path, headers=headers, json=payload))
+                   for _modality, path, _media, payload in requests]
+        try:
+            async def wait_for_both():
+                while True:
+                    pending = await host.records.pending()
+                    if len(pending) == 2:
+                        return pending
+                    await asyncio.sleep(0.01)
+
+            pending = await asyncio.wait_for(wait_for_both(), timeout=5)
+            self.assertTrue(all(not task.done() for task in waiting))
+            self.assertEqual({item["task"] for item in pending}, {"sensory_interpretation"})
+            self.assertEqual({item["priority"] for item in pending}, {10})
+            self.assertEqual({item["body_session"] for item in pending}, {"parallel-senses"})
+            self.assertEqual(await RuntimeRecords(
+                scope_storage(api.app.state.storage, self.beta.mind_id).mind,
+            ).pending(), [])
+            self.assertEqual(await api.app.state.runtime_records.pending(), [])
+
+            claimed = [await asyncio.wait_for(host.next_request(token), timeout=3) for _ in requests]
+            self.assertEqual(len({item["request_id"] for item in claimed}), 2)
+            for item in claimed:
+                context = item["context"]
+                self.assertEqual(context["status"], "sensory_interpretation")
+                self.assertEqual(context["task"], "sensory_interpretation")
+                evidence = context["input_context"]["evidence"]
+                self.assertIn(evidence["sha256"], item["user_message"])
+                self.assertIn(evidence["captured_at"], item["user_message"])
+            self.assertNotIn(base64.b64encode(image).decode(), str(claimed))
+            service.begin_interaction.assert_not_awaited()
+
+            observations = {
+                "vision": "Visual perception: A red mug is visible.",
+                "audio": "Auditory perception: A person says hello.",
+            }
+            # The independent worker may complete the two requests in either
+            # order without blocking the browser caller or mixing the results.
+            for item in reversed(claimed):
+                modality = item["context"]["input_context"]["modality"]
+                await host.complete(token, item["request_id"], observations[modality])
+            results = await asyncio.wait_for(asyncio.gather(*waiting), timeout=5)
+            for (modality, _path, media, _payload), result in zip(requests, results, strict=True):
+                self.assertEqual(result.status_code, 200, result.text)
+                body = result.json()
+                self.assertEqual(body["interpretation"], observations[modality])
+                self.assertEqual(body["response_text"], "")
+                self.assertEqual(body["evidence"]["sha256"], hashlib.sha256(media).hexdigest())
+                evidence_path = "/v1/evidence/" + body["evidence"]["sha256"]
+                params = {"captured_at": body["evidence"]["captured_at"]}
+                original = await self.alpha_client.get(evidence_path, params=params)
+                self.assertEqual(original.status_code, 200, original.text)
+                self.assertEqual(original.content, media)
+                self.assertEqual((await self.beta_client.get(evidence_path, params=params)).status_code, 404)
+            service.complete_interaction.assert_not_awaited()
+            self.assertEqual(await host.records.pending(), [])
+        finally:
+            for task in waiting:
+                task.cancel()
+            await asyncio.gather(*waiting, return_exceptions=True)
+
+        journal = await self.get_json(self.alpha_client, "/v1/mind/journal")
+        self.assertEqual([entry["kind"] for entry in journal], ["sensory_evidence"] * 4)
+        self.assertEqual(sorted(entry["experience"]["status"] for entry in journal),
+                         ["admitted", "admitted", "interpreted", "interpreted"])
+        self.assertNotIn("data:image", str(journal))
+        self.assertEqual((await self.get_json(self.alpha_client, "/v1/portal/evidence"))["total"], 2)
+        self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 0)
+        for modality in ("mouth", "face"):
+            self.assertIsNone(await self.get_json(self.alpha_client, f"/v1/body/{modality}/next", headers=headers))
+        self.assertEqual(await api.app.state.journal_store.read(), [])
+        self.assertEqual(await api.app.state.evidence_store.read(), [])
+
+    async def test_automatic_senses_without_own_host_do_not_use_another_account(self):
+        alpha_host = HostRuntime(
+            scope_storage(api.app.state.storage, self.alpha.mind_id).mind,
+            SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock()),
+        )
+        await alpha_host.attach("Alpha host only", "synthetic-multimodal")
+        for path, payload in (
+            ("/v1/body/eyes/observe", {
+                "image_data_url": "data:image/jpeg;base64,c3ludGhldGljLWltYWdl", "width": 10, "height": 10,
+            }),
+            ("/v1/body/ears/observe", {
+                "audio_data_url": "data:audio/webm;base64,c3ludGhldGljLWF1ZGlv", "duration_ms": 1_000,
+            }),
+        ):
+            result = await asyncio.wait_for(self.beta_client.post(path, json=payload), timeout=3)
+            self.assertEqual(result.status_code, 503, result.text)
+            self.assertIn("host", result.json()["detail"].lower())
+        self.assertEqual(await alpha_host.records.pending(), [])
+        self.assertEqual(await RuntimeRecords(
+            scope_storage(api.app.state.storage, self.beta.mind_id).mind,
+        ).pending(), [])
+        journal = await self.get_json(self.beta_client, "/v1/mind/journal")
+        self.assertEqual([item["experience"]["status"] for item in journal], ["admitted", "admitted"])
+        self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 2)
+        self.assertEqual((await self.get_json(self.alpha_client, "/v1/portal/evidence"))["total"], 0)
+
+    async def test_configured_automatic_sensory_specialists_do_not_enqueue_host_work(self):
+        saved = await self.alpha_client.put("/v1/admin/provider-endpoints", json={"items": [{
+            "id": "alpha-sensory", "name": "Alpha sensory", "provider_name": "synthetic",
+            "base_url": "https://synthetic.invalid/v1", "api_key": "synthetic-alpha-key", "model": "sensory-model",
+        }]})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        assignments = (await self.get_json(self.alpha_client, "/v1/admin/task-model-assignments"))["items"]
+        for item in assignments:
+            if item["task"] in {"vision", "audio"}:
+                item.update(provider="alpha-sensory", model="sensory-model")
+        saved = await self.alpha_client.put("/v1/admin/task-model-assignments", json={"items": assignments})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        seen = []
+
+        async def interpret(dispatcher, percept, *, focus=None):
+            seen.append((dispatcher.assignments.records.mind_id, percept))
+            return "Specialist " + percept.modality.value + " observation"
+
+        with patch("aicognitive_mind.task_dispatcher.TaskModelDispatcher.interpret_percept", new=interpret):
+            for modality, path, payload in (
+                ("vision", "/v1/body/eyes/observe", {
+                    "image_data_url": "data:image/jpeg;base64,c3ludGhldGljLWltYWdl", "width": 10, "height": 10,
+                }),
+                ("audio", "/v1/body/ears/observe", {
+                    "audio_data_url": "data:audio/webm;base64,c3ludGhldGljLWF1ZGlv", "duration_ms": 1_000,
+                }),
+            ):
+                response = await asyncio.wait_for(self.alpha_client.post(path, json=payload), timeout=3)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["interpretation"], "Specialist " + modality + " observation")
+                self.assertEqual(seen[-1][1].metadata["evidence"], response.json()["evidence"])
+        self.assertEqual({mind_id for mind_id, _percept in seen}, {self.alpha.mind_id})
+        self.assertEqual(await RuntimeRecords(
+            scope_storage(api.app.state.storage, self.alpha.mind_id).mind,
+        ).pending(), [])
+        self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 0)
 
     async def test_body_see_and_hear_cannot_consume_another_accounts_queued_observations(self):
         headers = {"X-Body-Session": "same-session"}
