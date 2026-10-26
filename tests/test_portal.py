@@ -22,7 +22,100 @@ from aicognitive_mind.domain import (
 from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
+class PortalPageMap(HTMLParser):
+    """Locate controls by their actual Administration page, including duplicates."""
+
+    def __init__(self, markup: str) -> None:
+        super().__init__()
+        self.articles = []
+        self.elements = {}
+        self.duplicate_ids = set()
+        self.page_controls = {}
+        self.navigation = {}
+        self.active_navigation = None
+        self.feed(markup)
+
+    def handle_starttag(self, tag, attrs) -> None:
+        attributes = dict(attrs)
+        if tag == "article":
+            self.articles.append(attributes.get("id"))
+        page = self.articles[-1] if self.articles else None
+        if page:
+            self.page_controls.setdefault(page, []).append((tag, attributes))
+        element_id = attributes.get("id")
+        if element_id:
+            if element_id in self.elements:
+                self.duplicate_ids.add(element_id)
+            self.elements[element_id] = (tag, attributes, page)
+        if tag == "button" and "data-admin-section" in attributes:
+            self.active_navigation = attributes["data-admin-section"]
+            self.navigation[self.active_navigation] = {"attributes": attributes, "text": ""}
+
+    def handle_data(self, data) -> None:
+        if self.active_navigation:
+            self.navigation[self.active_navigation]["text"] += data
+
+    def handle_endtag(self, tag) -> None:
+        if tag == "article":
+            self.articles.pop()
+        if tag == "button":
+            self.active_navigation = None
+
+
 class PortalTests(unittest.TestCase):
+    def test_tools_are_reachable_on_their_own_page_and_connection_controls_stay_separate(self) -> None:
+        pages = PortalPageMap((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+
+        self.assertFalse(pages.duplicate_ids, f"Duplicate DOM controls: {pages.duplicate_ids}")
+        self.assertEqual(pages.navigation["tools"]["text"].strip(), "Tools")
+        self.assertEqual(pages.navigation["tools"]["attributes"]["type"], "button")
+        self.assertIn("Endpoints", pages.navigation["mcp"]["text"])
+        self.assertIn("MCP", pages.navigation["mcp"]["text"])
+        self.assertNotIn("Tools", pages.navigation["mcp"]["text"])
+        self.assertRegex(script, r'\btools:\s*"toolsSection"')
+
+        for element_id in (
+            "mcpToolsServerFilter", "mcpToolsSearch", "mcpToolList", "mcpToolDetail",
+            "mcpToolName", "mcpToolServerName", "mcpToolDescription", "mcpToolSchema",
+            "mcpToolEnabled", "mcpToolStatus", "mcpDiscoverTools", "mcpEditTools",
+            "saveMcpTools", "mcpCancelTools", "mcpToolArguments", "mcpRunTool", "mcpToolOutput",
+        ):
+            with self.subTest(tool_control=element_id):
+                self.assertEqual(pages.elements[element_id][2], "toolsSection")
+        self.assertNotIn("mcpToolRunnerSelect", pages.elements)
+
+        for element_id in (
+            "taskProfileEndpointSelect", "taskProfileAddEndpoint", "endpointModelSelect",
+            "endpointModelId", "endpointEditButton", "endpointRemoveButton", "saveProviderEndpoints",
+            "mcpServerSelect", "mcpServerName", "mcpServerUrl", "mcpServerToken",
+            "mcpServerEnabled", "mcpAddServer", "mcpEditServer", "mcpDeleteServer",
+            "mcpCancelEdit", "saveMcpServers",
+        ):
+            with self.subTest(connection_control=element_id):
+                self.assertEqual(pages.elements[element_id][2], "mcpSection")
+
+        for page in ("toolsSection", "mcpSection"):
+            back_controls = [attrs for tag, attrs in pages.page_controls[page]
+                             if tag == "button" and "data-admin-back" in attrs]
+            self.assertEqual(len(back_controls), 1)
+            self.assertEqual(back_controls[0]["aria-label"], "Back to System Overview")
+
+    def test_tools_page_exposes_search_selection_and_a_locked_runner(self) -> None:
+        pages = PortalPageMap((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+
+        self.assertEqual(pages.elements["mcpToolsServerFilter"][0], "select")
+        self.assertEqual(pages.elements["mcpToolsSearch"][1]["type"], "search")
+        self.assertEqual(pages.elements["mcpToolList"][0], "select")
+        self.assertGreater(int(pages.elements["mcpToolList"][1]["size"]), 1)
+        self.assertTrue(pages.elements["mcpToolList"][1].get("aria-label"))
+        self.assertEqual(pages.elements["mcpToolArguments"][0], "textarea")
+        self.assertEqual(pages.elements["mcpToolEnabled"][1]["type"], "checkbox")
+        for element_id in ("mcpToolEnabled", "mcpRunTool", "saveMcpTools", "mcpCancelTools"):
+            with self.subTest(element_id=element_id):
+                self.assertIn("disabled", pages.elements[element_id][1])
+        self.assertEqual(pages.elements["mcpToolOutput"][1]["aria-live"], "polite")
+
     def test_foundations_keeps_identity_read_only_and_restores_the_startup_editor(self) -> None:
         class Foundations(HTMLParser):
             def __init__(self) -> None:
@@ -96,7 +189,7 @@ class PortalTests(unittest.TestCase):
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
 
-        for element_id in ("saveHostBehaviors", "saveTaskProfile", "saveMcpServers", "saveVoiceSettings"):
+        for element_id in ("saveHostBehaviors", "saveTaskProfile", "saveMcpServers", "saveMcpTools", "saveVoiceSettings"):
             with self.subTest(element_id=element_id):
                 self.assertRegex(markup, rf'id="{element_id}"[^>]*class="primary-button"[^>]*>Save</button>')
 
