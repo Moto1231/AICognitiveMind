@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 from fastapi import FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
@@ -137,6 +137,14 @@ class PortalLoginRequest(BaseModel):
 
 class InteractionRequest(BaseModel):
     message: str = Field(min_length=1)
+
+
+class BodyReadyRequest(BaseModel):
+    mind_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    lease_token: str = Field(min_length=20, max_length=256, repr=False)
+    after_request_ids: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
+        default_factory=list, max_length=512,
+    )
 
 
 class HostBehaviorListRequest(BaseModel):
@@ -801,6 +809,9 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
         request.url.path == "/health"
         or request.url.path == "/v1/portal/login"
         or request.url.path.startswith("/static/")
+        # This endpoint authenticates its private, Mind-scoped host capability
+        # in the handler. It exposes readiness metadata, never media or records.
+        or request.url.path == "/v1/host-events/ready"
     )
     if public_path:
         return await call_next(request)
@@ -1426,6 +1437,21 @@ async def acknowledge_body_output(modality: str, request: Request, delivery_id: 
     queue = getattr(_request_runtime(request), "browser_" + modality)
     await queue.acknowledge(delivery_id)
     return {"acknowledged": True}
+
+
+@app.post("/v1/host-events/ready")
+async def body_ready_events(payload: BodyReadyRequest, request: Request) -> dict[str, Any]:
+    """Wake an already authorized host without exporting portal credentials."""
+    storage = scope_storage(request.app.state.storage, payload.mind_id)
+    hosts = HostRuntime(storage.mind, None, get_settings().reasoning_timeout_seconds)
+    try:
+        return await hosts.ready_events(payload.lease_token, tuple(payload.after_request_ids))
+    except PermissionError as exc:
+        # A selector alone grants no access. The capability must match the host
+        # record in precisely this Mind; unknown selectors and bad tokens agree.
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid host capability") from exc
+    except CommitConflict as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Host connection changed; retry") from exc
 
 
 @app.get("/v1/body/hosts/status")

@@ -179,7 +179,9 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("body_work snapshot", HOST_INSTRUCTIONS)
         self.assertIn("commit the current direct", HOST_INSTRUCTIONS)
         self.assertIn("human response with complete_interaction", HOST_INSTRUCTIONS)
-        self.assertIn("A later begin_interaction will service more queued", HOST_INSTRUCTIONS)
+        self.assertIn("bounded batch of at most four", HOST_INSTRUCTIONS)
+        self.assertIn("registered receiver signals remaining/new work", HOST_INSTRUCTIONS)
+        self.assertNotIn("A later begin_interaction will service more queued", HOST_INSTRUCTIONS)
         self.assertIn("Do not mark work complete", HOST_INSTRUCTIONS)
         self.assertIn("Never self-dispatch a sensory prompt", HOST_INSTRUCTIONS)
 
@@ -289,11 +291,19 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "aicognitive_mind.chatgpt_mcp.HostRuntime",
             ) as hosts:
                 hosts.return_value.active = AsyncMock(return_value=None)
+                hosts.return_value.records.mind_id = "synthetic-account-mind"
                 result = await status(ctx=ctx)
             self.assertEqual(result["realtime"], {
                 "configured": bool(key), "model": "configured-realtime-model",
             })
             self.assertNotIn("synthetic-private-server-key", str(result))
+            self.assertEqual(result["wakeup"], {
+                "mind_id": "synthetic-account-mind",
+                "ready_url": self.base + "/v1/host-events/ready",
+                "authentication": "existing-private-host-lease",
+            })
+            self.assertNotIn("lease_token", str(result))
+            self.assertNotIn("token_hash", str(result))
 
     async def test_turn_tools_require_structured_host_working_context(self):
         provider = AxiomAuthorizationServerProvider(

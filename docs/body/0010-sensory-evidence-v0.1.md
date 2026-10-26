@@ -107,7 +107,8 @@ Dedicated Vision and Audio/Transcription model endpoints are optional. When a sp
 configured, automatic observations use that task's ordered provider/model routing. A specialist
 failure remains an interpretation error; it does not silently switch to a different route.
 
-When no specialist is configured, automatic observations use the attached reasoning host's queue.
+When no specialist is configured, automatic observations use a verified `sensory.ready`
+subscription when available, or the attached reasoning host's queue.
 The preserved artifact's trusted hash and capture time accompany the request, including when the
 inline media is too large for the text handoff. The host retrieves the original evidence and may
 delegate independent interpretation to parallel workers. These workers share the existing reasoning
@@ -119,8 +120,10 @@ interpretation and updates presence. It does not start a separate conscious conv
 for every frame or audio clip. The observation endpoint returns its normal result after the host
 completes interpretation; a queued request is never represented as an interpretation.
 
-An attached host still needs an active queue consumer. This default does not install a wake-up
-subscription or a persistent worker. If no host is available, admission fails promptly after
+An attached host still needs an active queue consumer. A connected client can instead register a
+verified callback for `sensory.ready`, so a newly admitted observation wakes its processing task
+without waiting for another human chat message. A host registration alone does not install that
+subscription or a persistent worker. If neither route is available, admission fails promptly after
 preserving the artifact and its admitted journal record. A bounded host camera request delivers
 its native frame before awaiting automatic interpretation, so the requesting host can consume
 the sensory work instead of waiting on itself.
@@ -134,6 +137,46 @@ reconnecting does not grant old observations a fresh processing lifetime.
 The browser separately bounds sensory requests, releases their busy state on failure, and cancels
 in-flight capture work when that sensor is turned off. A late result from an earlier sensor
 generation cannot overwrite the current display.
+
+### Sensory-ready callbacks
+
+`sensory.ready` is separate from `message.created`. It identifies a passive camera or microphone
+request with its account, Body session, modality, source, and immutable evidence reference. It does
+not copy original media into the event or represent the observation as a human message.
+
+The receiving task reads and claims that exact request with `read_incoming_sensory` and
+`claim_incoming_sensory`, retrieves its original evidence, and submits a grounded observation with
+`complete_incoming_sensory`. The private event claim token replaces the live-host lease for this
+request. Duplicate claims and completion retries retain the existing claim/result; the receiver
+can use `release_incoming_sensory` when an attempt fails. Expired or cancelled observations do not
+receive a fresh lifetime when an event arrives late.
+
+Subscription discovery and storage, request claims, evidence retrieval, and completion all use the
+authenticated account's Mind. The existing verified HTTPS callback and signed durable outbox
+protocol applies. Completing a passive request does not emit another ready event, begin a conscious
+interaction, or request speech; the awaiting Body bridge still owns interpreted journaling and
+presence updates.
+
+An end-to-end acceptance check needs a real registered receiver and a new Body input that starts
+reasoning while the chat is idle. Server regression tests can exercise authenticated media ingress,
+signed webhook delivery, claim/evidence/completion, and the resulting HTTP response with synthetic
+media and a synthetic callback receiver. Those checks do not establish that a particular ChatGPT
+or Codex client has registered its own receiver or resumed the target chat.
+
+### Local host readiness channel
+
+A registered local receiver can keep a bounded wait open on `POST /v1/host-events/ready` when it
+cannot accept incoming webhooks. The request supplies the exact Mind selector, its private host
+lease token, and optional `after_request_ids`. The capability is checked against that selected
+Mind; the selector alone grants no access. Other portal and Body endpoints keep their normal
+authentication.
+
+The response contains only ready request IDs, kind, creation time, and deadline, with human work
+ordered first. It renews the host registration without claiming requests or returning human text,
+media, evidence, or credentials. The receiving bridge must wake the intended chat and use the
+ordinary host tools to claim and complete its work. Keep the private lease outside model prompts
+and diagnostic output. A successful readiness response alone does not prove the chat resumed or
+the Body received an interpretation.
 
 After a completed See/Hear cycle, `/body/live` displays:
 
