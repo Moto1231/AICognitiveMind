@@ -32,7 +32,13 @@ The index and this record use the same baseline. Chapter source links are commit
 - **GitHub checks:** use the attached PR's actual results; this file does not predeclare a pass.
 - **Not performed for this manual:** live settings changes, account creation/login exercise, provider probe calls, sensory capture, physical-device testing, backup/restore drill or manual Render deploy.
 - **Not asserted:** current provider prices/free quotas, provider-account entitlement, universal host plugin compatibility or exact live deployed revision.
-- **No screenshots:** none were fabricated or represented as captured.
+- **Supplied screenshots:** four original JPEGs are reproduced unchanged in the [screenshot reference](screenshots.md). They show different interface versions and have unknown capture dates. They are not new authenticated-browser verification of the reviewed revision.
+
+## Supplied screenshot update
+
+Documentation update date: **2026-10-25**. Four user-supplied JPEGs were added as visual examples for Main, Behavior authoring, memory filtering and Audio/Transcription configuration. The [screenshot reference](screenshots.md) records their original filenames, limitations and links to current workflow chapters. Copies preserve the supplied image bytes; their local paths and copy hashes were checked during this update.
+
+The visual-reference page and chapter links do not change the implementation-review baseline above. The Main, Behavior and task images show older navigation and editor layouts; the supplied memory image shows icon navigation, with its deployed revision unknown. Visible counts, memory records, behavior text and provider/model selections are capture content; they do not establish current account state, policy, supported model capabilities or recommended configuration. No new login exercise, provider test or full chapter source review was performed for this image update.
 
 ## Gaps and follow-up register
 
@@ -50,6 +56,7 @@ The index and this record use the same baseline. Chapter source links are commit
 | UM-10 | Planned, not delivered here | Portable backup encryption is identified as a later increment in BACKUPS.md. Do not claim checkpoint encryption. |
 | UM-11 | Open reconciliation | Older Body storage/transience notes contain historical implementation claims. Prefer current handlers and preserve evidence versus interpretation distinctions. |
 | UM-12 | Open verification | Third-party provider documentation URLs and current capability/price changes are not freshly internet-verified by this source-authoring pass; repository labels are documented as repository claims. |
+| UM-13 | Open visual refresh | Replace or supplement the clearly labeled earlier-interface captures with authorized captures of the reviewed/current interface, recording the deployment revision and capture date. The supplied screenshots do not close UM-01 or provider/device verification gaps. |
 
 These are documentation/verification gaps, not authorization to change live settings or application behavior.
 

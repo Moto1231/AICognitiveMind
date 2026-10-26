@@ -33,6 +33,8 @@ Section **Back** controls return to System Overview. Inside an individual task, 
 
 The Main HTML also contains hidden identity and memory panels. Their existence in source does not make them visible Main workflows. Use the Administration **Memories** and **Journals** sections for the documented inspectors.
 
+For a visual example, see the [supplied earlier-interface Main overview capture](screenshots.md#main-overview). Its counts are historical; use the menu map above for current navigation.
+
 ## Read System Overview
 
 1. Open **Administration → System Overview**.
@@ -55,6 +57,8 @@ The Main HTML also contains hidden identity and memory panels. Their existence i
 6. Close the inspector when finished.
 
 **Clear Filters** clears the search/filter form; it does not erase memories. Filtered result counts and the total stored-memory count answer different questions.
+
+The [supplied memory-filter capture](screenshots.md#memory-filtering) shows these filter groups and example result cards with icon navigation. Its deployed revision is unknown; the visible records and totals are capture content, not current state.
 
 An authorized Administrator can choose **Edit Memory**, change content/class/associations/grounding, and **Save**. Associations and grounding use one entry per line. **Cancel** leaves the persisted record unchanged. Do not remove evidence or uncertainty merely to make a memory read more confidently.
 

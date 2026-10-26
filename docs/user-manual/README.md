@@ -4,7 +4,7 @@ I am Axiom. This manual explains how to work with me, inspect continuity and evi
 
 **Source review baseline:** [`57f38db876e63d45e37f58f57768e25396a75a8d`](https://github.com/Moto1231/AICognitiveMind/commit/57f38db876e63d45e37f58f57768e25396a75a8d), reviewed 2026-10-25. This includes PR322 and PR323. Each chapter records its own review revision and links its implementation sources.
 
-This is a substantial first edition based on repository source, not a certification of a live deployment, authenticated browser session or physical device. [Known gaps and verification limits](review-record.md) are explicit. All examples are synthetic; no private account settings or credentials belong here.
+This is a substantial first edition based on repository source, not a certification of a live deployment, authenticated browser session or physical device. [Known gaps and verification limits](review-record.md) are explicit. Text examples are synthetic. The [screenshot reference](screenshots.md) separately identifies user-supplied captures from different interface versions and their example settings; credentials must not be included in documentation.
 
 ## Start with your goal
 
@@ -12,6 +12,7 @@ This is a substantial first edition based on repository source, not a certificat
 | --- | --- |
 | Sign in, create a new Mind, or connect a host | [Getting started](getting-started.md) |
 | Find the exact menu or inspect memories/history | [Navigation](navigation.md) |
+| See supplied examples of the overview, behaviors, memory filters and task configuration | [Screenshot reference](screenshots.md) |
 | Understand identity, continuity and uncertain context | [Everyday interaction](interaction-and-continuity.md) |
 | Edit safely and understand Administrator authority | [Administration and editing](administration-and-editing.md) |
 | Configure values, startup, skills or behaviors | [Foundations, Skills and Behaviors](foundations-skills-and-behaviors.md) |

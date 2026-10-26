@@ -104,6 +104,8 @@ Account-scoped sessions are explicitly denied custom GitHub draft access because
 
 ## Create a reusable Behavior
 
+See the [supplied earlier-interface behavior-editor capture](screenshots.md#behavior-authoring) for an example of the name, instruction, priority and enabled fields. Follow the current workflow below when saving and assigning a behavior.
+
 1. Open **Administration → Behavior**.
 2. Choose **Add Behavior**; this starts a catalog draft if necessary.
 3. Replace **New Behavior** and **Describe the behavior.**

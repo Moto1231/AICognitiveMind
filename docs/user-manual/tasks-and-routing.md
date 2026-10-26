@@ -35,6 +35,8 @@ A task appearing in this list does not guarantee that every provider supports it
 
 The selected endpoint supplies its saved model. The standard model selector inside the task form is hidden in this revision; model choice belongs to the endpoint editor.
 
+The [supplied earlier-interface Audio/Transcription capture](screenshots.md#task-routing-and-transcription) illustrates endpoint and fallback fields. It includes an older in-task model selector; follow this chapter's current endpoint-model workflow. The pictured provider/model choices are examples, not tested or recommended transcription settings.
+
 Reasoning can use **Connected reasoning host**. Selecting provider endpoints for other tasks does not change which model the external chat host selected for itself.
 
 The task's endpoint-area Save and lower Save use the same assignment-save handler. They save endpoint choices, fallback list, routing mode and selected behavior IDs together. They do not save the separate Task Foundation editor or an unsaved shared Behavior catalog draft.
