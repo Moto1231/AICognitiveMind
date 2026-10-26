@@ -1,5 +1,19 @@
 # Private preview release
 
+## Version 5 — naming milestone clarification
+
+Published 2026-10-25 (America/Chicago); native owner-private deployment confirmed succeeded.
+
+- URL: https://axiom-continuity-portal.snowydeer18.chatgpt.site/guide#questions
+- Native source commit: e3898085d4d6be457d90c79967dd88da50c5724b
+- Saved version: appgprj_6ade9371c8688191994b9b27a3520bc1~appgver_19a0d495e90481919abfa4c8f61f0932
+- Deployment: appgdep_6adeb8a3a95881918622a1aa2f82e732
+- Audience: existing owner-private access preserved.
+
+The guide FAQ documents the implemented naming status: eligible at 1,000 journal experiences and required at 2,000, excluding current-state ledger checkpoints. It distinguishes status metadata from an automatic action. Automatic name-and-gender selection is not implemented in source review dbbc246860115153f3c11d05b505014cfcb874b8. Identity currently stores pronouns, while conversational self-name proposals follow a separate explicit-command governance path.
+
+Verified: TypeScript, production build, source diff check and native private publication. This is a copy-only addition; no identity, configuration, provider or milestone workflow was changed or exercised live. Earlier screenshot and boundary verification remains recorded under its corresponding version.
+
 ## Version 4 — supplied interface gallery
 
 Published 2026-10-25 (America/Chicago); native owner-private deployment confirmed succeeded.
