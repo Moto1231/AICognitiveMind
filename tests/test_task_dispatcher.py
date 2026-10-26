@@ -110,6 +110,92 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
                 [f"provider-{index}" for index in range(6)],
             )
 
+    async def test_vision_reaches_tenth_fallback_in_order_and_stops_on_first_success(self):
+        for success_index in (0, 4, 10):
+            with self.subTest(success_index=success_index):
+                records = await self.configured_pool(task="vision", count=11)
+                client = SequencedFakeClient([
+                    *[FakeResponse({}, 503, "Temporarily unavailable") for _ in range(success_index)],
+                    FakeResponse({"choices": [{"message": {"content": "A red square"}}]}),
+                ])
+                dispatcher = TaskModelDispatcher(records, client=client)
+                percept = SimpleNamespace(
+                    modality=SimpleNamespace(value="vision"),
+                    content_ref="data:image/png;base64,cHJlc2VydmVkLWltYWdl",
+                )
+
+                result = await dispatcher.interpret_percept(percept)
+
+                self.assertEqual(result, "Visual perception: A red square")
+                self.assertEqual([call[1] for call in client.calls], [
+                    f"https://provider-{index}.example/v1/chat/completions"
+                    for index in range(success_index + 1)
+                ])
+                self.assertEqual([call[2]["json"]["model"] for call in client.calls], [
+                    f"model-{index}" for index in range(success_index + 1)
+                ])
+                self.assertTrue(all(
+                    call[2]["json"]["messages"][-1]["content"][1]["image_url"]["url"] == percept.content_ref
+                    for call in client.calls
+                ))
+                self.assertEqual(client.responses, [])
+
+    async def test_audio_reaches_tenth_fallback_in_order_and_stops_on_first_success(self):
+        for success_index in (0, 4, 10):
+            with self.subTest(success_index=success_index):
+                records = await self.configured_pool(task="audio", count=11)
+                client = SequencedFakeClient([
+                    *[FakeResponse({}, 503, "Temporarily unavailable") for _ in range(success_index)],
+                    FakeResponse({"text": "Can you hear me?"}),
+                ])
+                dispatcher = TaskModelDispatcher(records, client=client)
+                percept = SimpleNamespace(
+                    modality=SimpleNamespace(value="audio"),
+                    content_ref="data:audio/webm;base64,YXVkaW8=",
+                )
+
+                result = await dispatcher.interpret_percept(percept)
+
+                self.assertEqual(result, "Auditory perception: Can you hear me?")
+                self.assertEqual([call[1] for call in client.calls], [
+                    f"https://provider-{index}.example/v1/audio/transcriptions"
+                    for index in range(success_index + 1)
+                ])
+                self.assertEqual([call[2]["data"]["model"] for call in client.calls], [
+                    f"model-{index}" for index in range(success_index + 1)
+                ])
+                self.assertTrue(all(
+                    call[2]["files"]["file"] == ("percept.webm", b"audio", "audio/webm")
+                    for call in client.calls
+                ))
+                self.assertEqual(client.responses, [])
+
+    async def test_large_fallback_pool_deduplicates_aliases_and_skips_cooling_model(self):
+        records = await self.configured_pool(task="vision", count=11)
+        registry = TaskModelAssignmentRegistry(records)
+        assignments = await registry.list()
+        vision = next(item for item in assignments if item.task == "vision")
+        vision.fallbacks[1:1] = [
+            TaskFallbackAssignment(provider="Provider 1", model="model-1"),
+            TaskFallbackAssignment(provider="https://provider-1.example/v1", model="model-1"),
+        ]
+        await registry.replace(assignments)
+        expected_indices = [0, 1, *range(3, 11)]
+        client = SequencedFakeClient([
+            *[FakeResponse({}, 503, "Temporarily unavailable") for _ in expected_indices[:-1]],
+            FakeResponse({"choices": [{"message": {"content": "Last eligible result"}}]}),
+        ])
+        dispatcher = TaskModelDispatcher(records, client=client)
+        cooling_endpoint = next(item for item in await dispatcher.endpoints.list() if item.id == "provider-2")
+        await dispatcher.routing.record_http_failure(cooling_endpoint, "model-2", 429, {"retry-after": "3600"})
+
+        self.assertEqual(await dispatcher.complete_chat("vision", []), "Last eligible result")
+
+        self.assertEqual([call[1] for call in client.calls], [
+            f"https://provider-{index}.example/v1/chat/completions" for index in expected_indices
+        ])
+        self.assertEqual(client.responses, [])
+
     async def test_rate_limit_falls_back_and_survives_new_dispatcher_until_expiry(self):
         records = await self.configured_pool(count=2)
         now = datetime(2026, 10, 25, 12, tzinfo=UTC)
