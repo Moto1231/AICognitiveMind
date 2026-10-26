@@ -655,6 +655,19 @@
         setStatus("Realtime voice is unavailable in this browser.");
         return;
       }
+
+      try {
+        const response = await bodyFetch("/v1/body/hosts/status", { cache: "no-store" });
+        if (!response.ok) throw new Error("Realtime capability check failed");
+        const capability = (await response.json()).realtime;
+        if (capability?.available !== true) {
+          setStatus(capability?.reason || "Realtime voice is unavailable.");
+          return;
+        }
+      } catch (_) {
+        setStatus("Realtime voice availability could not be checked.");
+        return;
+      }
       
       talkEnabled = true;
       talkBusy = true;

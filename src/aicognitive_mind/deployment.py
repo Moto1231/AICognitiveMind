@@ -315,7 +315,7 @@ async def _realtime_body_session(request: Request) -> Response:
         return JSONResponse({"detail": "Sign in to Axiom before starting voice."}, status_code=401)
     if account.mind_id != "__legacy__":
         return JSONResponse(
-            {"detail": "This endpoint is not available for account-scoped sessions."}, status_code=403,
+            {"detail": "Realtime voice is not configured for this account."}, status_code=403,
         )
 
     if not settings.openai_api_key:

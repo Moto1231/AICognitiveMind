@@ -1427,6 +1427,10 @@ function bodySettingsAvailable() {
   return state.adminAuthorized && state.status?.administration?.body_settings_available === true;
 }
 
+function bodyFallbackSettingsAvailable() {
+  return state.adminAuthorized && state.status?.administration?.body_fallback_settings_available === true;
+}
+
 function renderBodySettingsAvailability() {
   const available = bodySettingsAvailable();
   if (!available) {
@@ -1448,8 +1452,8 @@ function renderBodySettingsAvailability() {
   for (const name of ["voiceRate", "voicePitch", "voiceVolume", "voiceName", "saveVoiceSettings"]) {
     if (el[name]) el[name].disabled = !enabled;
   }
-  if (el.bodyFallbackEnabled) el.bodyFallbackEnabled.disabled = !available;
-  if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = !available;
+  if (el.bodyFallbackEnabled) el.bodyFallbackEnabled.disabled = !bodyFallbackSettingsAvailable();
+  if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = !bodyFallbackSettingsAvailable();
 }
 
 async function loadVoiceSettings() {
@@ -1520,7 +1524,7 @@ async function saveVoiceSettings() {
 }
 
 async function refreshBodyFallbackSettings() {
-  if (!bodySettingsAvailable() || !el.bodyFallbackEnabled) return;
+  if (!bodyFallbackSettingsAvailable() || !el.bodyFallbackEnabled) return;
   try {
     const settings = await api("/v1/admin/body/fallback", {}, true);
     el.bodyFallbackEnabled.checked = Boolean(settings.enabled);
@@ -1533,7 +1537,7 @@ async function refreshBodyFallbackSettings() {
 }
 
 async function saveBodyFallbackSettings() {
-  if (!bodySettingsAvailable() || !el.bodyFallbackEnabled) return;
+  if (!bodyFallbackSettingsAvailable() || !el.bodyFallbackEnabled) return;
   if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = true;
   try {
     const settings = await api("/v1/admin/body/fallback", {

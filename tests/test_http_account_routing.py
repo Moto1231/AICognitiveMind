@@ -1,6 +1,7 @@
 """Authenticated HTTP cognition must use one account's existing Mind and stores."""
 
 import base64
+import json
 from contextlib import AsyncExitStack
 from pathlib import Path
 import tempfile
@@ -15,6 +16,9 @@ from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.config import Settings
 from aicognitive_mind.domain import DiagnosticObservation, ReasoningProposal
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
+from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.persistence import scope_storage
+from aicognitive_mind.standalone import StandaloneRuntime
 
 
 PASSWORD = "synthetic-http-account-password"
@@ -157,24 +161,25 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         )
         root_status = await self.get_json(self.admin_client, "/v1/portal/status")
         self.assertIs(root_status["administration"]["body_settings_available"], True)
+        self.assertIs(root_status["administration"]["body_fallback_settings_available"], True)
         root_voice = await self.get_json(self.admin_client, "/v1/admin/body/voice/settings")
         self.assertEqual(root_voice["fishAudioApiKey"], "synthetic-deployment-voice-key")
         self.assertEqual(root_voice["rate"], 1.2)
 
         for client in (self.alpha_client, self.beta_client):
             portal = await self.get_json(client, "/v1/portal/status")
-            self.assertIs(portal["administration"]["body_settings_available"], False)
+            self.assertIs(portal["administration"]["body_settings_available"], True)
+            self.assertIs(portal["administration"]["body_fallback_settings_available"], False)
+            own_voice = await self.get_json(client, "/v1/admin/body/voice/settings")
+            self.assertEqual(own_voice["fishAudioApiKey"], "")
+            self.assertEqual(own_voice["rate"], 1)
+            self.assertIsNone(own_voice["fishAudioReferenceId"])
             for method, path in (
-                ("GET", "/v1/admin/body/voice/settings"),
-                ("POST", "/v1/admin/body/voice/settings"),
-                ("GET", "/v1/body/voice/settings"),
-                ("GET", "/v1/admin/body/fallback"),
-                ("PUT", "/v1/admin/body/fallback"),
+                ("GET", "/v1/admin/body/fallback"), ("PUT", "/v1/admin/body/fallback"),
+                ("GET", "/v1/admin/backup"),
             ):
-                with self.subTest(account=client, method=method, path=path):
+                with self.subTest(method=method, path=path):
                     kwargs = {"json": {"enabled": False}} if method == "PUT" else {}
-                    if method == "POST":
-                        kwargs = {"json": {"expected_revision": 1, "rate": 1.5}}
                     response = await client.request(method, path, **kwargs)
                     self.assertEqual(response.status_code, 403, response.text)
                     self.assertNotIn("synthetic-deployment-voice-key", response.text)
@@ -185,9 +190,10 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         still_scoped = await self.get_json(self.alpha_client, "/v1/portal/status", headers={
             "Authorization": "Basic " + basic,
         })
-        self.assertIs(still_scoped["administration"]["body_settings_available"], False)
+        self.assertIs(still_scoped["administration"]["body_fallback_settings_available"], False)
         anonymous = await self.client()
         self.assertEqual((await anonymous.get("/v1/portal/status")).status_code, 401)
+        self.assertEqual((await anonymous.get("/body/live")).status_code, 401)
         self.assertEqual((await anonymous.get("/v1/admin/body/voice/settings")).status_code, 401)
         self.assertEqual((await api.app.state.voice_settings.read())["rate"], 1.2)
 
@@ -345,24 +351,215 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
             close.assert_not_awaited()
         await api.app.state.runtime.ping()
 
-    async def test_unscoped_body_cognition_and_global_backup_fail_closed_for_accounts(self):
-        with patch.object(api.app.state.browser_mouth, "consume", new_callable=AsyncMock) as consume, patch.object(
-            api.app.state.mind_body, "interact", new_callable=AsyncMock,
-        ) as interact:
-            response = await self.alpha_client.get("/v1/body/mouth/next")
-            self.assertEqual(response.status_code, 403)
-            response = await self.alpha_client.post(
-                "/v1/mind/body/interact", json={"message": "Do not route this to the root"},
+    async def test_account_body_pages_voice_preferences_and_output_receipts_are_isolated(self):
+        for client in (self.alpha_client, self.beta_client, self.admin_client):
+            for path in ("/body/live", "/body/eyes", "/body/ears", "/body/face", "/body/mouth"):
+                response = await client.get(path)
+                self.assertEqual(response.status_code, 200, response.text)
+        saved = await self.alpha_client.post("/v1/admin/body/voice/settings", json={
+            "expected_revision": 0, "voice_name": "Alpha voice", "rate": 1.3,
+            "fish_audio_api_key": "synthetic-alpha-fish-key", "fish_audio_reference_id": "alpha-reference",
+        })
+        self.assertEqual(saved.status_code, 200, saved.text)
+        alpha_voice = await self.get_json(self.alpha_client, "/v1/body/voice/settings")
+        self.assertEqual(alpha_voice["voiceName"], "Alpha voice")
+        self.assertEqual(alpha_voice["fishAudioReferenceId"], "alpha-reference")
+        self.assertNotIn("fishAudioApiKey", alpha_voice)
+        for client in (self.beta_client, self.admin_client):
+            other_voice = await self.get_json(client, "/v1/body/voice/settings")
+            self.assertEqual(other_voice["voiceName"], "")
+            self.assertNotEqual(other_voice["fishAudioReferenceId"], "alpha-reference")
+
+        with patch("aicognitive_mind.api.FishAudioRenderer") as renderer:
+            renderer.return_value.synthesize = AsyncMock(return_value=b"synthetic-alpha-audio")
+            speech = await self.alpha_client.post("/v1/body/speech/fish-audio", json={"text": "Alpha voice"})
+            self.assertEqual(speech.status_code, 200, speech.text)
+            self.assertEqual(speech.content, b"synthetic-alpha-audio")
+            renderer.assert_called_once_with(
+                api_key="synthetic-alpha-fish-key", model="s2.1-pro-free", reference_id="alpha-reference",
             )
-            self.assertEqual(response.status_code, 403)
-            response = await self.alpha_client.get("/v1/admin/backup")
-            self.assertEqual(response.status_code, 403)
-            consume.assert_not_awaited()
-            interact.assert_not_awaited()
-        # Explicit deployment administration retains its existing Body access.
-        response = await self.admin_client.get("/v1/body/mouth/next")
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.json())
+
+        headers = {"X-Body-Session": "same-session"}
+        spoken = await self.alpha_client.post("/v1/body/mouth/speak", headers=headers, json={"text": "Alpha output"})
+        self.assertEqual(spoken.status_code, 200, spoken.text)
+        expression = await self.alpha_client.post("/v1/body/face/expression", headers=headers, json={
+            "text": "Alpha expression", "expression": "happy", "weight": 0.5,
+        })
+        self.assertEqual(expression.status_code, 200, expression.text)
+        for client in (self.beta_client, self.admin_client):
+            for modality in ("mouth", "face"):
+                self.assertIsNone(await self.get_json(client, f"/v1/body/{modality}/next", headers=headers))
+        for modality in ("mouth", "face"):
+            output = await self.alpha_client.get(f"/v1/body/{modality}/next", headers=headers)
+            self.assertEqual(output.status_code, 200, output.text)
+            receipt = output.headers["X-Body-Delivery"]
+            self.assertIn("Alpha", output.json()["text"])
+            other_ack = await self.beta_client.post(f"/v1/body/{modality}/ack?delivery_id={receipt}", headers=headers)
+            self.assertEqual(other_ack.status_code, 200)
+            still_pending = await self.alpha_client.get(f"/v1/body/{modality}/next", headers=headers)
+            self.assertEqual(still_pending.headers["X-Body-Delivery"], receipt)
+            own_ack = await self.alpha_client.post(f"/v1/body/{modality}/ack?delivery_id={receipt}", headers=headers)
+            self.assertEqual(own_ack.status_code, 200)
+            self.assertIsNone(await self.get_json(self.alpha_client, f"/v1/body/{modality}/next", headers=headers))
+
+    async def test_body_interactions_and_sensory_evidence_use_only_the_authenticated_mind(self):
+        headers = {"X-Body-Session": "same-session"}
+        with patch.object(api.app.state.mind_body, "interact", new_callable=AsyncMock) as root_interact:
+            for client, word in ((self.alpha_client, "alpha"), (self.beta_client, "beta")):
+                response = await client.post("/v1/mind/body/interact", headers=headers, json={
+                    "message": "Synthetic " + word + " Body note",
+                })
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertIn(word, response.json()["response_text"])
+            root_interact.assert_not_awaited()
+        with patch("aicognitive_mind.api.HostAwareInterpreter.interpret_automatically", new_callable=AsyncMock,
+                   return_value="A person is speaking nearby"):
+            for path, payload in (
+                ("/v1/body/eyes/observe", {"image_data_url": "data:image/jpeg;base64,c3ludGhldGljLWltYWdl", "width": 10, "height": 10}),
+                ("/v1/body/ears/observe", {"audio_data_url": "data:audio/webm;base64,c3ludGhldGljLWF1ZGlv", "duration_ms": 1000}),
+            ):
+                response = await self.alpha_client.post(path, headers=headers, json=payload)
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["interpretation"], "A person is speaking nearby")
+        for client, own, other in ((self.alpha_client, "alpha", "beta"), (self.beta_client, "beta", "alpha")):
+            memories = await self.get_json(client, "/v1/mind/memory")
+            self.assertIn(own + " Body note", str(memories))
+            self.assertNotIn(other + " Body note", str(memories))
+        alpha_evidence = await self.get_json(self.alpha_client, "/v1/portal/evidence")
+        self.assertEqual(alpha_evidence["total"], 2)
+        self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 0)
+        self.assertTrue(api.app.state.presence.active(scope=(self.alpha.mind_id, "same-session")))
+        self.assertFalse(api.app.state.presence.active(scope=(self.beta.mind_id, "same-session")))
+        self.assertEqual(await api.app.state.memory_store.read(), [])
+        self.assertEqual(await api.app.state.journal_store.read(), [])
+        self.assertEqual(await api.app.state.evidence_store.read(), [])
+
+    async def test_body_see_and_hear_cannot_consume_another_accounts_queued_observations(self):
+        headers = {"X-Body-Session": "same-session"}
+        records = RuntimeRecords(scope_storage(api.app.state.storage, self.alpha.mind_id).mind)
+        queues = [
+            ("eyes", "see", api.BrowserVisionIngress(), {
+                "image_data_url": "data:image/jpeg;base64,c3ludGhldGljLWltYWdl", "width": 10, "height": 10,
+            }),
+            ("ears", "hear", api.BrowserAudioIngress(), {
+                "audio_data_url": "data:audio/webm;base64,c3ludGhldGljLWF1ZGlv", "duration_ms": 1000,
+            }),
+        ]
+        token = api.body_session.set("same-session")
+        try:
+            for modality, action, adapter, payload in queues:
+                await api.BodyQueue(records, modality, adapter).accept(**payload)
+        finally:
+            api.body_session.reset(token)
+        with patch("aicognitive_mind.api.HostAwareInterpreter.interpret", new_callable=AsyncMock,
+                   return_value="A person is speaking nearby"):
+            for modality, action, _adapter, _payload in queues:
+                for client in (self.beta_client, self.admin_client):
+                    direct = await client.get(f"/v1/body/{modality}/{action}", headers=headers)
+                    self.assertEqual(direct.status_code, 409, direct.text)
+                    cognitive = await client.post(f"/v1/mind/body/{action}?express=false", headers=headers)
+                    self.assertEqual(cognitive.status_code, 409, cognitive.text)
+                own = await self.alpha_client.post(f"/v1/mind/body/{action}?express=false", headers=headers)
+                self.assertEqual(own.status_code, 200, own.text)
+                self.assertEqual(own.json()["interpretation"], "A person is speaking nearby")
+        self.assertEqual((await self.get_json(self.alpha_client, "/v1/portal/evidence"))["total"], 2)
+        self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 0)
+        self.assertEqual(await api.app.state.evidence_store.read(), [])
+
+    async def test_body_sessions_hosts_and_camera_requests_are_account_scoped(self):
+        headers = {"X-Body-Session": "same-session"}
+        records = {}
+        for client, account, label in ((self.alpha_client, self.alpha, "alpha"), (self.beta_client, self.beta, "beta")):
+            records[label] = RuntimeRecords(scope_storage(api.app.state.storage, account.mind_id).mind)
+            await records[label].create("camera_request", {
+                "kind": "camera_request", "request_id": label + "-camera", "state": "pending",
+                "seconds": 3, "deadline": time.time() + 60, "created": time.time(), "result": {},
+            })
+            registration = await client.post("/v1/body/session/active", headers=headers)
+            self.assertEqual(registration.status_code, 200, registration.text)
+            self.assertEqual((await records[label].get("active_body_session"))["session_id"], "same-session")
+            camera = await self.get_json(client, "/v1/body/camera/request", headers=headers)
+            self.assertEqual(camera["request_id"], label + "-camera")
+        self.assertIsNone(await api.app.state.runtime_records.get("active_body_session"))
+        self.assertIsNone(await self.get_json(self.admin_client, "/v1/body/camera/request", headers=headers))
+        result = {"request_id": "alpha-camera", "image_data_url": "data:image/jpeg;base64,c3ludGhldGljLWltYWdl", "width": 10, "height": 10}
+        denied = await self.beta_client.post("/v1/body/camera/complete", headers=headers, json=result)
+        self.assertEqual(denied.status_code, 409)
+        completed = await self.alpha_client.post("/v1/body/camera/complete", headers=headers, json=result)
+        self.assertEqual(completed.status_code, 200, completed.text)
+        self.assertEqual((await records["alpha"].get("camera_request"))["state"], "complete")
+        self.assertEqual((await records["beta"].get("camera_request"))["state"], "pending")
+        with patch.object(api.app.state.hosts, "status", new_callable=AsyncMock) as root_status:
+            for client in (self.alpha_client, self.beta_client):
+                status = await self.get_json(client, "/v1/body/hosts/status")
+                self.assertFalse(status["connected"])
+                self.assertFalse(status["realtime"]["available"])
+                self.assertEqual(status["realtime"]["reason"], "Realtime voice is not configured for this account.")
+            root_status.assert_not_awaited()
+
+    async def test_account_body_never_inherits_deployment_provider_credentials(self):
+        global_settings = self.settings.model_copy(update={
+            "standalone_reasoning_provider": "openai", "openai_api_key": "synthetic-root-openai-key",
+            "gemini_api_key": "synthetic-root-gemini-key", "fish_audio_api_key": "synthetic-root-fish-key",
+            "fish_audio_reference_id": "root-voice-reference",
+        })
+        with patch("aicognitive_mind.api.get_settings", return_value=global_settings), patch(
+            "aicognitive_mind.config.get_settings", return_value=global_settings,
+        ), patch("aicognitive_mind.api.StandaloneRuntime", wraps=StandaloneRuntime) as runtime, patch(
+            "aicognitive_mind.engines.OpenAIReasoningEngine",
+        ) as openai, patch("aicognitive_mind.engines.GeminiReasoningEngine") as gemini, patch(
+            "aicognitive_mind.api.FishAudioRenderer",
+        ) as fish:
+            response = await self.alpha_client.post("/v1/mind/body/interact", json={"message": "No shared providers"})
+            self.assertEqual(response.status_code, 502, response.text)
+            voice = await self.get_json(self.alpha_client, "/v1/admin/body/voice/settings")
+            self.assertEqual(voice["fishAudioApiKey"], "")
+            self.assertIsNone(voice["fishAudioReferenceId"])
+            speech = await self.alpha_client.post("/v1/body/speech/fish-audio", json={"text": "No shared voice key"})
+            self.assertEqual(speech.status_code, 503, speech.text)
+            for call in runtime.call_args_list:
+                scoped_settings = call.args[0]
+                self.assertEqual(scoped_settings.effective_standalone_reasoning_provider, "disabled")
+                self.assertIsNone(scoped_settings.openai_api_key)
+                self.assertIsNone(scoped_settings.gemini_api_key)
+                self.assertIsNone(scoped_settings.fish_audio_api_key)
+            openai.assert_not_called()
+            gemini.assert_not_called()
+            fish.assert_not_called()
+
+    async def test_configured_account_reasoning_works_without_deployment_fallback(self):
+        saved = await self.alpha_client.put("/v1/admin/provider-endpoints", json={"items": [{
+            "id": "alpha-only", "name": "Alpha reasoning", "provider_name": "synthetic",
+            "base_url": "https://synthetic.invalid/v1", "api_key": "synthetic-alpha-key", "model": "alpha-model",
+        }]})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        assignments = (await self.get_json(self.alpha_client, "/v1/admin/task-model-assignments"))["items"]
+        for item in assignments:
+            if item["task"] in {"reasoning", "memory_recall"}:
+                item.update(provider="alpha-only", model="alpha-model")
+        saved = await self.alpha_client.put("/v1/admin/task-model-assignments", json={"items": assignments})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        scopes = []
+        async def complete(dispatcher, task, messages, **kwargs):
+            scopes.append((dispatcher.assignments.records.mind_id, task))
+            if task == "memory_recall":
+                action = {"action": "finish", "reason": "No stable learning from this synthetic request."}
+                if kwargs.get("steward_action_phase") == "recall":
+                    action["outcome"] = "no_recall_needed"
+                return json.dumps(action)
+            self.assertEqual(task, "reasoning")
+            return "Synthetic account reasoning result"
+        local = self.settings.model_copy(update={"body_allow_standalone_fallback": False})
+        with patch("aicognitive_mind.api.get_settings", return_value=local), patch(
+            "aicognitive_mind.config.get_settings", return_value=local,
+        ), patch("aicognitive_mind.task_dispatcher.TaskModelDispatcher._complete_chat_with_assignment", new=complete):
+            response = await self.alpha_client.post("/v1/mind/body/interact", json={"message": "Use my configured task"})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["response_text"], "Synthetic account reasoning result")
+        self.assertTrue(scopes)
+        self.assertEqual({scope for scope, _task in scopes}, {self.alpha.mind_id})
+        self.assertEqual({task for _scope, task in scopes}, {"reasoning", "memory_recall"})
+        self.assertEqual(await api.app.state.journal_store.read(), [])
 
 
 if __name__ == "__main__":
