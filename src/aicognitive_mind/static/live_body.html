@@ -143,6 +143,8 @@
     let voiceEnabled = localStorage.getItem("aicognitive_mind.voice") !== "off";
     let sensoryLoopGeneration = 0;
     let sensoryRequestInFlight = false;
+    const sensoryRequests = new Map();
+    const SENSORY_REQUEST_TIMEOUT_MS = 150_000;
     const AUDIO_IDLE_WINDOW_MS = 4_000;
     const AUDIO_MAX_DURATION_MS = 30_000;
     const AUDIO_SILENCE_MS = 900;
@@ -434,9 +436,49 @@
       text.textContent = message;
     }
 
+    function cancelSensoryObservation(modality) {
+      sensoryRequests.get(modality)?.abort();
+    }
+
+    async function requestSensoryObservation(modality, payload) {
+      const controller = new AbortController();
+      sensoryRequests.set(modality, controller);
+      sensoryRequestInFlight = true;
+      let timedOut = false;
+      let evidenceAccepted = false;
+      const timeout = window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, SENSORY_REQUEST_TIMEOUT_MS);
+      try {
+        const response = await bodyFetch(
+          modality === "vision" ? "/v1/body/eyes/observe" : "/v1/body/ears/observe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify(payload)
+          }
+        );
+        if (!response.ok) throw new Error(await responseErrorMessage(response));
+        evidenceAccepted = true;
+        return await response.json();
+      } catch (error) {
+        if (timedOut) {
+          error = new Error("Interpretation timed out.");
+        }
+        if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
+        throw error;
+      } finally {
+        window.clearTimeout(timeout);
+        if (sensoryRequests.get(modality) === controller) sensoryRequests.delete(modality);
+        sensoryRequestInFlight = sensoryRequests.size > 0;
+      }
+    }
+
     function reportSenseFailure(modality, error) {
       const detail = String(error?.message || error || "Unknown error");
-      const evidenceAccepted = Boolean(error && typeof error === "object" && error.evidenceAccepted);
+      const evidenceAccepted = Boolean(error && typeof error === "object" && error.evidenceAccepted) ||
+        /^(?:Reasoning-host interpretation failed for (?:vision|audio): RuntimeError: )?Sensory evidence was saved\b/i.test(detail);
       const waitingForHost = /no external reasoning host|no connected external host|standalone fallback is disabled/i.test(detail);
       let message;
       let state;
@@ -946,6 +988,7 @@
       if (
         !visionEnabled ||
         generation !== sensoryLoopGeneration ||
+        sensoryRequests.has("vision") ||
         !cameraStream ||
         liveScene.readyState < 2 ||
         !liveScene.videoWidth ||
@@ -978,35 +1021,17 @@
       canvas.width = Math.max(1, Math.round(liveScene.videoWidth * scale));
       canvas.height = Math.max(1, Math.round(liveScene.videoHeight * scale));
       canvas.getContext("2d").drawImage(liveScene, 0, 0, canvas.width, canvas.height);
-      sensoryRequestInFlight = true;
-      let evidenceAccepted = false;
-      try {
-        setStatus("SENSES ON\nSeeing...");
-        setSenseStatus("vision", "Capturing frame and saving evidence…", "working");
-        const ingress = await bodyFetch("/v1/body/eyes/observe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            image_data_url: canvas.toDataURL("image/jpeg", 0.82),
-            width: canvas.width,
-            height: canvas.height,
-            source: "browser-camera"
-          })
-        });
-        if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
-        evidenceAccepted = true;
-        setSenseStatus("vision", "Frame saved and interpreted.", "success");
-        if (!visionEnabled || generation !== sensoryLoopGeneration) return;
-
-        const interpreted = await ingress.json();
-        if (!visionEnabled || generation !== sensoryLoopGeneration) return;
-        await showMindResult(interpreted, { modality: "vision", consumeOutputs: false });
-      } catch (error) {
-        if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
-        throw error;
-      } finally {
-        sensoryRequestInFlight = false;
-      }
+      setStatus("SENSES ON\nSeeing...");
+      setSenseStatus("vision", "Processing frame…", "working");
+      const interpreted = await requestSensoryObservation("vision", {
+        image_data_url: canvas.toDataURL("image/jpeg", 0.82),
+        width: canvas.width,
+        height: canvas.height,
+        source: "browser-camera"
+      });
+      if (!visionEnabled || generation !== sensoryLoopGeneration) return;
+      setSenseStatus("vision", "Frame saved and interpreted.", "success");
+      await showMindResult(interpreted, { modality: "vision", consumeOutputs: false });
     }
 
     function recordAudioWindow(generation) {
@@ -1218,6 +1243,7 @@
     }
 
     async function perceiveAudio(generation) {
+      if (sensoryRequests.has("audio")) { await delay(250); return; }
       if (talkEnabled || talkBusy) { await delay(250); return; }
       if (talkSpeaking || window.speechSynthesis?.speaking) {
         await delay(250);
@@ -1238,33 +1264,17 @@
         setSenseStatus("audio", "Listening; no speech detected in this 4-second window. Nothing sent for interpretation.", "info");
         return;
       }
-      sensoryRequestInFlight = true;
-      let evidenceAccepted = false;
-      try {
-        setSenseStatus("audio", "Speech detected; saving audio evidence…", "working");
-        const ingress = await bodyFetch("/v1/body/ears/observe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            audio_data_url: await blobToDataUrl(recording.blob),
-            duration_ms: recording.durationMs,
-            source: "browser-microphone"
-          })
-        });
-        if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
-        evidenceAccepted = true;
-        setSenseStatus("audio", "Audio saved and interpreted.", "success");
-        if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
-
-        const interpreted = await ingress.json();
-        if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
-        await showMindResult(interpreted, { modality: "audio", consumeOutputs: false });
-      } catch (error) {
-        if (error && typeof error === "object") error.evidenceAccepted = evidenceAccepted;
-        throw error;
-      } finally {
-        sensoryRequestInFlight = false;
-      }
+      const audioDataUrl = await blobToDataUrl(recording.blob);
+      if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
+      setSenseStatus("audio", "Processing audio…", "working");
+      const interpreted = await requestSensoryObservation("audio", {
+        audio_data_url: audioDataUrl,
+        duration_ms: recording.durationMs,
+        source: "browser-microphone"
+      });
+      if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
+      setSenseStatus("audio", "Audio saved and interpreted.", "success");
+      await showMindResult(interpreted, { modality: "audio", consumeOutputs: false });
     }
 
     async function runVisionLoop(generation) {
@@ -1354,6 +1364,7 @@
 
     function disableVision({ persist = true } = {}) {
       visionEnabled = false;
+      cancelSensoryObservation("vision");
       sensoryLoopGeneration += 1;
       if (cameraStream) {
         cameraStream.getTracks().forEach((track) => track.stop());
@@ -1409,6 +1420,7 @@
     function disableHearing({ persist = true } = {}) {
       ++hearingGeneration;
       hearingEnabled = false;
+      cancelSensoryObservation("audio");
       stopTalking();
       sensoryLoopGeneration += 1;
       if (recorder?.state === "recording") recorder.stop();

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from aicognitive_mind.body import Percept, SensoryModality
+from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.host_runtime import HostAwareInterpreter, HostRuntime
 from aicognitive_mind.task_dispatcher import TaskDispatchError
 
@@ -140,7 +141,8 @@ class AutomaticSensoryHostTests(unittest.IsolatedAsyncioTestCase):
             await self.wait_for_queue(runtime, 1)
             first = await runtime.next_request(lease)
             claimed = await runtime.records.get(first["request_id"])
-            self.assertIsNone(claimed["deadline"])
+            self.assertGreater(claimed["deadline"], time.time())
+            self.assertLessEqual(claimed["deadline"], claimed["created"] + runtime.timeout)
             self.assertGreater(claimed["claim_until"], time.time())
             self.assertLessEqual(claimed["claim_until"], time.time() + runtime.timeout)
             expired = {**claimed, "claim_until": time.time() - 1}
@@ -214,6 +216,160 @@ class AutomaticSensoryHostTests(unittest.IsolatedAsyncioTestCase):
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def test_passive_request_expires_when_attached_host_never_consumes_it(self):
+        service = SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock())
+        runtime = HostRuntime(SimpleNamespace(mind_id="unconsumed-sensory"), service, timeout=0.02)
+        lease = (await runtime.attach("Connected model", "model-selected"))["lease_token"]
+        interpreter = self.make_interpreter(runtime)
+        task = asyncio.create_task(interpreter.interpret_automatically(self.make_percept()))
+        request = (await self.wait_for_queue(runtime, 1))[0]
+
+        with self.assertRaisesRegex(RuntimeError, "evidence was saved.*did not complete"):
+            await asyncio.wait_for(task, timeout=1)
+
+        self.assertEqual((await runtime.records.get(request["request_id"]))["state"], "expired")
+        self.assertEqual(await runtime.records.pending(), [])
+        runtime.REQUEST_WAIT_SECONDS = 0
+        self.assertIsNone(await runtime.next_request(lease))
+        service.begin_interaction.assert_not_awaited()
+        service.complete_interaction.assert_not_awaited()
+
+    async def test_claimed_passive_request_expires_without_changing_human_request(self):
+        service = SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock())
+        runtime = HostRuntime(SimpleNamespace(mind_id="expired-sensory"), service, timeout=120)
+        lease = (await runtime.attach("Connected model", "model-selected"))["lease_token"]
+        task = asyncio.create_task(self.make_interpreter(runtime).interpret_automatically(self.make_percept()))
+        await self.wait_for_queue(runtime, 1)
+        claimed = await runtime.next_request(lease)
+        request = await runtime.records.get(claimed["request_id"])
+        self.assertTrue(await runtime.records.replace(
+            claimed["request_id"], request, {**request, "deadline": time.time() - 1}
+        ))
+
+        with self.assertRaisesRegex(RuntimeError, "evidence was saved.*did not complete"):
+            await asyncio.wait_for(task, timeout=1)
+        with self.assertRaisesRegex(CommitConflict, "request is expired"):
+            await runtime.complete(lease, claimed["request_id"], "Too late")
+        self.assertEqual(await runtime.records.pending(), [])
+
+        human = asyncio.create_task(runtime.submit("Keep this human request"))
+        human_request = (await self.wait_for_queue(runtime, 1))[0]
+        self.assertIsNone(human_request["deadline"])
+        human.cancel()
+        await asyncio.gather(human, return_exceptions=True)
+        self.assertEqual((await runtime.records.get(human_request["request_id"]))["state"], "pending")
+
+    async def test_cancelling_passive_caller_removes_claimed_job_from_pending_queue(self):
+        service = SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock())
+        runtime = HostRuntime(SimpleNamespace(mind_id="cancelled-sensory"), service)
+        lease = (await runtime.attach("Connected model", "model-selected"))["lease_token"]
+        task = asyncio.create_task(self.make_interpreter(runtime).interpret_automatically(self.make_percept("audio")))
+        await self.wait_for_queue(runtime, 1)
+        claimed = await runtime.next_request(lease)
+
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+
+        self.assertEqual((await runtime.records.get(claimed["request_id"]))["state"], "cancelled")
+        self.assertEqual(await runtime.records.pending(), [])
+        with self.assertRaisesRegex(CommitConflict, "request is cancelled"):
+            await runtime.complete(lease, claimed["request_id"], "Orphaned observation")
+        service.complete_interaction.assert_not_awaited()
+
+    async def test_passive_expiry_does_not_overwrite_completion_that_wins_storage_race(self):
+        service = SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock())
+        runtime = HostRuntime(SimpleNamespace(mind_id="sensory-completion-race"), service, timeout=0.02)
+        await runtime.attach("Connected model", "model-selected")
+        replace = runtime.records.replace
+        result = {"response_text": "Completed observation", "occurred_at": "2026-10-26T20:00:00Z"}
+
+        async def complete_before_expiry_write(key, before, after):
+            if after.get("state") == "expired":
+                self.assertTrue(await replace(key, before, {**before, "state": "complete", "result": result}))
+                return False
+            return await replace(key, before, after)
+
+        runtime.records.replace = complete_before_expiry_write
+        task = self.make_interpreter(runtime).interpret_automatically(self.make_percept())
+        self.assertEqual(await asyncio.wait_for(task, timeout=1), "Completed observation")
+        self.assertEqual(await runtime.records.pending(), [])
+
+    async def test_cancelling_passive_caller_preserves_completed_result(self):
+        service = SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock())
+        runtime = HostRuntime(SimpleNamespace(mind_id="sensory-cancel-complete-race"), service)
+        lease = (await runtime.attach("Connected model", "model-selected"))["lease_token"]
+        task = asyncio.create_task(self.make_interpreter(runtime).interpret_automatically(self.make_percept()))
+        await self.wait_for_queue(runtime, 1)
+        claimed = await runtime.next_request(lease)
+        result = await runtime.complete(lease, claimed["request_id"], "Saved observation")
+
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        saved = await runtime.records.get(claimed["request_id"])
+        self.assertEqual(saved["state"], "complete")
+        self.assertEqual(saved["result"], result)
+
+    async def test_status_reconciles_legacy_sensory_jobs_without_expiring_humans(self):
+        service = SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock())
+        runtime = HostRuntime(SimpleNamespace(mind_id="legacy-sensory"), service, timeout=120)
+        lease = (await runtime.attach("Connected model", "model-selected"))["lease_token"]
+        now = time.time()
+        base = {
+            "kind": "body_request", "state": "pending", "message": "Legacy input",
+            "deadline": None, "claim": "", "claim_until": 0.0, "result": {},
+        }
+        await runtime.records.create("old-sensory", {
+            **base, "request_id": "old-sensory", "created": now - 121,
+            "task": "sensory_interpretation", "priority": 10,
+        })
+        await runtime.records.create("recent-sensory", {
+            **base, "request_id": "recent-sensory", "created": now - 10,
+            "task": "sensory_interpretation", "priority": 10,
+        })
+        await runtime.records.create("old-human", {
+            **base, "request_id": "old-human", "created": now - 999, "priority": 0,
+        })
+        await runtime.records.create("ambiguous-legacy", {
+            **base, "request_id": "ambiguous-legacy", "created": now - 999, "priority": 10,
+        })
+
+        status = await runtime.status()
+
+        self.assertEqual(status["requests"]["pending"], 3)
+        self.assertEqual((await runtime.records.get("old-sensory"))["state"], "expired")
+        recent = await runtime.records.get("recent-sensory")
+        self.assertEqual(recent["deadline"], recent["created"] + runtime.timeout)
+        self.assertEqual((await runtime.records.get("old-human"))["state"], "pending")
+        self.assertIsNone((await runtime.records.get("old-human"))["deadline"])
+        self.assertIsNone((await runtime.records.get("ambiguous-legacy"))["deadline"])
+        self.assertEqual((await runtime.next_request(lease))["request_id"], "old-human")
+        self.assertEqual((await runtime.status())["requests"]["pending"], 2)
+        self.assertEqual((await runtime.records.get("recent-sensory"))["deadline"], recent["deadline"])
+
+    async def test_legacy_reconciliation_does_not_overwrite_concurrent_completion(self):
+        runtime = HostRuntime(SimpleNamespace(mind_id="legacy-sensory-race"), SimpleNamespace())
+        await runtime.attach("Connected model", "model-selected")
+        base = {
+            "kind": "body_request", "request_id": "legacy-sensory-race", "state": "pending",
+            "message": "Old frame", "created": time.time() - 121, "deadline": None,
+            "claim": "", "claim_until": 0.0, "result": {},
+            "task": "sensory_interpretation", "priority": 10,
+        }
+        await runtime.records.create(base["request_id"], base)
+        replace = runtime.records.replace
+        result = {"response_text": "Winning observation", "occurred_at": "2026-10-26T20:00:00Z"}
+
+        async def complete_before_reconciliation(key, before, after):
+            self.assertTrue(await replace(key, before, {**before, "state": "complete", "result": result}))
+            return False
+
+        runtime.records.replace = complete_before_reconciliation
+        self.assertEqual((await runtime.status())["requests"]["pending"], 0)
+        saved = await runtime.records.get(base["request_id"])
+        self.assertEqual(saved["state"], "complete")
+        self.assertEqual(saved["result"], result)
 
 
 if __name__ == "__main__":
