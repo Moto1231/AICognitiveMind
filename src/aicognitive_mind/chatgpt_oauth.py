@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import secrets
 import time
 from dataclasses import dataclass
@@ -357,7 +358,10 @@ class AxiomAuthorizationServerProvider(
         cached = self.access_tokens.get(token)
         if cached is not None:
             if cached.expires_at is None or cached.expires_at > time.time():
-                return cached
+                if await self.access_token_session_active(cached):
+                    return cached
+                self.access_tokens.pop(token, None)
+                return None
             self.access_tokens.pop(token, None)
 
         record = await self._load_record("access", token)
@@ -367,8 +371,28 @@ class AxiomAuthorizationServerProvider(
         if access.expires_at is not None and access.expires_at <= time.time():
             await self._deactivate("access", token)
             return None
+        if not await self.access_token_session_active(access):
+            return None
         self.access_tokens[token] = access
         return access
+
+    async def access_token_session_active(self, access: AccessToken) -> bool:
+        """Realtime tokens expire with the portal session, including cached tokens."""
+        if access.client_id != "axiom-realtime":
+            return True
+        if access.expires_at is None or access.expires_at <= time.time():
+            return False
+        key = (access.claims or {}).get("portal_session_key")
+        if self._records is None or not isinstance(key, str) or not key.startswith("portal_session_"):
+            return False
+        session = await self._records.get(key)
+        if not session or session.get("account_mind_id") != access.subject:
+            return False
+        try:
+            expiry = float(session.get("expires_at", 0))
+        except (TypeError, ValueError):
+            return False
+        return math.isfinite(expiry) and expiry > time.time()
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         self.access_tokens.pop(token.token, None)
@@ -378,17 +402,23 @@ class AxiomAuthorizationServerProvider(
             token.token,
         )
 
-    async def mint_service_access_token(self, *, subject: str, client_id: str) -> str:
+    async def mint_service_access_token(
+        self, *, subject: str, client_id: str,
+        portal_session_key: str | None = None, expires_at: float | None = None,
+    ) -> str:
         """Mint a short-lived server-to-server MCP token for an authenticated Mind.
 
         This is used by trusted Axiom services such as OpenAI Realtime. The token
-        never crosses the browser boundary.
+        never crosses the browser boundary. Realtime callers must bind it to the
+        authenticated portal session; it stops authorizing tools at logout.
         """
         pair = await self._mint_token_pair(
             client_id=client_id,
             scopes=[self.required_scope],
             resource=self.resource_url,
             subject=subject,
+            claims={"portal_session_key": portal_session_key} if portal_session_key else None,
+            expires_at=expires_at,
         )
         return pair.access_token
 
@@ -399,6 +429,8 @@ class AxiomAuthorizationServerProvider(
         scopes: list[str],
         resource: str,
         subject: str,
+        claims: dict[str, Any] | None = None,
+        expires_at: float | None = None,
     ) -> OAuthToken:
         now = int(time.time())
         access_value = secrets.token_urlsafe(32)
@@ -407,10 +439,10 @@ class AxiomAuthorizationServerProvider(
             token=access_value,
             client_id=client_id,
             scopes=scopes,
-            expires_at=now + 3600,
+            expires_at=int(min(now + 3600, expires_at)) if expires_at is not None else now + 3600,
             resource=resource,
             subject=subject,
-            claims={"iss": self.base_url},
+            claims={"iss": self.base_url, **(claims or {})},
         )
         refresh = RefreshToken(
             token=refresh_value,

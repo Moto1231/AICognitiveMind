@@ -19,7 +19,9 @@ def test_live_body_supports_bounded_voice_requested_camera_observation():
 
 def test_realtime_session_enables_input_transcription():
     source = DEPLOYMENT.read_text(encoding="utf-8")
-    assert '"input": {"transcription": {"model": "gpt-4o-mini-transcribe"}}' in source
+    assert '"transcription": {"model": "gpt-4o-mini-transcribe"}' in source
+    assert '"create_response": False' in source
+    assert '"interrupt_response": False' in source
 
 
 def test_live_body_polls_for_host_camera_requests_without_overlapping_or_spamming():
@@ -114,10 +116,17 @@ def test_live_body_voice_off_stops_current_audio_playback():
     voice_toggle_start = source.index("function toggleVoice()")
     voice_toggle_end = source.index("interactionForm.addEventListener", voice_toggle_start)
     voice_toggle = source[voice_toggle_start:voice_toggle_end]
-    assert "activeSpeechAudio.pause()" in voice_toggle
-    assert "activeSpeechAudio.currentTime = 0" in voice_toggle
-    assert "window.speechSynthesis?.cancel()" in voice_toggle
-    assert "if (!voiceEnabled) return;" in source[source.index("async function speakIntent"):source.index("function resumeTalking")]
+    assert "stopTalking();" in voice_toggle
+    stop_start = source.index("function stopTalking(")
+    stop_end = source.index("async function startTalking()", stop_start)
+    assert "cancelBodySpeech();" in source[stop_start:stop_end]
+    cancel_start = source.index("function cancelBodySpeech()")
+    cancel_end = source.index("async function speakIntent", cancel_start)
+    cancel = source[cancel_start:cancel_end]
+    assert "activeSpeechAudio.pause()" in cancel
+    assert "activeSpeechAudio.currentTime = 0" in cancel
+    assert "window.speechSynthesis?.cancel()" in cancel
+    assert "voiceEnabled && generation === speechGeneration && isCurrent()" in source[source.index("async function speakIntent"):source.index("function resumeTalking")]
 
 
 

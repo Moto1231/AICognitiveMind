@@ -494,8 +494,28 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
                 status = await self.get_json(client, "/v1/body/hosts/status")
                 self.assertFalse(status["connected"])
                 self.assertFalse(status["realtime"]["available"])
-                self.assertEqual(status["realtime"]["reason"], "Realtime voice is not configured for this account.")
+                self.assertEqual(status["realtime"]["reason"], "Realtime voice is not configured.")
             root_status.assert_not_awaited()
+
+    async def test_realtime_capability_uses_server_broker_without_exposing_its_key(self):
+        for key in (None, "synthetic-server-realtime-key"):
+            configured = self.settings.model_copy(update={"openai_api_key": key})
+            with patch("aicognitive_mind.api.get_settings", return_value=configured):
+                markers = []
+                for client in (self.alpha_client, self.beta_client):
+                    status = await self.get_json(client, "/v1/body/hosts/status")
+                    self.assertEqual(status["realtime"]["available"], bool(key))
+                    self.assertEqual(status["realtime"]["reason"], "" if key else "Realtime voice is not configured.")
+                    marker = status["realtime"]["scope"]
+                    self.assertEqual(marker, api.realtime_session_scope(client.cookies["axiom_portal_session"]))
+                    self.assertNotIn(client.cookies["axiom_portal_session"], json.dumps(status))
+                    markers.append(marker)
+                    self.assertNotIn("synthetic-server-realtime-key", json.dumps(status))
+                self.assertNotEqual(*markers)
+                root = (await self.get_json(self.admin_client, "/v1/body/hosts/status"))["realtime"]
+                self.assertFalse(root["available"])
+                self.assertIsNone(root["scope"])
+                self.assertEqual(root["reason"], "Sign in to Axiom before starting voice.")
 
     async def test_account_body_never_inherits_deployment_provider_credentials(self):
         global_settings = self.settings.model_copy(update={

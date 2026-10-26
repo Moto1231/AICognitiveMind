@@ -326,6 +326,10 @@ def build_chatgpt_mcp(
             ).active(),
             "fallback_provider": provider_name,
             "fallback_requested_model": requested_model,
+            "realtime": {
+                "configured": bool(settings.openai_api_key),
+                "model": settings.openai_realtime_model,
+            },
         }
 
     @account_tool(

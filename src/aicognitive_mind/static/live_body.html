@@ -89,6 +89,7 @@
       applyVoicePack,
       loadSavedVoicePack
     } from "/static/voice_pack.js";
+    import { RealtimeTurns } from "/static/realtime_turns.js";
 
     const stage = document.getElementById("stage");
     const video = document.getElementById("video");
@@ -126,14 +127,17 @@
     let realtimeMicrophone = null;
     let realtimeAudio = null;
     let activeSpeechAudio = null;
-    let realtimeMcpPending = 0;
+    let realtimeTurns = null;
+    let realtimeGeneration = 0;
+    let realtimeScope = null;
+    let hearingGeneration = 0;
+    let speechGeneration = 0;
+    let activeSpeechDone = null;
     let audioContext = null;
     let audioAnalyser = null;
     let audioMeterSource = null;
     let audioMeterOutput = null;
     let audioMeterFrame = null;
-    let realtimeResponseDone = false;
-    let realtimeResponseUsedMcp = false;
     let visionEnabled = false;
     let hearingEnabled = false;
     let voiceEnabled = localStorage.getItem("aicognitive_mind.voice") !== "off";
@@ -244,25 +248,11 @@
         const remaining = seconds * 1000 - ((sampleCount - 1) * (seconds * 1000) / sampleCount);
         if (remaining > 0) await delay(remaining);
 
-        if (realtimeEvents?.readyState === "open") {
-          realtimeEvents.send(JSON.stringify({
-            type: "conversation.item.create",
-            item: {
-              type: "message",
-              role: "user",
-              content: [{
-                type: "input_text",
-                text: "Visual observation requested by the human (" + spokenCommand + "). Camera sampled for " +
-                  seconds + " seconds. Describe what Axiom observed and answer the human naturally. Observations: " +
-                  observations.join("\n---\n")
-              }]
-            }
-          }));
-          realtimeEvents.send(JSON.stringify({ type: "response.create" }));
-        }
         setStatus("Axiom finished looking. Hands-free voice remains active.");
+        return observations.join("\n---\n");
       } catch (error) {
         setStatus("Bounded camera observation failed: " + error.message);
+        throw error;
       } finally {
         if (temporaryStream) stream?.getTracks().forEach((track) => track.stop());
         boundedLookActive = false;
@@ -393,10 +383,14 @@
           refreshConnectedHostStatus.nextPollAt = Date.now() + refreshConnectedHostStatus.pollDelayMs;
           throw new Error("Host status rate limited");
         }
+        if (response.status === 401 || response.status === 403) stopTalking("Realtime account session ended.");
         if (!response.ok) throw new Error(await responseErrorMessage(response));
         refreshConnectedHostStatus.pollDelayMs = 5_000;
         refreshConnectedHostStatus.nextPollAt = Date.now() + 5_000;
         const status = await response.json();
+        if (realtimeScope && (status.realtime?.available !== true || status.realtime.scope !== realtimeScope)) {
+          stopTalking("Realtime account session changed.");
+        }
         const requests = status.requests || {};
         const pending = Number(requests.pending || 0);
         const inProgress = Number(requests.in_progress || 0);
@@ -503,92 +497,115 @@
       voices = window.speechSynthesis?.getVoices?.() || [];
     }
 
-    async function speakIntent(intent) {
+    function cancelBodySpeech() {
+      ++speechGeneration;
+      window.speechSynthesis?.cancel();
+      if (activeSpeechAudio) {
+        activeSpeechAudio.pause();
+        activeSpeechAudio.currentTime = 0;
+        if (activeSpeechAudio.src.startsWith("blob:")) URL.revokeObjectURL(activeSpeechAudio.src);
+        activeSpeechAudio = null;
+      }
+      activeSpeechDone?.();
+      activeSpeechDone = null;
+      talkSpeaking = false;
+      if (hearingEnabled) for (const track of microphoneStream?.getAudioTracks() || []) track.enabled = true;
+    }
+
+    async function speakIntent(intent, isCurrent = () => true, validateScope = async () => true) {
       if (!voiceEnabled || !intent?.text) return;
+      cancelBodySpeech();
+      const generation = speechGeneration;
+      const current = () => voiceEnabled && generation === speechGeneration && isCurrent();
+      const stream = microphoneStream;
+      const tracks = stream?.getAudioTracks() || [];
+      // Prevent the browser/Fish voice from becoming the next microphone turn.
+      for (const track of tracks) track.enabled = false;
       const metadata = intent.metadata || {};
       const requestedRate = Number(metadata.rate ?? sharedVoicePack?.rate ?? 1);
       const requestedVolume = Number(metadata.volume ?? sharedVoicePack?.volume ?? 1);
       let audioUrl = null;
-
+      const waitForPlayback = register => new Promise((resolve, reject) => {
+        let timer;
+        const done = error => {
+          clearTimeout(timer);
+          if (activeSpeechDone === done) activeSpeechDone = null;
+          error ? reject(error) : resolve();
+        };
+        activeSpeechDone = done;
+        timer = setTimeout(() => done(new Error("Voice playback timed out.")), 180_000);
+        try { register(done); } catch (error) { done(error); }
+      });
       try {
-        const response = await bodyFetch("/v1/body/speech/fish-audio", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: intent.text,
-            rate: Number.isFinite(requestedRate) ? requestedRate : 1,
-            volume: Number.isFinite(requestedVolume) ? requestedVolume : 1
-          })
-        });
-        if (!response.ok) throw new Error(await responseErrorMessage(response));
-        if (!voiceEnabled) return;
-
-        const blob = await response.blob();
-        if (!voiceEnabled) return;
-        audioUrl = URL.createObjectURL(blob);
-        const audio = new Audio(audioUrl);
-        activeSpeechAudio = audio;
-        await applyBodyAudioOutput(audio);
-        if (!voiceEnabled) { audio.pause(); URL.revokeObjectURL(audioUrl); activeSpeechAudio = null; return; }
-        audio.volume = 1;
-        talkSpeaking = true;
-        audio.addEventListener("ended", () => {
-          talkSpeaking = false;
-          if (activeSpeechAudio === audio) activeSpeechAudio = null;
-          setStatus("VOICE PLAYBACK COMPLETE (Fish Audio)");
-          URL.revokeObjectURL(audioUrl);
-        }, { once: true });
-        audio.addEventListener("error", () => {
-          talkSpeaking = false;
-          if (activeSpeechAudio === audio) activeSpeechAudio = null;
-          setStatus("Fish Audio playback failed. Check the selected output device and browser audio permissions.");
-          URL.revokeObjectURL(audioUrl);
-        }, { once: true });
-        await audio.play();
-        setStatus("VOICE PLAYBACK STARTED (Fish Audio)");
-        return;
-      } catch (error) {
-        talkSpeaking = false;
-        if (audioUrl) URL.revokeObjectURL(audioUrl);
-        // Keep the Body usable when Fish is not configured during local development,
-        // but make the fallback visible rather than implying Fish Audio played.
-        if (!window.speechSynthesis) {
-          setStatus("Fish Audio speech failed and browser speech is unavailable: " + error.message);
+        try {
+          const response = await bodyFetch("/v1/body/speech/fish-audio", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: intent.text,
+              rate: Number.isFinite(requestedRate) ? requestedRate : 1,
+              volume: Number.isFinite(requestedVolume) ? requestedVolume : 1
+            })
+          });
+          if (!current()) return;
+          if (!response.ok) throw new Error(await responseErrorMessage(response));
+          const blob = await response.blob();
+          if (!current()) return;
+          if (!await validateScope() || !current()) return;
+          audioUrl = URL.createObjectURL(blob);
+          const audio = new Audio(audioUrl);
+          activeSpeechAudio = audio;
+          await applyBodyAudioOutput(audio);
+          if (!current()) { audio.pause(); return; }
+          audio.volume = 1;
+          talkSpeaking = true;
+          await waitForPlayback(done => {
+            audio.addEventListener("ended", () => done(), { once: true });
+            audio.addEventListener("error", () => done(new Error("Fish Audio playback failed.")), { once: true });
+            audio.play().then(() => {
+              if (current()) setStatus("VOICE PLAYBACK STARTED (Fish Audio)");
+              else { audio.pause(); done(); }
+            }, done);
+          });
+          if (current()) setStatus("VOICE PLAYBACK COMPLETE (Fish Audio)");
           return;
+        } catch (error) {
+          if (!current()) return;
+          activeSpeechAudio?.pause();
+          activeSpeechAudio = null;
+          if (!window.speechSynthesis) throw error;
+          setStatus("Fish Audio unavailable; falling back to browser speech: " + error.message);
         }
-        setStatus("Fish Audio unavailable; falling back to browser speech: " + error.message);
+        if (!current()) return;
+        if (!await validateScope() || !current()) return;
+        loadVoices();
+        const utterance = new SpeechSynthesisUtterance(intent.text);
+        applyVoicePack(utterance, sharedVoicePack, voices);
+        utterance.rate = Math.max(0.1, Math.min(10, utterance.rate * (Number.isFinite(requestedRate) ? requestedRate : 1)));
+        utterance.volume = Math.max(0, Math.min(1, utterance.volume * (Number.isFinite(requestedVolume) ? requestedVolume : 1)));
+        if (metadata.voice_name) {
+          const requestedVoice = voices.find(item => item.name === metadata.voice_name);
+          if (requestedVoice) utterance.voice = requestedVoice;
+        }
+        await waitForPlayback(done => {
+          utterance.onstart = () => {
+            if (!current()) { window.speechSynthesis.cancel(); done(); return; }
+            talkSpeaking = true;
+            setStatus("VOICE PLAYBACK STARTED (browser speech)");
+          };
+          utterance.onend = () => done();
+          utterance.onerror = event => done(new Error("Browser speech playback failed: " + (event.error || "unknown speech error")));
+          window.speechSynthesis.speak(utterance);
+        });
+        if (current()) setStatus("VOICE PLAYBACK COMPLETE (browser speech)");
+      } finally {
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        if (generation === speechGeneration) {
+          activeSpeechAudio = null;
+          talkSpeaking = false;
+          if (microphoneStream === stream) for (const track of tracks) track.enabled = hearingEnabled;
+        }
       }
-
-      if (!voiceEnabled) return;
-      loadVoices();
-      const utterance = new SpeechSynthesisUtterance(intent.text);
-      applyVoicePack(utterance, sharedVoicePack, voices);
-      utterance.rate = Math.max(
-        0.1,
-        Math.min(10, utterance.rate * (Number.isFinite(requestedRate) ? requestedRate : 1))
-      );
-      utterance.volume = Math.max(
-        0,
-        Math.min(1, utterance.volume * (Number.isFinite(requestedVolume) ? requestedVolume : 1))
-      );
-      if (metadata.voice_name) {
-        const requestedVoice = voices.find((item) => item.name === metadata.voice_name);
-        if (requestedVoice) utterance.voice = requestedVoice;
-      }
-      utterance.onstart = () => {
-        talkSpeaking = true;
-        setStatus("VOICE PLAYBACK STARTED (browser speech)");
-      };
-      utterance.onend = () => {
-        talkSpeaking = false;
-        setStatus("VOICE PLAYBACK COMPLETE (browser speech)");
-      };
-      utterance.onerror = (event) => {
-        talkSpeaking = false;
-        setStatus("Browser speech playback failed: " + (event.error || "unknown speech error"));
-      };
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
     }
 
     function resumeTalking() {
@@ -618,126 +635,136 @@
     }
 
     function stopTalking(message = "Hands-free conversation stopped.") {
+      ++realtimeGeneration;
+      realtimeTurns?.close();
+      realtimeTurns = null;
       talkEnabled = false;
       talkListening = false;
       talkBusy = false;
-      talkSpeaking = false;
       clearTimeout(talkRestartTimer);
-      realtimeMicrophone?.getTracks().forEach((track) => track.stop());
-      realtimeEvents?.close();
-      realtimePeer?.close();
-      if (realtimeAudio) realtimeAudio.srcObject = null;
-      realtimeMicrophone = null;
+      const events = realtimeEvents;
+      const peer = realtimePeer;
       realtimeEvents = null;
       realtimePeer = null;
+      // Hearing owns the shared microphone. Closing voice must not release it.
+      realtimeMicrophone = null;
+      realtimeScope = null;
+      cancelBodySpeech();
+      events?.close();
+      peer?.close();
+      if (realtimeAudio) realtimeAudio.srcObject = null;
       realtimeAudio = null;
-      realtimeMcpPending = 0;
-      realtimeResponseDone = false;
-      realtimeResponseUsedMcp = false;
       setStatus(message);
     }
 
-    function maybeContinueRealtimeAfterMcp() {
-      if (
-        !talkEnabled ||
-        !realtimeResponseDone ||
-        !realtimeResponseUsedMcp ||
-        realtimeMcpPending !== 0 ||
-        realtimeEvents?.readyState !== "open"
-      ) return;
-      realtimeResponseDone = false;
-      realtimeResponseUsedMcp = false;
-      realtimeEvents.send(JSON.stringify({ type: "response.create" }));
-    }
-
     async function startTalking() {
+      if (!hearingEnabled || !voiceEnabled || talkEnabled || talkBusy) return;
       if (!window.RTCPeerConnection || !navigator.mediaDevices?.getUserMedia) {
         setStatus("Realtime voice is unavailable in this browser.");
         return;
       }
-
-      try {
-        const response = await bodyFetch("/v1/body/hosts/status", { cache: "no-store" });
-        if (!response.ok) throw new Error("Realtime capability check failed");
-        const capability = (await response.json()).realtime;
-        if (capability?.available !== true) {
-          setStatus(capability?.reason || "Realtime voice is unavailable.");
-          return;
-        }
-      } catch (_) {
-        setStatus("Realtime voice availability could not be checked.");
-        return;
-      }
-      
-      talkEnabled = true;
+      const generation = ++realtimeGeneration;
+      const current = () => generation === realtimeGeneration && hearingEnabled && voiceEnabled;
       talkBusy = true;
-      setStatus("Connecting Axiom voice…");
-
+      let peer = null;
       try {
-        const peer = new RTCPeerConnection();
-        realtimePeer = peer;
-        realtimeMicrophone = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
-        for (const track of realtimeMicrophone.getAudioTracks()) {
-          peer.addTrack(track, realtimeMicrophone);
+        const capabilityResponse = await bodyFetch("/v1/body/hosts/status", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+        if (!current()) return;
+        if (!capabilityResponse.ok) throw new Error("Realtime voice availability could not be checked.");
+        const capability = (await capabilityResponse.json()).realtime;
+        if (!current()) return;
+        if (capability?.available !== true) throw new Error(capability?.reason || "Realtime voice is unavailable.");
+        if (!capability.scope) throw new Error("Realtime session scope is unavailable.");
+        realtimeScope = capability.scope;
+        const stream = microphoneStream;
+        if (!stream || !stream.getAudioTracks().some(track => track.readyState !== "ended")) {
+          throw new Error("The hearing microphone is unavailable.");
         }
-
-        realtimeEvents = peer.createDataChannel("oai-events");
-        realtimeEvents.addEventListener("open", () => {
+        setStatus("Connecting Axiom voice…");
+        talkEnabled = true;
+        if (recorder?.state === "recording") recorder.stop();
+        peer = new RTCPeerConnection();
+        realtimePeer = peer;
+        realtimeMicrophone = stream;
+        for (const track of stream.getAudioTracks()) peer.addTrack(track, stream);
+        const events = peer.createDataChannel("oai-events");
+        realtimeEvents = events;
+        const turns = new RealtimeTurns({
+          send: event => {
+            if (current() && events.readyState === "open") events.send(JSON.stringify(event));
+            else throw new Error("Realtime voice disconnected.");
+          },
+          prepare: async transcript => {
+            const seconds = requestedLookDuration(transcript);
+            return seconds !== null && visionEnabled ? await performBoundedLook(seconds, transcript) : "";
+          },
+          speak: async (text, valid) => {
+            const validateScope = async () => {
+              if (!current() || !valid()) return false;
+              const response = await bodyFetch("/v1/body/hosts/status", { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+              if (!current() || !valid()) return false;
+              const capability = response.ok ? (await response.json()).realtime : null;
+              if (!current() || !valid()) return false;
+              if (capability?.available !== true || capability.scope !== realtimeScope) {
+                stopTalking("Realtime account session changed.");
+                return false;
+              }
+              return true;
+            };
+            if (await validateScope()) await speakIntent({ text }, () => current() && valid(), validateScope);
+          },
+          fail: message => { if (current()) stopTalking(message); }
+        });
+        realtimeTurns = turns;
+        events.addEventListener("open", () => {
+          if (!current()) return;
           talkBusy = false;
           talkListening = true;
           setStatus("Axiom is listening.");
         });
-        realtimeEvents.addEventListener("message", ({ data }) => {
+        events.addEventListener("message", ({ data }) => {
+          if (!current()) return;
           let event;
           try { event = JSON.parse(data); } catch (_) { return; }
-
-          if (event.type === "conversation.item.input_audio_transcription.completed") {
-            const transcript = event.transcript || "";
-            const seconds = requestedLookDuration(transcript);
-            if (seconds !== null) {
-              performBoundedLook(seconds, transcript);
-            }
-          } else if (event.type === "response.output_text.done") {
-            const text = event.text || "";
-            if (text.trim()) speakIntent({ text });
-          } else if (event.type === "response.mcp_call.in_progress") {
-            realtimeMcpPending += 1;
-            realtimeResponseUsedMcp = true;
-          } else if (
-            event.type === "response.output_item.done" &&
-            event.item?.type === "mcp_call"
-          ) {
-            realtimeMcpPending = Math.max(0, realtimeMcpPending - 1);
-            maybeContinueRealtimeAfterMcp();
-          } else if (event.type === "response.done") {
-            realtimeResponseDone = true;
-            maybeContinueRealtimeAfterMcp();
-          } else if (event.type === "error") {
-            setStatus("Realtime voice error: " + (event.error?.message || "unknown error"));
+          // conversation.item.input_audio_transcription.completed is queued by
+          // the controller until the actual MCP tools have been imported.
+          turns.handle(event);
+        });
+        events.addEventListener("close", () => {
+          if (current()) stopTalking("Realtime voice disconnected.");
+        });
+        peer.addEventListener("connectionstatechange", () => {
+          if (current() && ["failed", "closed", "disconnected"].includes(peer.connectionState)) {
+            stopTalking("Realtime voice disconnected.");
           }
         });
-        realtimeEvents.addEventListener("close", () => {
-          if (talkEnabled) stopTalking("Realtime voice disconnected.");
-        });
-
         const offer = await peer.createOffer();
+        if (!current()) return;
         await peer.setLocalDescription(offer);
+        if (!current()) return;
         const response = await bodyFetch("/v1/body/realtime/session", {
           method: "POST",
+          signal: AbortSignal.timeout(40_000),
           headers: { "Content-Type": "application/sdp" },
           body: offer.sdp
         });
+        if (!current()) return;
         if (!response.ok) {
           let detail = "Realtime session creation failed.";
           try { detail = (await response.json()).detail || detail; } catch (_) {}
           throw new Error(detail);
         }
-        await peer.setRemoteDescription({
-          type: "answer",
-          sdp: await response.text()
-        });
+        if (response.headers.get("X-Axiom-Realtime-Scope") !== realtimeScope) {
+          throw new Error("Realtime account session changed.");
+        }
+        const sdp = await response.text();
+        if (!current()) return;
+        await peer.setRemoteDescription({ type: "answer", sdp });
       } catch (error) {
-        stopTalking("Realtime voice failed: " + error.message);
+        if (current()) stopTalking("Realtime voice failed: " + error.message);
+      } finally {
+        if (!current()) peer?.close();
+        if (generation === realtimeGeneration && !talkEnabled) talkBusy = false;
       }
     }
 
@@ -1189,14 +1216,16 @@
     }
 
     async function perceiveAudio(generation) {
-      if (window.speechSynthesis?.speaking) {
+      if (talkEnabled || talkBusy) { await delay(250); return; }
+      if (talkSpeaking || window.speechSynthesis?.speaking) {
+        await delay(250);
         setSenseStatus("audio", "Listening paused while Axiom is speaking.", "info");
         return;
       }
 
       setStatus("SENSES ON\nListening...");
       const recording = await recordAudioWindow(generation);
-      if (!recording || !hearingEnabled || generation !== sensoryLoopGeneration) {
+      if (!recording || !hearingEnabled || talkEnabled || talkBusy || generation !== sensoryLoopGeneration) {
         if (hearingEnabled && generation === sensoryLoopGeneration) {
           setSenseStatus("audio", "No audio chunk received in this window; retrying.", "warning");
         }
@@ -1344,10 +1373,15 @@
         return;
       }
       hearingToggle.disabled = true;
+      const generation = ++hearingGeneration;
+      let stream = null;
       try {
         setStatus("HEARING ON\nRequesting microphone access…");
-        microphoneStream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
+        stream = await navigator.mediaDevices.getUserMedia(bodyMediaConstraints("audioInput"));
+        if (generation !== hearingGeneration) { stream.getTracks().forEach(track => track.stop()); return; }
+        microphoneStream = stream;
         await startAudioMeter(microphoneStream);
+        if (generation !== hearingGeneration) { stream.getTracks().forEach(track => track.stop()); return; }
         hearingEnabled = true;
         localStorage.setItem("aicognitive_mind.hearing", "on");
         audioMeter.style.display = "block";
@@ -1355,6 +1389,8 @@
         setSenseStatus("audio", "Hearing is active.", "success");
         setStatus("HEARING ON\nMicrophone ready.");
         startSensoryLoop();
+        hearingToggle.disabled = false;
+        startTalking();
       } catch (error) {
         microphoneStream?.getTracks().forEach((track) => track.stop());
         microphoneStream = null;
@@ -1369,7 +1405,9 @@
     }
 
     function disableHearing({ persist = true } = {}) {
+      ++hearingGeneration;
       hearingEnabled = false;
+      stopTalking();
       sensoryLoopGeneration += 1;
       if (recorder?.state === "recording") recorder.stop();
       recorder = null;
@@ -1409,21 +1447,13 @@
       refreshToggleUi();
       if (!voiceEnabled) {
         connectMouthEvents();
-        window.speechSynthesis?.cancel();
-        if (activeSpeechAudio) {
-          activeSpeechAudio.pause();
-          activeSpeechAudio.currentTime = 0;
-          if (activeSpeechAudio.src.startsWith("blob:")) URL.revokeObjectURL(activeSpeechAudio.src);
-          activeSpeechAudio = null;
-        }
-        talkSpeaking = false;
-        if (realtimeAudio) realtimeAudio.muted = true;
+        stopTalking();
         setStatus("VOICE OFF\nSpoken output is disabled; vision and hearing are unchanged.");
       } else {
         connectMouthEvents();
-        if (realtimeAudio) realtimeAudio.muted = false;
         refreshSharedVoiceSettings();
         setStatus("VOICE ON\nSpoken output is enabled.");
+        startTalking();
       }
     }
 

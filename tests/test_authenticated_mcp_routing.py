@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import hashlib
+import time
 from contextvars import ContextVar
 from functools import wraps
 from types import SimpleNamespace
@@ -235,6 +236,41 @@ class AuthenticatedMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(MCPError):
                     await self.invoke("mind_status", access=access)
         self.assertIsNone(await self.storage.mind.load())
+
+    async def test_realtime_transport_rechecks_revoked_portal_session_for_each_tool(self):
+        from aicognitive_mind.api import revoke_portal_session, store_portal_session
+
+        portal = SimpleNamespace(state=SimpleNamespace(runtime_records=self.records))
+        cookie = "synthetic-realtime-portal-cookie"
+        expiry = time.time() + 300
+        await store_portal_session(portal, cookie, self.alpha.mind_id, expiry)
+        issued = await self.provider.mint_service_access_token(
+            subject=self.alpha.mind_id, client_id="axiom-realtime",
+            portal_session_key="portal_session_" + hashlib.sha256(cookie.encode()).hexdigest(),
+            expires_at=expiry,
+        )
+        access = await self.provider.load_access_token(issued)
+        self.assertIsNotNone(access)
+        before = await self.invoke("mind_status", access=access)
+        self.assertEqual(before["active_storage"]["mind_id"], self.alpha.mind_id)
+
+        # Simulate a transport retaining its original verified AccessToken:
+        # no further OAuth load runs between logout and these actual tool calls.
+        await revoke_portal_session(portal, cookie)
+        with self.assertRaisesRegex(MCPError, "portal session has ended"):
+            await self.invoke("mind_status", access=access)
+        with self.assertRaisesRegex(MCPError, "portal session has ended"):
+            await self.invoke(
+                "complete_interaction", access=access, user_message="Synthetic stale turn",
+                response_text="This must never be committed.",
+                host_working_context=HostWorkingContext(), idempotency_key="stale-voice-turn",
+            )
+        tenant = scope_storage(self.storage, self.alpha.mind_id)
+        self.assertEqual(await tenant.journal.read(), [])
+        self.assertEqual(await tenant.memory.read(), [])
+        # Unrelated account OAuth sessions remain usable after this logout.
+        normal = await self.invoke("mind_status", self.beta)
+        self.assertEqual(normal["active_storage"]["mind_id"], self.beta.mind_id)
 
     async def test_inactive_and_ambiguous_account_subjects_are_rejected(self):
         key = account_key(self.alpha.username)
