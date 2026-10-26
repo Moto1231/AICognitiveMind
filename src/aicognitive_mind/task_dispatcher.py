@@ -39,6 +39,7 @@ class TaskModelDispatcher:
     """
 
     supports_steward_action_tools = True
+    supports_steward_failover = True
 
     def __init__(
         self, records: Any, *, timeout: float = 90.0, client: Any | None = None,
@@ -51,6 +52,10 @@ class TaskModelDispatcher:
         self.routing = ProviderRoutingRegistry(records, clock=clock)
         self.timeout = timeout
         self.client = client
+
+    def steward_assessment(self) -> _StewardAssessment:
+        """Create a provider cursor owned by one bounded Steward assessment."""
+        return _StewardAssessment(self)
 
     async def execute(self, context: TaskExecutionContext, payload: Any) -> Any:
         """Runtime-neutral entry point implemented by the stateless API adapter."""
@@ -668,3 +673,79 @@ class TaskModelDispatcher:
                 f"Provider endpoint '{endpoint.name}' returned no transcription text."
             )
         return text.strip()
+
+
+class _StewardAssessment:
+    """Retain successful providers and advance past failures only within this assessment.
+
+    Returned decisions consume the Steward's existing four-round budget. Provider
+    transport failures traverse the finite saved pool under the same assessment
+    timeout; they cannot restart a failed candidate on a later search round.
+    """
+
+    def __init__(self, dispatcher: TaskModelDispatcher) -> None:
+        self.dispatcher = dispatcher
+        self._candidates: list[TaskModelAssignment] | None = None
+        self._index = 0
+
+    async def prepare(self) -> None:
+        if self._candidates is None:
+            self._candidates = await self.dispatcher._candidate_assignments("memory_recall")
+
+    @property
+    def single_provider(self) -> bool:
+        return self._candidates is not None and len(self._candidates) == 1
+
+    def reject_response(self, error: TaskDispatchError) -> bool:
+        """Exclude a rejected decision's provider; never persist a semantic cooldown."""
+        assert self._candidates is not None
+        assignment = self._candidates[self._index]
+        logger.warning(
+            "task_provider_steward_rejected provider=%s model=%s error=%s",
+            assignment.provider, assignment.model, error,
+        )
+        self._index += 1
+        return self._index < len(self._candidates)
+
+    async def execute(self, context: TaskExecutionContext, payload: Any) -> str:
+        if (
+            context.task != "memory_recall" or not isinstance(payload, dict)
+            or payload.get("operation") != "chat"
+            or payload.get("steward_action_phase") not in ("recall", "review")
+            or payload.get("response_format") is not None
+            or not isinstance(payload.get("steward_finish_only", False), bool)
+        ):
+            raise TaskDispatchError("A Steward assessment requires a registered Memory Recall phase.")
+        messages = payload.get("messages")
+        if not isinstance(messages, list) or not all(isinstance(item, dict) for item in messages):
+            raise TaskDispatchError("Chat runtime payload requires a messages list.")
+        await self.prepare()
+        assert self._candidates is not None
+        last_error: TaskDispatchError | None = None
+        while self._index < len(self._candidates):
+            assignment = self._candidates[self._index]
+            try:
+                assignment, endpoint = await self.dispatcher._resolve("memory_recall", assignment)
+                cooldown = await self.dispatcher.routing.cooldown(endpoint, assignment.model)
+                if cooldown:
+                    raise TaskDispatchError(
+                        f"Provider endpoint '{endpoint.name}' is cooling down; "
+                        f"retry after {cooldown['cooldown_until']}."
+                    )
+                return await self.dispatcher._complete_chat_with_assignment(
+                    "memory_recall", messages, assignment=assignment,
+                    temperature=payload.get("temperature"), context=context,
+                    steward_action_phase=payload["steward_action_phase"],
+                    steward_finish_only=payload.get("steward_finish_only", False),
+                    retry_steward_rate_limit=self.single_provider,
+                )
+            except TaskDispatchError as exc:
+                last_error = exc
+                self._index += 1
+                logger.warning(
+                    "task_provider_fallback task=memory_recall provider=%s model=%s error=%s",
+                    assignment.provider, assignment.model, exc,
+                )
+        if last_error is not None:
+            raise last_error
+        raise TaskDispatchError("Memory Steward exhausted its eligible provider pool.")

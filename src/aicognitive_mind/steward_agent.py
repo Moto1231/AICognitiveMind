@@ -183,6 +183,11 @@ class ModelMemorySteward(MemoryStewardTool):
         adapter = RECALL_STEPS if phase == "recall" else REVIEW_STEPS
         finish_adapter = TypeAdapter(RecallFinish if phase == "recall" else ReviewFinish)
         native_actions = getattr(self.runtime, "supports_steward_action_tools", False) is True
+        provider_session = (
+            self.runtime.steward_assessment()
+            if native_actions and getattr(self.runtime, "supports_steward_failover", False) is True
+            else None
+        )
         records = self.skill_records
         if records is None:
             records = getattr(getattr(self.runtime, "assignments", None), "records", None)
@@ -215,6 +220,8 @@ class ModelMemorySteward(MemoryStewardTool):
         self._validation_corrections = 0
         try:
             async with asyncio.timeout(60):
+                if provider_session is not None:
+                    await provider_session.prepare()
                 for round_index in range(4):
                     final_round = round_index == 3
                     round_adapter = finish_adapter if final_round else adapter
@@ -223,7 +230,12 @@ class ModelMemorySteward(MemoryStewardTool):
                         "search_allowed": not final_round,
                         "searches_completed": self._search_count,
                         "review_corrections_remaining": (
-                            min(1 - self._validation_corrections, 3 - round_index)
+                            min(
+                                3 - round_index
+                                if provider_session is not None and not provider_session.single_provider
+                                else max(0, 1 - self._validation_corrections),
+                                3 - round_index,
+                            )
                             if phase == "review" else 0
                         ),
                     }
@@ -240,17 +252,21 @@ class ModelMemorySteward(MemoryStewardTool):
                         payload["steward_finish_only"] = final_round
                     else:
                         payload["response_format"] = {"type": "json_object"}
-                    raw = await self.runtime.execute(
+                    runtime = provider_session if provider_session is not None else self.runtime
+                    raw = await runtime.execute(
                         TaskExecutionContext(task="memory_recall"), payload,
                     )
-                    if not isinstance(raw, str):
-                        raise StewardProtocolError("Memory Steward returned non-text content.")
-                    text = raw.strip()
-                    if text.startswith("```") and text.endswith("```"):
-                        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
                     try:
+                        if not isinstance(raw, str):
+                            raise StewardProtocolError("Memory Steward returned non-text content.")
+                        text = raw.strip()
+                        if text.startswith("```") and text.endswith("```"):
+                            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
                         step = round_adapter.validate_json(text)
-                        if not isinstance(step, Search) and validate_finish is not None:
+                        if isinstance(step, Search):
+                            if step.source != "recent" and not _tokens(step.query):
+                                raise StewardProtocolError("A targeted memory search requires a query.")
+                        elif validate_finish is not None:
                             validate_finish(step)
                     except (ValidationError, StewardProtocolError) as exc:
                         if isinstance(exc, ValidationError):
@@ -261,18 +277,29 @@ class ModelMemorySteward(MemoryStewardTool):
                             )[:1000]
                         else:
                             detail = str(exc)
-                        if phase != "review" or self._validation_corrections or final_round:
+                        can_correct = (
+                            phase == "review" and not self._validation_corrections
+                            and not final_round
+                            and (provider_session is None or provider_session.single_provider)
+                        )
+                        has_fallback = False
+                        if provider_session is not None and not can_correct:
+                            has_fallback = provider_session.reject_response(
+                                StewardProtocolError(detail)
+                            )
+                        if final_round or not (can_correct or has_fallback):
                             raise StewardProtocolError(
                                 f"Memory Steward {phase} validation failed"
                                 f"{' on final call' if final_round else ''}: {detail}"
                             ) from exc
-                        self._validation_corrections += 1
+                        if phase == "review":
+                            self._validation_corrections += 1
                         messages.extend([
-                            {"role": "assistant", "content": raw},
+                            {"role": "assistant", "content": raw if isinstance(raw, str) else str(raw)},
                             {"role": "user", "content": json.dumps({
                                 "validation_error": detail,
                                 "correction": (
-                                    "Return one corrected review matching the phase schema. "
+                                    f"Return one corrected {phase} matching the phase schema. "
                                     "Preserve supported decisions and their classifications; "
                                     "do not invent evidence or silently discard valid learning. "
                                     "Explain any changed decision in the review reason."
@@ -340,8 +367,8 @@ class ModelMemorySteward(MemoryStewardTool):
             experiences=tuple(row for row in selected if isinstance(row, JournalEntry)),
         ).model_copy(update={"summary": summary})
 
-    async def _recall(self, requested_focus: str) -> Any:
-        finished = await self._run("recall", {})
+    def _validate_recall(self, finished: RecallFinish) -> None:
+        """Validate the whole decision before accepting its provider's result."""
         if finished.outcome == "no_recall_needed" and self._search_count:
             raise StewardProtocolError(
                 "No-recall assessment cannot claim a search was skipped after searching."
@@ -353,6 +380,10 @@ class ModelMemorySteward(MemoryStewardTool):
                 raise StewardProtocolError("A recalled brief requires sources and a summary.")
         elif finished.references or finished.summary:
             raise StewardProtocolError("An empty recall outcome cannot include recalled content.")
+        self._validate_references(finished.references)
+
+    async def _recall(self, requested_focus: str) -> Any:
+        finished = await self._run("recall", {}, validate_finish=self._validate_recall)
         self._select(finished.references, finished.summary)
         self.assessment = {"outcome": finished.outcome, "reason": finished.reason}
         self._public_context = {**self.assessment, "summary": finished.summary}
