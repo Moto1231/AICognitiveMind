@@ -7,7 +7,7 @@ Expected origin: https://axiom-continuity-portal.snowydeer18.chatgpt.site (deplo
 
 This is a new website, not a replacement Mind or a change to the existing Render runtime. Routes: `/`, `/guide`, `/portal`, `/account`, `/preview/checkout`. Native Sites sign-in identifies this site's visitor only. Existing Axiom signup/login links navigate directly to the established service. No credentials are collected here. No runtime secrets are configured. No model provider is called.
 
-The subscriber portal is explicitly illustrative: sample access states, prepared responses and simulated checkout. Sample state selection is not a production entitlement. `/api/interaction` and `/api/billing/{checkout,manage,webhook}` always return 503. The browser cannot unlock a real Mind using a flag, a forged account id or a success redirect.
+The subscriber portal is explicitly illustrative: sample access states and simulated checkout. Sample state selection is not a production entitlement. `/api/interaction` and `/api/billing/{checkout,manage,webhook}` always return 503. The browser cannot unlock a real Mind using a flag, a forged account id or a success redirect.
 
 ## Source review
 
@@ -30,7 +30,7 @@ node --test tests/access.test.mjs
 node node_modules/typescript/bin/tsc --noEmit
 ```
 
-`tests/http-check.mjs` can run against an accessible local preview origin. Its transport attempt in this managed environment failed before completion; do not count it as passing. Browser QA covered homepage, model swap, portal sample response and expired denial. Responsive CSS is included; no physical mobile device verification is claimed.
+`tests/http-check.mjs` can run against an accessible local preview origin. Its initial-release transport attempt in the managed environment failed before completion; do not count it as passing. Initial-release browser QA covered the homepage, model swap, the former conversation example and expired denial. That historical exercise does not establish browser coverage for the revised account/access-only portal. Responsive CSS is included; no physical mobile device verification is claimed.
 
 ## Billing core and limits
 

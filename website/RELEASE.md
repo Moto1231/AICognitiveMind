@@ -1,6 +1,20 @@
 # Private preview release
 
-## Version 6 — real screenshots in Every layer
+## Version 7 — access-only portal
+
+Published 2026-10-25 (America/Chicago); native owner-private deployment confirmed succeeded.
+
+- URL: https://axiom-continuity-portal.snowydeer18.chatgpt.site/portal
+- Native source commit: 20d80d1cae5f6c47e4435dd534b88b52831c8b0e
+- Saved version: appgprj_6ade9371c8688191994b9b27a3520bc1~appgver_f461e52d59fc81918b4cbbc72c394ec3
+- Deployment: appgdep_6adecdb591788191bad58f4f4a8d358e
+- Audience: existing owner-private access preserved.
+
+Removed the portal conversation panel, composer, suggestions, prepared replies and sample-message endpoint. The portal now shows sample account/subscription states and account-management links. Homepage, guide and portal copy reflect that scope.
+
+Verified: 18 access tests, 17 local HTTP checks, TypeScript, production build, independent source review and source diff checks. The retired sample-message route returns 404; production interaction and billing routes remain fail closed. Native private publication succeeded. No new browser automation or authenticated screenshot capture was performed. Historical browser evidence below refers to earlier versions.
+
+## Version 6 â€” real screenshots in Every layer
 
 Published 2026-10-25 (America/Chicago); native owner-private deployment confirmed succeeded.
 
@@ -14,7 +28,7 @@ The Every layer section now presents the supplied application screenshot gallery
 
 Verified: TypeScript, production build, independent source/accessibility review, source diff checks and original/package screenshot SHA256 bbdeb036f917dff2848d0de46172a46ab32d6548e486f4afd5a9b19e4fec93bf. Native private publication succeeded. No new browser automation or authenticated screenshot capture was performed. The original captures span different interface versions and do not establish current settings or recommended model choices. This focused website change does not alter application settings or billing.
 
-## Version 5 — naming milestone clarification
+## Version 5 â€” naming milestone clarification
 
 Published 2026-10-25 (America/Chicago); native owner-private deployment confirmed succeeded.
 
@@ -28,7 +42,7 @@ The guide FAQ documents the implemented naming status: eligible at 1,000 journal
 
 Verified: TypeScript, production build, source diff check and native private publication. This is a copy-only addition; no identity, configuration, provider or milestone workflow was changed or exercised live. Earlier screenshot and boundary verification remains recorded under its corresponding version.
 
-## Version 4 — supplied interface gallery
+## Version 4 â€” supplied interface gallery
 
 Published 2026-10-25 (America/Chicago); native owner-private deployment confirmed succeeded.
 
@@ -44,7 +58,7 @@ The supplied captures span different interface revisions; capture dates and depl
 
 Verified: TypeScript, production build, source diff checks, original/copy hashes, packaged image assets and native private publication. No new browser automation, authenticated capture or live provider/settings exercise was performed for this revision. Billing and conversations remain simulated with existing fail-closed production boundaries. Source-mirror and CI results are recorded in the PR.
 
-## Version 3 — context-first language
+## Version 3 â€” context-first language
 
 Published 2026-10-25 (America/Chicago); native private deployment confirmed succeeded.
 
@@ -59,7 +73,7 @@ The main copy, diagram and guide now use persistent context and familiar AI/mode
 
 Verified: TypeScript, production build, source diff checks and native publication. The previous version's 18 access checks remain applicable; this revision changes copy and label sizing only. No authenticated screenshots have been received or captured; Will plans to provide them, and current visual panels remain labeled illustrations.
 
-## Version 2 — technical copy and configuration explorer
+## Version 2 â€” technical copy and configuration explorer
 
 Published 2026-10-25 (America/Chicago); native private deployment confirmed succeeded.
 
@@ -75,7 +89,7 @@ The homepage, guide, navigation, metadata and workspace headings now emphasize p
 
 Verified for this revision: TypeScript check, 18 existing access-boundary tests, production build, independent source/copy review, and native private publication. No new browser automation or authenticated screenshot capture was available for this revision; initial-release browser checks below are historical evidence, not a new visual pass. Billing and portal conversations remain simulated.
 
-## Version 1 — initial preview
+## Version 1 â€” initial preview
 
 Native deployment verified succeeded on 2026-10-25.
 
