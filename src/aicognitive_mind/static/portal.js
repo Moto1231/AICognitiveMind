@@ -22,6 +22,8 @@ const state = {
   hostBehaviorDraft: null,
   hostBehaviorRevision: null,
   hostBehaviorSaving: false,
+  activeHostBehaviorId: null,
+  hostBehaviorQuery: "",
   cognitiveConfiguration: null,
   cognitiveDraft: null,
   cognitiveSaving: false,
@@ -174,6 +176,9 @@ const el = {
   editGrounding: document.getElementById("editGrounding"),
   cancelMemoryEdit: document.getElementById("cancelMemoryEdit"),
   hostBehaviorList: document.getElementById("hostBehaviorList"),
+  hostBehaviorSearch: document.getElementById("hostBehaviorSearch"),
+  hostBehaviorSelect: document.getElementById("hostBehaviorSelect"),
+  hostBehaviorSummary: document.getElementById("hostBehaviorSummary"),
   addHostBehavior: document.getElementById("addHostBehavior"),
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
   editHostBehaviors: document.getElementById("editHostBehaviors"),
@@ -332,6 +337,7 @@ function toast(message, error = false) {
 }
 
 function setMode(mode) {
+  if (mode === "mind" && typeof discardDeviceSelectionChanges === "function") discardDeviceSelectionChanges();
   if (mode === "mind" && state.activeTaskProfile) closeTaskProfile();
   state.mode = mode;
   const admin = mode === "admin";
@@ -370,8 +376,43 @@ async function validateAdmin() {
 
 function renderHostBehaviors() {
   el.hostBehaviorList.replaceChildren();
+  const items = state.hostBehaviorDraft || state.hostBehaviors;
+  const query = (state.hostBehaviorQuery || "").trim().toLocaleLowerCase();
+  const matches = items.filter(behavior => !query || `${behavior.name}\n${behavior.instruction}`.toLocaleLowerCase().includes(query));
+  if (!matches.some(behavior => behavior.id === state.activeHostBehaviorId)) {
+    state.activeHostBehaviorId = matches[0]?.id || null;
+  }
+  state.hostBehaviorMatchCount = matches.length;
+  if (el.hostBehaviorSearch) {
+    el.hostBehaviorSearch.value = state.hostBehaviorQuery || "";
+    el.hostBehaviorSearch.disabled = state.hostBehaviorSaving;
+  }
+  if (el.hostBehaviorSelect) {
+    el.hostBehaviorSelect.replaceChildren();
+    if (!matches.length) {
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = items.length ? "No matching behaviors" : "No behaviors yet";
+      el.hostBehaviorSelect.append(emptyOption);
+    }
+    for (const behavior of matches) {
+      const option = document.createElement("option");
+      option.value = behavior.id;
+      option.textContent = behavior.name || "Unnamed behavior";
+      el.hostBehaviorSelect.append(option);
+    }
+    el.hostBehaviorSelect.value = state.activeHostBehaviorId || "";
+    el.hostBehaviorSelect.disabled = state.hostBehaviorSaving || !matches.length;
+  }
   const editing = Boolean(state.hostBehaviorDraft) && !state.hostBehaviorSaving;
-  for (const behavior of state.hostBehaviorDraft || state.hostBehaviors) {
+  const selected = matches.find(behavior => behavior.id === state.activeHostBehaviorId);
+  if (!selected) {
+    const empty = document.createElement("p");
+    empty.className = "record-empty";
+    empty.textContent = items.length ? "No behaviors match this search. Clear the search to browse the library." : "No behaviors yet. Add a behavior to start.";
+    el.hostBehaviorList.append(empty);
+  }
+  for (const behavior of selected ? [selected] : []) {
     const row = document.createElement("div");
     row.className = "memory-card host-behavior-card";
     const fields = document.createElement("div");
@@ -441,6 +482,7 @@ function renderHostBehaviors() {
     remove.addEventListener("click", () => {
       if (!state.hostBehaviorDraft || state.hostBehaviorSaving) return;
       state.hostBehaviorDraft = state.hostBehaviorDraft.filter(item => item.id !== behavior.id);
+      state.activeHostBehaviorId = null;
       renderHostBehaviors();
     });
     const controls = document.createElement("div");
@@ -454,13 +496,25 @@ function renderHostBehaviors() {
 
 function updateBehaviorSaveState() {
   const editing = Boolean(state.hostBehaviorDraft);
+  const items = state.hostBehaviorDraft || state.hostBehaviors;
+  const dirty = editing && JSON.stringify(state.hostBehaviorDraft) !== state.hostBehaviorSnapshot;
+  const invalid = editing && state.hostBehaviorDraft.some(item => !item.name.trim() || !item.instruction.trim()
+    || !Number.isInteger(item.priority) || item.priority < 0 || item.priority > 10000);
   if (el.saveHostBehaviors) el.saveHostBehaviors.disabled =
-    !editing || state.hostBehaviorSaving || JSON.stringify(state.hostBehaviorDraft) === state.hostBehaviorSnapshot ||
-    state.hostBehaviorDraft.some(item => !item.name.trim() || !item.instruction.trim()
-      || !Number.isInteger(item.priority) || item.priority < 0 || item.priority > 10000);
+    !editing || state.hostBehaviorSaving || !dirty || invalid;
   if (el.editHostBehaviors) el.editHostBehaviors.disabled = !Number.isInteger(state.hostBehaviorRevision) || editing || state.hostBehaviorSaving;
   if (el.cancelHostBehaviors) el.cancelHostBehaviors.disabled = !editing || state.hostBehaviorSaving;
   if (el.addHostBehavior) el.addHostBehavior.disabled = !Number.isInteger(state.hostBehaviorRevision) || state.hostBehaviorSaving;
+  if (el.hostBehaviorSelect) {
+    const selected = items.find(item => item.id === state.activeHostBehaviorId);
+    const option = [...el.hostBehaviorSelect.options].find(item => item.value === state.activeHostBehaviorId);
+    if (selected && option) option.textContent = selected.name || "Unnamed behavior";
+  }
+  if (el.hostBehaviorSummary) {
+    const count = state.hostBehaviorMatchCount ?? items.length;
+    const mode = state.hostBehaviorSaving ? "Saving…" : editing ? dirty ? "Unsaved changes" : "Editing · No changes" : "Read-only";
+    el.hostBehaviorSummary.textContent = `${items.length} behavior${items.length === 1 ? "" : "s"} · ${count} match${count === 1 ? "" : "es"} · ${mode}${invalid ? " · Complete all draft fields before saving." : ""}`;
+  }
 }
 
 async function refreshHostBehaviors() {
@@ -499,6 +553,8 @@ function addHostBehavior() {
     priority: 100,
     protected: false,
   });
+  state.hostBehaviorQuery = "";
+  state.activeHostBehaviorId = id;
   renderHostBehaviors();
 }
 
@@ -2371,6 +2427,16 @@ if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBeha
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
 if (el.editHostBehaviors) el.editHostBehaviors.addEventListener("click", editHostBehaviors);
 if (el.cancelHostBehaviors) el.cancelHostBehaviors.addEventListener("click", cancelHostBehaviorEdit);
+if (el.hostBehaviorSearch) el.hostBehaviorSearch.addEventListener("input", () => {
+  if (state.hostBehaviorSaving) return;
+  state.hostBehaviorQuery = el.hostBehaviorSearch.value;
+  renderHostBehaviors();
+});
+if (el.hostBehaviorSelect) el.hostBehaviorSelect.addEventListener("change", () => {
+  if (state.hostBehaviorSaving) return;
+  state.activeHostBehaviorId = el.hostBehaviorSelect.value;
+  renderHostBehaviors();
+});
 if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
 
 let diagnosticsRevision = 0;
@@ -2873,6 +2939,7 @@ async function refreshIntegrations() {
 }
 
 function showAdminSection(sectionName) {
+  if (sectionName !== "devices" && typeof discardDeviceSelectionChanges === "function") discardDeviceSelectionChanges();
   if (sectionName !== "mcp" && state.providerSetupDraft) cancelProviderConnections();
   for (const [name, id] of Object.entries(adminSectionIds)) {
     const panel = document.getElementById(id);
@@ -2985,53 +3052,144 @@ const BODY_DEVICE_STORAGE_KEYS = {
   audioinput: "aicognitive_mind.device.audioInput",
   audiooutput: "aicognitive_mind.device.audioOutput",
 };
+let deviceSelectionDraft = null;
+let deviceSelectionBaseline = null;
+let deviceSelectionError = "";
+let deviceInventoryRequest = 0;
+
+function readDeviceSelections() {
+  return Object.fromEntries(Object.entries(BODY_DEVICE_STORAGE_KEYS)
+    .map(([kind, key]) => [kind, localStorage.getItem(key)]));
+}
+
+function ensureDeviceSelectionDraft() {
+  if (deviceSelectionDraft) return true;
+  try {
+    deviceSelectionBaseline = readDeviceSelections();
+    deviceSelectionDraft = Object.fromEntries(Object.entries(deviceSelectionBaseline)
+      .map(([kind, value]) => [kind, value || ""]));
+    deviceSelectionError = "";
+    return true;
+  } catch (error) {
+    deviceSelectionError = "Could not read device preferences in this browser: " + error.message;
+    return false;
+  }
+}
 
 function selectedDeviceId(kind) {
   try { return localStorage.getItem(BODY_DEVICE_STORAGE_KEYS[kind]) || ""; }
   catch (_) { return ""; }
 }
 
+function deviceSelectionIsDirty() {
+  return Boolean(deviceSelectionDraft) && Object.keys(BODY_DEVICE_STORAGE_KEYS)
+    .some(kind => deviceSelectionDraft[kind] !== (deviceSelectionBaseline[kind] || ""));
+}
+
+function updateDeviceSelectionState() {
+  const dirty = deviceSelectionIsDirty();
+  const valid = Boolean(deviceSelectionDraft) && Object.keys(BODY_DEVICE_STORAGE_KEYS).every(kind => {
+    const value = deviceSelectionDraft[kind];
+    return value === "" || value === (deviceSelectionBaseline[kind] || "")
+      || (state.deviceInventory || []).some(device => device.kind === kind && device.deviceId === value);
+  });
+  const save = document.getElementById("saveDeviceSelections");
+  const cancel = document.getElementById("cancelDeviceSelections");
+  const status = document.getElementById("deviceSelectionStatus");
+  if (save) save.disabled = !dirty || !valid;
+  if (cancel) cancel.disabled = !dirty && !deviceSelectionError;
+  if (status) status.textContent = deviceSelectionError || (dirty
+    ? (valid ? "Unsaved device changes. Save applies them to Body operation in this browser."
+      : "A selected device is no longer available. Choose an available device or Cancel.")
+    : "Device choices are saved only in this browser. Select a device, then Save to apply it.");
+}
+
 function saveSelectedDevice(kind, deviceId) {
+  if (!Object.hasOwn(BODY_DEVICE_STORAGE_KEYS, kind) || !ensureDeviceSelectionDraft()) return;
+  deviceSelectionDraft[kind] = deviceId;
+  deviceSelectionError = "";
+  updateDeviceSelectionState();
+}
+
+function saveDeviceSelections() {
+  updateDeviceSelectionState();
+  if (document.getElementById("saveDeviceSelections")?.disabled || !deviceSelectionDraft) return;
+  let before;
   try {
-    if (deviceId) localStorage.setItem(BODY_DEVICE_STORAGE_KEYS[kind], deviceId);
-    else localStorage.removeItem(BODY_DEVICE_STORAGE_KEYS[kind]);
+    before = readDeviceSelections();
+    if (Object.keys(BODY_DEVICE_STORAGE_KEYS).some(kind => before[kind] !== deviceSelectionBaseline[kind])) {
+      deviceSelectionError = "Saved device preferences changed while you were editing. Cancel to reload them before trying again.";
+      updateDeviceSelectionState();
+      return;
+    }
+    for (const [kind, key] of Object.entries(BODY_DEVICE_STORAGE_KEYS)) {
+      if (deviceSelectionDraft[kind] === (before[kind] || "")) continue;
+      if (deviceSelectionDraft[kind]) localStorage.setItem(key, deviceSelectionDraft[kind]);
+      else localStorage.removeItem(key);
+    }
+    deviceSelectionBaseline = readDeviceSelections();
+    deviceSelectionDraft = Object.fromEntries(Object.entries(deviceSelectionBaseline)
+      .map(([kind, value]) => [kind, value || ""]));
+    deviceSelectionError = "";
     renderDeviceSelectionSummary();
-    toast(deviceId ? "Body device selection saved" : "Body will use the browser default device");
+    updateDeviceSelectionState();
+    toast("Body device choices saved in this browser");
   } catch (error) {
-    toast("Could not save device selection in this browser: " + error.message, true);
+    let restored = Boolean(before);
+    if (before) {
+      for (const [kind, key] of Object.entries(BODY_DEVICE_STORAGE_KEYS)) {
+        try {
+          if (localStorage.getItem(key) === before[kind]) continue;
+          if (before[kind] === null) localStorage.removeItem(key);
+          else localStorage.setItem(key, before[kind]);
+        } catch (_) { restored = false; }
+      }
+    }
+    deviceSelectionError = "Could not save device preferences: " + error.message
+      + (restored ? ". Previous choices were restored; your draft is still available."
+        : ". Some preferences may have changed; Cancel reloads saved values. Your draft has been kept.");
+    renderDeviceSelectionSummary();
+    updateDeviceSelectionState();
+    toast(deviceSelectionError, true);
   }
+}
+
+function cancelDeviceSelectionEdit() {
+  deviceSelectionDraft = null;
+  deviceSelectionBaseline = null;
+  deviceSelectionError = "";
+  ensureDeviceSelectionDraft();
+  renderDeviceInventory();
+  renderDeviceSelectionSummary();
+  updateDeviceSelectionState();
+}
+
+function discardDeviceSelectionChanges() {
+  deviceInventoryRequest += 1;
+  deviceSelectionDraft = null;
+  deviceSelectionBaseline = null;
+  deviceSelectionError = "";
 }
 
 function renderDeviceSelectionSummary() {
   if (!el.deviceSelectionSummary) return;
+  let saved;
+  try { saved = readDeviceSelections(); }
+  catch (_) {
+    el.deviceSelectionSummary.textContent = "Saved device preferences could not be read in this browser.";
+    return;
+  }
   const labels = [];
   for (const [kind, label] of [["videoinput", "Camera"], ["audioinput", "Microphone"], ["audiooutput", "Speaker"]]) {
-    const id = selectedDeviceId(kind);
+    const id = saved[kind] || "";
     const device = (state.deviceInventory || []).find(item => item.kind === kind && item.deviceId === id);
     labels.push(label + ": " + (device?.label || (id ? "Saved device (" + id.slice(0, 8) + "…)" : "Browser default")));
   }
-  el.deviceSelectionSummary.textContent = labels.join(" · ");
+  el.deviceSelectionSummary.textContent = "Saved for this browser — " + labels.join(" · ");
 }
 
-async function refreshDeviceInventory() {
-  el.devicePermissionStatus.textContent = "Querying browser device inventory…";
+function renderDeviceInventory() {
   el.deviceInventoryList.replaceChildren();
-  if (!navigator.mediaDevices?.enumerateDevices) {
-    el.devicePermissionStatus.textContent = "Device discovery is unavailable in this browser or context. Use a secure HTTPS page and a browser that supports MediaDevices.";
-    return;
-  }
-  try {
-    const [devices, cameraPermission, microphonePermission] = await Promise.all([
-      navigator.mediaDevices.enumerateDevices(),
-      navigator.permissions?.query ? navigator.permissions.query({ name: "camera" }).catch(() => null) : Promise.resolve(null),
-      navigator.permissions?.query ? navigator.permissions.query({ name: "microphone" }).catch(() => null) : Promise.resolve(null),
-    ]);
-    state.deviceInventory = devices.filter(device => ["videoinput", "audioinput", "audiooutput"].includes(device.kind));
-    const permissions = [
-      `Camera permission: ${cameraPermission?.state || "not reported by browser"}`,
-      `Microphone permission: ${microphonePermission?.state || "not reported by browser"}`,
-    ];
-    el.devicePermissionStatus.textContent = `${state.deviceInventory.length} device(s) discovered. ${permissions.join(" · ")}. Labels may be hidden until permission is granted.`;
     for (const [kind, heading] of [["videoinput", "Body camera"], ["audioinput", "Body microphone"], ["audiooutput", "Body speaker / audio output"]]) {
       const matches = state.deviceInventory.filter(device => device.kind === kind);
       const section = document.createElement("section");
@@ -3043,7 +3201,9 @@ async function refreshDeviceInventory() {
       pickerLabel.className = "host-behavior-field";
       pickerLabel.append(document.createTextNode("Use for Body operation"));
       const picker = document.createElement("select");
+      picker.dataset.deviceKind = kind;
       picker.setAttribute("aria-label", `Select ${heading.toLowerCase()}`);
+      picker.disabled = !deviceSelectionDraft;
       const defaultOption = document.createElement("option");
       defaultOption.value = "";
       defaultOption.textContent = "Browser default";
@@ -3056,8 +3216,14 @@ async function refreshDeviceInventory() {
         option.textContent = device.label.trim() || `${singular} ${index + 1} (label hidden)`;
         picker.append(option);
       });
-      picker.value = selectedDeviceId(kind);
-      if (![...picker.options].some(option => option.value === picker.value)) picker.value = "";
+      const value = deviceSelectionDraft?.[kind] || "";
+      if (value && !matches.some(device => device.deviceId === value)) {
+        const unavailable = document.createElement("option");
+        unavailable.value = value;
+        unavailable.textContent = `${value === (deviceSelectionBaseline?.[kind] || "") ? "Saved" : "Selected"} device (${value.slice(0, 8)}…, unavailable)`;
+        picker.append(unavailable);
+      }
+      picker.value = value;
       picker.addEventListener("change", () => saveSelectedDevice(kind, picker.value));
       pickerLabel.append(picker);
       section.append(pickerLabel);
@@ -3075,12 +3241,48 @@ async function refreshDeviceInventory() {
       }
       el.deviceInventoryList.append(section);
     }
+}
+
+async function refreshDeviceInventory() {
+  const request = ++deviceInventoryRequest;
+  if (deviceSelectionDraft && !deviceSelectionError && !deviceSelectionIsDirty()) {
+    deviceSelectionDraft = null;
+    deviceSelectionBaseline = null;
+  }
+  ensureDeviceSelectionDraft();
+  renderDeviceInventory();
+  renderDeviceSelectionSummary();
+  updateDeviceSelectionState();
+  el.devicePermissionStatus.textContent = "Querying browser device inventory…";
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    el.devicePermissionStatus.textContent = "Device discovery is unavailable in this browser or context. Use a secure HTTPS page and a browser that supports MediaDevices.";
+    return;
+  }
+  try {
+    const [devices, cameraPermission, microphonePermission] = await Promise.all([
+      navigator.mediaDevices.enumerateDevices(),
+      navigator.permissions?.query ? navigator.permissions.query({ name: "camera" }).catch(() => null) : Promise.resolve(null),
+      navigator.permissions?.query ? navigator.permissions.query({ name: "microphone" }).catch(() => null) : Promise.resolve(null),
+    ]);
+    if (request !== deviceInventoryRequest) return;
+    state.deviceInventory = devices.filter(device => ["videoinput", "audioinput", "audiooutput"].includes(device.kind));
+    const permissions = [
+      `Camera permission: ${cameraPermission?.state || "not reported by browser"}`,
+      `Microphone permission: ${microphonePermission?.state || "not reported by browser"}`,
+    ];
+    el.devicePermissionStatus.textContent = `${state.deviceInventory.length} device(s) discovered. ${permissions.join(" · ")}. Labels may be hidden until permission is granted.`;
+    renderDeviceInventory();
     renderDeviceSelectionSummary();
+    updateDeviceSelectionState();
   } catch (error) {
+    if (request !== deviceInventoryRequest) return;
     el.devicePermissionStatus.textContent = `Device query failed: ${error.message}. Check browser permissions and reload the page.`;
     toast(`Could not query devices: ${error.message}`, true);
   }
 }
+
+document.getElementById("saveDeviceSelections")?.addEventListener("click", saveDeviceSelections);
+document.getElementById("cancelDeviceSelections")?.addEventListener("click", cancelDeviceSelectionEdit);
 
 if (navigator.mediaDevices?.addEventListener) {
   navigator.mediaDevices.addEventListener("devicechange", () => refreshDeviceInventory());

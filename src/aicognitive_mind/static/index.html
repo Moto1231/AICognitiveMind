@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261025-task-foundation-buttons">
+  <link rel="stylesheet" href="/static/portal.css?v=20261025-form-actions">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -210,12 +210,18 @@
               <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             
-            <div id="hostBehaviorList" class="record-list"></div>
-            <div class="edit-actions">
-              <button id="editHostBehaviors" class="secondary-button" type="button" disabled>Edit</button>
-              <button id="saveHostBehaviors" class="primary-button" type="button" disabled>Save</button>
-              <button id="cancelHostBehaviors" class="secondary-button" type="button" disabled>Cancel</button>
+            <div class="behavior-library-navigation">
+              <label class="host-behavior-field">Search behaviors<input id="hostBehaviorSearch" type="search" placeholder="Name or instruction" aria-controls="hostBehaviorSelect hostBehaviorList"></label>
+              <label class="host-behavior-field">Behavior<select id="hostBehaviorSelect" aria-controls="hostBehaviorList"><option value="">No behaviors yet</option></select></label>
             </div>
+            <div class="edit-actions behavior-library-actions">
+              <button id="editHostBehaviors" class="secondary-button" type="button" aria-label="Edit behaviors" title="Edit behaviors" disabled>Edit</button>
+              <button id="saveHostBehaviors" class="primary-button" type="button" aria-label="Save behaviors" title="Save behaviors" disabled>Save</button>
+              <button id="cancelHostBehaviors" class="secondary-button" type="button" aria-label="Cancel behavior changes" title="Cancel behavior changes" disabled>Cancel</button>
+            </div>
+            <p class="muted-copy">Save keeps all behavior changes. Cancel restores the saved library.</p>
+            <p id="hostBehaviorSummary" class="record-empty" role="status" aria-live="polite"></p>
+            <div id="hostBehaviorList" class="record-list"></div>
           </article>
 
           <article id="tasksSection" class="panel admin-task-model-panel task-profiles-panel hidden">
@@ -557,6 +563,11 @@
             <div id="devicePermissionStatus" class="search-summary" aria-live="polite">Device inventory has not been queried.</div>
             <div class="device-selection-summary" id="deviceSelectionSummary">Body device preferences have not been loaded.</div>
             <div id="deviceInventoryList" class="record-list"></div>
+            <div class="edit-actions device-selection-actions">
+              <button id="saveDeviceSelections" class="primary-button" type="button" aria-label="Save device choices" title="Save device choices" disabled>Save</button>
+              <button id="cancelDeviceSelections" class="secondary-button" type="button" aria-label="Cancel device changes" title="Cancel device changes" disabled>Cancel</button>
+            </div>
+            <p id="deviceSelectionStatus" role="status" aria-live="polite">Device choices are saved only in this browser.</p>
           </article>
 
           <article id="overviewSection" class="panel admin-summary">
@@ -712,6 +723,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261025-task-panel"></script>
+  <script src="/static/portal.js?v=20261025-device-behavior-editors"></script>
 </body>
 </html>
