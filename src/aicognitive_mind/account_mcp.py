@@ -37,6 +37,12 @@ async def authorized_account(provider: Any, token: Any) -> Any:
     ):
         raise MCPError(code=-32001, message="An authenticated Axiom account is required")
 
+    # A persistent MCP transport can retain the verified token between calls.
+    # Recheck its originating portal session before every Realtime tool call,
+    # including calls whose access token is still valid in the OAuth cache.
+    if token.client_id == "axiom-realtime" and not await provider.access_token_session_active(token):
+        raise MCPError(code=-32001, message="The Realtime portal session has ended")
+
     account = None
     accounts = getattr(provider, "accounts", None)
     if accounts is not None:

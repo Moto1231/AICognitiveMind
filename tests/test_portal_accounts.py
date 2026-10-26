@@ -124,7 +124,7 @@ class PortalAccountTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rejected.status_code, 401)
         self.assertNotIn("set-cookie", rejected.headers)
 
-    async def test_realtime_does_not_bypass_account_body_boundary_or_mint_tokens(self):
+    async def test_realtime_requires_server_configuration_and_live_account_before_minting(self):
         self.assertEqual((await self.signup()).status_code, 201)
         self.assertEqual((await self.login()).status_code, 200)
         mint = AsyncMock()
@@ -133,7 +133,7 @@ class PortalAccountTests(unittest.IsolatedAsyncioTestCase):
                 "/v1/body/realtime/session", content="synthetic-sdp",
                 headers={"content-type": "application/sdp"},
             )
-            self.assertEqual(denied.status_code, 403, denied.text)
+            self.assertEqual(denied.status_code, 503, denied.text)
             with patch.object(self.accounts, "resolve_subject", return_value=None):
                 unavailable = await self.client.post(
                     "/v1/body/realtime/session", content="synthetic-sdp",

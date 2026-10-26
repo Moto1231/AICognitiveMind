@@ -68,8 +68,8 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Verify portal editing and task configuration
-        run: node --test tests/portal_editors.test.cjs tests/device_settings.test.cjs
+      - name: Verify portal editing, devices, and hands-free voice
+        run: node --test tests/*.test.cjs
 
       - name: Validate MCP server import
         run: python -c "import aicognitive_mind.mcp_server; print('MCP server import OK')"

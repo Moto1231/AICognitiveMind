@@ -726,6 +726,11 @@ def _portal_session_record_key(token: str) -> str:
     return "portal_session_" + hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def realtime_session_scope(token: str) -> str:
+    """Opaque browser comparison marker; never usable as a session credential."""
+    return hashlib.sha256(("axiom-realtime-scope\0" + token).encode("utf-8")).hexdigest()
+
+
 async def store_portal_session(app: FastAPI, token: str, mind_id: str, expires_at: float) -> None:
     """Persist portal login state so a Render process restart does not log users out."""
     records = app.state.runtime_records
@@ -1426,14 +1431,17 @@ async def acknowledge_body_output(modality: str, request: Request, delivery_id: 
 @app.get("/v1/body/hosts/status")
 async def body_hosts_status(request: Request) -> dict[str, Any]:
     """Return safe, read-only connection and Body request diagnostics."""
-    scoped = getattr(request.state, "tenant_storage", None) is not None
-    realtime_available = not scoped and bool(get_settings().openai_api_key)
+    # The authenticated deployment broker supplies Realtime's server credential;
+    # each connection receives an MCP token scoped to its own account Mind.
+    session_token = request.cookies.get("axiom_portal_session", "")
+    realtime_available = bool(session_token and get_settings().openai_api_key)
     realtime = {
         "available": realtime_available,
         "reason": "" if realtime_available else (
-            "Realtime voice is not configured for this account." if scoped
+            "Sign in to Axiom before starting voice." if not session_token
             else "Realtime voice is not configured."
         ),
+        "scope": realtime_session_scope(session_token) if session_token else None,
     }
     hosts = getattr(_request_runtime(request), "hosts", None)
     if hosts is None:
