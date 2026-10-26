@@ -1,5 +1,19 @@
 # Private preview release
 
+## Version 6 — real screenshots in Every layer
+
+Published 2026-10-25 (America/Chicago); native owner-private deployment confirmed succeeded.
+
+- URL: https://axiom-continuity-portal.snowydeer18.chatgpt.site/#configuration
+- Native source commit: 99809686ae89f129095d0fc2971efba65c9ab70b
+- Saved version: appgprj_6ade9371c8688191994b9b27a3520bc1~appgver_d3862bf08cc48191acd2ff1ba0cc48b0
+- Deployment: appgdep_6adec77f25b881918727d861cf61fa88
+- Audience: existing owner-private access preserved.
+
+The Every layer section now presents the supplied application screenshot gallery without mounting the illustrated six-panel configuration demo. Its initial view is the unchanged Audio/Transcription task-routing capture, displayed proportionally with a larger 760px height allowance and a full-image link. The homepage and guide describe actual Administration captures. Capture-revision and example-provider/model caveats remain visible.
+
+Verified: TypeScript, production build, independent source/accessibility review, source diff checks and original/package screenshot SHA256 bbdeb036f917dff2848d0de46172a46ab32d6548e486f4afd5a9b19e4fec93bf. Native private publication succeeded. No new browser automation or authenticated screenshot capture was performed. The original captures span different interface versions and do not establish current settings or recommended model choices. This focused website change does not alter application settings or billing.
+
 ## Version 5 — naming milestone clarification
 
 Published 2026-10-25 (America/Chicago); native owner-private deployment confirmed succeeded.

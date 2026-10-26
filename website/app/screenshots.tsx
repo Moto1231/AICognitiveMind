@@ -42,13 +42,13 @@ const captures = [
 ] as const;
 
 export default function Screenshots() {
-  const [selectedId, setSelectedId] = useState<(typeof captures)[number]["id"]>("behaviors");
-  const selected = captures.find((capture) => capture.id === selectedId) ?? captures[1];
+  const [selectedId, setSelectedId] = useState<(typeof captures)[number]["id"]>("task-routing");
+  const selected = captures.find((capture) => capture.id === selectedId) ?? captures[3];
 
   return (
     <div className="screenshot-gallery">
       <div className="screenshot-intro">
-        <p className="screenshot-kicker">SUPPLIED PRODUCT VIEWS</p>
+        <p className="screenshot-kicker">APPLICATION SCREENSHOTS</p>
         <h3>Inside Administration</h3>
         <p className="screenshot-note">Provided interface captures. Navigation, totals and example settings can differ from the current release.</p>
       </div>
