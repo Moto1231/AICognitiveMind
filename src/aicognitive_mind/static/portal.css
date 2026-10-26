@@ -1066,8 +1066,11 @@ body {
 
 /* Skills icon: match the blue, light-outline treatment of the other admin artwork. */
 .admin-section-icon .skills-line-icon, .admin-form-icon .skills-line-icon { color:#60a5fa; stroke:#60a5fa; width:100%; height:auto; max-height:48px; }
-#skillsSection .edit-actions { display: flex; flex-wrap: wrap; align-items: center; }
-#skillsSection button.axiom-icon-button {
+/* Skills and Task Foundation editors share compact, wrapping action controls. */
+#skillsSection .edit-actions,
+#taskProfileEditor .task-profile-foundation-section > .edit-actions { display: flex; flex-wrap: wrap; align-items: center; }
+#skillsSection button.axiom-icon-button,
+#taskProfileEditor .task-profile-foundation-section > .edit-actions button.axiom-icon-button {
   inline-size: 36px;
   block-size: 36px;
   min-inline-size: 36px;
