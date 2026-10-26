@@ -15,6 +15,10 @@ const editorFunctions = [
   'selectedMcpServer', 'syncMcpServerForm', 'updateMcpEditorState', 'editMcpServer',
   'cancelMcpEdit', 'renderMcpServerOptions', 'loadMcpServerIntoForm', 'renderMcpTools',
   'addMcpServer', 'saveMcpServers', 'removeMcpServer', 'discoverMcpTools',
+  'mcpToolKey', 'mcpToolEntries', 'selectedMcpTool', 'mcpToolsTargetServer',
+  'invalidateMcpToolRun', 'selectMcpTool', 'renderMcpToolDetail', 'mcpToolArgumentsValid',
+  'updateMcpToolsState', 'editMcpTools', 'cancelMcpTools', 'saveMcpTools', 'runMcpTool',
+  'refreshMcpServers', 'showAdminSection',
   'allTaskNames', 'renderTaskProfiles', 'taskProviderEndpoint', 'taskEndpointOptions', 'selectedTaskBehaviorIds',
   'taskBehaviorCatalog',
   'taskProfileConfiguration', 'updateTaskSaveState', 'renderTaskBehaviorSelection',
@@ -65,6 +69,9 @@ function editor({ apiHandler } = {}) {
     mcpServers: [{ id: 'tools', name: 'Tools', url: 'https://tools.example/mcp', bearer_token: '',
       enabled: true, tools: [{ name: 'lookup', enabled: true }] }],
     activeMcpServerId: 'tools', mcpServerDraft: null, mcpEditBaseline: '', integrationSaving: false,
+    mcpToolsServerId: '', mcpToolsQuery: '', activeMcpToolKey: '', mcpToolsDraft: null,
+    mcpToolsSaving: false, mcpToolsDiscovering: false, mcpToolsDiscoveryRevision: 0,
+    mcpToolsRefreshRevision: 0, mcpToolRunRevision: 0, mcpToolRunning: false,
     taskModelAssignments: [{ task: 'vision', provider: 'openai', model: 'gpt-test',
       fallbacks: [{ provider: 'OpenAI - GPT', model: 'gpt-test' }] }],
     taskBehaviors: [], taskFoundations: {}, hostBehaviors: [], activeTaskProfile: null,
@@ -73,6 +80,10 @@ function editor({ apiHandler } = {}) {
   };
   const calls = [];
   const toasts = [];
+  const sections = Object.fromEntries(['overview', 'mcp', 'tools'].map(name => [name + 'Section', new Element('article')]));
+  const navigation = ['overview', 'mcp', 'tools'].map(name => {
+    const button = new Element('button'); button.dataset.adminSection = name; return button;
+  });
   const context = vm.createContext({
     state, el, URL, COMMON_ENDPOINT_PRESETS: [], crypto: { randomUUID: () => ++endpointSequence === 1 ? 'new-id' : `new-id-${endpointSequence}` },
     taskModelLabels: { reasoning: 'Reasoning', vision: 'Vision', audio_voice: 'Audio/Voice' },
@@ -80,13 +91,20 @@ function editor({ apiHandler } = {}) {
     Option: class extends Element {
       constructor(label, value) { super('option'); this.textContent = label; this.value = value; }
     },
-    document: { createElement: tag => new Element(tag), createTextNode: value => value },
+    document: { createElement: tag => new Element(tag), createTextNode: value => value,
+      getElementById: id => sections[id], querySelectorAll: () => navigation },
+    adminSectionIds: { overview: 'overviewSection', mcp: 'mcpSection', tools: 'toolsSection' },
+    refreshDiagnostics() {}, refreshDeviceInventory() {}, refreshSkillDrafts() {}, refreshFoundations() {},
     renderTaskProfiles() {}, refreshTaskModelAssignments: async () => {}, toast: (...args) => toasts.push(args),
     resetEndpointApiKeyVisibility() {}, toggleEndpointApiKeyVisibility() {},
     api: async (url, options = {}) => {
       const body = options.body ? JSON.parse(options.body) : undefined;
       calls.push({ url, body });
-      if (apiHandler) return apiHandler(url, body, options);
+      if (apiHandler) {
+        const result = await apiHandler(url, body, options);
+        if (result !== undefined) return result;
+      }
+      if (url === '/v1/admin/mcp/servers' && !body) return { items: JSON.parse(JSON.stringify(state.mcpServers)) };
       return body;
     },
   });
@@ -114,9 +132,13 @@ function editor({ apiHandler } = {}) {
   const behaviorBindings = source.indexOf('if (el.hostBehaviorSearch) el.hostBehaviorSearch.addEventListener');
   const behaviorBindingsEnd = source.indexOf('if (el.taskProfileBack)', behaviorBindings);
   vm.runInContext(source.slice(behaviorBindings, behaviorBindingsEnd), context);
+  const toolsBindingsStart = source.indexOf('if (el.mcpEditTools) el.mcpEditTools.addEventListener');
+  const toolsBindingsEnd = source.indexOf('if (el.taskProfileEndpointSelect)', toolsBindingsStart);
+  vm.runInContext(source.slice(toolsBindingsStart, toolsBindingsEnd), context);
   context.loadEndpointIntoForm();
   context.loadMcpServerIntoForm();
-  return { ...context, calls, toasts };
+  context.renderMcpTools();
+  return { ...context, calls, toasts, sections, navigation };
 }
 
 test('missing capability details stay explicitly unverified without losing a saved model selection', () => {
@@ -699,8 +721,10 @@ test('pending endpoint discovery blocks MCP Save and preserves its dirty draft u
   assert.equal(ui.el.mcpServerName.disabled, false);
   assert.equal(JSON.stringify(ui.state.mcpServerDraft), dirtyDraft);
   await ui.saveMcpServers();
-  assert.equal(ui.calls.length, 2);
+  assert.equal(ui.calls.length, 3);
   assert.equal(ui.calls[1].url, '/v1/admin/mcp/servers');
+  assert.equal(ui.calls[1].body, undefined);
+  assert.equal(ui.calls[2].url, '/v1/admin/mcp/servers');
   assert.equal(ui.state.mcpServers[0].name, 'Unsaved MCP name');
   assert.equal(ui.state.mcpServerDraft, null);
   assert.equal(ui.el.taskProfileDiscover.disabled, false);
@@ -748,24 +772,28 @@ test('saving endpoint model updates primary and fallback references then locks t
   assert.equal(ui.el.saveProviderEndpoints.disabled, true);
 });
 
-test('MCP server and tool changes require Edit and do not alter saved records before Save', async () => {
+test('Tools have a separate locked editor and Save changes tools without editing the connection', async () => {
   const ui = editor();
   assert.equal(ui.el.mcpServerName.disabled, true);
-  const readOnlyToggle = ui.el.mcpToolList.children[0].children[1].children[0];
-  assert.equal(readOnlyToggle.disabled, true);
-  ui.editMcpServer();
-  assert.equal(ui.el.saveMcpServers.disabled, true);
-  const toggle = ui.el.mcpToolList.children[0].children[1].children[0];
-  assert.equal(toggle.disabled, false);
-  toggle.checked = false;
-  toggle.listeners.change();
-  assert.equal(ui.el.saveMcpServers.disabled, false);
-  assert.equal(ui.state.mcpServers[0].tools[0].enabled, true);
-  await ui.saveMcpServers();
-  assert.equal(ui.state.mcpServers[0].tools[0].enabled, false);
+  assert.equal(ui.el.mcpToolEnabled.disabled, true);
+  ui.editMcpTools();
   assert.equal(ui.state.mcpServerDraft, null);
+  assert.equal(ui.el.saveMcpServers.disabled, true);
+  assert.equal(ui.el.saveMcpTools.disabled, true);
+  assert.equal(ui.el.mcpToolEnabled.disabled, false);
+  ui.el.mcpToolEnabled.checked = false;
+  ui.el.mcpToolEnabled.listeners.change();
+  assert.equal(ui.el.saveMcpTools.disabled, false);
+  assert.equal(ui.state.mcpServers[0].tools[0].enabled, true);
+  await ui.saveMcpTools();
+  assert.equal(ui.state.mcpServers[0].tools[0].enabled, false);
+  assert.equal(ui.state.mcpToolsDraft, null);
   assert.equal(ui.el.mcpServerName.disabled, true);
   assert.equal(ui.el.saveMcpServers.disabled, true);
+  assert.equal(ui.el.saveMcpTools.disabled, true);
+  assert.equal(ui.calls.length, 2);
+  assert.equal(ui.calls[0].body, undefined);
+  assert.equal(ui.calls[1].body.items[0].url, 'https://tools.example/mcp');
 });
 
 test('invalid MCP URL keeps Save disabled and Cancel restores configuration', () => {
@@ -777,6 +805,294 @@ test('invalid MCP URL keeps Save disabled and Cancel restores configuration', ()
   ui.cancelMcpEdit();
   assert.equal(ui.el.mcpServerUrl.value, 'https://tools.example/mcp');
   assert.equal(ui.state.mcpServers[0].url, 'https://tools.example/mcp');
+});
+
+test('Tools browse hundreds of names across servers with search, server scope and duplicate-name identity', () => {
+  const ui = editor();
+  ui.state.mcpServers[0].tools = Array.from({ length: 180 }, (_, index) => ({
+    name: `tool_${String(index).padStart(3, '0')}`, description: `Description ${index}`, enabled: true,
+    inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+  }));
+  ui.state.mcpServers.push({ id: 'other', name: 'Other server', enabled: true, url: 'https://other.example/mcp',
+    bearer_token: 'never-render-this', tools: [{ name: 'tool_000', description: 'Other duplicate', enabled: false }] });
+  ui.renderMcpTools();
+  assert.equal(ui.el.mcpToolList.children.length, 181);
+  assert.equal(ui.el.mcpToolCount.textContent, '181');
+  const duplicates = ui.el.mcpToolList.children.filter(option => option.textContent.startsWith('tool_000'));
+  assert.equal(duplicates.length, 2);
+  assert.notEqual(duplicates[0].value, duplicates[1].value);
+  assert.match(duplicates[0].textContent, /Other server|Tools/);
+  assert.equal(ui.el.mcpToolList.children.every(option => option.children.length === 0), true);
+  assert.equal(ui.el.mcpToolList.children.some(option => option.textContent.includes('never-render-this')), false);
+  ui.selectMcpTool(ui.mcpToolKey('other', 'tool_000'));
+  assert.equal(ui.el.mcpToolDescription.textContent, 'Other duplicate');
+  assert.equal(ui.el.mcpToolServerName.textContent, 'Other server');
+  assert.equal(ui.el.mcpRunTool.disabled, true);
+  ui.el.mcpToolsSearch.value = 'Description 179';
+  ui.el.mcpToolsSearch.listeners.input();
+  assert.equal(ui.el.mcpToolList.children.length, 1);
+  assert.equal(ui.el.mcpToolName.textContent, 'tool_179');
+  ui.el.mcpToolsSearch.value = '';
+  ui.el.mcpToolsSearch.listeners.input();
+  ui.el.mcpToolsServerFilter.value = 'other';
+  ui.el.mcpToolsServerFilter.listeners.change();
+  assert.equal(ui.el.mcpToolList.children.length, 1);
+  assert.equal(ui.el.mcpToolDescription.textContent, 'Other duplicate');
+  ui.el.mcpToolsSearch.value = 'no such tool';
+  ui.el.mcpToolsSearch.listeners.input();
+  assert.equal(ui.el.mcpToolCount.textContent, '0');
+  assert.equal(ui.el.mcpToolDetail.classList.contains('hidden'), true);
+  assert.equal(ui.el.mcpRunTool.disabled, true);
+  assert.equal(ui.calls.length, 0);
+});
+
+test('Tools Cancel restores saved enabled flags while connection drafts stay isolated', () => {
+  const ui = editor();
+  ui.editMcpServer();
+  ui.el.mcpServerName.value = 'Connection-only draft';
+  ui.syncMcpServerForm();
+  const connection = JSON.stringify(ui.state.mcpServerDraft);
+  ui.editMcpTools();
+  ui.el.mcpToolEnabled.checked = false;
+  ui.el.mcpToolEnabled.listeners.change();
+  assert.equal(ui.state.mcpServers[0].tools[0].enabled, true);
+  assert.equal(ui.el.saveMcpTools.disabled, true);
+  assert.equal(ui.el.mcpRunTool.disabled, true);
+  assert.equal(ui.el.mcpDiscoverTools.disabled, true);
+  ui.cancelMcpTools();
+  assert.equal(ui.el.mcpToolEnabled.checked, true);
+  assert.equal(ui.state.mcpToolsDraft, null);
+  assert.equal(JSON.stringify(ui.state.mcpServerDraft), connection);
+  assert.equal(ui.el.mcpServerName.value, 'Connection-only draft');
+  assert.equal(ui.calls.length, 0);
+});
+
+test('Tools Save merges only tools into fresh server connections and preserves added records', async () => {
+  let fresh;
+  const ui = editor({ apiHandler: async (url, body) => body || { items: fresh } });
+  fresh = JSON.parse(JSON.stringify(ui.state.mcpServers));
+  fresh[0].name = 'Renamed by another admin';
+  fresh[0].enabled = false;
+  fresh.push({ id: 'added', name: 'Added server', url: 'https://new.example/mcp', bearer_token: 'new-secret', enabled: true, tools: [] });
+  ui.editMcpTools();
+  ui.el.mcpToolEnabled.checked = false;
+  ui.el.mcpToolEnabled.listeners.change();
+  await ui.saveMcpTools();
+  const saved = ui.calls[1].body.items;
+  assert.equal(saved.length, 2);
+  assert.equal(saved[0].name, 'Renamed by another admin');
+  assert.equal(saved[0].enabled, false);
+  assert.equal(saved[0].tools[0].enabled, false);
+  assert.equal(saved[1].bearer_token, 'new-secret');
+  assert.equal(ui.state.mcpToolsDraft, null);
+  assert.equal(ui.el.mcpRunTool.disabled, true);
+});
+
+test('pending Tools Save locks draft mutations and duplicate saves while a failed write preserves Cancel and retry', async () => {
+  let rejectWrite;
+  const ui = editor({ apiHandler: async (url, body) => body
+    ? new Promise((resolve, reject) => { rejectWrite = reject; }) : undefined });
+  ui.editMcpTools();
+  ui.el.mcpToolEnabled.checked = false;
+  ui.el.mcpToolEnabled.listeners.change();
+  const saving = ui.saveMcpTools();
+  while (!rejectWrite) await Promise.resolve();
+  assert.equal(ui.state.mcpToolsSaving, true);
+  assert.equal(ui.el.mcpToolEnabled.disabled, true);
+  assert.equal(ui.el.mcpToolsServerFilter.disabled, true);
+  assert.equal(ui.el.saveMcpTools.disabled, true);
+  assert.equal(ui.el.mcpCancelTools.disabled, true);
+  ui.cancelMcpTools();
+  await ui.saveMcpTools();
+  assert.equal(ui.calls.length, 2);
+  assert.equal(ui.state.mcpToolsDraft.tools[0].enabled, false);
+  rejectWrite(new Error('Save unavailable'));
+  await saving;
+  assert.equal(ui.state.mcpToolsSaving, false);
+  assert.equal(ui.state.mcpToolsDraft.tools[0].enabled, false);
+  assert.equal(ui.state.mcpServers[0].tools[0].enabled, true);
+  assert.equal(ui.el.saveMcpTools.disabled, false);
+  assert.equal(ui.el.mcpCancelTools.disabled, false);
+  ui.cancelMcpTools();
+  assert.equal(ui.state.mcpToolsDraft, null);
+});
+
+test('Tools Save keeps its draft and never resurrects a deleted or changed server', async () => {
+  for (const change of ['deleted', 'credentials', 'url', 'tools']) {
+    let fresh;
+    const ui = editor({ apiHandler: async () => ({ items: fresh }) });
+    ui.editMcpTools();
+    ui.el.mcpToolEnabled.checked = false;
+    ui.el.mcpToolEnabled.listeners.change();
+    fresh = JSON.parse(JSON.stringify(ui.state.mcpServers));
+    if (change === 'deleted') fresh = [];
+    if (change === 'credentials') fresh[0].bearer_token = 'rotated-secret';
+    if (change === 'url') fresh[0].url = 'https://moved.example/mcp';
+    if (change === 'tools') fresh[0].tools.push({ name: 'concurrent_tool', enabled: true });
+    await ui.saveMcpTools();
+    assert.equal(ui.calls.length, 1, change);
+    assert.equal(ui.state.mcpToolsDraft.tools[0].enabled, false, change);
+    assert.match(ui.el.mcpToolStatus.textContent, /removed|changed/, change);
+    ui.cancelMcpTools();
+    assert.equal(ui.state.mcpServers.length, fresh.length, change);
+    assert.equal(ui.state.mcpToolsDraft, null, change);
+  }
+});
+
+test('Tools discovery uses the saved server and stays unsaved until explicit Save', async () => {
+  const ui = editor({ apiHandler: async (url, body) => url.endsWith('/discover')
+    ? { server_id: body.id, items: [{ name: 'discovered', description: 'Fresh tool', enabled: true }] } : body });
+  ui.el.mcpServerUrl.value = 'https://unsaved.example/mcp';
+  await ui.discoverMcpTools();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].body.url, 'https://tools.example/mcp');
+  assert.equal(ui.state.mcpServers[0].tools[0].name, 'lookup');
+  assert.equal(ui.state.mcpToolsDraft.tools[0].name, 'discovered');
+  assert.equal(ui.state.mcpServerDraft, null);
+  assert.equal(ui.el.saveMcpTools.disabled, false);
+  assert.equal(ui.el.mcpRunTool.disabled, true);
+  ui.cancelMcpTools();
+  assert.equal(ui.el.mcpToolName.textContent, 'lookup');
+});
+
+test('cancelled discovery cannot overwrite the next server or a newer discovery', async () => {
+  const pending = [];
+  const ui = editor({ apiHandler: async (url) => url.endsWith('/discover')
+    ? new Promise(resolve => pending.push(resolve)) : undefined });
+  ui.state.mcpServers.push({ id: 'other', name: 'Other', url: 'https://other.example/mcp', enabled: true,
+    tools: [{ name: 'second', enabled: true }] });
+  const first = ui.discoverMcpTools();
+  assert.equal(ui.el.mcpDiscoverTools.disabled, true);
+  await ui.discoverMcpTools();
+  assert.equal(ui.calls.length, 1);
+  ui.cancelMcpTools();
+  ui.el.mcpToolsServerFilter.value = 'other';
+  ui.el.mcpToolsServerFilter.listeners.change();
+  const second = ui.discoverMcpTools();
+  pending[0]({ server_id: 'tools', items: [{ name: 'stale', enabled: true }] });
+  await first;
+  assert.equal(ui.state.mcpToolsDiscovering, true);
+  assert.equal(ui.state.mcpToolsDraft.serverId, 'other');
+  assert.equal(ui.state.mcpToolsDraft.tools[0].name, 'second');
+  pending[1]({ server_id: 'other', items: [{ name: 'current', enabled: true }] });
+  await second;
+  assert.equal(ui.el.mcpToolName.textContent, 'current');
+  assert.equal(ui.state.mcpToolsDiscovering, false);
+});
+
+test('failed discovery and mismatched responses keep the existing draft available for Cancel or retry', async () => {
+  for (const response of ['failure', 'mismatch']) {
+    const ui = editor({ apiHandler: async () => {
+      if (response === 'failure') throw new Error('Unavailable');
+      return { server_id: 'wrong', items: [{ name: 'wrong_tool' }] };
+    } });
+    await ui.discoverMcpTools();
+    assert.equal(ui.state.mcpToolsDraft.tools[0].name, 'lookup');
+    assert.equal(ui.state.mcpToolsDiscovering, false);
+    assert.match(ui.el.mcpToolStatus.textContent, /Discovery failed/);
+    assert.equal(ui.el.mcpDiscoverTools.disabled, false);
+    ui.cancelMcpTools();
+    assert.equal(ui.state.mcpToolsDraft, null);
+  }
+});
+
+test('Run validates the saved server and tool plus object arguments and sends the exact selection', async () => {
+  const ui = editor({ apiHandler: async () => ({ content: 'Completed' }) });
+  for (const args of ['[]', 'null', '"text"', 'bad json', '1']) {
+    ui.el.mcpToolArguments.value = args;
+    await ui.runMcpTool();
+  }
+  assert.equal(ui.calls.length, 0);
+  assert.match(ui.el.mcpToolStatus.textContent, /JSON object/);
+  ui.el.mcpToolArguments.value = '{"query":"specific"}';
+  ui.state.mcpServers[0].enabled = false;
+  await ui.runMcpTool();
+  assert.equal(ui.calls.length, 0);
+  ui.state.mcpServers[0].enabled = true;
+  ui.state.mcpServers[0].tools[0].enabled = false;
+  await ui.runMcpTool();
+  assert.equal(ui.calls.length, 0);
+  ui.state.mcpServers[0].tools[0].enabled = true;
+  await ui.runMcpTool();
+  assert.equal(ui.calls.length, 1);
+  assert.deepEqual(ui.calls[0].body, { server_id: 'tools', tool_name: 'lookup', arguments: { query: 'specific' } });
+  assert.match(ui.el.mcpToolOutput.textContent, /Completed/);
+});
+
+test('late Run success or failure never replaces output after selecting another same-named tool', async () => {
+  for (const failure of [false, true]) {
+    let resolveRun, rejectRun;
+    const ui = editor({ apiHandler: async () => new Promise((resolve, reject) => { resolveRun = resolve; rejectRun = reject; }) });
+    ui.state.mcpServers.push({ id: 'other', name: 'Other', enabled: true, tools: [{ name: 'lookup', enabled: true }] });
+    const running = ui.runMcpTool();
+    assert.equal(ui.el.mcpRunTool.disabled, true);
+    await ui.runMcpTool();
+    assert.equal(ui.calls.length, 1);
+    ui.selectMcpTool(ui.mcpToolKey('other', 'lookup'));
+    assert.equal(ui.el.mcpToolOutput.textContent, '');
+    assert.equal(ui.el.mcpToolArguments.value, '{}');
+    if (failure) rejectRun(new Error('Old failure')); else resolveRun({ content: 'Old success' });
+    await running;
+    assert.equal(ui.el.mcpToolOutput.textContent, '');
+    assert.equal(ui.el.mcpToolServerName.textContent, 'Other');
+    assert.equal(ui.el.mcpRunTool.disabled, false);
+  }
+});
+
+test('Admin Refresh and page navigation preserve Tools drafts and keep connection fields independent', async () => {
+  const ui = editor();
+  ui.editMcpTools();
+  ui.el.mcpToolEnabled.checked = false;
+  ui.el.mcpToolEnabled.listeners.change();
+  const draft = JSON.stringify(ui.state.mcpToolsDraft);
+  ui.showAdminSection('tools');
+  assert.equal(ui.sections.toolsSection.classList.contains('hidden'), false);
+  assert.equal(ui.sections.mcpSection.classList.contains('hidden'), true);
+  ui.showAdminSection('overview');
+  assert.equal(ui.sections.toolsSection.classList.contains('hidden'), true);
+  assert.equal(ui.sections.overviewSection.classList.contains('hidden'), false);
+  await ui.refreshMcpServers();
+  assert.equal(JSON.stringify(ui.state.mcpToolsDraft), draft);
+  assert.equal(ui.state.mcpServers[0].tools[0].enabled, true);
+  assert.equal(ui.el.mcpToolEnabled.checked, false);
+  assert.equal(ui.el.mcpServerName.disabled, true);
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].body, undefined);
+});
+
+test('a pending stale refresh cannot overwrite newly saved Tools', async () => {
+  let resolveRefresh;
+  let reads = 0;
+  const ui = editor({ apiHandler: async (url, body) => {
+    if (body) return body;
+    if (++reads === 1) return new Promise(resolve => { resolveRefresh = resolve; });
+    return undefined;
+  } });
+  const refresh = ui.refreshMcpServers();
+  const old = JSON.parse(JSON.stringify(ui.state.mcpServers));
+  ui.editMcpTools();
+  ui.el.mcpToolEnabled.checked = false;
+  ui.el.mcpToolEnabled.listeners.change();
+  await ui.saveMcpTools();
+  resolveRefresh({ items: old });
+  await refresh;
+  assert.equal(ui.state.mcpServers[0].tools[0].enabled, false);
+  assert.equal(ui.state.mcpToolsDraft, null);
+});
+
+test('connection Save retains freshly discovered saved tools rather than its old copied inventory', async () => {
+  let latest;
+  const ui = editor({ apiHandler: async (url, body) => body || { items: latest } });
+  latest = JSON.parse(JSON.stringify(ui.state.mcpServers));
+  latest[0].tools = [{ name: 'added_elsewhere', enabled: false }];
+  latest.push({ id: 'added', name: 'Added', url: 'https://added.example/mcp', enabled: true, tools: [] });
+  ui.editMcpServer();
+  ui.el.mcpServerName.value = 'Renamed';
+  ui.syncMcpServerForm();
+  await ui.saveMcpServers();
+  assert.equal(ui.state.mcpServers.length, 2);
+  assert.equal(ui.state.mcpServers[0].name, 'Renamed');
+  assert.equal(ui.state.mcpServers[0].tools[0].name, 'added_elsewhere');
 });
 
 test('removing endpoint clears its primary and fallback task references', async () => {

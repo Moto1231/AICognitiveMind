@@ -50,6 +50,17 @@ const state = {
   providerSetupDraft: null,
   mcpServerDraft: null,
   mcpEditBaseline: "",
+  mcpToolsServerId: "",
+  mcpToolsQuery: "",
+  activeMcpToolKey: "",
+  mcpToolsDraft: null,
+  mcpToolsError: "",
+  mcpToolsSaving: false,
+  mcpToolsDiscovering: false,
+  mcpToolsDiscoveryRevision: 0,
+  mcpToolsRefreshRevision: 0,
+  mcpToolRunRevision: 0,
+  mcpToolRunning: false,
   integrationSaving: false,
   deviceInventory: [],
   voiceSettingsRevision: 0,
@@ -144,8 +155,20 @@ const el = {
   mcpEditServer: document.getElementById("mcpEditServer"),
   mcpCancelEdit: document.getElementById("mcpCancelEdit"),
   mcpServerStatus: document.getElementById("mcpServerStatus"),
+  mcpToolsServerFilter: document.getElementById("mcpToolsServerFilter"),
+  mcpToolsSearch: document.getElementById("mcpToolsSearch"),
   mcpToolList: document.getElementById("mcpToolList"),
-  mcpToolRunnerSelect: document.getElementById("mcpToolRunnerSelect"),
+  mcpToolCount: document.getElementById("mcpToolCount"),
+  mcpToolDetail: document.getElementById("mcpToolDetail"),
+  mcpToolName: document.getElementById("mcpToolName"),
+  mcpToolServerName: document.getElementById("mcpToolServerName"),
+  mcpToolDescription: document.getElementById("mcpToolDescription"),
+  mcpToolSchema: document.getElementById("mcpToolSchema"),
+  mcpToolEnabled: document.getElementById("mcpToolEnabled"),
+  mcpToolStatus: document.getElementById("mcpToolStatus"),
+  mcpEditTools: document.getElementById("mcpEditTools"),
+  saveMcpTools: document.getElementById("saveMcpTools"),
+  mcpCancelTools: document.getElementById("mcpCancelTools"),
   mcpToolArguments: document.getElementById("mcpToolArguments"),
   mcpRunTool: document.getElementById("mcpRunTool"),
   mcpToolOutput: document.getElementById("mcpToolOutput"),
@@ -923,7 +946,7 @@ function changeTaskFallbackEndpoint() {
   const sameEndpoint = endpoint && taskProviderEndpoint(fallback.provider) === endpoint;
   fallback.provider = endpoint?.id || provider;
   fallback.model = endpoint?.model || (sameEndpoint ? fallback.model : "");
-  if (endpoint && !fallback.model) toast("Save a model for this endpoint in Endpoints, Servers & Tools first", true);
+  if (endpoint && !fallback.model) toast("Save a model for this endpoint in Endpoints & MCP Servers first", true);
   renderFallbackSelectors();
   updateTaskSaveState();
 }
@@ -2661,6 +2684,7 @@ document.getElementById("apiActivityFilter")?.addEventListener("change", refresh
 
 const adminSectionIds = {
   mcp: "mcpSection",
+  tools: "toolsSection",
   tasks: "tasksSection",
   behaviors: "behaviorsSection",
   skills: "skillsSection",
@@ -2805,7 +2829,7 @@ function syncMcpServerForm() {
 function updateMcpEditorState() {
   const editing = !!state.mcpServerDraft;
   const saved = state.mcpServers.some(server => server.id === state.activeMcpServerId);
-  const busy = Boolean(state.integrationSaving || state.endpointDiscovering || state.endpointProbing);
+  const busy = Boolean(state.integrationSaving || state.endpointDiscovering || state.endpointProbing || state.mcpToolsSaving || state.mcpToolsDiscovering);
   [el.mcpServerName, el.mcpServerUrl, el.mcpServerToken, el.mcpServerEnabled].forEach(input => {
     input.disabled = !editing || busy;
   });
@@ -2816,9 +2840,8 @@ function updateMcpEditorState() {
   el.mcpCancelEdit.disabled = !editing || busy;
   const server = selectedMcpServer();
   const valid = !!(server?.name && /^https?:\/\/\S+$/i.test(server?.url || ""));
-  el.mcpDiscoverTools.disabled = busy || !valid;
   el.saveMcpServers.disabled = !editing || busy || !valid || JSON.stringify(server) === state.mcpEditBaseline;
-  el.mcpRunTool.disabled = editing || busy || !saved;
+  updateMcpToolsState();
 }
 
 function editMcpServer() {
@@ -2861,76 +2884,159 @@ function loadMcpServerIntoForm() {
   el.mcpServerUrl.value = server?.url || "";
   el.mcpServerToken.value = server?.bearer_token || "";
   el.mcpServerEnabled.checked = server ? server.enabled !== false : true;
-  el.mcpServerStatus.textContent = server
-    ? `${server.tools?.length || 0} discovered tool(s). ${state.mcpServerDraft ? "Save to apply server and tool changes." : "Choose Edit to change this server or its tools."}`
-    : "Choose Add to configure an MCP server.";
+  el.mcpServerStatus.textContent = state.mcpServerDraft ? "Unsaved changes" : "";
+  updateMcpEditorState();
+}
+
+function mcpToolKey(serverId, toolName) {
+  return JSON.stringify([serverId, toolName]);
+}
+
+function mcpToolEntries() {
+  return state.mcpServers.flatMap(server => {
+    const tools = state.mcpToolsDraft?.serverId === server.id ? state.mcpToolsDraft.tools : server.tools;
+    return (tools || []).map(tool => ({ server, tool, key: mcpToolKey(server.id, tool.name) }));
+  });
+}
+
+function selectedMcpTool() {
+  return mcpToolEntries().find(entry => entry.key === state.activeMcpToolKey) || null;
+}
+
+function mcpToolsTargetServer() {
+  const id = state.mcpToolsDraft?.serverId || state.mcpToolsServerId || selectedMcpTool()?.server.id;
+  return state.mcpServers.find(server => server.id === id) || null;
+}
+
+function invalidateMcpToolRun() {
+  state.mcpToolRunRevision = (state.mcpToolRunRevision || 0) + 1;
+  state.mcpToolRunning = false;
+  el.mcpToolArguments.value = "{}";
+  el.mcpToolOutput.textContent = "";
+}
+
+function selectMcpTool(key) {
+  if (state.activeMcpToolKey !== key) invalidateMcpToolRun();
+  state.activeMcpToolKey = key;
+  el.mcpToolList.value = key;
+  renderMcpToolDetail();
+}
+
+function renderMcpTools() {
+  if (!el.mcpToolList) return;
+  el.mcpToolsServerFilter.replaceChildren(new Option("All servers", ""));
+  for (const server of state.mcpServers) el.mcpToolsServerFilter.append(new Option(server.name, server.id));
+  if (state.mcpToolsDraft && !state.mcpServers.some(server => server.id === state.mcpToolsDraft.serverId)) {
+    el.mcpToolsServerFilter.append(new Option("Unavailable server", state.mcpToolsDraft.serverId));
+  } else if (!state.mcpServers.some(server => server.id === state.mcpToolsServerId)) {
+    state.mcpToolsServerId = "";
+  }
+  el.mcpToolsServerFilter.value = state.mcpToolsServerId || "";
+  el.mcpToolsSearch.value = state.mcpToolsQuery || "";
+  const query = (state.mcpToolsQuery || "").trim().toLowerCase();
+  const entries = mcpToolEntries().filter(({ server, tool }) =>
+    (!state.mcpToolsServerId || server.id === state.mcpToolsServerId)
+    && (!query || `${tool.name} ${tool.description || ""} ${server.name}`.toLowerCase().includes(query)))
+    .sort((a, b) => a.tool.name.localeCompare(b.tool.name) || a.server.name.localeCompare(b.server.name));
+  el.mcpToolList.replaceChildren();
+  for (const { server, tool, key } of entries) {
+    const status = server.enabled === false ? "Server disabled" : tool.enabled === false ? "Disabled" : "Enabled";
+    el.mcpToolList.append(new Option(`${tool.name} · ${server.name} · ${status}`, key));
+  }
+  el.mcpToolCount.textContent = String(entries.length);
+  const nextKey = entries.some(entry => entry.key === state.activeMcpToolKey) ? state.activeMcpToolKey : entries[0]?.key || "";
+  el.mcpToolList.value = nextKey;
+  selectMcpTool(nextKey);
+}
+
+function renderMcpToolDetail() {
+  const entry = selectedMcpTool();
+  el.mcpToolDetail.classList.toggle("hidden", !entry);
+  el.mcpToolName.textContent = entry?.tool.name || "";
+  el.mcpToolServerName.textContent = entry?.server.name || "";
+  el.mcpToolDescription.textContent = entry?.tool.description || "";
+  el.mcpToolDescription.classList.toggle("hidden", !entry?.tool.description);
+  el.mcpToolSchema.textContent = entry ? JSON.stringify(entry.tool.inputSchema || {}, null, 2) : "";
+  el.mcpToolEnabled.checked = !!entry && entry.tool.enabled !== false;
+  updateMcpToolsState();
+}
+
+function mcpToolArgumentsValid() {
+  try {
+    const value = JSON.parse(el.mcpToolArguments.value || "{}");
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  } catch (_) { return false; }
+}
+
+function updateMcpToolsState() {
+  if (!el.mcpToolList) return;
+  const editing = !!state.mcpToolsDraft;
+  const busy = Boolean(state.integrationSaving || state.endpointDiscovering || state.endpointProbing || state.mcpToolsSaving || state.mcpToolsDiscovering);
+  const target = mcpToolsTargetServer();
+  const entry = selectedMcpTool();
+  const dirty = editing && JSON.stringify(state.mcpToolsDraft.tools) !== state.mcpToolsDraft.baseline;
+  el.mcpToolsServerFilter.disabled = editing || state.mcpToolsSaving;
+  el.mcpEditTools.disabled = editing || busy || !target;
+  el.mcpDiscoverTools.disabled = busy || !target || !!state.mcpServerDraft;
+  el.mcpCancelTools.disabled = !editing || state.mcpToolsSaving;
+  el.saveMcpTools.disabled = !dirty || busy || !target || !!state.mcpServerDraft;
+  el.mcpToolEnabled.disabled = !editing || busy || !entry || entry.server.id !== state.mcpToolsDraft.serverId;
+  const runnable = !!entry && entry.server.enabled !== false && entry.tool.enabled !== false && !editing && !state.mcpServerDraft && !busy;
+  el.mcpToolArguments.disabled = !runnable || state.mcpToolRunning;
+  el.mcpRunTool.disabled = !runnable || state.mcpToolRunning || !mcpToolArgumentsValid();
+  el.mcpToolStatus.textContent = state.mcpToolsError || (state.mcpToolsSaving ? "Saving tools…"
+    : state.mcpToolsDiscovering ? "Discovering tools…"
+    : editing && !target ? "Server unavailable"
+    : dirty ? "Unsaved changes"
+    : entry?.server.enabled === false ? "Server disabled"
+    : entry?.tool.enabled === false ? "Tool disabled"
+    : runnable && !mcpToolArgumentsValid() ? "Arguments must be a JSON object"
+    : !el.mcpToolList.children.length ? "No matching tools" : "");
+}
+
+function editMcpTools() {
+  if (state.mcpToolsDraft || state.mcpToolsSaving || state.integrationSaving || state.mcpToolsDiscovering) return;
+  const server = mcpToolsTargetServer();
+  if (!server) return;
+  invalidateMcpToolRun();
+  state.mcpToolsDraft = {
+    serverId: server.id,
+    tools: JSON.parse(JSON.stringify(server.tools || [])),
+    baseline: JSON.stringify(server.tools || []),
+    connection: JSON.stringify([server.url, server.bearer_token || ""]),
+  };
+  state.mcpToolsServerId = server.id;
+  state.mcpToolsError = "";
+  renderMcpTools();
+}
+
+function cancelMcpTools() {
+  if (state.mcpToolsSaving) return;
+  state.mcpToolsDiscoveryRevision = (state.mcpToolsDiscoveryRevision || 0) + 1;
+  state.mcpToolsDiscovering = false;
+  state.mcpToolsDraft = null;
+  state.mcpToolsError = "";
+  invalidateMcpToolRun();
   renderMcpTools();
   updateMcpEditorState();
 }
 
-function renderMcpTools() {
-  const server = selectedMcpServer();
-  el.mcpToolList.replaceChildren();
-  el.mcpToolRunnerSelect.replaceChildren();
-  const runnerPlaceholder = document.createElement("option");
-  runnerPlaceholder.value = "";
-  runnerPlaceholder.textContent = "Choose an enabled tool";
-  el.mcpToolRunnerSelect.append(runnerPlaceholder);
-  if (!server?.tools?.length) {
-    const empty = document.createElement("p");
-    empty.className = "record-empty";
-    empty.textContent = "No tools discovered for this server yet.";
-    el.mcpToolList.append(empty);
-    return;
-  }
-  for (const tool of server.tools) {
-    const row = document.createElement("div");
-    row.className = "memory-card host-behavior-card";
-    const details = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = tool.name;
-    const description = document.createElement("p");
-    description.className = "muted-copy";
-    description.textContent = tool.description || "No description provided by server.";
-    const schema = document.createElement("code");
-    schema.className = "mcp-tool-schema";
-    schema.textContent = JSON.stringify(tool.inputSchema || {}, null, 2);
-    details.append(title, description, schema);
-    const toggleLabel = document.createElement("label");
-    toggleLabel.className = "host-behavior-enabled";
-    const toggle = document.createElement("input");
-    toggle.type = "checkbox";
-    toggle.checked = tool.enabled !== false;
-    toggle.disabled = !state.mcpServerDraft || state.integrationSaving;
-    toggle.addEventListener("change", () => {
-      tool.enabled = toggle.checked;
-      renderMcpTools();
-      updateMcpEditorState();
-    });
-    toggleLabel.append(toggle, document.createTextNode(" Enabled"));
-    row.append(details, toggleLabel);
-    el.mcpToolList.append(row);
-    if (tool.enabled !== false) {
-      const option = document.createElement("option");
-      option.value = tool.name;
-      option.textContent = tool.name;
-      el.mcpToolRunnerSelect.append(option);
-    }
-  }
-}
-
 async function refreshMcpServers() {
-  if (state.mcpServerDraft) return;
+  if (state.integrationSaving || state.mcpToolsSaving) return;
+  const revision = state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
   try {
     const payload = await api("/v1/admin/mcp/servers", {}, true);
+    if (revision !== state.mcpToolsRefreshRevision) return;
+    invalidateMcpToolRun();
     state.mcpServers = payload.items || [];
-    if (!state.mcpServers.some(server => server.id === state.activeMcpServerId)) {
+    if (!state.mcpServerDraft && !state.mcpServers.some(server => server.id === state.activeMcpServerId)) {
       state.activeMcpServerId = state.mcpServers[0]?.id || null;
     }
     renderMcpServerOptions();
     loadMcpServerIntoForm();
+    renderMcpTools();
   } catch (error) {
-    toast(`Could not load MCP servers: ${error.message}`, true);
+    if (revision === state.mcpToolsRefreshRevision) toast(`Could not load MCP servers: ${error.message}`, true);
   }
 }
 
@@ -2952,112 +3058,167 @@ function addMcpServer() {
 }
 
 async function discoverMcpTools() {
-  // Discovery of an existing server enters edit mode so results can be saved.
-  if (!state.mcpServerDraft) editMcpServer();
-  const server = syncMcpServerForm();
-  if (!server) {
-    addMcpServer();
-    toast("Enter a server URL, then discover its tools", true);
-    return;
-  }
-  if (!server.name || !server.url) {
-    toast("Server name and URL are required", true);
-    return;
-  }
-  el.mcpServerStatus.textContent = "Connecting and discovering tools…";
-  el.mcpDiscoverTools.disabled = true;
+  updateMcpToolsState();
+  if (el.mcpDiscoverTools.disabled) return;
+  if (!state.mcpToolsDraft) editMcpTools();
+  const draft = state.mcpToolsDraft;
+  const server = mcpToolsTargetServer();
+  if (!draft || !server) return;
+  const revision = state.mcpToolsDiscoveryRevision = (state.mcpToolsDiscoveryRevision || 0) + 1;
+  state.mcpToolsDiscovering = true;
+  state.mcpToolsError = "";
+  updateMcpEditorState();
   try {
     const payload = await api("/v1/admin/mcp/servers/discover", {
-      method: "POST",
-      body: JSON.stringify(server),
+      method: "POST", body: JSON.stringify({ ...server, tools: draft.tools }),
     }, true);
-    server.tools = payload.items || [];
+    if (revision !== state.mcpToolsDiscoveryRevision || state.mcpToolsDraft !== draft) return;
+    if (payload.server_id !== server.id) throw new Error("Discovery returned a different server");
+    draft.tools = payload.items || [];
+    renderMcpTools();
+    toast(`Discovered ${draft.tools.length} tool(s)`);
+  } catch (error) {
+    if (revision !== state.mcpToolsDiscoveryRevision || state.mcpToolsDraft !== draft) return;
+    state.mcpToolsError = `Discovery failed: ${error.message}`;
+    toast(state.mcpToolsError, true);
+  } finally {
+    if (revision === state.mcpToolsDiscoveryRevision) {
+      state.mcpToolsDiscovering = false;
+      updateMcpEditorState();
+    }
+  }
+}
+
+async function saveMcpTools() {
+  updateMcpToolsState();
+  if (el.saveMcpTools.disabled) return;
+  const draft = state.mcpToolsDraft;
+  state.mcpToolsSaving = true;
+  state.mcpToolsError = "";
+  state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
+  updateMcpEditorState();
+  try {
+    const latest = await api("/v1/admin/mcp/servers", {}, true);
+    const servers = latest.items || [];
+    state.mcpServers = servers;
     renderMcpServerOptions();
     loadMcpServerIntoForm();
-    el.mcpServerStatus.textContent = `Connected. Discovered ${server.tools.length} tool(s). Save to persist this configuration.`;
-    toast(`Discovered ${server.tools.length} MCP tool(s)`);
+    renderMcpTools();
+    const server = servers.find(item => item.id === draft.serverId);
+    if (!server) throw new Error("Server was removed. Cancel to reload.");
+    if (JSON.stringify([server.url, server.bearer_token || ""]) !== draft.connection
+        || JSON.stringify(server.tools || []) !== draft.baseline) {
+      throw new Error("Saved server or tools changed. Cancel to reload.");
+    }
+    const payload = await api("/v1/admin/mcp/servers", {
+      method: "PUT",
+      body: JSON.stringify({ items: servers.map(item => item.id === draft.serverId ? { ...item, tools: draft.tools } : item) }),
+    }, true);
+    state.mcpServers = payload.items || [];
+    state.mcpToolsDraft = null;
+    renderMcpServerOptions();
+    loadMcpServerIntoForm();
+    renderMcpTools();
+    toast("Tools saved");
   } catch (error) {
-    el.mcpServerStatus.textContent = `Connection failed: ${error.message}`;
-    toast(error.message, true);
+    state.mcpToolsError = error.message;
+    toast(`Could not save tools: ${error.message}`, true);
+  } finally {
+    state.mcpToolsSaving = false;
+    state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
+    updateMcpEditorState();
   }
-  finally { updateMcpEditorState(); }
 }
 
 async function saveMcpServers() {
   syncMcpServerForm();
   if (el.saveMcpServers.disabled) return;
   const server = state.mcpServerDraft;
+  const wasSaved = state.mcpServers.some(item => item.id === server.id);
   state.integrationSaving = true;
+  state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
   updateMcpEditorState();
   try {
+    const latest = await api("/v1/admin/mcp/servers", {}, true);
+    const servers = latest.items || [];
+    const saved = servers.find(item => item.id === server.id);
+    if (wasSaved && !saved) throw new Error("Server was removed. Cancel to reload.");
+    const changed = { ...(saved || server), name: server.name, url: server.url,
+      bearer_token: server.bearer_token, enabled: server.enabled };
     const payload = await api("/v1/admin/mcp/servers", {
       method: "PUT",
-      body: JSON.stringify({ items: state.mcpServers.filter(item => item.id !== server.id).concat(server) }),
+      body: JSON.stringify({ items: saved ? servers.map(item => item.id === server.id ? changed : item) : servers.concat(changed) }),
     }, true);
     state.mcpServers = payload.items || [];
     state.mcpServerDraft = null;
     state.mcpEditBaseline = "";
     renderMcpServerOptions();
     loadMcpServerIntoForm();
-    toast("MCP server and tool configuration saved");
+    renderMcpTools();
+    toast("MCP server saved");
   } catch (error) {
     toast(`Could not save MCP configuration: ${error.message}`, true);
   }
   finally {
     state.integrationSaving = false;
+    state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
     updateMcpEditorState();
   }
 }
 
 async function removeMcpServer() {
-  if (!state.activeMcpServerId || state.mcpServerDraft || state.integrationSaving) return;
+  if (!state.activeMcpServerId || state.mcpServerDraft || state.integrationSaving || state.mcpToolsSaving || state.mcpToolsDiscovering) return;
+  const serverId = state.activeMcpServerId;
   state.integrationSaving = true;
+  state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
   updateMcpEditorState();
   try {
+    const latest = await api("/v1/admin/mcp/servers", {}, true);
     const payload = await api("/v1/admin/mcp/servers", {
       method: "PUT",
-      body: JSON.stringify({ items: state.mcpServers.filter(server => server.id !== state.activeMcpServerId) }),
+      body: JSON.stringify({ items: (latest.items || []).filter(server => server.id !== serverId) }),
     }, true);
     state.mcpServers = payload.items || [];
     state.activeMcpServerId = state.mcpServers[0]?.id || null;
     renderMcpServerOptions();
     loadMcpServerIntoForm();
+    invalidateMcpToolRun();
+    renderMcpTools();
     toast("Removed MCP server");
   } catch (error) { toast(error.message, true); }
   finally {
     state.integrationSaving = false;
+    state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
     updateMcpEditorState();
   }
 }
 
 async function runMcpTool() {
-  const server = syncMcpServerForm();
-  const toolName = el.mcpToolRunnerSelect.value;
-  if (!server || !toolName) {
-    toast("Choose a server and an enabled tool", true);
-    return;
-  }
-  let argumentsValue;
-  try {
-    argumentsValue = JSON.parse(el.mcpToolArguments.value || "{}");
-    if (!argumentsValue || Array.isArray(argumentsValue) || typeof argumentsValue !== "object") {
-      throw new Error("Arguments must be a JSON object");
-    }
-  } catch (error) {
-    toast(`Invalid tool arguments: ${error.message}`, true);
-    return;
-  }
+  updateMcpToolsState();
+  if (el.mcpRunTool.disabled) return;
+  const entry = selectedMcpTool();
+  if (!entry || entry.server.enabled === false || entry.tool.enabled === false || state.mcpToolsDraft) return;
+  const argumentsValue = JSON.parse(el.mcpToolArguments.value || "{}");
+  const key = entry.key;
+  const revision = state.mcpToolRunRevision = (state.mcpToolRunRevision || 0) + 1;
+  state.mcpToolRunning = true;
   el.mcpToolOutput.textContent = "Running tool…";
+  updateMcpToolsState();
   try {
     const result = await api("/v1/admin/mcp/tools/call", {
       method: "POST",
-      body: JSON.stringify({ server_id: server.id, tool_name: toolName, arguments: argumentsValue }),
+      body: JSON.stringify({ server_id: entry.server.id, tool_name: entry.tool.name, arguments: argumentsValue }),
     }, true);
+    if (revision !== state.mcpToolRunRevision || key !== state.activeMcpToolKey) return;
     el.mcpToolOutput.textContent = JSON.stringify(result, null, 2);
-    toast(`MCP tool ${toolName} completed`);
   } catch (error) {
+    if (revision !== state.mcpToolRunRevision || key !== state.activeMcpToolKey) return;
     el.mcpToolOutput.textContent = error.message;
-    toast(error.message, true);
+  } finally {
+    if (revision === state.mcpToolRunRevision) {
+      state.mcpToolRunning = false;
+      updateMcpToolsState();
+    }
   }
 }
 
@@ -3085,6 +3246,10 @@ function showAdminSection(sectionName) {
   if (sectionName === "foundations") refreshFoundations();
   if (sectionName === "overview") refreshDiagnostics();
   if (sectionName === "mcp" && state.adminAuthorized) refreshIntegrations();
+  if (sectionName === "tools") {
+    renderMcpTools();
+    if (state.adminAuthorized) refreshMcpServers();
+  }
 }
 
 document.querySelectorAll("[data-admin-section]").forEach(button => {
@@ -3109,6 +3274,28 @@ if (el.mcpDiscoverTools) el.mcpDiscoverTools.addEventListener("click", discoverM
 if (el.mcpDeleteServer) el.mcpDeleteServer.addEventListener("click", removeMcpServer);
 if (el.saveMcpServers) el.saveMcpServers.addEventListener("click", saveMcpServers);
 if (el.mcpRunTool) el.mcpRunTool.addEventListener("click", runMcpTool);
+if (el.mcpEditTools) el.mcpEditTools.addEventListener("click", editMcpTools);
+if (el.mcpCancelTools) el.mcpCancelTools.addEventListener("click", cancelMcpTools);
+if (el.saveMcpTools) el.saveMcpTools.addEventListener("click", saveMcpTools);
+if (el.mcpToolsServerFilter) el.mcpToolsServerFilter.addEventListener("change", () => {
+  if (state.mcpToolsDraft || state.mcpToolsSaving) return;
+  state.mcpToolsServerId = el.mcpToolsServerFilter.value;
+  state.mcpToolsError = "";
+  renderMcpTools();
+});
+if (el.mcpToolsSearch) el.mcpToolsSearch.addEventListener("input", () => {
+  state.mcpToolsQuery = el.mcpToolsSearch.value;
+  renderMcpTools();
+});
+if (el.mcpToolList) el.mcpToolList.addEventListener("change", () => selectMcpTool(el.mcpToolList.value));
+if (el.mcpToolArguments) el.mcpToolArguments.addEventListener("input", updateMcpToolsState);
+if (el.mcpToolEnabled) el.mcpToolEnabled.addEventListener("change", () => {
+  const entry = selectedMcpTool();
+  if (el.mcpToolEnabled.disabled || !state.mcpToolsDraft || entry?.server.id !== state.mcpToolsDraft.serverId) return;
+  entry.tool.enabled = el.mcpToolEnabled.checked;
+  state.mcpToolsError = "";
+  renderMcpTools();
+});
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   if (state.endpointDraft) return;
   const value = el.taskProfileEndpointSelect.value;
@@ -3145,7 +3332,7 @@ el.taskProviderSelect.addEventListener("change", () => {
   assignment.provider = endpoint?.id || el.taskProviderSelect.value;
   assignment.model = endpoint?.model || (sameEndpoint ? assignment.model : "")
     || (assignment.provider === "connected-host" ? "host-selected" : "");
-  if (endpoint && !assignment.model) toast("Save a model for this endpoint in Endpoints, Servers & Tools first", true);
+  if (endpoint && !assignment.model) toast("Save a model for this endpoint in Endpoints & MCP Servers first", true);
   el.taskProviderSelect.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
   updateTaskSaveState();
 });
