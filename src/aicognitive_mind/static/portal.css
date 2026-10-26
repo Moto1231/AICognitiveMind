@@ -1066,11 +1066,15 @@ body {
 
 /* Skills icon: match the blue, light-outline treatment of the other admin artwork. */
 .admin-section-icon .skills-line-icon, .admin-form-icon .skills-line-icon { color:#60a5fa; stroke:#60a5fa; width:100%; height:auto; max-height:48px; }
-/* Skills and Task Foundation editors share compact, wrapping action controls. */
+/* Administration editors share compact, wrapping action controls. */
 #skillsSection .edit-actions,
-#taskProfileEditor .task-profile-foundation-section > .edit-actions { display: flex; flex-wrap: wrap; align-items: center; }
+#taskProfileEditor .task-profile-foundation-section > .edit-actions,
+#behaviorsSection .behavior-library-actions,
+#devicesSection .device-selection-actions { display: flex; flex-wrap: wrap; align-items: center; }
 #skillsSection button.axiom-icon-button,
-#taskProfileEditor .task-profile-foundation-section > .edit-actions button.axiom-icon-button {
+#taskProfileEditor .task-profile-foundation-section > .edit-actions button.axiom-icon-button,
+#behaviorsSection .behavior-library-actions button.axiom-icon-button,
+#devicesSection .device-selection-actions button.axiom-icon-button {
   inline-size: 36px;
   block-size: 36px;
   min-inline-size: 36px;
@@ -1078,6 +1082,11 @@ body {
   padding: 6px;
   flex: 0 0 36px;
 }
+
+#behaviorsSection .behavior-library-navigation { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 18px; }
+#behaviorsSection #hostBehaviorSummary { color: var(--muted); font-size: 12px; margin: 12px 0; }
+#devicesSection .device-selection-actions { gap: 10px; margin: 18px 0; }
+@media (max-width: 680px) { #behaviorsSection .behavior-library-navigation { grid-template-columns: minmax(0, 1fr); } }
 
 /* Behavior panels and editor interiors share the dark Administration palette. */
 #behaviorsSection .host-behavior-card {

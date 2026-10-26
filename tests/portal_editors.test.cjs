@@ -80,7 +80,7 @@ function editor({ apiHandler } = {}) {
       constructor(label, value) { super('option'); this.textContent = label; this.value = value; }
     },
     document: { createElement: tag => new Element(tag), createTextNode: value => value },
-    renderTaskProfiles() {}, toast: (...args) => toasts.push(args),
+    renderTaskProfiles() {}, refreshTaskModelAssignments: async () => {}, toast: (...args) => toasts.push(args),
     resetEndpointApiKeyVisibility() {}, toggleEndpointApiKeyVisibility() {},
     api: async (url, options = {}) => {
       const body = options.body ? JSON.parse(options.body) : undefined;
@@ -107,6 +107,9 @@ function editor({ apiHandler } = {}) {
   const primaryHandler = source.indexOf('el.taskProviderSelect.addEventListener("change", () => {');
   const primaryHandlerEnd = source.indexOf('\n});', primaryHandler);
   vm.runInContext(source.slice(primaryHandler, primaryHandlerEnd + 4), context);
+  const behaviorBindings = source.indexOf('if (el.hostBehaviorSearch) el.hostBehaviorSearch.addEventListener');
+  const behaviorBindingsEnd = source.indexOf('if (el.taskProfileBack)', behaviorBindings);
+  vm.runInContext(source.slice(behaviorBindings, behaviorBindingsEnd), context);
   context.loadEndpointIntoForm();
   context.loadMcpServerIntoForm();
   return { ...context, calls, toasts };
@@ -971,6 +974,143 @@ test('protected behavior settings are editable only in an isolated Administrator
   assert.equal(ui.state.hostBehaviorDraft, null);
   assert.equal(ui.state.hostBehaviorRevision, 8);
   assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[0].children[1].readOnly, true);
+});
+
+test('a large behavior library searches and selects one editor without rendering every instruction', () => {
+  const ui = editor();
+  ui.state.hostBehaviors = Array.from({ length: 1000 }, (_, index) => ({
+    id: `behavior-${index}`, name: `Behavior ${index}`, instruction: `Instruction ${index}`,
+    priority: index, enabled: true,
+  }));
+  ui.state.hostBehaviorSnapshot = JSON.stringify(ui.state.hostBehaviors);
+  ui.renderHostBehaviors();
+  assert.equal(ui.el.hostBehaviorSelect.options.length, 1000);
+  assert.equal(ui.el.hostBehaviorList.children.length, 1);
+  assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[0].children[1].value, 'Behavior 0');
+  ui.el.hostBehaviorSearch.value = 'Instruction 97';
+  ui.el.hostBehaviorSearch.listeners.input();
+  assert.equal(ui.el.hostBehaviorSelect.options.length, 11);
+  assert.match(ui.el.hostBehaviorSummary.textContent, /1000 behaviors · 11 matches/);
+  ui.el.hostBehaviorSelect.value = 'behavior-975';
+  ui.el.hostBehaviorSelect.listeners.change();
+  assert.equal(ui.el.hostBehaviorList.children.length, 1);
+  assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[0].children[1].value, 'Behavior 975');
+  ui.el.hostBehaviorSearch.value = 'no matching instruction';
+  ui.el.hostBehaviorSearch.listeners.input();
+  assert.equal(ui.el.hostBehaviorSelect.disabled, true);
+  assert.match(ui.el.hostBehaviorList.children[0].textContent, /No behaviors match/);
+  assert.equal(ui.calls.length, 0);
+});
+
+test('behavior selection and search retain all draft edits until one revisioned Save', async () => {
+  const ui = editor({ apiHandler: (_url, body) => ({ items: body.items, revision: 9 }) });
+  ui.state.hostBehaviors = [
+    { id: 'a', name: 'First', instruction: 'First saved instruction', priority: 1, enabled: true },
+    { id: 'b', name: 'Second', instruction: 'Second saved instruction', priority: 2, enabled: true },
+  ];
+  ui.state.hostBehaviorRevision = 8;
+  const original = ui.state.hostBehaviorSnapshot = JSON.stringify(ui.state.hostBehaviors);
+  ui.editHostBehaviors();
+  let name = ui.el.hostBehaviorList.children[0].children[0].children[0].children[1];
+  name.value = 'First edited'; name.listeners.input();
+  assert.equal(ui.el.hostBehaviorSelect.options[0].textContent, 'First edited');
+  ui.el.hostBehaviorSearch.value = 'Second'; ui.el.hostBehaviorSearch.listeners.input();
+  let instruction = ui.el.hostBehaviorList.children[0].children[0].children[2].children[1];
+  instruction.value = 'Second edited instruction'; instruction.listeners.input();
+  ui.el.hostBehaviorSearch.value = ''; ui.el.hostBehaviorSearch.listeners.input();
+  ui.el.hostBehaviorSelect.value = 'a'; ui.el.hostBehaviorSelect.listeners.change();
+  assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[0].children[1].value, 'First edited');
+  assert.equal(JSON.stringify(ui.state.hostBehaviors), original);
+  assert.equal(ui.calls.length, 0);
+  await ui.saveHostBehaviors();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].body.expected_revision, 8);
+  assert.equal(ui.calls[0].body.items[0].name, 'First edited');
+  assert.equal(ui.calls[0].body.items[1].instruction, 'Second edited instruction');
+  assert.equal(ui.state.hostBehaviorRevision, 9);
+  assert.equal(ui.state.hostBehaviorDraft, null);
+  assert.match(ui.el.hostBehaviorSummary.textContent, /Read-only/);
+});
+
+test('behavior Cancel restores the catalog after editing across selections and adding or removing entries', () => {
+  const ui = editor();
+  ui.state.hostBehaviors = [
+    { id: 'a', name: 'First', instruction: 'First instruction', priority: 1, enabled: true },
+    { id: 'b', name: 'Second', instruction: 'Second instruction', priority: 2, enabled: true },
+  ];
+  const original = ui.state.hostBehaviorSnapshot = JSON.stringify(ui.state.hostBehaviors);
+  ui.editHostBehaviors();
+  ui.el.hostBehaviorSelect.value = 'b'; ui.el.hostBehaviorSelect.listeners.change();
+  const instruction = ui.el.hostBehaviorList.children[0].children[0].children[2].children[1];
+  instruction.value = 'Unsaved second'; instruction.listeners.input();
+  ui.el.hostBehaviorSearch.value = 'not found'; ui.el.hostBehaviorSearch.listeners.input();
+  ui.addHostBehavior();
+  assert.equal(ui.el.hostBehaviorSearch.value, '');
+  assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[0].children[1].value, 'New Behavior');
+  ui.el.hostBehaviorList.children[0].children[1].children[3].listeners.click();
+  assert.equal(ui.state.hostBehaviorDraft.length, 2);
+  ui.cancelHostBehaviorEdit();
+  assert.equal(JSON.stringify(ui.state.hostBehaviors), original);
+  assert.equal(ui.state.hostBehaviorDraft, null);
+  ui.el.hostBehaviorSelect.value = 'b'; ui.el.hostBehaviorSelect.listeners.change();
+  assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[2].children[1].value, 'Second instruction');
+  assert.equal(ui.calls.length, 0);
+});
+
+test('behavior Save rejects invalid hidden draft entries and preserves selection on server failure', async () => {
+  const ui = editor({ apiHandler: async () => { throw new Error('Revision conflict'); } });
+  ui.state.hostBehaviors = [
+    { id: 'a', name: 'First', instruction: 'First instruction', priority: 1, enabled: true },
+    { id: 'b', name: 'Second', instruction: 'Second instruction', priority: 2, enabled: true },
+  ];
+  ui.state.hostBehaviorSnapshot = JSON.stringify(ui.state.hostBehaviors);
+  ui.editHostBehaviors();
+  ui.state.hostBehaviorDraft[0].name = '';
+  ui.el.hostBehaviorSelect.value = 'b'; ui.el.hostBehaviorSelect.listeners.change();
+  assert.equal(ui.el.saveHostBehaviors.disabled, true);
+  assert.match(ui.el.hostBehaviorSummary.textContent, /Complete all draft fields/);
+  await ui.saveHostBehaviors();
+  assert.equal(ui.calls.length, 0);
+  ui.state.hostBehaviorDraft[0].name = 'First edited';
+  ui.updateBehaviorSaveState();
+  await ui.saveHostBehaviors();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.state.activeHostBehaviorId, 'b');
+  assert.equal(ui.state.hostBehaviorDraft[0].name, 'First edited');
+  assert.equal(ui.state.hostBehaviors[0].name, 'First');
+  assert.equal(ui.el.hostBehaviorSelect.disabled, false);
+  assert.match(ui.el.hostBehaviorSummary.textContent, /Unsaved changes/);
+  assert.equal(ui.toasts.at(-1)[0], 'Revision conflict');
+});
+
+test('a pending behavior Save locks navigation and editing until its result is known', async () => {
+  let finish;
+  const ui = editor({ apiHandler: (_url, body) => new Promise(resolve => {
+    finish = () => resolve({ items: body.items, revision: 3 });
+  }) });
+  ui.state.hostBehaviors = [
+    { id: 'a', name: 'First', instruction: 'First instruction', priority: 1, enabled: true },
+    { id: 'b', name: 'Second', instruction: 'Second instruction', priority: 2, enabled: true },
+  ];
+  ui.state.hostBehaviorRevision = 2;
+  ui.state.hostBehaviorSnapshot = JSON.stringify(ui.state.hostBehaviors);
+  ui.editHostBehaviors();
+  const name = ui.el.hostBehaviorList.children[0].children[0].children[0].children[1];
+  name.value = 'First edited'; name.listeners.input();
+  const pending = ui.saveHostBehaviors();
+  assert.equal(ui.el.hostBehaviorSearch.disabled, true);
+  assert.equal(ui.el.hostBehaviorSelect.disabled, true);
+  assert.equal(ui.el.cancelHostBehaviors.disabled, true);
+  assert.equal(ui.el.hostBehaviorList.children[0].children[0].children[0].children[1].readOnly, true);
+  ui.el.hostBehaviorSearch.value = 'Second'; ui.el.hostBehaviorSearch.listeners.input();
+  ui.el.hostBehaviorSelect.value = 'b'; ui.el.hostBehaviorSelect.listeners.change();
+  assert.equal(ui.state.activeHostBehaviorId, 'a');
+  assert.equal(ui.state.hostBehaviorQuery || '', '');
+  finish(); await pending;
+  assert.equal(ui.state.hostBehaviorDraft, null);
+  assert.equal(ui.state.hostBehaviors[0].name, 'First edited');
+  assert.equal(ui.el.hostBehaviorSearch.disabled, false);
+  assert.equal(ui.el.hostBehaviorSelect.disabled, false);
 });
 
 test('task foundations use independent revisioned drafts, preserve blanks, and cancel on Return', async () => {
