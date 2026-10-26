@@ -1133,6 +1133,8 @@ body {
 
 #foundationsSection { grid-column: 1 / -1; }
 #foundationsSection .overview-group { margin-top: 20px; }
+#foundationsSection .host-behavior-fields { margin-top: 20px; }
+#foundationContract { font-family: ui-monospace, monospace; }
 .foundation-identity { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0; }
 .foundation-identity > div { min-width: 0; }
 .foundation-identity dt { color: var(--muted); font-size: 11px; margin-bottom: 6px; }

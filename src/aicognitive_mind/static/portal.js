@@ -24,6 +24,9 @@ const state = {
   hostBehaviorSaving: false,
   activeHostBehaviorId: null,
   hostBehaviorQuery: "",
+  cognitiveConfiguration: null,
+  cognitiveDraft: null,
+  cognitiveSaving: false,
   foundationIdentity: null,
   taskFoundationDraft: null,
   taskFoundationSaving: false,
@@ -3402,8 +3405,78 @@ async function refreshIdentityConfiguration() {
   }
 }
 
+function renderStartupConfiguration() {
+  const value = state.cognitiveDraft || state.cognitiveConfiguration;
+  document.getElementById("foundationContract").value = value?.base_contract ?? "";
+  document.getElementById("foundationStartup").value = value?.startup_instructions ?? "";
+  updateStartupEditorState();
+}
+
+function updateStartupEditorState() {
+  const editing = Boolean(state.cognitiveDraft);
+  const busy = state.cognitiveSaving === true;
+  const payload = {
+    base_contract: document.getElementById("foundationContract").value,
+    startup_instructions: document.getElementById("foundationStartup").value,
+  };
+  for (const id of ["foundationContract", "foundationStartup"]) document.getElementById(id).readOnly = !editing || busy;
+  document.getElementById("startupEdit").disabled = !state.cognitiveConfiguration || editing || busy;
+  document.getElementById("startupCancel").disabled = !editing || busy;
+  document.getElementById("startupSave").disabled = !editing || busy || JSON.stringify(payload) === state.cognitiveDraft?.baseline;
+}
+
+async function refreshStartupConfiguration() {
+  if (state.cognitiveDraft || state.cognitiveSaving) return;
+  const revision = state.startupConfigurationLoadRevision = (state.startupConfigurationLoadRevision || 0) + 1;
+  try {
+    const result = await api("/v1/admin/cognitive-configuration", {}, true);
+    if (revision !== state.startupConfigurationLoadRevision || state.cognitiveDraft || state.cognitiveSaving) return;
+    state.cognitiveConfiguration = result;
+    state.taskFoundations = state.cognitiveConfiguration.task_foundations || {};
+    renderStartupConfiguration();
+    document.getElementById("startupStatus").textContent = "Startup configuration loaded.";
+  } catch (error) {
+    if (revision === state.startupConfigurationLoadRevision && !state.cognitiveDraft && !state.cognitiveSaving) document.getElementById("startupStatus").textContent = error.message;
+  }
+}
+
+function editStartupConfiguration() {
+  if (!state.cognitiveConfiguration || state.cognitiveDraft || state.cognitiveSaving) return;
+  state.startupConfigurationLoadRevision = (state.startupConfigurationLoadRevision || 0) + 1;
+  const { base_contract, startup_instructions, revision } = state.cognitiveConfiguration;
+  state.cognitiveDraft = { base_contract, startup_instructions, revision, baseline: JSON.stringify({ base_contract, startup_instructions }) };
+  renderStartupConfiguration();
+  document.getElementById("startupStatus").textContent = "Editing startup configuration.";
+}
+
+function cancelStartupConfiguration() {
+  if (state.cognitiveSaving) return;
+  state.cognitiveDraft = null;
+  renderStartupConfiguration();
+  document.getElementById("startupStatus").textContent = "Changes cancelled.";
+}
+
+async function saveStartupConfiguration() {
+  updateStartupEditorState();
+  if (document.getElementById("startupSave").disabled) return;
+  const payload = {
+    expected_revision: state.cognitiveDraft.revision,
+    base_contract: document.getElementById("foundationContract").value,
+    startup_instructions: document.getElementById("foundationStartup").value,
+  };
+  state.cognitiveSaving = true;
+  updateStartupEditorState();
+  try {
+    state.cognitiveConfiguration = await api("/v1/admin/cognitive-configuration", { method: "PUT", body: JSON.stringify(payload) }, true);
+    state.cognitiveDraft = null;
+    renderStartupConfiguration();
+    document.getElementById("startupStatus").textContent = "Startup configuration saved for this Mind.";
+  } catch (error) { document.getElementById("startupStatus").textContent = error.message; }
+  finally { state.cognitiveSaving = false; updateStartupEditorState(); }
+}
+
 async function refreshFoundations() {
-  await refreshIdentityConfiguration();
+  await Promise.all([refreshIdentityConfiguration(), refreshStartupConfiguration()]);
 }
 
 function updateTaskFoundationEditor() {
@@ -3458,6 +3531,10 @@ async function saveTaskFoundation() {
   finally { state.taskFoundationSaving = false; updateTaskFoundationEditor(); }
 }
 
+for (const id of ["foundationContract", "foundationStartup"]) document.getElementById(id)?.addEventListener("input", updateStartupEditorState);
+document.getElementById("startupEdit")?.addEventListener("click", editStartupConfiguration);
+document.getElementById("startupCancel")?.addEventListener("click", cancelStartupConfiguration);
+document.getElementById("startupSave")?.addEventListener("click", saveStartupConfiguration);
 el.taskFoundationEdit?.addEventListener("click", editTaskFoundation);
 el.taskFoundationCancel?.addEventListener("click", cancelTaskFoundationEdit);
 el.taskFoundationSave?.addEventListener("click", saveTaskFoundation);

@@ -1358,10 +1358,11 @@ test('Administrator can save an intentionally blank Mind skill while GitHub stil
 
 function foundationsView(apiHandler) {
   const elements = Object.fromEntries(['foundationSelfName', 'foundationPronouns', 'foundationDevelopment',
-    'foundationValues', 'foundationCommitments', 'foundationRelationships', 'foundationStatus']
+    'foundationValues', 'foundationCommitments', 'foundationRelationships', 'foundationStatus',
+    'foundationContract', 'foundationStartup', 'startupStatus', 'startupEdit', 'startupSave', 'startupCancel']
     .map(id => [id, new Element()]));
   const calls = [];
-  const state = { foundationIdentity: null };
+  const state = { foundationIdentity: null, cognitiveConfiguration: null, cognitiveDraft: null, cognitiveSaving: false };
   const context = vm.createContext({
     state, document: { getElementById: id => elements[id] || null },
     api: async (url, options = {}, authenticated) => {
@@ -1370,7 +1371,9 @@ function foundationsView(apiHandler) {
     },
   });
   for (const name of ['displayLabel', 'foundationIdentityText', 'renderIdentityConfiguration',
-    'refreshIdentityConfiguration', 'refreshFoundations']) {
+    'refreshIdentityConfiguration', 'renderStartupConfiguration', 'updateStartupEditorState',
+    'refreshStartupConfiguration', 'editStartupConfiguration', 'cancelStartupConfiguration', 'saveStartupConfiguration',
+    'refreshFoundations']) {
     const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
     assert.ok(start >= 0, `${name} exists`);
     const next = source.slice(start + 1).search(/^(?:async )?function |^const |^let |^for |^document\.|^el\.|^if \(/m);
@@ -1412,11 +1415,23 @@ test('Foundations distinguishes unavailable identity from unselected and empty i
   }
 });
 
-test('refreshing Foundations only reads identity and does not fetch or write startup configuration', async () => {
-  const ui = foundationsView(() => ({ identity: { self_name: 'Axiom' } }));
+test('refreshing Foundations reads identity and the restored startup configuration without writing either', async () => {
+  const ui = foundationsView(url => url.endsWith('/identity')
+    ? { identity: { self_name: 'Axiom' } }
+    : { revision: 3, base_contract: 'Saved contract', startup_instructions: 'Saved startup' });
   await ui.refreshFoundations();
-  assert.deepEqual(ui.calls, [{ url: '/v1/admin/identity', method: 'GET', body: undefined, authenticated: true }]);
+  assert.deepEqual(ui.calls, [
+    { url: '/v1/admin/identity', method: 'GET', body: undefined, authenticated: true },
+    { url: '/v1/admin/cognitive-configuration', method: 'GET', body: undefined, authenticated: true },
+  ]);
   assert.equal(ui.elements.foundationStatus.textContent, 'Identity loaded.');
+  assert.equal(ui.elements.foundationContract.value, 'Saved contract');
+  assert.equal(ui.elements.foundationStartup.value, 'Saved startup');
+  assert.equal(ui.elements.foundationContract.readOnly, true);
+  assert.equal(ui.elements.foundationStartup.readOnly, true);
+  assert.equal(ui.elements.startupEdit.disabled, false);
+  assert.equal(ui.elements.startupSave.disabled, true);
+  assert.equal(ui.elements.startupCancel.disabled, true);
 });
 
 test('an older identity response cannot overwrite a newer refresh', async () => {
@@ -1463,6 +1478,125 @@ test('a failed current identity refresh clears old identity and reports the fail
   }
   assert.equal(ui.elements.foundationStatus.textContent, 'Identity is unavailable');
   assert.equal(ui.calls.length, 2);
+});
+
+
+test('startup edits stay isolated until Save and Cancel restores the saved values', async () => {
+  const saved = { revision: 3, base_contract: 'Saved contract', startup_instructions: 'Saved startup',
+    task_foundations: { vision: 'Vision foundation' } };
+  const ui = foundationsView(() => saved);
+  await ui.refreshStartupConfiguration();
+  ui.editStartupConfiguration();
+  assert.equal(ui.elements.foundationContract.readOnly, false);
+  assert.equal(ui.elements.foundationStartup.readOnly, false);
+  assert.equal(ui.elements.startupEdit.disabled, true);
+  assert.equal(ui.elements.startupSave.disabled, true);
+  ui.elements.foundationContract.value = 'Draft contract';
+  ui.elements.foundationStartup.value = '';
+  ui.updateStartupEditorState();
+  assert.equal(ui.elements.startupSave.disabled, false);
+  assert.equal(ui.elements.startupCancel.disabled, false);
+  assert.equal(ui.state.cognitiveConfiguration.base_contract, 'Saved contract');
+  await ui.refreshStartupConfiguration();
+  assert.equal(ui.calls.length, 1);
+  ui.cancelStartupConfiguration();
+  assert.equal(ui.elements.foundationContract.value, 'Saved contract');
+  assert.equal(ui.elements.foundationStartup.value, 'Saved startup');
+  assert.equal(ui.state.cognitiveDraft, null);
+  assert.equal(ui.elements.foundationContract.readOnly, true);
+  assert.equal(ui.elements.startupSave.disabled, true);
+  assert.equal(saved.base_contract, 'Saved contract');
+});
+
+test('startup Save keeps explicit blanks and revision without changing identity or task foundations', async () => {
+  const saved = { revision: 7, base_contract: 'Original contract', startup_instructions: 'Original startup',
+    task_foundations: { vision: 'Keep vision', reasoning: 'Keep reasoning' } };
+  let resolveSave;
+  const ui = foundationsView((url, options) => {
+    if (!options.body) return saved;
+    return new Promise(resolve => { resolveSave = resolve; });
+  });
+  await ui.refreshStartupConfiguration();
+  ui.editStartupConfiguration();
+  ui.elements.foundationContract.value = '';
+  ui.elements.foundationStartup.value = 'Changed startup';
+  const pending = ui.saveStartupConfiguration();
+  const request = ui.calls.at(-1);
+  assert.deepEqual({ url: request.url, method: request.method, authenticated: request.authenticated }, {
+    url: '/v1/admin/cognitive-configuration', method: 'PUT', authenticated: true,
+  });
+  assert.deepEqual(JSON.parse(request.body), {
+    expected_revision: 7, base_contract: '', startup_instructions: 'Changed startup',
+  });
+  assert.equal(ui.elements.foundationContract.readOnly, true);
+  for (const id of ['startupEdit', 'startupSave', 'startupCancel']) assert.equal(ui.elements[id].disabled, true);
+  await ui.refreshStartupConfiguration();
+  assert.equal(ui.calls.length, 2);
+  ui.cancelStartupConfiguration();
+  assert.notEqual(ui.state.cognitiveDraft, null);
+  resolveSave({ ...saved, revision: 8, base_contract: '', startup_instructions: 'Changed startup' });
+  await pending;
+  assert.equal(ui.state.cognitiveConfiguration.revision, 8);
+  assert.equal(ui.elements.foundationContract.value, '');
+  assert.equal(ui.state.cognitiveDraft, null);
+  assert.deepEqual(JSON.parse(JSON.stringify(ui.state.cognitiveConfiguration.task_foundations)), saved.task_foundations);
+  assert.equal(ui.calls.some(request => request.url === '/v1/admin/identity'), false);
+});
+
+test('failed startup Save retains the draft and revision so it can be corrected or cancelled', async () => {
+  const ui = foundationsView((url, options) => {
+    if (options.body) throw new Error('Configuration revision changed');
+    return { revision: 3, base_contract: 'Saved contract', startup_instructions: 'Saved startup' };
+  });
+  await ui.refreshStartupConfiguration();
+  ui.editStartupConfiguration();
+  ui.elements.foundationStartup.value = 'Unsaved startup';
+  await ui.saveStartupConfiguration();
+  assert.equal(ui.elements.startupStatus.textContent, 'Configuration revision changed');
+  assert.equal(ui.elements.foundationStartup.value, 'Unsaved startup');
+  assert.equal(ui.state.cognitiveDraft.revision, 3);
+  assert.equal(ui.elements.foundationStartup.readOnly, false);
+  assert.equal(ui.elements.startupSave.disabled, false);
+  ui.cancelStartupConfiguration();
+  assert.equal(ui.elements.foundationStartup.value, 'Saved startup');
+  assert.equal(ui.state.cognitiveConfiguration.revision, 3);
+});
+
+test('an in-flight startup refresh cannot overwrite an edit even after Cancel', async () => {
+  let resolveOld;
+  let reads = 0;
+  const ui = foundationsView(() => {
+    if (++reads === 1) return { revision: 3, base_contract: 'Current contract', startup_instructions: 'Current startup' };
+    return new Promise(resolve => { resolveOld = resolve; });
+  });
+  await ui.refreshStartupConfiguration();
+  const pending = ui.refreshStartupConfiguration();
+  ui.editStartupConfiguration();
+  ui.elements.foundationStartup.value = 'Unsaved startup';
+  ui.updateStartupEditorState();
+  ui.cancelStartupConfiguration();
+  resolveOld({ revision: 2, base_contract: 'Older contract', startup_instructions: 'Older startup' });
+  await pending;
+  assert.equal(ui.state.cognitiveConfiguration.revision, 3);
+  assert.equal(ui.elements.foundationStartup.value, 'Current startup');
+  assert.equal(ui.elements.startupStatus.textContent, 'Changes cancelled.');
+});
+
+test('an older startup success or failure cannot replace the latest loaded configuration', async () => {
+  for (const olderFails of [false, true]) {
+    const pending = [];
+    const ui = foundationsView(() => new Promise((resolve, reject) => pending.push({ resolve, reject })));
+    const older = ui.refreshStartupConfiguration();
+    const newer = ui.refreshStartupConfiguration();
+    pending[1].resolve({ revision: 8, base_contract: 'Current contract', startup_instructions: 'Current startup' });
+    await newer;
+    if (olderFails) pending[0].reject(new Error('Older request failed'));
+    else pending[0].resolve({ revision: 2, base_contract: 'Older contract', startup_instructions: 'Older startup' });
+    await older;
+    assert.equal(ui.state.cognitiveConfiguration.revision, 8);
+    assert.equal(ui.elements.foundationStartup.value, 'Current startup');
+    assert.equal(ui.elements.startupStatus.textContent, 'Startup configuration loaded.');
+  }
 });
 
 function currentStatePortal({ diagnosticsHandler, bodySettings = true, fallbackSettings = bodySettings, voiceHandler } = {}) {

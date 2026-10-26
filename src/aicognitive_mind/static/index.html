@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261025-foundations-view">
+  <link rel="stylesheet" href="/static/portal.css?v=20261026-foundations-startup">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -178,6 +178,12 @@
               </dl>
               <p id="foundationStatus" role="status" aria-live="polite"></p>
             </section>
+            <section class="overview-group"><h4>Startup</h4><div class="host-behavior-fields">
+              <label class="host-behavior-field host-behavior-instruction">Base operating contract<textarea id="foundationContract" rows="18" readonly spellcheck="false"></textarea></label>
+              <label class="host-behavior-field host-behavior-instruction">Startup instructions<textarea id="foundationStartup" rows="12" readonly spellcheck="false"></textarea></label>
+            </div>
+            <div class="edit-actions"><button id="startupEdit" class="secondary-button" type="button" aria-label="Edit startup instructions" title="Edit startup instructions" disabled>Edit</button><button id="startupSave" class="primary-button" type="button" aria-label="Save startup instructions" title="Save startup instructions" disabled>Save Startup</button><button id="startupCancel" class="secondary-button" type="button" aria-label="Cancel startup changes" title="Cancel startup changes" disabled>Cancel</button></div>
+            <p id="startupStatus" role="status" aria-live="polite"></p></section>
           </article>
           <article id="skillsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
@@ -716,6 +722,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261025-account-body"></script>
+  <script src="/static/portal.js?v=20261026-foundations-startup"></script>
 </body>
 </html>
