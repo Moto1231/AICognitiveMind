@@ -1465,7 +1465,7 @@ test('a failed current identity refresh clears old identity and reports the fail
   assert.equal(ui.calls.length, 2);
 });
 
-function currentStatePortal({ diagnosticsHandler, bodySettings = true, voiceHandler } = {}) {
+function currentStatePortal({ diagnosticsHandler, bodySettings = true, fallbackSettings = bodySettings, voiceHandler } = {}) {
   const elements = new Proxy({}, { get: (target, id) => {
     if (!target[id]) {
       target[id] = new Element();
@@ -1488,7 +1488,7 @@ function currentStatePortal({ diagnosticsHandler, bodySettings = true, voiceHand
   };
   const status = { mind: { identity, developmental_state: 'genesis', created_at: '2026-10-25T00:00:00Z' },
     integration: {}, durable_memory_count: 1, journal_experience_count: 2,
-    administration: { body_settings_available: bodySettings } };
+    administration: { body_settings_available: bodySettings, body_fallback_settings_available: fallbackSettings } };
   const context = vm.createContext({
     state, el: elements, filters: { admin: {}, mind: {} },
     document: { getElementById: id => elements[id], createElement: tag => new Element(tag) },
@@ -1518,7 +1518,7 @@ function currentStatePortal({ diagnosticsHandler, bodySettings = true, voiceHand
     },
   });
   vm.runInContext(source.match(/^let diagnosticsRevision = .*;$/m)[0], context);
-  for (const name of ['setMode', 'bodySettingsAvailable', 'renderBodySettingsAvailability', 'updateVoiceSliderReadouts',
+  for (const name of ['setMode', 'bodySettingsAvailable', 'bodyFallbackSettingsAvailable', 'renderBodySettingsAvailability', 'updateVoiceSliderReadouts',
     'loadVoiceSettings', 'saveVoiceSettings', 'refreshBodyFallbackSettings', 'saveBodyFallbackSettings',
     'enterAdminMode', 'renderStatus', 'refreshStatus', 'refresh',
     'formatCurrentIdentity', 'refreshDiagnostics', 'refreshAdmin']) {
@@ -1705,4 +1705,19 @@ test('switching to account scope clears loaded root voice values and ignores an 
   assert.equal(ui.state.voiceSettingsLoaded, false);
   assert.equal(ui.elements.voiceSettingsStatus.textContent, 'Unavailable for this account.');
   assert.equal(ui.toasts.length, 0);
+});
+
+
+test('scoped voice settings can refresh and save while the deployment fallback switch stays unavailable', async () => {
+  const ui = currentStatePortal({ bodySettings: true, fallbackSettings: false });
+  await ui.enterAdminMode();
+  assert.equal(ui.calls.includes('/v1/admin/body/voice/settings'), true);
+  assert.equal(ui.calls.includes('/v1/admin/body/fallback'), false);
+  assert.equal(ui.elements.saveVoiceSettings.disabled, false);
+  assert.equal(ui.elements.saveBodyFallbackSetting.disabled, true);
+  await ui.saveBodyFallbackSettings();
+  assert.equal(ui.calls.includes('/v1/admin/body/fallback'), false);
+  ui.elements.voiceName.value = 'Account voice';
+  await ui.saveVoiceSettings();
+  assert.equal(ui.requests.find(request => request.method === 'POST').body.voice_name, 'Account voice');
 });

@@ -104,6 +104,56 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
             json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}},
         )
 
+    async def test_account_realtime_route_stays_closed_before_global_credentials_or_token_mint(self):
+        account = SimpleNamespace(mind_id="synthetic-account")
+        accounts = SimpleNamespace(resolve_subject=AsyncMock(return_value=account))
+        self.client.cookies.set("axiom_portal_session", "synthetic-session")
+        configured = self.settings.model_copy(update={"openai_api_key": "synthetic-root-key"})
+        with patch.object(self.deployment, "read_portal_session", AsyncMock(return_value={
+            "mind_id": account.mind_id, "expires_at": time.time() + 3600,
+        })), patch.object(self.provider, "accounts", accounts), patch.object(
+            self.provider, "mint_service_access_token", new_callable=AsyncMock,
+        ) as mint, patch.object(self.deployment, "settings", configured), patch(
+            "aicognitive_mind.deployment.httpx.AsyncClient",
+        ) as upstream:
+            response = await self.client.post(
+                "/v1/body/realtime/session", content="synthetic-sdp-offer",
+                headers={"Content-Type": "application/sdp"},
+            )
+        self.assertEqual(response.status_code, 403, response.text)
+        self.assertEqual(response.json()["detail"], "Realtime voice is not configured for this account.")
+        accounts.resolve_subject.assert_awaited_once_with(account.mind_id)
+        mint.assert_not_awaited()
+        upstream.assert_not_called()
+
+    async def test_legacy_realtime_route_keeps_authenticated_session_contract(self):
+        accounts = SimpleNamespace(resolve_subject=AsyncMock(return_value=SimpleNamespace(mind_id="__legacy__")))
+        self.client.cookies.set("axiom_portal_session", "synthetic-legacy-session")
+        configured = self.settings.model_copy(update={"openai_api_key": "synthetic-root-key"})
+        upstream_client = SimpleNamespace(post=AsyncMock(return_value=httpx.Response(
+            201, content=b"synthetic-sdp-answer", headers={"Content-Type": "application/sdp"},
+        )))
+        with patch.object(self.deployment, "read_portal_session", AsyncMock(return_value={
+            "mind_id": "__legacy__", "expires_at": time.time() + 3600,
+        })), patch.object(self.provider, "accounts", accounts), patch.object(
+            self.provider, "mint_service_access_token", AsyncMock(return_value="synthetic-mcp-token"),
+        ) as mint, patch.object(self.deployment, "settings", configured), patch(
+            "aicognitive_mind.deployment.httpx.AsyncClient",
+        ) as upstream:
+            upstream.return_value.__aenter__.return_value = upstream_client
+            response = await self.client.post(
+                "/v1/body/realtime/session", content="synthetic-sdp-offer",
+                headers={"Content-Type": "application/sdp"},
+            )
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.text, "synthetic-sdp-answer")
+        mint.assert_awaited_once_with(subject="__legacy__", client_id="axiom-realtime")
+        self.assertEqual(upstream_client.post.await_args.args[0], "https://api.openai.com/v1/realtime/calls")
+        submitted = upstream_client.post.await_args.kwargs
+        self.assertEqual(submitted["headers"]["Authorization"], "Bearer synthetic-root-key")
+        self.assertEqual(submitted["files"]["sdp"], (None, "synthetic-sdp-offer", "application/sdp"))
+        self.assertEqual(json.loads(submitted["files"]["session"][1])["tools"][0]["authorization"], "synthetic-mcp-token")
+
     @deployment_running
     async def test_transport_oauth_and_packaged_url_use_one_exact_endpoint(self):
         manifest = json.loads(Path("plugins/axiom-mind/mcp.json").read_text())

@@ -465,21 +465,42 @@ def _request_runtime(request: Request) -> Any:
     context = getattr(request.state, "tenant_runtime", None)
     if context is not None:
         return context
-    settings = get_settings()
+    # Account cognition uses its saved task endpoints or connected host. Never
+    # inherit deployment provider credentials as an unconfigured fallback.
+    settings = get_settings().model_copy(update={
+        "standalone_reasoning_provider": "disabled", "reasoning_provider": "disabled",
+        "openai_api_key": None, "gemini_api_key": None, "fish_audio_api_key": None,
+        "fish_audio_model": "s2.1-pro-free", "fish_audio_reference_id": None,
+    })
     records = RuntimeRecords(tenant.mind)
     service = CognitiveMcpService(mind=tenant.mind, journal=tenant.journal, memory=tenant.memory)
     fallback = StandaloneRuntime(settings, records)
     hosts = HostRuntime(tenant.mind, service, settings.reasoning_timeout_seconds)
-    interpreter = HostAwareInterpreter(fallback, hosts)
+    interpreter = HostAwareInterpreter(fallback, hosts, allow_standalone_fallback=True)
     evidence_review = SensoryEvidenceReviewTool(
         evidence=tenant.evidence, journal=tenant.journal, interpreter=interpreter,
     )
     core = HostAwareCore(CognitiveCore(
         mind=tenant.mind, journal=tenant.journal, memory=tenant.memory,
         diagnostics=tenant.diagnostics, engine=fallback, reasoning_tools=(evidence_review,),
-    ), hosts)
+    ), hosts, allow_standalone_fallback=True)
+    from aicognitive_mind.voice_settings import VoiceSettings
+
+    eyes = BodyQueue(records, "eyes", BrowserVisionIngress())
+    ears = BodyQueue(records, "ears", BrowserAudioIngress())
+    face = BodyQueue(records, "face", BrowserAvatarOutput())
+    mouth = BodyQueue(records, "mouth", BrowserVoiceOutput())
+    body = BodyRuntime(vision=eyes, audio=ears, voice=mouth, avatar=face)
+    bridge = MindBodyBridge(
+        core=core, body=body, interpreter=interpreter,
+        evidence=tenant.evidence, journal=tenant.journal,
+        presence=request.app.state.presence,
+    )
     context = SimpleNamespace(
         core=core, mcp_service=service, hosts=hosts, standalone=fallback,
+        body=body, mind_body=bridge, voice_settings=VoiceSettings(tenant.mind),
+        browser_eyes=eyes, browser_ears=ears, browser_face=face, browser_mouth=mouth,
+        runtime_settings=settings,
         standalone_reasoning_provider=settings.effective_standalone_reasoning_provider,
         runtime_records=records, diagnostics=tenant.diagnostics,
         mind_store=tenant.mind, journal_store=tenant.journal,
@@ -794,14 +815,12 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
         # unknown, expired or ambiguous cookie never falls back to that Mind.
         if account.mind_id == "__legacy__":
             return await call_next(request)
-        # These handlers still use deployment-wide Body/backup/GitHub state.
-        # Until they have account-scoped implementations, do not silently run
-        # them against another Mind's resources. Explicit root admin access is
-        # unchanged; the cognitive and scoped configuration routes remain usable.
-        if request.url.path == "/v1/admin/backup" or request.url.path.startswith((
-            "/body/", "/v1/body/", "/v1/mind/body/",
-            "/v1/admin/body/",
-        )):
+        # Backup and the deployment fallback switch remain root administration.
+        # Body pages, queues, cognition and voice settings use the verified Mind.
+        if request.url.path == "/v1/admin/backup" or (
+            request.url.path.startswith("/v1/admin/body/")
+            and request.url.path != "/v1/admin/body/voice/settings"
+        ):
             return JSONResponse(
                 {"detail": "This endpoint is not available for account-scoped sessions."},
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -852,32 +871,35 @@ async def live_body_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "live_body.html")
 
 
+def _body_voice_settings_response(
+    request: Request, values: dict[str, Any], *, include_secret: bool,
+) -> dict[str, Any]:
+    if getattr(request.state, "tenant_storage", None) is None:
+        settings = get_settings()
+        if include_secret and not values.get("fishAudioApiKey"):
+            values["fishAudioApiKey"] = settings.fish_audio_api_key
+        if values.get("fishAudioModel") is None:
+            values["fishAudioModel"] = settings.fish_audio_model
+        if values.get("fishAudioReferenceId") is None:
+            values["fishAudioReferenceId"] = settings.fish_audio_reference_id
+    if not include_secret:
+        values.pop("fishAudioApiKey", None)
+    return values
+
+
 @app.get("/v1/body/voice/settings")
 async def body_voice_settings(request: Request) -> dict[str, Any]:
     """Read non-secret voice preferences shared with Body clients."""
-    values = await request.app.state.voice_settings.read()
-    values.pop("fishAudioApiKey", None)
-    settings = get_settings()
-    if values.get("fishAudioModel") is None:
-        values["fishAudioModel"] = settings.fish_audio_model
-    if values.get("fishAudioReferenceId") is None:
-        values["fishAudioReferenceId"] = settings.fish_audio_reference_id
-    return values
+    values = await _request_runtime(request).voice_settings.read()
+    return _body_voice_settings_response(request, values, include_secret=False)
 
 
 @app.get("/v1/admin/body/voice/settings")
 async def admin_body_voice_settings(request: Request) -> dict[str, Any]:
     """Read voice settings, including the API key, for authenticated administrators only."""
     require_admin(request)
-    values = await request.app.state.voice_settings.read()
-    settings = get_settings()
-    if not values.get("fishAudioApiKey"):
-        values["fishAudioApiKey"] = settings.fish_audio_api_key
-    if values.get("fishAudioModel") is None:
-        values["fishAudioModel"] = settings.fish_audio_model
-    if values.get("fishAudioReferenceId") is None:
-        values["fishAudioReferenceId"] = settings.fish_audio_reference_id
-    return values
+    values = await _request_runtime(request).voice_settings.read()
+    return _body_voice_settings_response(request, values, include_secret=True)
 
 
 @app.post("/v1/admin/body/voice/settings")
@@ -888,7 +910,7 @@ async def update_admin_body_voice_settings(
     """Persist voice and Fish Audio parameters for an authenticated administrator."""
     require_admin(request)
     try:
-        values = await request.app.state.voice_settings.update(
+        values = await _request_runtime(request).voice_settings.update(
             expected_revision=payload.expected_revision,
             voice_name=payload.voice_name,
             fish_audio_api_key=payload.fish_audio_api_key,
@@ -902,14 +924,7 @@ async def update_admin_body_voice_settings(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    settings = get_settings()
-    if not values.get("fishAudioApiKey"):
-        values["fishAudioApiKey"] = settings.fish_audio_api_key
-    if values.get("fishAudioModel") is None:
-        values["fishAudioModel"] = settings.fish_audio_model
-    if values.get("fishAudioReferenceId") is None:
-        values["fishAudioReferenceId"] = settings.fish_audio_reference_id
-    return values
+    return _body_voice_settings_response(request, values, include_secret=True)
 
 
 @app.post("/v1/mind/body/see", response_model=EmbodiedInteractionResult)
@@ -917,7 +932,7 @@ async def mind_see(
     request: Request,
     express: bool = True,
 ) -> EmbodiedInteractionResult:
-    bridge = cast(MindBodyBridge, request.app.state.mind_body)
+    bridge = cast(MindBodyBridge, _request_runtime(request).mind_body)
     try:
         return await bridge.see(
             express=express, presence_scope=_body_presence_scope(request)
@@ -947,7 +962,7 @@ async def mind_hear(
     request: Request,
     express: bool = True,
 ) -> EmbodiedInteractionResult:
-    bridge = cast(MindBodyBridge, request.app.state.mind_body)
+    bridge = cast(MindBodyBridge, _request_runtime(request).mind_body)
     try:
         return await bridge.hear(
             express=express, presence_scope=_body_presence_scope(request)
@@ -1074,7 +1089,7 @@ async def receive_browser_observation(
     body: BrowserVisionObservationRequest,
     request: Request,
 ) -> EmbodiedInteractionResult:
-    eyes = cast(BodyQueue, request.app.state.browser_eyes)
+    eyes = cast(BodyQueue, _request_runtime(request).browser_eyes)
     try:
         percept = type(eyes.adapter)().accept(
             image_data_url=body.image_data_url,
@@ -1082,7 +1097,7 @@ async def receive_browser_observation(
             height=body.height,
             source=body.source,
         )
-        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        bridge = cast(MindBodyBridge, _request_runtime(request).mind_body)
         return await bridge.perceive(
             percept,
             express=False,
@@ -1099,13 +1114,13 @@ async def receive_browser_observation(
 
 @app.get("/v1/body/eyes/status")
 async def eyes_status(request: Request) -> DeviceStatus:
-    eyes = cast(BrowserVisionIngress, request.app.state.browser_eyes)
+    eyes = cast(BrowserVisionIngress, _request_runtime(request).browser_eyes)
     return await eyes.status()
 
 
 @app.get("/v1/body/eyes/see", response_model=Percept)
 async def body_see(request: Request) -> Percept:
-    runtime = cast(BodyRuntime, request.app.state.body)
+    runtime = cast(BodyRuntime, _request_runtime(request).body)
     try:
         return await runtime.see()
     except RuntimeError as exc:
@@ -1125,14 +1140,14 @@ async def receive_browser_audio_observation(
     body: BrowserAudioObservationRequest,
     request: Request,
 ) -> EmbodiedInteractionResult:
-    ears = cast(BodyQueue, request.app.state.browser_ears)
+    ears = cast(BodyQueue, _request_runtime(request).browser_ears)
     try:
         percept = type(ears.adapter)().accept(
             audio_data_url=body.audio_data_url,
             duration_ms=body.duration_ms,
             source=body.source,
         )
-        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        bridge = cast(MindBodyBridge, _request_runtime(request).mind_body)
         return await bridge.perceive(
             percept,
             express=False,
@@ -1149,13 +1164,13 @@ async def receive_browser_audio_observation(
 
 @app.get("/v1/body/ears/status")
 async def ears_status(request: Request) -> DeviceStatus:
-    ears = cast(BrowserAudioIngress, request.app.state.browser_ears)
+    ears = cast(BrowserAudioIngress, _request_runtime(request).browser_ears)
     return await ears.status()
 
 
 @app.get("/v1/body/ears/hear", response_model=Percept)
 async def body_hear(request: Request) -> Percept:
-    runtime = cast(BodyRuntime, request.app.state.body)
+    runtime = cast(BodyRuntime, _request_runtime(request).body)
     try:
         return await runtime.hear()
     except RuntimeError as exc:
@@ -1175,7 +1190,7 @@ async def set_face_expression(
     body: FaceExpressionRequest,
     request: Request,
 ) -> ExpressionIntent:
-    runtime = cast(BodyRuntime, request.app.state.body)
+    runtime = cast(BodyRuntime, _request_runtime(request).body)
     intent = ExpressionIntent(
         modality=ExpressionModality.AVATAR,
         text=body.text,
@@ -1205,13 +1220,13 @@ async def default_face_avatar() -> Response:
 
 @app.get("/v1/body/face/status")
 async def face_status(request: Request) -> DeviceStatus:
-    face = cast(BrowserAvatarOutput, request.app.state.browser_face)
+    face = cast(BrowserAvatarOutput, _request_runtime(request).browser_face)
     return await face.status()
 
 
 @app.get("/v1/body/face/next", response_model=ExpressionIntent | None)
 async def next_face_intent(request: Request, response: Response) -> ExpressionIntent | None:
-    face = cast(BrowserAvatarOutput, request.app.state.browser_face)
+    face = cast(BrowserAvatarOutput, _request_runtime(request).browser_face)
     if body_session.get() == "legacy":
         return await face.consume()
     intent, receipt = await face.deliver()
@@ -1234,7 +1249,7 @@ async def register_active_body_session(request: Request) -> dict[str, bool]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A named live Body session is required",
         )
-    records = cast(RuntimeRecords, request.app.state.runtime_records)
+    records = cast(RuntimeRecords, _request_runtime(request).runtime_records)
     value = {"session_id": session_id, "updated_at": time_module.time()}
     for _ in range(10):
         before = await records.get("active_body_session")
@@ -1257,8 +1272,8 @@ async def speak_through_mouth(
     body: MouthSpeechRequest,
     request: Request,
 ) -> ExpressionIntent:
-    runtime = cast(BodyRuntime, request.app.state.body)
-    voice_settings = await request.app.state.voice_settings.read()
+    runtime = cast(BodyRuntime, _request_runtime(request).body)
+    voice_settings = await _request_runtime(request).voice_settings.read()
     intent = configured_voice_intent(
         body.text,
         voice_settings,
@@ -1283,11 +1298,12 @@ async def fish_audio_speech(
     request: Request,
 ) -> Response:
     """Render Axiom's spoken output through Fish Audio without exposing its API key."""
-    settings = get_settings()
-    voice_settings = await request.app.state.voice_settings.read()
+    context = _request_runtime(request)
+    settings = getattr(context, "runtime_settings", None) or get_settings()
+    voice_settings = await context.voice_settings.read()
     # Browser voice settings use a 0-1 volume scale; Fish uses dB.
     fish_volume = (body.volume - 1.0) * 20.0
-    dispatcher = TaskModelDispatcher(request.app.state.runtime_records)
+    dispatcher = TaskModelDispatcher(_request_runtime(request).runtime_records)
     try:
         if await dispatcher.is_configured("audio_voice"):
             audio = await dispatcher.execute(
@@ -1306,7 +1322,9 @@ async def fish_audio_speech(
             if not fish_api_key:
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Audio/Voice task is not configured and FISH_AUDIO_API_KEY is absent.",
+                    detail="Audio/Voice task is not configured for this account."
+                    if getattr(request.state, "tenant_storage", None) is not None
+                    else "Audio/Voice task is not configured and FISH_AUDIO_API_KEY is absent.",
                 )
             renderer = FishAudioRenderer(
                 api_key=fish_api_key,
@@ -1336,13 +1354,13 @@ async def fish_audio_speech(
 
 @app.get("/v1/body/mouth/status")
 async def mouth_status(request: Request) -> DeviceStatus:
-    mouth = cast(BrowserVoiceOutput, request.app.state.browser_mouth)
+    mouth = cast(BrowserVoiceOutput, _request_runtime(request).browser_mouth)
     return await mouth.status()
 
 
 @app.get("/v1/body/mouth/next", response_model=ExpressionIntent | None)
 async def next_mouth_intent(request: Request, response: Response) -> ExpressionIntent | None:
-    mouth = cast(BrowserVoiceOutput, request.app.state.browser_mouth)
+    mouth = cast(BrowserVoiceOutput, _request_runtime(request).browser_mouth)
     if body_session.get() == "legacy":
         return await mouth.consume()
     intent, receipt = await mouth.deliver()
@@ -1361,11 +1379,11 @@ async def mouth_output_events(request: Request) -> StreamingResponse:
             detail="A named live Body session is required",
         )
 
-    subscriber = subscribe_body_output(session_id, "mouth")
+    mouth = cast(BodyQueue, _request_runtime(request).browser_mouth)
+    subscriber = subscribe_body_output(session_id, "mouth", mind_scope=mouth.output_scope)
 
     async def stream() -> AsyncIterator[str]:
         token = body_session.set(session_id)
-        mouth = cast(BrowserVoiceOutput, request.app.state.browser_mouth)
         try:
             # Subscribe before checking the durable queue to close the enqueue/connect race.
             intent, _ = await mouth.deliver()
@@ -1386,7 +1404,7 @@ async def mouth_output_events(request: Request) -> StreamingResponse:
                         subscriber.get_nowait()
                     yield "event: voice-ready\ndata: {}\n\n"
         finally:
-            unsubscribe_body_output(session_id, "mouth", subscriber)
+            unsubscribe_body_output(session_id, "mouth", subscriber, mind_scope=mouth.output_scope)
             body_session.reset(token)
 
     return StreamingResponse(
@@ -1400,7 +1418,7 @@ async def mouth_output_events(request: Request) -> StreamingResponse:
 async def acknowledge_body_output(modality: str, request: Request, delivery_id: str = Query(min_length=1, max_length=64)) -> dict[str, bool]:
     if modality not in {"face", "mouth"}:
         raise HTTPException(404, "Unknown output modality")
-    queue = getattr(request.app.state, "browser_" + modality)
+    queue = getattr(_request_runtime(request), "browser_" + modality)
     await queue.acknowledge(delivery_id)
     return {"acknowledged": True}
 
@@ -1408,22 +1426,32 @@ async def acknowledge_body_output(modality: str, request: Request, delivery_id: 
 @app.get("/v1/body/hosts/status")
 async def body_hosts_status(request: Request) -> dict[str, Any]:
     """Return safe, read-only connection and Body request diagnostics."""
-    hosts = getattr(request.app.state, "hosts", None)
+    scoped = getattr(request.state, "tenant_storage", None) is not None
+    realtime_available = not scoped and bool(get_settings().openai_api_key)
+    realtime = {
+        "available": realtime_available,
+        "reason": "" if realtime_available else (
+            "Realtime voice is not configured for this account." if scoped
+            else "Realtime voice is not configured."
+        ),
+    }
+    hosts = getattr(_request_runtime(request), "hosts", None)
     if hosts is None:
         return {
+            "realtime": realtime,
             "connected": False,
             "host": None,
             "lease_remaining_seconds": 0,
             "last_heartbeat_age_seconds": None,
             "requests": {"pending": 0, "in_progress": 0, "items": []},
         }
-    return await hosts.status()
+    return {**await hosts.status(), "realtime": realtime}
 
 
 @app.get("/v1/body/camera/request")
 async def next_camera_request(request: Request) -> dict[str, Any] | None:
     """Let the active browser Body poll for a host-requested bounded camera capture."""
-    return await CameraRequestRuntime(request.app.state.mind_store).next()
+    return await CameraRequestRuntime(_request_runtime(request).mind_store).next()
 
 
 @app.post("/v1/body/camera/complete")
@@ -1431,7 +1459,7 @@ async def complete_camera_request(request: Request) -> dict[str, Any]:
     """Return a browser-owned camera capture to the waiting MCP host."""
     payload = await request.json()
     try:
-        return await CameraRequestRuntime(request.app.state.mind_store).complete(
+        return await CameraRequestRuntime(_request_runtime(request).mind_store).complete(
             request_id=str(payload["request_id"]),
             image_data_url=str(payload["image_data_url"]),
             width=int(payload["width"]),
@@ -1501,7 +1529,8 @@ async def portal_status(request: Request) -> dict[str, Any]:
         result["administration"] = {
             "pin_required": bool(runtime_settings.admin_pin),
             "memory_editing": True,
-            "body_settings_available": getattr(request.state, "tenant_storage", None) is None,
+            "body_settings_available": True,
+            "body_fallback_settings_available": getattr(request.state, "tenant_storage", None) is None,
         }
         return result
     except RuntimeError as exc:
@@ -2257,7 +2286,7 @@ async def embodied_text_interaction(
     express: bool = True,
 ) -> InteractionResult:
     try:
-        bridge = cast(MindBodyBridge, request.app.state.mind_body)
+        bridge = cast(MindBodyBridge, _request_runtime(request).mind_body)
         return await bridge.interact(
             body.message,
             express=express,

@@ -698,8 +698,11 @@ class HostRuntime:
 class HostAwareCore:
     """Route Body cognition to a live host; never silently double-run a timeout."""
 
-    def __init__(self, core: Any, hosts: HostRuntime) -> None:
+    def __init__(
+        self, core: Any, hosts: HostRuntime, *, allow_standalone_fallback: bool | None = None,
+    ) -> None:
         self.core, self.hosts = core, hosts
+        self.allow_standalone_fallback = allow_standalone_fallback
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.core, name)
@@ -719,7 +722,10 @@ class HostAwareCore:
             return InteractionResult.model_validate(await self.hosts.submit(message))
         from aicognitive_mind.config import body_allow_standalone_fallback_enabled
 
-        if not body_allow_standalone_fallback_enabled():
+        fallback_enabled = self.allow_standalone_fallback
+        if fallback_enabled is None:
+            fallback_enabled = body_allow_standalone_fallback_enabled()
+        if not fallback_enabled:
             raise RuntimeError(
                 "No external reasoning host is attached. Body standalone fallback is disabled."
             )
@@ -762,8 +768,11 @@ class HostAwareCore:
 
 
 class HostAwareInterpreter:
-    def __init__(self, fallback: Any, hosts: HostRuntime) -> None:
+    def __init__(
+        self, fallback: Any, hosts: HostRuntime, *, allow_standalone_fallback: bool | None = None,
+    ) -> None:
         self.fallback, self.hosts = fallback, hosts
+        self.allow_standalone_fallback = allow_standalone_fallback
         self.task_dispatcher = (
             TaskModelDispatcher(fallback.records)
             if getattr(fallback, "records", None) is not None else None
@@ -846,7 +855,10 @@ class HostAwareInterpreter:
             )
         from aicognitive_mind.config import body_allow_standalone_fallback_enabled
 
-        if not body_allow_standalone_fallback_enabled():
+        fallback_enabled = self.allow_standalone_fallback
+        if fallback_enabled is None:
+            fallback_enabled = body_allow_standalone_fallback_enabled()
+        if not fallback_enabled:
             modality = getattr(getattr(percept, "modality", None), "value", "unknown")
             if modality in {"audio", "vision"} and self.task_dispatcher is not None:
                 task_label = {
