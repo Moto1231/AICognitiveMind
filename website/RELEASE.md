@@ -1,5 +1,20 @@
 # Private preview release
 
+## Version 3 — context-first language
+
+Published 2026-10-25 (America/Chicago); native private deployment confirmed succeeded.
+
+- URL: https://axiom-continuity-portal.snowydeer18.chatgpt.site
+- Headline: Persistent context. Your choice of AI.
+- Native source commit: 535286b93ae5630bb3d03f71d571e57f13958cb0
+- Saved version: appgprj_6ade9371c8688191994b9b27a3520bc1~appgver_baba17d98fb88191a7bb5680625f0939
+- Deployment: appgdep_6adeaf588d348191b26fb3d6e2314059
+- Audience: existing owner-private access preserved.
+
+The main copy, diagram and guide now use persistent context and familiar AI/model/agent terminology. MCP connections remain described as compatible apps/agents, separate from configured model endpoints. Selective recall and supported-model limits remain explicit. Actual product names such as Axiom Current State and concrete subscription/access states are unchanged. The diagram's label size accommodates Context.
+
+Verified: TypeScript, production build, source diff checks and native publication. The previous version's 18 access checks remain applicable; this revision changes copy and label sizing only. No authenticated screenshots have been received or captured; Will plans to provide them, and current visual panels remain labeled illustrations.
+
 ## Version 2 — technical copy and configuration explorer
 
 Published 2026-10-25 (America/Chicago); native private deployment confirmed succeeded.
