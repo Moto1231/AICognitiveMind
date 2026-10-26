@@ -104,9 +104,11 @@ another function, or issue parallel decisions. For a lookup, the decision is
 `{"action":"search","source":"memory","query":"project decision","limit":6}`.
 The server validates that object, performs one bounded search, and supplies its
 results in the next message. A `finish` object ends your assessment. The server
-supplies the remaining call budget. Finish as soon as the current evidence permits;
-do not use searches simply to consume the budget. There are at most four model
-calls, including review corrections, and the final call permits only `finish`.
+supplies the remaining search and provider-attempt budgets. Finish as soon as the
+current evidence permits; do not use searches simply to consume the budget.
+There are at most three searches across the assessment, including provider
+changes. After that search budget is spent, only `finish` is permitted. A rejected
+finish can still advance to another eligible model within the provider budget.
 Use targeted searches only for a material gap and useful follow-up. If the
 model/provider cannot complete a valid assessment within these limits, report
 failure rather than pretending that no recall or no learning was necessary.

@@ -44,14 +44,17 @@ shared dispatcher, and a new assessment starts with the configured priority and
 existing provider cooldowns. Successful traffic is not rotated by this failover
 mechanism; scheduled rotation remains a separate, explicitly selected option.
 
-Each assessment is limited to four returned model decisions and sixty seconds.
-Invalid decisions consume that same decision budget. HTTP, transport and action
-wrapper failures advance through the finite eligible pool within the shared time
-limit. The normal skip path uses one model decision and no search. Provider
-exhaustion, invalid JSON, invented references, missing grounding and exhausted
-budgets are explicit errors; none is reported as an intelligent no-recall or
-no-learning decision. An exhausted review does not commit memories or the
-interaction journal.
+Each assessment permits at most three searches shared across provider changes,
+bounded attempts for each eligible model, and sixty seconds overall. Search
+rounds do not consume another model's opportunity to finish: once the search
+budget is spent, remaining candidates receive the finish-only schema. Invalid
+decisions and HTTP, transport or action-wrapper failures advance through the
+finite eligible pool within the shared deadline. The normal skip path uses one
+model decision and no search. Exhausting the eligible provider pool is distinct
+from reaching the overall deadline before the chain completes. Both are explicit
+errors; neither is reported as an intelligent no-recall or no-learning decision.
+An exhausted or timed-out review does not commit memories or the interaction
+journal. Successful idempotency receipts continue to prevent duplicate commits.
 
 Configure a working Memory Recall endpoint in Task Profiles before use. Model tests
 use scripted responses; the explicitly named `mcp_test_server.py` harness tests
