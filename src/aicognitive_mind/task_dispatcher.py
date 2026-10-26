@@ -31,6 +31,15 @@ class TaskDispatchError(RuntimeError):
     """A selected task provider could not be resolved or did not complete the request."""
 
 
+class StewardProviderPoolExhausted(TaskDispatchError):
+    """One assessment has tried every eligible saved provider/model candidate."""
+
+    def __init__(self, last_error: TaskDispatchError | None = None) -> None:
+        self.last_error = last_error
+        detail = f" Last failure: {last_error}" if last_error is not None else ""
+        super().__init__("Memory Steward exhausted its eligible provider pool." + detail)
+
+
 class TaskModelDispatcher:
     """Resolve saved task preferences and call the selected OpenAI-compatible endpoint.
 
@@ -676,28 +685,44 @@ class TaskModelDispatcher:
 
 
 class _StewardAssessment:
-    """Retain successful providers and advance past failures only within this assessment.
+    """Traverse one finite provider snapshot without restarting failed candidates.
 
-    Returned decisions consume the Steward's existing four-round budget. Provider
-    transport failures traverse the finite saved pool under the same assessment
-    timeout; they cannot restart a failed candidate on a later search round.
+    The Steward owns the shared search allowance and overall deadline. Transport
+    and rejected model responses advance this assessment-local cursor separately.
     """
 
     def __init__(self, dispatcher: TaskModelDispatcher) -> None:
         self.dispatcher = dispatcher
         self._candidates: list[TaskModelAssignment] | None = None
         self._index = 0
+        self.last_error: TaskDispatchError | None = None
 
     async def prepare(self) -> None:
         if self._candidates is None:
-            self._candidates = await self.dispatcher._candidate_assignments("memory_recall")
+            try:
+                self._candidates = await self.dispatcher._candidate_assignments("memory_recall")
+            except TaskDispatchError as exc:
+                self._candidates = []
+                self.last_error = exc
+                raise StewardProviderPoolExhausted(exc) from exc
+
+    @property
+    def candidate_count(self) -> int:
+        return len(self._candidates or ())
+
+    @property
+    def remaining_candidates(self) -> int:
+        return max(0, self.candidate_count - self._index)
 
     @property
     def single_provider(self) -> bool:
-        return self._candidates is not None and len(self._candidates) == 1
+        return self.candidate_count == 1
 
     def reject_response(self, error: TaskDispatchError) -> bool:
         """Exclude a rejected decision's provider; never persist a semantic cooldown."""
+        self.last_error = error
+        if not self.remaining_candidates:
+            return False
         assert self._candidates is not None
         assignment = self._candidates[self._index]
         logger.warning(
@@ -705,7 +730,31 @@ class _StewardAssessment:
             assignment.provider, assignment.model, error,
         )
         self._index += 1
-        return self._index < len(self._candidates)
+        return bool(self.remaining_candidates)
+
+    def _messages_with_budget(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Refresh candidate counts when transport failures skip earlier models."""
+        updated = [dict(message) for message in messages]
+        if len(updated) < 2 or not isinstance(updated[1].get("content"), str):
+            return updated
+        try:
+            context = json.loads(updated[1]["content"])
+        except ValueError:
+            return updated
+        if not isinstance(context, dict) or not isinstance(context.get("assessment_budget"), dict):
+            return updated
+        budget = context["assessment_budget"]
+        budget["provider_candidates_total"] = self.candidate_count
+        budget["provider_candidates_remaining"] = self.remaining_candidates
+        remaining = budget.get("decision_attempts_remaining")
+        searches = budget.get("searches_remaining")
+        corrections = budget.get("review_corrections_remaining")
+        if all(type(value) is int for value in (remaining, searches, corrections)):
+            budget["decision_attempts_remaining"] = min(
+                remaining, searches + self.remaining_candidates + corrections,
+            )
+        updated[1]["content"] = json.dumps(context, default=str)
+        return updated
 
     async def execute(self, context: TaskExecutionContext, payload: Any) -> str:
         if (
@@ -721,8 +770,7 @@ class _StewardAssessment:
             raise TaskDispatchError("Chat runtime payload requires a messages list.")
         await self.prepare()
         assert self._candidates is not None
-        last_error: TaskDispatchError | None = None
-        while self._index < len(self._candidates):
+        while self.remaining_candidates:
             assignment = self._candidates[self._index]
             try:
                 assignment, endpoint = await self.dispatcher._resolve("memory_recall", assignment)
@@ -733,19 +781,17 @@ class _StewardAssessment:
                         f"retry after {cooldown['cooldown_until']}."
                     )
                 return await self.dispatcher._complete_chat_with_assignment(
-                    "memory_recall", messages, assignment=assignment,
+                    "memory_recall", self._messages_with_budget(messages), assignment=assignment,
                     temperature=payload.get("temperature"), context=context,
                     steward_action_phase=payload["steward_action_phase"],
                     steward_finish_only=payload.get("steward_finish_only", False),
                     retry_steward_rate_limit=self.single_provider,
                 )
             except TaskDispatchError as exc:
-                last_error = exc
+                self.last_error = exc
                 self._index += 1
                 logger.warning(
                     "task_provider_fallback task=memory_recall provider=%s model=%s error=%s",
                     assignment.provider, assignment.model, exc,
                 )
-        if last_error is not None:
-            raise last_error
-        raise TaskDispatchError("Memory Steward exhausted its eligible provider pool.")
+        raise StewardProviderPoolExhausted(self.last_error) from self.last_error

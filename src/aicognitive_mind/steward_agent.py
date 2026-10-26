@@ -15,11 +15,31 @@ from aicognitive_mind.domain import DurableMemory, JournalEntry, JournalKind, Me
 from aicognitive_mind.memory_steward import MemoryStewardTool, ProposeMemoryCall, _tokens
 from aicognitive_mind.retrieval import candidates
 from aicognitive_mind.task_behaviors import TaskExecutionContext
-from aicognitive_mind.task_dispatcher import TaskDispatchError
+from aicognitive_mind.task_dispatcher import (
+    StewardProviderPoolExhausted, TaskDispatchError, _StewardAssessment,
+)
 
 
 class StewardProtocolError(TaskDispatchError):
     """The Steward could not produce a grounded, valid assessment."""
+
+
+class StewardAssessmentExhausted(StewardProtocolError):
+    """Every eligible candidate failed this assessment; no cognitive writes commit."""
+
+    def __init__(self, last_error: Exception | None = None) -> None:
+        self.last_error = last_error
+        detail = f" Last failure: {last_error}" if last_error is not None else ""
+        super().__init__("Memory Steward assessment exhausted its eligible provider pool." + detail)
+
+
+class StewardAssessmentTimeout(StewardProtocolError):
+    """The assessment's overall deadline expired, independently of its candidate pool."""
+
+    def __init__(self, last_error: Exception | None = None) -> None:
+        self.last_error = last_error
+        detail = f" Last failure: {last_error}" if last_error is not None else ""
+        super().__init__("Memory Steward assessment timed out." + detail)
 
 
 class Step(BaseModel):
@@ -180,64 +200,84 @@ class ModelMemorySteward(MemoryStewardTool):
         self, phase: Literal["recall", "review"], result: dict[str, Any],
         *, validate_finish: Callable[[Any], None] | None = None,
     ) -> Any:
-        adapter = RECALL_STEPS if phase == "recall" else REVIEW_STEPS
-        finish_adapter = TypeAdapter(RecallFinish if phase == "recall" else ReviewFinish)
-        native_actions = getattr(self.runtime, "supports_steward_action_tools", False) is True
-        provider_session = (
-            self.runtime.steward_assessment()
-            if native_actions and getattr(self.runtime, "supports_steward_failover", False) is True
-            else None
-        )
-        records = self.skill_records
-        if records is None:
-            records = getattr(getattr(self.runtime, "assignments", None), "records", None)
-        if records is None:
-            # Standalone test/custom runtimes without Mind storage retain defaults.
-            skill = files("aicognitive_mind").joinpath("skills/memory-steward/SKILL.md").read_text()
-        else:
-            from aicognitive_mind.effective_skills import EffectiveSkillRegistry
-
-            configured = await EffectiveSkillRegistry(records).get("memory-steward")
-            skill = configured["content"] if configured and configured["enabled"] else ""
-        context = {
-            "phase": phase,
-            "identity": self._mind.identity.model_dump(mode="json"),
-            "current_state": self._current_state,
-            "host_working_context": self._working_context,
-            "user_message": self._input_text,
-            **result,
-        }
-        messages = [
-            {
-                "role": "system",
-                "content": skill + (
-                    "\n\nCall steward_action with one decision matching its parameter schema."
-                    if native_actions else "\n\nPHASE SCHEMA:\n" + json.dumps(adapter.json_schema())
-                ),
-            },
-            {"role": "user", "content": json.dumps(context, default=str)},
-        ]
-        self._validation_corrections = 0
+        provider_session: Any = None
+        last_rejection: StewardProtocolError | None = None
+        deadline = asyncio.timeout(60)
         try:
-            async with asyncio.timeout(60):
+            async with deadline:
+                adapter = RECALL_STEPS if phase == "recall" else REVIEW_STEPS
+                finish_adapter = TypeAdapter(RecallFinish if phase == "recall" else ReviewFinish)
+                native_actions = getattr(self.runtime, "supports_steward_action_tools", False) is True
+                provider_session = (
+                    self.runtime.steward_assessment()
+                    if native_actions and getattr(self.runtime, "supports_steward_failover", False) is True
+                    else None
+                )
+                records = self.skill_records
+                if records is None:
+                    records = getattr(getattr(self.runtime, "assignments", None), "records", None)
+                if records is None:
+                    # Standalone test/custom runtimes without Mind storage retain defaults.
+                    skill = files("aicognitive_mind").joinpath("skills/memory-steward/SKILL.md").read_text()
+                else:
+                    from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+
+                    configured = await EffectiveSkillRegistry(records).get("memory-steward")
+                    skill = configured["content"] if configured and configured["enabled"] else ""
+                context = {
+                    "phase": phase,
+                    "identity": self._mind.identity.model_dump(mode="json"),
+                    "current_state": self._current_state,
+                    "host_working_context": self._working_context,
+                    "user_message": self._input_text,
+                    **result,
+                }
+                messages = [
+                    {
+                        "role": "system",
+                        "content": skill + (
+                            "\n\nCall steward_action with one decision matching its parameter schema."
+                            if native_actions else "\n\nPHASE SCHEMA:\n" + json.dumps(adapter.json_schema())
+                        ),
+                    },
+                    {"role": "user", "content": json.dumps(context, default=str)},
+                ]
+                self._validation_corrections = 0
                 if provider_session is not None:
                     await provider_session.prepare()
-                for round_index in range(4):
-                    final_round = round_index == 3
-                    round_adapter = finish_adapter if final_round else adapter
+                # Only the real dispatcher owns a trusted finite candidate snapshot.
+                # A custom session claiming endless failover must still stop promptly.
+                finite_pool = type(provider_session) is _StewardAssessment
+                candidate_count = provider_session.candidate_count if finite_pool else None
+                searches_at_start = self._search_count
+                singleton_review = phase == "review" and (
+                    provider_session is None or provider_session.single_provider
+                )
+                decision_limit = (
+                    candidate_count + 3 + int(singleton_review)
+                    if finite_pool else 4 + int(phase == "review")
+                )
+                for decision_index in range(decision_limit):
+                    searches_completed = self._search_count - searches_at_start
+                    searches_remaining = max(0, 3 - searches_completed)
+                    finish_only = searches_remaining == 0
+                    round_adapter = finish_adapter if finish_only else adapter
+                    corrections_remaining = int(singleton_review and not self._validation_corrections)
+                    remaining_candidates = provider_session.remaining_candidates if finite_pool else None
+                    decisions_remaining = decision_limit - decision_index
+                    if finite_pool:
+                        decisions_remaining = min(
+                            decisions_remaining,
+                            searches_remaining + remaining_candidates + corrections_remaining,
+                        )
                     context["assessment_budget"] = {
-                        "model_calls_remaining": 4 - round_index,
-                        "search_allowed": not final_round,
-                        "searches_completed": self._search_count,
-                        "review_corrections_remaining": (
-                            min(
-                                3 - round_index
-                                if provider_session is not None and not provider_session.single_provider
-                                else max(0, 1 - self._validation_corrections),
-                                3 - round_index,
-                            )
-                            if phase == "review" else 0
-                        ),
+                        "decision_attempts_remaining": decisions_remaining,
+                        "provider_candidates_total": candidate_count,
+                        "provider_candidates_remaining": remaining_candidates,
+                        "searches_remaining": searches_remaining,
+                        "search_allowed": not finish_only,
+                        "searches_completed": searches_completed,
+                        "review_corrections_remaining": corrections_remaining,
                     }
                     messages[1]["content"] = json.dumps(context, default=str)
                     if not native_actions:
@@ -249,7 +289,7 @@ class ModelMemorySteward(MemoryStewardTool):
                     }
                     if native_actions:
                         payload["steward_action_phase"] = phase
-                        payload["steward_finish_only"] = final_round
+                        payload["steward_finish_only"] = finish_only
                     else:
                         payload["response_format"] = {"type": "json_object"}
                     runtime = provider_session if provider_session is not None else self.runtime
@@ -259,10 +299,10 @@ class ModelMemorySteward(MemoryStewardTool):
                     try:
                         if not isinstance(raw, str):
                             raise StewardProtocolError("Memory Steward returned non-text content.")
-                        text = raw.strip()
-                        if text.startswith("```") and text.endswith("```"):
-                            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-                        step = round_adapter.validate_json(text)
+                        response = raw.strip()
+                        if response.startswith("```") and response.endswith("```"):
+                            response = response.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+                        step = round_adapter.validate_json(response)
                         if isinstance(step, Search):
                             if step.source != "recent" and not _tokens(step.query):
                                 raise StewardProtocolError("A targeted memory search requires a query.")
@@ -277,20 +317,16 @@ class ModelMemorySteward(MemoryStewardTool):
                             )[:1000]
                         else:
                             detail = str(exc)
-                        can_correct = (
-                            phase == "review" and not self._validation_corrections
-                            and not final_round
-                            and (provider_session is None or provider_session.single_provider)
-                        )
+                        last_rejection = StewardProtocolError(detail)
+                        can_correct = bool(corrections_remaining)
                         has_fallback = False
                         if provider_session is not None and not can_correct:
-                            has_fallback = provider_session.reject_response(
-                                StewardProtocolError(detail)
-                            )
-                        if final_round or not (can_correct or has_fallback):
+                            has_fallback = provider_session.reject_response(last_rejection)
+                        if not (can_correct or has_fallback):
+                            if finite_pool:
+                                raise StewardAssessmentExhausted(last_rejection) from exc
                             raise StewardProtocolError(
-                                f"Memory Steward {phase} validation failed"
-                                f"{' on final call' if final_round else ''}: {detail}"
+                                f"Memory Steward {phase} validation failed: {detail}"
                             ) from exc
                         if phase == "review":
                             self._validation_corrections += 1
@@ -310,15 +346,21 @@ class ModelMemorySteward(MemoryStewardTool):
                     if not isinstance(step, Search):
                         return step
                     found = await self._search(step)
-                    messages.extend(
-                        [
-                            {"role": "assistant", "content": raw},
-                            {"role": "user", "content": json.dumps({"search_results": found})},
-                        ]
-                    )
+                    messages.extend([
+                        {"role": "assistant", "content": raw},
+                        {"role": "user", "content": json.dumps({"search_results": found})},
+                    ])
+                detail = f" Last failure: {last_rejection}" if last_rejection is not None else ""
+                raise StewardProtocolError(
+                    "Memory Steward exceeded its bounded custom-runtime decision budget." + detail
+                )
+        except StewardProviderPoolExhausted as exc:
+            raise StewardAssessmentExhausted(exc.last_error) from exc
         except TimeoutError as exc:
-            raise StewardProtocolError("Memory Steward assessment timed out.") from exc
-        raise StewardProtocolError("Memory Steward exceeded its assessment round limit.")
+            if not deadline.expired():
+                raise
+            last_error = getattr(provider_session, "last_error", None) or last_rejection
+            raise StewardAssessmentTimeout(last_error) from exc
 
     async def _search(self, step: Search) -> list[dict[str, Any]]:
         if step.source != "recent" and not _tokens(step.query):
