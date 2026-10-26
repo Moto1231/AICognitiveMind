@@ -1,5 +1,23 @@
 # Private preview release
 
+## Version 2 — technical copy and configuration explorer
+
+Published 2026-10-25 (America/Chicago); native private deployment confirmed succeeded.
+
+- URL: https://axiom-continuity-portal.snowydeer18.chatgpt.site
+- Configuration explorer: https://axiom-continuity-portal.snowydeer18.chatgpt.site/#configuration
+- Site: appgprj_6ade9371c8688191994b9b27a3520bc1
+- Native source commit: 4ed445d3042f11a05fa145269934aef45f8052a1
+- Saved version: appgprj_6ade9371c8688191994b9b27a3520bc1~appgver_cefd5b7976b48191bf3bfa1913fe51fa
+- Deployment: appgdep_6adeabfc04e4819197b4080ccb6baa32
+- Audience: existing owner-private access preserved.
+
+The homepage, guide, navigation, metadata and workspace headings now emphasize persistent state, MCP hosts, model endpoints, task routing, evidence validation and Administrator controls. A six-panel interactive illustration shows Models, Tools, Skills, Behaviors, Vision and Audio using editable sample settings and a local configuration readout. It is visibly labeled sample data, changes no actual configuration, and is not represented as authenticated Administration screenshots.
+
+Verified for this revision: TypeScript check, 18 existing access-boundary tests, production build, independent source/copy review, and native private publication. No new browser automation or authenticated screenshot capture was available for this revision; initial-release browser checks below are historical evidence, not a new visual pass. Billing and portal conversations remain simulated.
+
+## Version 1 — initial preview
+
 Native deployment verified succeeded on 2026-10-25.
 
 - URL: https://axiom-continuity-portal.snowydeer18.chatgpt.site
