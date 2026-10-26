@@ -1132,8 +1132,14 @@ body {
 }
 
 #foundationsSection { grid-column: 1 / -1; }
-#foundationsSection .host-behavior-fields { margin-top: 20px; }
-#foundationContract, #foundationRelationships { font-family: ui-monospace, monospace; }
+#foundationsSection .overview-group { margin-top: 20px; }
+.foundation-identity { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 0; }
+.foundation-identity > div { min-width: 0; }
+.foundation-identity dt { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+.foundation-identity dd { color: var(--text); margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.foundation-identity-wide { grid-column: 1 / -1; }
+#deviceSelectionStatus:empty { margin: 0; }
+@media (max-width: 680px) { .foundation-identity { grid-template-columns: minmax(0, 1fr); } }
 #foundationStatus, #taskFoundationStatus { font-size: 12px; color: var(--accent); }
 #skillsConfigurationFlags { margin-block: 14px; }
 .provider-setup-actions {

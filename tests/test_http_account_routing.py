@@ -149,6 +149,48 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await api.app.state.memory_store.read(), [])
         self.assertEqual(await api.app.state.journal_store.read(), [])
 
+    async def test_portal_body_settings_capability_matches_authenticated_scope(self):
+        initialized = await self.admin_client.post("/v1/mind/initialize", json={"self_name": "Synthetic root"})
+        self.assertEqual(initialized.status_code, 201, initialized.text)
+        await api.app.state.voice_settings.update(
+            expected_revision=0, fish_audio_api_key="synthetic-deployment-voice-key", rate=1.2,
+        )
+        root_status = await self.get_json(self.admin_client, "/v1/portal/status")
+        self.assertIs(root_status["administration"]["body_settings_available"], True)
+        root_voice = await self.get_json(self.admin_client, "/v1/admin/body/voice/settings")
+        self.assertEqual(root_voice["fishAudioApiKey"], "synthetic-deployment-voice-key")
+        self.assertEqual(root_voice["rate"], 1.2)
+
+        for client in (self.alpha_client, self.beta_client):
+            portal = await self.get_json(client, "/v1/portal/status")
+            self.assertIs(portal["administration"]["body_settings_available"], False)
+            for method, path in (
+                ("GET", "/v1/admin/body/voice/settings"),
+                ("POST", "/v1/admin/body/voice/settings"),
+                ("GET", "/v1/body/voice/settings"),
+                ("GET", "/v1/admin/body/fallback"),
+                ("PUT", "/v1/admin/body/fallback"),
+            ):
+                with self.subTest(account=client, method=method, path=path):
+                    kwargs = {"json": {"enabled": False}} if method == "PUT" else {}
+                    if method == "POST":
+                        kwargs = {"json": {"expected_revision": 1, "rate": 1.5}}
+                    response = await client.request(method, path, **kwargs)
+                    self.assertEqual(response.status_code, 403, response.text)
+                    self.assertNotIn("synthetic-deployment-voice-key", response.text)
+            self.assertEqual((await self.get_json(client, "/v1/admin/provider-endpoints"))["items"], [])
+            self.assertEqual((await self.get_json(client, "/v1/portal/memory"))["total"], 0)
+
+        basic = base64.b64encode(b"synthetic-admin:synthetic-admin-password").decode()
+        still_scoped = await self.get_json(self.alpha_client, "/v1/portal/status", headers={
+            "Authorization": "Basic " + basic,
+        })
+        self.assertIs(still_scoped["administration"]["body_settings_available"], False)
+        anonymous = await self.client()
+        self.assertEqual((await anonymous.get("/v1/portal/status")).status_code, 401)
+        self.assertEqual((await anonymous.get("/v1/admin/body/voice/settings")).status_code, 401)
+        self.assertEqual((await api.app.state.voice_settings.read())["rate"], 1.2)
+
     async def test_cookie_scope_prevails_over_basic_and_untrusted_tenant_selectors(self):
         original = await self.get_json(self.alpha_client, "/v1/mind")
         basic = base64.b64encode(b"synthetic-admin:synthetic-admin-password").decode()

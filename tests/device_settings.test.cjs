@@ -92,12 +92,13 @@ test('changing a device creates a draft and leaves the saved Body preference unc
   assert.equal(ui.elements.saveDeviceSelections.disabled, false);
   assert.equal(ui.elements.cancelDeviceSelections.disabled, false);
   assert.match(ui.el.deviceSelectionSummary.textContent, /Saved.*Camera one/);
-  assert.match(ui.elements.deviceSelectionStatus.textContent, /Unsaved/);
+  assert.equal(ui.elements.deviceSelectionStatus.textContent, 'Unsaved changes.');
 });
 
 test('Save commits the complete draft and disables clean actions; Cancel restores saved values', async () => {
   const ui = fixture({ saved: { videoinput: 'camera-1', audioinput: 'microphone-1' } });
   await ui.refreshDeviceInventory();
+  assert.equal(ui.elements.deviceSelectionStatus.textContent, '');
   ui.saveSelectedDevice('videoinput', 'camera-2');
   ui.saveSelectedDevice('audioinput', '');
   ui.saveSelectedDevice('audiooutput', 'speaker-1');
@@ -107,9 +108,11 @@ test('Save commits the complete draft and disables clean actions; Cancel restore
   assert.equal(ui.data.get(keys.audiooutput), 'speaker-1');
   assert.equal(ui.elements.saveDeviceSelections.disabled, true);
   assert.equal(ui.elements.cancelDeviceSelections.disabled, true);
+  assert.equal(ui.elements.deviceSelectionStatus.textContent, '');
   ui.saveSelectedDevice('videoinput', 'camera-1');
   ui.cancelDeviceSelectionEdit();
   assert.equal(ui.picker('videoinput').value, 'camera-2');
+  assert.equal(ui.elements.deviceSelectionStatus.textContent, '');
   assert.equal(ui.data.get(keys.videoinput), 'camera-2');
   assert.equal(ui.elements.saveDeviceSelections.disabled, true);
 });
