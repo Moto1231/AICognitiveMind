@@ -47,7 +47,7 @@ Choosing or changing my name in conversation follows its own governance protocol
 
 ## Naming milestone and current limits
 
-> This section alone was reviewed against `dbbc246860115153f3c11d05b505014cfcb874b8` on 2026-10-25; the other sections retain their opening review baseline.
+> This section was reviewed against `dbbc246860115153f3c11d05b505014cfcb874b8` on 2026-10-25. Sections without another explicit review block retain the opening baseline.
 
 The status response reports a naming milestone based on the journal experience count. Current-state ledger checkpoints do not advance that count.
 
@@ -122,14 +122,22 @@ Account-scoped sessions are explicitly denied custom GitHub draft access because
 
 ## Create a reusable Behavior
 
-See the [supplied earlier-interface behavior-editor capture](screenshots.md#behavior-authoring) for an example of the name, instruction, priority and enabled fields. Follow the current workflow below when saving and assigning a behavior.
+> This section was reviewed against `29e11c94af84e07b278c4aae6fd650cd92e6a428` on 2026-10-25. Other sections keep their stated review revisions.
+
+The library shows one selected behavior editor. **Search behaviors** matches the name or instruction; the **Behavior** selector chooses among matching entries. Clear the search to browse the complete library. The count/status line reports the library size, matching entries and whether changes are unsaved.
+
+To create an entry:
 
 1. Open **Administration → Behavior**.
-2. Choose **Add Behavior**; this starts a catalog draft if necessary.
+2. Choose **Add Behavior**; this starts a catalog draft if necessary, clears the search and selects the new entry.
 3. Replace **New Behavior** and **Describe the behavior.**
 4. Set Priority and Enabled; review Required and Protected deliberately.
-5. Choose **Save**.
+5. Choose **Save** above the editor and wait for confirmation.
 6. Open the desired task in **Task Configuration**, select that behavior and save the task assignment.
+
+To change an existing entry, search or select it, choose **Edit**, then make the change. You can search or select another behavior while editing: changes remain in the same library draft. **Save applies all behavior changes in that draft**, including edits to entries currently hidden by the search. A blank name/instruction or invalid priority anywhere in the draft keeps Save disabled; use the selector or clear the search to find the unfinished entry.
+
+**Cancel restores the saved library and discards all draft edits**, additions and removals. A failed Save keeps the draft available; read the error before retrying. The search, selector and editing controls are locked while Save is pending. Edit, Save and Cancel sit above the selected editor and share the compact action-button sizing used elsewhere in Administration.
 
 Example instruction:
 
@@ -138,6 +146,10 @@ Example instruction:
 Editing the library and selecting membership are separate steps. A selected behavior marked **Disabled in library** is not an active enabled behavior merely because its task checkbox is checked.
 
 An Administrator may edit or remove entries previously marked required/protected. Explicit saved task membership and Administrator removals take precedence over factory membership defaults. See [task configuration](tasks-and-routing.md) for the separate task foundation.
+
+The [supplied earlier-interface behavior capture](screenshots.md#behavior-authoring) illustrates the fields; it predates this single-editor navigation. Follow the workflow above for the reviewed controls and saving behavior.
+
+Section sources: [Behavior form and navigation](https://github.com/Moto1231/AICognitiveMind/blob/29e11c94af84e07b278c4aae6fd650cd92e6a428/src/aicognitive_mind/static/index.html#L206-L227), [selected editor and catalog Save/Cancel](https://github.com/Moto1231/AICognitiveMind/blob/29e11c94af84e07b278c4aae6fd650cd92e6a428/src/aicognitive_mind/static/portal.js#L377-L581), [search and selector handlers](https://github.com/Moto1231/AICognitiveMind/blob/29e11c94af84e07b278c4aae6fd650cd92e6a428/src/aicognitive_mind/static/portal.js#L2430-L2443).
 
 ## Source references
 

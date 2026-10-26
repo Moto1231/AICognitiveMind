@@ -44,6 +44,14 @@ The visual-reference page and chapter links do not change the implementation-rev
 
 Focused source review on **2026-10-25** at **`dbbc246860115153f3c11d05b505014cfcb874b8`** added [Naming milestone and current limits](foundations-skills-and-behaviors.md#naming-milestone-and-current-limits), with a link from Getting started. Only that subsection uses this later baseline. The status response marks naming eligible at 1,000 journal experiences and required at 2,000, excluding current-state ledger checkpoints. This is distinct from the explicit-command self-name write path, which does not enforce that count. Automatic name-and-gender selection is not implemented; the current schema has pronouns and no separate gender field. The subsection links its exact implementation sources. No live identity or configuration was changed, and no milestone transition was exercised in a live account.
 
+## Devices and Behavior workflow refresh
+
+Focused source review on **2026-10-25** at **`29e11c94af84e07b278c4aae6fd650cd92e6a428`** updated only [Select devices](body.md#select-devices) and [Create a reusable Behavior](foundations-skills-and-behaviors.md#create-a-reusable-behavior). Their section review blocks and implementation links identify the newer revision; the other chapter sections and initial review table retain their stated baselines.
+
+Devices now uses a browser-local draft with explicit Save/Cancel, a separate saved-preference summary, navigation rollback, refresh/stale-response protection and storage/conflict status. The Behavior library now searches and selects one editor while retaining the complete revisioned catalog draft across selections. Its top Edit/Save/Cancel controls save or discard the whole draft, and validation includes hidden entries. The Task Foundation button-size correction changes presentation without changing its documented editing workflow.
+
+This maintenance pass reviewed the changed source and documentation links. It does not establish a new authenticated-browser, provider or physical-device test, nor does it close UM-01, UM-02, UM-03 or UM-09. Product PRs [327](https://github.com/Moto1231/AICognitiveMind/pull/327) and [328](https://github.com/Moto1231/AICognitiveMind/pull/328) record their separate implementation validation and delivery evidence. Existing screenshot provenance and limitations remain in force.
+
 ## Gaps and follow-up register
 
 | ID | Status | Gap / next evidence needed |

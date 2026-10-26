@@ -2,7 +2,7 @@
 
 [Manual index](README.md) · [Review record](review-record.md)
 
-> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. All sections on this page share this review revision. This is source review, not authenticated browser or physical-device certification.
+> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. Sections inherit this revision unless an explicit section review below overrides it. This is source review, not authenticated browser or physical-device certification.
 
 ## Check access before hardware
 
@@ -14,17 +14,27 @@ No authenticated browser or physical-device test was performed for this manual. 
 
 ## Select devices
 
+> This section was reviewed against `29e11c94af84e07b278c4aae6fd650cd92e6a428` on 2026-10-25. Other sections retain the opening review baseline.
+
 1. On the browser/device you will use for Live, open **Administration → Devices**.
 2. Read the camera and microphone permission statuses.
-3. In **Body camera**, **Body microphone**, or **Body speaker / audio output**, choose **Use for Body operation**.
-4. Choose a specific exposed device, or **Browser default**.
-5. Open Live on that same browser.
+3. In **Body camera**, **Body microphone**, or **Body speaker / audio output**, use the **Use for Body operation** selector to choose a specific exposed device or **Browser default**.
+4. Review the unsaved-change status, then choose **Save** to apply changed, valid choices. **Cancel** reloads the saved choices instead.
+5. Open Live on that same browser after saving.
 
-Selection saves immediately to browser local storage. It does not select a camera on a different phone or sync a device ID to all browsers.
+Selecting a device changes a form draft; it does not save immediately. The **Saved for this browser** summary continues to describe persisted preferences until Save succeeds. Save is enabled only when the draft differs from the saved choices and its selections are valid. Leaving Devices for another Administration section or returning to Main discards the unsaved device draft.
+
+Preferences remain in this browser's local storage using the existing Body device keys. They do not select a camera on another phone, synchronize device IDs across browsers or grant hardware permission. Clearing a selection to **Browser default** takes effect when saved.
+
+The inventory refreshes on supported device-change events. Refresh preserves unsaved choices; an older discovery response cannot replace a newer result. A previously saved device that is currently unavailable remains an explicit option rather than silently becoming Browser default. If a newly selected device disappears before Save, choose an available device or Cancel before saving.
+
+If saved preferences changed elsewhere while this form was being edited, Save reports the conflict; Cancel reloads those saved values. A storage failure keeps the draft and attempts to restore the previous choices. Read the status: if restoration also fails, some preferences may have changed, and Cancel reloads the values actually saved.
 
 Labels may be hidden until the browser grants permission. Missing labels do not prove a microphone is a speaker; use the device type and test deliberately. A browser without `setSinkId` cannot route media-element playback to the selected speaker and uses its default output.
 
-The device inventory refreshes on supported device-change events. If a device is unplugged or unavailable, recheck the selection and browser permissions.
+These controls do not change the account-scope restrictions described above. No new browser or physical-device exercise is established by this source review.
+
+Section sources: [Devices controls](https://github.com/Moto1231/AICognitiveMind/blob/29e11c94af84e07b278c4aae6fd650cd92e6a428/src/aicognitive_mind/static/index.html#L552-L571), [device draft, Save/Cancel and inventory refresh](https://github.com/Moto1231/AICognitiveMind/blob/29e11c94af84e07b278c4aae6fd650cd92e6a428/src/aicognitive_mind/static/portal.js#L3044-L3289), [Main navigation rollback](https://github.com/Moto1231/AICognitiveMind/blob/29e11c94af84e07b278c4aae6fd650cd92e6a428/src/aicognitive_mind/static/portal.js#L339-L349), [Administration navigation rollback](https://github.com/Moto1231/AICognitiveMind/blob/29e11c94af84e07b278c4aae6fd650cd92e6a428/src/aicognitive_mind/static/portal.js#L2941-L2960).
 
 ## Send a text message in Live
 
