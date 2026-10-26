@@ -1501,6 +1501,7 @@ async def portal_status(request: Request) -> dict[str, Any]:
         result["administration"] = {
             "pin_required": bool(runtime_settings.admin_pin),
             "memory_editing": True,
+            "body_settings_available": getattr(request.state, "tenant_storage", None) is None,
         }
         return result
     except RuntimeError as exc:

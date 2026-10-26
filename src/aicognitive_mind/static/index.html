@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261025-form-actions">
+  <link rel="stylesheet" href="/static/portal.css?v=20261025-foundations-view">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -167,23 +167,17 @@
         <div class="admin-grid">
           <article id="foundationsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">MIND CONFIGURATION</p><h3>Foundations</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
-            <p class="muted-copy">Identity, foundational values and the startup operating contract for this Mind.</p>
-            <section class="overview-group"><h4>Identity</h4><div class="host-behavior-fields">
-              <label class="host-behavior-field">Self-name<input id="foundationSelfName" maxlength="120" readonly></label>
-              <label class="host-behavior-field">Pronouns<input id="foundationPronouns" maxlength="80" readonly></label>
-              <label class="host-behavior-field">Developmental state<input id="foundationDevelopment" maxlength="120" readonly></label>
-              <label class="host-behavior-field host-behavior-instruction">Foundational values<textarea id="foundationValues" rows="5" readonly placeholder="One value per line"></textarea></label>
-              <label class="host-behavior-field host-behavior-instruction">Commitments<textarea id="foundationCommitments" rows="5" readonly placeholder="One commitment per line"></textarea></label>
-              <label class="host-behavior-field host-behavior-instruction">Relationships<textarea id="foundationRelationships" rows="7" readonly spellcheck="false"></textarea></label>
-            </div>
-            <div class="edit-actions"><button id="foundationEdit" class="secondary-button" type="button" aria-label="Edit identity" title="Edit identity" disabled>Edit</button><button id="foundationSave" class="primary-button" type="button" aria-label="Save identity" title="Save identity" disabled>Save Identity</button><button id="foundationCancel" class="secondary-button" type="button" aria-label="Cancel identity changes" title="Cancel identity changes" disabled>Cancel</button></div>
-            <p id="foundationStatus" role="status" aria-live="polite"></p></section>
-            <section class="overview-group"><h4>Startup</h4><div class="host-behavior-fields">
-              <label class="host-behavior-field host-behavior-instruction">Base operating contract<textarea id="foundationContract" rows="18" readonly spellcheck="false"></textarea></label>
-              <label class="host-behavior-field host-behavior-instruction">Startup instructions<textarea id="foundationStartup" rows="12" readonly spellcheck="false"></textarea></label>
-            </div>
-            <div class="edit-actions"><button id="startupEdit" class="secondary-button" type="button" aria-label="Edit startup instructions" title="Edit startup instructions" disabled>Edit</button><button id="startupSave" class="primary-button" type="button" aria-label="Save startup instructions" title="Save startup instructions" disabled>Save Startup</button><button id="startupCancel" class="secondary-button" type="button" aria-label="Cancel startup changes" title="Cancel startup changes" disabled>Cancel</button></div>
-            <p id="startupStatus" role="status" aria-live="polite"></p></section>
+            <section class="overview-group"><h4>Identity</h4>
+              <dl class="foundation-identity">
+                <div><dt>Self-name</dt><dd id="foundationSelfName">Unknown</dd></div>
+                <div><dt>Pronouns</dt><dd id="foundationPronouns">Unknown</dd></div>
+                <div><dt>Developmental state</dt><dd id="foundationDevelopment">Unknown</dd></div>
+                <div class="foundation-identity-wide"><dt>Foundational values</dt><dd id="foundationValues">Unknown</dd></div>
+                <div class="foundation-identity-wide"><dt>Commitments</dt><dd id="foundationCommitments">Unknown</dd></div>
+                <div class="foundation-identity-wide"><dt>Relationships</dt><dd id="foundationRelationships">Unknown</dd></div>
+              </dl>
+              <p id="foundationStatus" role="status" aria-live="polite"></p>
+            </section>
           </article>
           <article id="skillsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
@@ -219,7 +213,6 @@
               <button id="saveHostBehaviors" class="primary-button" type="button" aria-label="Save behaviors" title="Save behaviors" disabled>Save</button>
               <button id="cancelHostBehaviors" class="secondary-button" type="button" aria-label="Cancel behavior changes" title="Cancel behavior changes" disabled>Cancel</button>
             </div>
-            <p class="muted-copy">Save keeps all behavior changes. Cancel restores the saved library.</p>
             <p id="hostBehaviorSummary" class="record-empty" role="status" aria-live="polite"></p>
             <div id="hostBehaviorList" class="record-list"></div>
           </article>
@@ -539,19 +532,20 @@
             
             <div class="task-model-fields">
               <label class="host-behavior-field voice-slider-field">Speech rate <output id="voiceRateValue" for="voiceRate">1.00</output>
-                <input id="voiceRate" type="range" min="0.5" max="1.75" step="0.05" value="1">
+                <input id="voiceRate" type="range" min="0.5" max="1.75" step="0.05" value="1" disabled>
               </label>
               <label class="host-behavior-field voice-slider-field">Pitch (browser voices) <output id="voicePitchValue" for="voicePitch">1.00</output>
-                <input id="voicePitch" type="range" min="0.5" max="1.5" step="0.05" value="1">
+                <input id="voicePitch" type="range" min="0.5" max="1.5" step="0.05" value="1" disabled>
               </label>
               <label class="host-behavior-field voice-slider-field">Volume <output id="voiceVolumeValue" for="voiceVolume">1.00</output>
-                <input id="voiceVolume" type="range" min="0" max="1" step="0.05" value="1">
+                <input id="voiceVolume" type="range" min="0" max="1" step="0.05" value="1" disabled>
               </label>
               <label class="host-behavior-field">Browser voice name
-                <input id="voiceName" type="text" maxlength="120" placeholder="Blank uses browser default">
+                <input id="voiceName" type="text" disabled maxlength="120" placeholder="Blank uses browser default">
               </label>
             </div>
-            <div class="edit-actions"><button id="saveVoiceSettings" class="primary-button" type="button">Save</button></div>
+            <p id="voiceSettingsStatus" role="status" aria-live="polite"></p>
+            <div class="edit-actions"><button id="saveVoiceSettings" class="primary-button" type="button" disabled>Save</button></div>
           </article>
 
           <article id="devicesSection" class="panel hidden">
@@ -567,7 +561,7 @@
               <button id="saveDeviceSelections" class="primary-button" type="button" aria-label="Save device choices" title="Save device choices" disabled>Save</button>
               <button id="cancelDeviceSelections" class="secondary-button" type="button" aria-label="Cancel device changes" title="Cancel device changes" disabled>Cancel</button>
             </div>
-            <p id="deviceSelectionStatus" role="status" aria-live="polite">Device choices are saved only in this browser.</p>
+            <p id="deviceSelectionStatus" role="status" aria-live="polite"></p>
           </article>
 
           <article id="overviewSection" class="panel admin-summary">
@@ -723,6 +717,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261025-device-behavior-editors"></script>
+  <script src="/static/portal.js?v=20261025-foundations-view"></script>
 </body>
 </html>

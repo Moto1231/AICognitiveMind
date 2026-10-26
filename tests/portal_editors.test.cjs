@@ -1356,24 +1356,21 @@ test('Administrator can save an intentionally blank Mind skill while GitHub stil
   assert.equal(ui.elements.skillsSave.disabled, true);
 });
 
-function foundationsEditor(apiHandler) {
-  const elements = new Proxy({}, { get: (target, id) => target[id] ||= new Element() });
+function foundationsView(apiHandler) {
+  const elements = Object.fromEntries(['foundationSelfName', 'foundationPronouns', 'foundationDevelopment',
+    'foundationValues', 'foundationCommitments', 'foundationRelationships', 'foundationStatus']
+    .map(id => [id, new Element()]));
   const calls = [];
-  const state = { foundationIdentity: null, foundationIdentityDraft: null, foundationIdentitySaving: false,
-    cognitiveConfiguration: null, cognitiveDraft: null, cognitiveSaving: false, taskFoundations: {} };
+  const state = { foundationIdentity: null };
   const context = vm.createContext({
-    state, document: { getElementById: id => elements[id] }, toast() {}, refreshStatus: async () => {},
-    api: async (url, options = {}) => {
-      const body = options.body && JSON.parse(options.body);
-      calls.push({ url, body });
-      return JSON.parse(JSON.stringify(await apiHandler(url, body)));
+    state, document: { getElementById: id => elements[id] || null },
+    api: async (url, options = {}, authenticated) => {
+      calls.push({ url, method: options.method || 'GET', body: options.body, authenticated });
+      return JSON.parse(JSON.stringify(await apiHandler(url, options)));
     },
   });
-  for (const name of ['identityFormElements', 'renderIdentityConfiguration', 'identityFormPayload',
-    'updateIdentityEditorState', 'refreshIdentityConfiguration', 'editIdentityConfiguration',
-    'cancelIdentityConfiguration', 'saveIdentityConfiguration', 'renderStartupConfiguration',
-    'updateStartupEditorState', 'refreshStartupConfiguration', 'editStartupConfiguration',
-    'cancelStartupConfiguration', 'saveStartupConfiguration', 'refreshFoundations']) {
+  for (const name of ['displayLabel', 'foundationIdentityText', 'renderIdentityConfiguration',
+    'refreshIdentityConfiguration', 'refreshFoundations']) {
     const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
     assert.ok(start >= 0, `${name} exists`);
     const next = source.slice(start + 1).search(/^(?:async )?function |^const |^let |^for |^document\.|^el\.|^if \(/m);
@@ -1382,134 +1379,93 @@ function foundationsEditor(apiHandler) {
   return { ...context, elements, calls };
 }
 
-test('identity changes require Edit and valid dirty Save, preserve records and roll back with Cancel', async () => {
-  let identity = { revision: 'original-token', identity: { self_name: 'Original', pronouns: 'she/her',
-    foundational_values: ['Care'], commitments: ['Listen'], relationships: [{ label: 'A relationship', facts: ['Known fact'] }] },
-    developmental_state: 'genesis', created_at: '2026-01-01T00:00:00Z' };
-  const ui = foundationsEditor((url, body) => {
-    assert.equal(url, '/v1/admin/identity');
-    if (body) identity = { ...identity, identity: body.identity, developmental_state: body.developmental_state, revision: 'saved-token' };
-    return identity;
-  });
+test('Foundations loads the complete identity as readable text without interpreting markup', async () => {
+  const identity = { revision: 'current', identity: { self_name: '<img src=x onerror=alert(1)>', pronouns: 'she/her',
+    foundational_values: ['Care', 'Curiosity'], commitments: ['Listen'],
+    relationships: [{ label: 'Will', facts: ['Collaborator', 'Has a son'] }] }, developmental_state: 'genesis' };
+  const ui = foundationsView(() => identity);
   await ui.refreshIdentityConfiguration();
   const el = ui.elements;
-  assert.equal(el.foundationSelfName.readOnly, true);
-  ui.editIdentityConfiguration();
-  assert.equal(el.foundationSelfName.readOnly, false);
-  assert.equal(el.foundationSave.disabled, true);
-  el.foundationRelationships.value = 'invalid';
-  ui.updateIdentityEditorState();
-  assert.equal(el.foundationSave.disabled, true);
-  ui.cancelIdentityConfiguration();
-  assert.deepEqual(JSON.parse(el.foundationRelationships.value), identity.identity.relationships);
-  ui.editIdentityConfiguration();
-  el.foundationSelfName.value = 'Unsaved';
-  ui.updateIdentityEditorState();
-  assert.equal(el.foundationSave.disabled, false);
-  assert.equal(identity.identity.self_name, 'Original');
-  ui.cancelIdentityConfiguration();
-  assert.equal(el.foundationSelfName.value, 'Original');
-  ui.editIdentityConfiguration();
-  el.foundationSelfName.value = '';
-  el.foundationValues.value = 'Care\nCuriosity';
-  await ui.saveIdentityConfiguration();
-  const saved = ui.calls.find(call => call.body).body;
-  assert.equal(saved.expected_revision, 'original-token');
-  assert.equal(saved.identity.self_name, null);
-  assert.deepEqual(saved.identity.foundational_values, ['Care', 'Curiosity']);
-  assert.deepEqual(saved.identity.relationships, [{ label: 'A relationship', facts: ['Known fact'] }]);
-  assert.equal(el.foundationSelfName.readOnly, true);
-  assert.equal(ui.state.foundationIdentity.revision, 'saved-token');
+  assert.equal(el.foundationSelfName.textContent, identity.identity.self_name);
+  assert.equal(el.foundationSelfName.children.length, 0);
+  assert.equal(el.foundationPronouns.textContent, 'she/her');
+  assert.equal(el.foundationDevelopment.textContent, 'genesis');
+  assert.equal(el.foundationValues.textContent, 'Care\nCuriosity');
+  assert.equal(el.foundationCommitments.textContent, 'Listen');
+  assert.equal(el.foundationRelationships.textContent, 'Label: Will\nFacts: Collaborator\nHas a son');
+  assert.equal(el.foundationStatus.textContent, 'Identity loaded.');
+  assert.equal(ui.state.foundationIdentity.revision, 'current');
 });
 
-test('startup saves are revisioned separately from identity and preserve explicit blank overrides', async () => {
-  let configuration = { revision: 6, base_contract: 'Base contract', startup_instructions: 'Startup',
-    task_foundations: { reasoning: 'Preserve reasoning' } };
-  const ui = foundationsEditor((url, body) => {
-    assert.equal(url, '/v1/admin/cognitive-configuration');
-    if (body) configuration = { ...configuration, base_contract: body.base_contract,
-      startup_instructions: body.startup_instructions, revision: 7 };
-    return configuration;
-  });
-  await ui.refreshStartupConfiguration();
-  const el = ui.elements;
-  assert.equal(el.foundationContract.readOnly, true);
-  ui.editStartupConfiguration();
-  assert.equal(el.startupSave.disabled, true);
-  el.foundationContract.value = 'Unsaved';
-  ui.cancelStartupConfiguration();
-  assert.equal(el.foundationContract.value, 'Base contract');
-  ui.editStartupConfiguration();
-  el.foundationContract.value = '';
-  el.foundationStartup.value = 'New startup';
-  await ui.saveStartupConfiguration();
-  const saved = ui.calls.find(call => call.body).body;
-  assert.deepEqual(saved, { expected_revision: 6, base_contract: '', startup_instructions: 'New startup' });
-  assert.equal(configuration.task_foundations.reasoning, 'Preserve reasoning');
-  assert.equal(ui.state.cognitiveConfiguration.base_contract, '');
-  assert.equal(el.foundationContract.readOnly, true);
+test('Foundations distinguishes unavailable identity from unselected and empty identity fields', async () => {
+  const ui = foundationsView(() => ({ identity: { self_name: null, pronouns: null,
+    foundational_values: [], commitments: [], relationships: [] }, developmental_state: 'genesis' }));
+  ui.renderIdentityConfiguration();
+  for (const name of ['SelfName', 'Pronouns', 'Development', 'Values', 'Commitments', 'Relationships']) {
+    assert.equal(ui.elements['foundation' + name].textContent, 'Unknown');
+  }
+  await ui.refreshIdentityConfiguration();
+  assert.equal(ui.elements.foundationSelfName.textContent, 'Not selected');
+  assert.equal(ui.elements.foundationPronouns.textContent, 'Unknown');
+  for (const name of ['Values', 'Commitments', 'Relationships']) {
+    assert.equal(ui.elements['foundation' + name].textContent, 'None recorded');
+  }
 });
 
-test('a stale identity Save retains its isolated draft and does not claim success or retry', async () => {
-  const identity = { revision: 'old-token', identity: { self_name: null, pronouns: 'she/her',
-    foundational_values: [], commitments: [], relationships: [] }, developmental_state: 'genesis' };
-  const ui = foundationsEditor((url, body) => {
-    if (body) throw new Error('Configuration changed; refresh and retry.');
-    return identity;
+test('refreshing Foundations only reads identity and does not fetch or write startup configuration', async () => {
+  const ui = foundationsView(() => ({ identity: { self_name: 'Axiom' } }));
+  await ui.refreshFoundations();
+  assert.deepEqual(ui.calls, [{ url: '/v1/admin/identity', method: 'GET', body: undefined, authenticated: true }]);
+  assert.equal(ui.elements.foundationStatus.textContent, 'Identity loaded.');
+});
+
+test('an older identity response cannot overwrite a newer refresh', async () => {
+  const requests = [];
+  const ui = foundationsView(() => new Promise(resolve => requests.push(resolve)));
+  const older = ui.refreshIdentityConfiguration();
+  const newer = ui.refreshIdentityConfiguration();
+  assert.match(ui.elements.foundationStatus.textContent, /Loading identity/);
+  requests[1]({ revision: 'new', identity: { self_name: 'Current name' } });
+  await newer;
+  requests[0]({ revision: 'old', identity: { self_name: 'Older name' } });
+  await older;
+  assert.equal(ui.elements.foundationSelfName.textContent, 'Current name');
+  assert.equal(ui.state.foundationIdentity.revision, 'new');
+  assert.equal(ui.elements.foundationStatus.textContent, 'Identity loaded.');
+});
+
+test('an older identity failure cannot clear a successful newer refresh', async () => {
+  const requests = [];
+  const ui = foundationsView(() => new Promise((resolve, reject) => requests.push({ resolve, reject })));
+  const older = ui.refreshIdentityConfiguration();
+  const newer = ui.refreshIdentityConfiguration();
+  requests[1].resolve({ revision: 'new', identity: { self_name: 'Current name' } });
+  await newer;
+  requests[0].reject(new Error('Earlier request failed'));
+  await older;
+  assert.equal(ui.elements.foundationSelfName.textContent, 'Current name');
+  assert.equal(ui.state.foundationIdentity.revision, 'new');
+  assert.equal(ui.elements.foundationStatus.textContent, 'Identity loaded.');
+});
+
+test('a failed current identity refresh clears old identity and reports the failure', async () => {
+  let reads = 0;
+  const ui = foundationsView(() => {
+    if (++reads > 1) throw new Error('Identity is unavailable');
+    return { identity: { self_name: 'Old name', pronouns: 'she/her', foundational_values: ['Care'],
+      commitments: ['Listen'], relationships: [{ label: 'Will' }] }, developmental_state: 'genesis' };
   });
   await ui.refreshIdentityConfiguration();
-  ui.editIdentityConfiguration();
-  ui.elements.foundationSelfName.value = 'Draft name';
-  await ui.saveIdentityConfiguration();
-  assert.equal(ui.calls.filter(call => call.body).length, 1);
-  assert.equal(ui.state.foundationIdentity.identity.self_name, null);
-  assert.equal(ui.elements.foundationSelfName.value, 'Draft name');
-  assert.equal(ui.elements.foundationSelfName.readOnly, false);
-  assert.equal(ui.elements.foundationSave.disabled, false);
-  assert.match(ui.elements.foundationStatus.textContent, /Configuration changed/);
-  ui.cancelIdentityConfiguration();
-  assert.equal(ui.elements.foundationSelfName.value, '');
-});
-
-test('identity refresh cannot erase typing begun after its request started', async () => {
-  let reads = 0;
-  let resolveRefresh;
-  const original = { revision: 'old-token', identity: { self_name: 'Original', pronouns: 'she/her',
-    foundational_values: [], commitments: [], relationships: [] }, developmental_state: 'genesis' };
-  const ui = foundationsEditor(() => ++reads === 1 ? original : new Promise(resolve => { resolveRefresh = resolve; }));
   await ui.refreshIdentityConfiguration();
-  const pending = ui.refreshIdentityConfiguration();
-  ui.editIdentityConfiguration();
-  ui.elements.foundationSelfName.value = 'Typed name';
-  resolveRefresh({ ...original, revision: 'new-token', identity: { ...original.identity, self_name: 'Concurrent name' } });
-  await pending;
-  assert.equal(ui.state.foundationIdentity.revision, 'old-token');
-  assert.equal(ui.state.foundationIdentityDraft.revision, 'old-token');
-  assert.equal(ui.elements.foundationSelfName.value, 'Typed name');
+  assert.equal(ui.state.foundationIdentity, null);
+  for (const name of ['SelfName', 'Pronouns', 'Development', 'Values', 'Commitments', 'Relationships']) {
+    assert.equal(ui.elements['foundation' + name].textContent, 'Unknown');
+  }
+  assert.equal(ui.elements.foundationStatus.textContent, 'Identity is unavailable');
+  assert.equal(ui.calls.length, 2);
 });
 
-test('an older startup refresh cannot replace a configuration saved after Edit began', async () => {
-  let reads = 0;
-  let resolveRefresh;
-  const original = { revision: 6, base_contract: 'Base', startup_instructions: 'Startup', task_foundations: {} };
-  const ui = foundationsEditor((_url, body) => {
-    if (body) return { ...original, ...body, revision: 7 };
-    if (++reads === 1) return original;
-    return new Promise(resolve => { resolveRefresh = resolve; });
-  });
-  await ui.refreshStartupConfiguration();
-  const pending = ui.refreshStartupConfiguration();
-  ui.editStartupConfiguration();
-  ui.elements.foundationStartup.value = 'Saved after refresh began';
-  await ui.saveStartupConfiguration();
-  resolveRefresh(original);
-  await pending;
-  assert.equal(ui.state.cognitiveConfiguration.revision, 7);
-  assert.equal(ui.elements.foundationStartup.value, 'Saved after refresh began');
-  assert.equal(ui.state.cognitiveDraft, null);
-});
-
-function currentStatePortal({ diagnosticsHandler } = {}) {
+function currentStatePortal({ diagnosticsHandler, bodySettings = true, voiceHandler } = {}) {
   const elements = new Proxy({}, { get: (target, id) => {
     if (!target[id]) {
       target[id] = new Element();
@@ -1518,6 +1474,9 @@ function currentStatePortal({ diagnosticsHandler } = {}) {
     return target[id];
   } });
   const calls = [];
+  const requests = [];
+  const updates = [];
+  const toasts = [];
   const failures = { diagnostics: null };
   const state = { mode: 'mind', adminAuthorized: false, activeTaskProfile: null };
   const identity = { self_name: null, pronouns: 'she/her', developmental_state: 'genesis' };
@@ -1528,17 +1487,25 @@ function currentStatePortal({ diagnosticsHandler } = {}) {
     current_context: { value: 'Current interaction', status: 'current' },
   };
   const status = { mind: { identity, developmental_state: 'genesis', created_at: '2026-10-25T00:00:00Z' },
-    integration: {}, durable_memory_count: 1, journal_experience_count: 2 };
+    integration: {}, durable_memory_count: 1, journal_experience_count: 2,
+    administration: { body_settings_available: bodySettings } };
   const context = vm.createContext({
     state, el: elements, filters: { admin: {}, mind: {} },
     document: { getElementById: id => elements[id], createElement: tag => new Element(tag) },
     displayLabel: value => value, formatBrowserDateTime: value => value,
     validateAdmin: async () => { state.adminAuthorized = true; return true; },
-    refreshMemory() {}, refreshJournal() {}, refreshHostBehaviors() {}, refreshTaskModelAssignments() {},
-    refreshTaskBehaviors() {}, refreshProviderEndpoints() {}, refreshMcpServers() {}, loadVoiceSettings() {},
-    refreshBodyFallbackSettings() {}, refreshSkillDrafts() {}, refreshDeviceInventory() {}, refreshFoundations() {}, toast() {},
-    api: async url => {
+    refreshMemory() { updates.push('memory'); }, refreshJournal() { updates.push('journal'); },
+    refreshHostBehaviors() { updates.push('behaviors'); }, refreshTaskModelAssignments() { updates.push('tasks'); },
+    refreshTaskBehaviors() {}, refreshProviderEndpoints() { updates.push('endpoints'); }, refreshMcpServers() {},
+    refreshSkillDrafts() {}, refreshDeviceInventory() {}, refreshFoundations() {}, toast: (...args) => toasts.push(args),
+    api: async (url, options = {}) => {
       calls.push(url);
+      requests.push({ url, method: options.method || 'GET', body: options.body && JSON.parse(options.body) });
+      if (url === '/v1/admin/body/voice/settings') {
+        if (voiceHandler) return voiceHandler(options);
+        return { revision: 3, rate: 1.2, pitch: 0.9, volume: 0.8, voiceName: 'Saved voice' };
+      }
+      if (url === '/v1/admin/body/fallback') return { enabled: true, runtime_override: null, deployment_default: true };
       if (url === '/v1/portal/status') return status;
       if (url === '/v1/admin/diagnostics') {
         if (diagnosticsHandler) return diagnosticsHandler();
@@ -1551,14 +1518,16 @@ function currentStatePortal({ diagnosticsHandler } = {}) {
     },
   });
   vm.runInContext(source.match(/^let diagnosticsRevision = .*;$/m)[0], context);
-  for (const name of ['setMode', 'enterAdminMode', 'renderStatus', 'refreshStatus', 'refresh',
+  for (const name of ['setMode', 'bodySettingsAvailable', 'renderBodySettingsAvailability', 'updateVoiceSliderReadouts',
+    'loadVoiceSettings', 'saveVoiceSettings', 'refreshBodyFallbackSettings', 'saveBodyFallbackSettings',
+    'enterAdminMode', 'renderStatus', 'refreshStatus', 'refresh',
     'formatCurrentIdentity', 'refreshDiagnostics', 'refreshAdmin']) {
     const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
     assert.ok(start >= 0, `${name} exists`);
     const next = source.slice(start + 1).search(/^(?:async )?function |^const |^let |^document\.|^if \(|^refresh\(\);/m);
     vm.runInContext(source.slice(start, next < 0 ? source.length : start + 1 + next), context);
   }
-  return { ...context, elements, calls, fields, status, failures };
+  return { ...context, elements, calls, requests, updates, toasts, fields, status, failures };
 }
 
 test('entering Administration again loads current diagnostics instead of retaining earlier state', async () => {
@@ -1651,4 +1620,89 @@ test('an older diagnostics success or failure cannot replace a newer refresh res
     assert.equal(ui.elements.cognitiveStateSummary.children.at(-1).children[1].textContent, 'Latest interaction');
     assert.equal(ui.calls.length, 2);
   }
+});
+
+
+test('account-scoped Admin refresh skips global Body settings while other available data refreshes', async () => {
+  const ui = currentStatePortal({ bodySettings: false });
+  ui.state.mode = 'admin';
+  ui.state.adminAuthorized = true;
+  ui.state.status = { administration: { body_settings_available: true } };
+  await ui.refreshAdmin();
+  assert.equal(ui.calls[0], '/v1/portal/status');
+  assert.equal(ui.calls.some(url => url.startsWith('/v1/admin/body/')), false);
+  assert.equal(ui.calls.includes('/v1/admin/diagnostics'), true);
+  for (const update of ['memory', 'journal', 'behaviors', 'tasks', 'endpoints']) assert.ok(ui.updates.includes(update));
+  for (const name of ['voiceRate', 'voicePitch', 'voiceVolume', 'voiceName', 'saveVoiceSettings']) {
+    assert.equal(ui.elements[name].disabled, true);
+  }
+  assert.equal(ui.elements.voiceSettingsStatus.textContent, 'Unavailable for this account.');
+  assert.equal(ui.toasts.length, 0);
+  await ui.saveVoiceSettings();
+  await ui.saveBodyFallbackSettings();
+  assert.equal(ui.calls.some(url => url.startsWith('/v1/admin/body/')), false);
+});
+
+test('authorized root Admin loads and saves voice settings after current capabilities are known', async () => {
+  const ui = currentStatePortal();
+  await ui.enterAdminMode();
+  assert.equal(ui.calls[0], '/v1/portal/status');
+  assert.equal(ui.calls.filter(url => url === '/v1/admin/body/voice/settings').length, 1);
+  assert.equal(ui.calls.filter(url => url === '/v1/admin/body/fallback').length, 1);
+  assert.equal(ui.elements.voiceRate.value, '1.2');
+  assert.equal(ui.elements.voiceName.value, 'Saved voice');
+  assert.equal(ui.elements.saveVoiceSettings.disabled, false);
+  assert.equal(ui.elements.voiceSettingsStatus.textContent, '');
+  ui.elements.voiceName.value = 'Changed voice';
+  await ui.saveVoiceSettings();
+  assert.deepEqual(ui.requests.find(request => request.method === 'POST').body, {
+    expected_revision: 3, rate: 1.2, pitch: 0.9, volume: 0.8, voice_name: 'Changed voice',
+  });
+});
+
+test('anonymous or unknown-scope refresh cannot request or save deployment Body settings', async () => {
+  const ui = currentStatePortal();
+  await ui.refresh();
+  await ui.loadVoiceSettings();
+  await ui.saveVoiceSettings();
+  await ui.refreshBodyFallbackSettings();
+  await ui.saveBodyFallbackSettings();
+  assert.deepEqual(ui.calls, ['/v1/portal/status']);
+  assert.equal(ui.elements.saveVoiceSettings.disabled, true);
+  ui.state.adminAuthorized = true;
+  delete ui.status.administration.body_settings_available;
+  await ui.refresh();
+  await ui.loadVoiceSettings();
+  await ui.saveVoiceSettings();
+  assert.equal(ui.calls.some(url => url.startsWith('/v1/admin/body/')), false);
+});
+
+test('a failed permitted voice read disables Save and does not stop other Admin refreshes', async () => {
+  const ui = currentStatePortal({ voiceHandler: () => { throw new Error('Voice store unavailable'); } });
+  await ui.enterAdminMode();
+  assert.equal(ui.elements.saveVoiceSettings.disabled, true);
+  assert.equal(ui.elements.voiceRate.disabled, true);
+  assert.equal(ui.elements.voiceSettingsStatus.textContent, 'Voice store unavailable');
+  for (const update of ['memory', 'journal', 'behaviors', 'tasks', 'endpoints']) assert.ok(ui.updates.includes(update));
+  await ui.saveVoiceSettings();
+  assert.equal(ui.requests.some(request => request.method === 'POST'), false);
+});
+
+test('switching to account scope clears loaded root voice values and ignores an in-flight read', async () => {
+  let resolveVoice;
+  const ui = currentStatePortal({ voiceHandler: () => new Promise(resolve => { resolveVoice = resolve; }) });
+  ui.state.adminAuthorized = true;
+  ui.renderStatus(ui.status);
+  const pending = ui.loadVoiceSettings();
+  ui.status.administration.body_settings_available = false;
+  ui.elements.voiceName.value = 'Previously loaded root voice';
+  ui.renderStatus(ui.status);
+  resolveVoice({ revision: 4, rate: 1.5, voiceName: 'Old root voice' });
+  await pending;
+  assert.equal(ui.elements.voiceName.value, '');
+  assert.equal(ui.elements.voiceRate.value, '1');
+  assert.equal(ui.elements.saveVoiceSettings.disabled, true);
+  assert.equal(ui.state.voiceSettingsLoaded, false);
+  assert.equal(ui.elements.voiceSettingsStatus.textContent, 'Unavailable for this account.');
+  assert.equal(ui.toasts.length, 0);
 });

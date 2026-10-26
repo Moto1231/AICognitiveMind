@@ -23,6 +23,41 @@ from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
 class PortalTests(unittest.TestCase):
+    def test_foundations_displays_identity_without_editable_controls(self) -> None:
+        class Foundations(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__()
+                self.active = False
+                self.fields = {}
+                self.controls = []
+
+            def handle_starttag(self, tag, attrs) -> None:
+                attributes = dict(attrs)
+                if tag == "article":
+                    self.active = attributes.get("id") == "foundationsSection"
+                if not self.active:
+                    return
+                if attributes.get("id"):
+                    self.fields[attributes["id"]] = (tag, attributes)
+                if tag in ("input", "textarea", "select", "button"):
+                    self.controls.append((tag, attributes))
+
+            def handle_endtag(self, tag) -> None:
+                if tag == "article":
+                    self.active = False
+
+        foundations = Foundations()
+        foundations.feed((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        for name in ("SelfName", "Pronouns", "Development", "Values", "Commitments", "Relationships"):
+            with self.subTest(name=name):
+                self.assertEqual(foundations.fields["foundation" + name][0], "dd")
+        self.assertEqual(len(foundations.controls), 1)
+        tag, back = foundations.controls[0]
+        self.assertEqual(tag, "button")
+        self.assertIn("data-admin-back", back)
+        self.assertEqual(back["aria-label"], "Back to System Overview")
+        self.assertEqual(foundations.fields["foundationStatus"][1]["role"], "status")
+
     def test_endpoint_api_key_is_an_accessible_masked_text_input(self) -> None:
         class Controls(HTMLParser):
             def __init__(self) -> None:

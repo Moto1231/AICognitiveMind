@@ -24,12 +24,7 @@ const state = {
   hostBehaviorSaving: false,
   activeHostBehaviorId: null,
   hostBehaviorQuery: "",
-  cognitiveConfiguration: null,
-  cognitiveDraft: null,
-  cognitiveSaving: false,
   foundationIdentity: null,
-  foundationIdentityDraft: null,
-  foundationIdentitySaving: false,
   taskFoundationDraft: null,
   taskFoundationSaving: false,
   taskModelAssignments: [],
@@ -53,6 +48,8 @@ const state = {
   integrationSaving: false,
   deviceInventory: [],
   voiceSettingsRevision: 0,
+  voiceSettingsLoaded: false,
+  voiceSettingsBusy: false,
   taskProfileSnapshot: "",
   hostBehaviorSnapshot: "",
 };
@@ -230,6 +227,7 @@ const el = {
   voiceVolumeValue: document.getElementById("voiceVolumeValue"),
   voiceName: document.getElementById("voiceName"),
   voiceSettingsRevision: document.getElementById("voiceSettingsRevision"),
+  voiceSettingsStatus: document.getElementById("voiceSettingsStatus"),
   saveVoiceSettings: document.getElementById("saveVoiceSettings"),
   taskProfileFoundation: document.getElementById("taskProfileFoundation"),
   taskFoundationEdit: document.getElementById("taskFoundationEdit"),
@@ -1425,22 +1423,76 @@ function updateVoiceSliderReadouts() {
   if (el.voiceVolumeValue) el.voiceVolumeValue.value = Number(el.voiceVolume.value).toFixed(2);
 }
 
+function bodySettingsAvailable() {
+  return state.adminAuthorized && state.status?.administration?.body_settings_available === true;
+}
+
+function renderBodySettingsAvailability() {
+  const available = bodySettingsAvailable();
+  if (!available) {
+    state.voiceSettingsLoaded = false;
+    state.voiceSettingsRevision = 0;
+    for (const name of ["voiceRate", "voicePitch", "voiceVolume"]) {
+      if (el[name]) el[name].value = "1";
+    }
+    if (el.voiceName) el.voiceName.value = "";
+    updateVoiceSliderReadouts();
+    if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "";
+    const message = state.status?.administration?.body_settings_available === false
+      ? "Unavailable for this account." : "Voice settings unavailable.";
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = message;
+    if (el.bodyFallbackEnabled) el.bodyFallbackEnabled.checked = false;
+    if (el.bodyFallbackSource) el.bodyFallbackSource.textContent = message;
+  }
+  const enabled = available && state.voiceSettingsLoaded && !state.voiceSettingsBusy;
+  for (const name of ["voiceRate", "voicePitch", "voiceVolume", "voiceName", "saveVoiceSettings"]) {
+    if (el[name]) el[name].disabled = !enabled;
+  }
+  if (el.bodyFallbackEnabled) el.bodyFallbackEnabled.disabled = !available;
+  if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = !available;
+}
+
 async function loadVoiceSettings() {
+  const revision = state.voiceSettingsLoadRevision = (state.voiceSettingsLoadRevision || 0) + 1;
+  if (!bodySettingsAvailable()) {
+    renderBodySettingsAvailability();
+    return;
+  }
+  state.voiceSettingsLoaded = false;
+  state.voiceSettingsBusy = true;
+  renderBodySettingsAvailability();
+  if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = "Loading voice settings…";
   try {
     const settings = await api("/v1/admin/body/voice/settings", {}, true);
+    if (revision !== state.voiceSettingsLoadRevision || !bodySettingsAvailable()) return;
     state.voiceSettingsRevision = Number(settings.revision || 0);
     el.voiceRate.value = String(settings.rate ?? 1);
     el.voicePitch.value = String(settings.pitch ?? 1);
     el.voiceVolume.value = String(settings.volume ?? 1);
     el.voiceName.value = settings.voiceName || "";
+    state.voiceSettingsLoaded = true;
     updateVoiceSliderReadouts();
     if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = "";
   } catch (error) {
+    if (revision !== state.voiceSettingsLoadRevision || !bodySettingsAvailable()) return;
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = error.message;
     toast("Could not load voice settings: " + error.message, true);
+  } finally {
+    if (revision === state.voiceSettingsLoadRevision) {
+      state.voiceSettingsBusy = false;
+      renderBodySettingsAvailability();
+    }
   }
 }
 
 async function saveVoiceSettings() {
+  if (!bodySettingsAvailable() || !state.voiceSettingsLoaded || state.voiceSettingsBusy) {
+    renderBodySettingsAvailability();
+    return;
+  }
+  state.voiceSettingsBusy = true;
+  renderBodySettingsAvailability();
   try {
     const settings = await api("/v1/admin/body/voice/settings", {
       method: "POST",
@@ -1452,16 +1504,23 @@ async function saveVoiceSettings() {
         voice_name: el.voiceName.value.trim(),
       }),
     }, true);
+    if (!bodySettingsAvailable()) return;
     state.voiceSettingsRevision = Number(settings.revision || 0);
     if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = "";
     toast("Voice settings saved");
   } catch (error) {
+    if (!bodySettingsAvailable()) return;
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = error.message;
     toast("Could not save voice settings: " + error.message, true);
+  } finally {
+    state.voiceSettingsBusy = false;
+    renderBodySettingsAvailability();
   }
 }
 
 async function refreshBodyFallbackSettings() {
-  if (!state.adminAuthorized || !el.bodyFallbackEnabled) return;
+  if (!bodySettingsAvailable() || !el.bodyFallbackEnabled) return;
   try {
     const settings = await api("/v1/admin/body/fallback", {}, true);
     el.bodyFallbackEnabled.checked = Boolean(settings.enabled);
@@ -1474,7 +1533,7 @@ async function refreshBodyFallbackSettings() {
 }
 
 async function saveBodyFallbackSettings() {
-  if (!el.bodyFallbackEnabled) return;
+  if (!bodySettingsAvailable() || !el.bodyFallbackEnabled) return;
   if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = true;
   try {
     const settings = await api("/v1/admin/body/fallback", {
@@ -1496,6 +1555,7 @@ async function saveBodyFallbackSettings() {
 
 async function enterAdminMode() {
   try {
+    await refreshStatus();
     const allowed = await validateAdmin();
     if (!allowed) return;
     setMode("admin");
@@ -1518,6 +1578,7 @@ async function enterAdminMode() {
 
 function renderStatus(status) {
   state.status = status;
+  renderBodySettingsAvailability();
   const mind = status.mind;
   const integration = status.integration;
   const selfName = typeof mind.identity.self_name === "string" && mind.identity.self_name.trim()
@@ -2298,9 +2359,9 @@ async function refreshStatus() {
 
 async function refresh() {
   try {
+    await refreshStatus();
     const admin = state.mode === "admin" && state.adminAuthorized;
     await Promise.all([
-      refreshStatus(),
       refreshMemory(admin ? filters.admin : filters.mind, true),
       refreshJournal(true),
       ...(admin ? [
@@ -3099,9 +3160,9 @@ function updateDeviceSelectionState() {
   if (save) save.disabled = !dirty || !valid;
   if (cancel) cancel.disabled = !dirty && !deviceSelectionError;
   if (status) status.textContent = deviceSelectionError || (dirty
-    ? (valid ? "Unsaved device changes. Save applies them to Body operation in this browser."
+    ? (valid ? "Unsaved changes."
       : "A selected device is no longer available. Choose an available device or Cancel.")
-    : "Device choices are saved only in this browser. Select a device, then Save to apply it.");
+    : "");
 }
 
 function saveSelectedDevice(kind, deviceId) {
@@ -3293,182 +3354,52 @@ if (navigator.mediaDevices?.addEventListener) {
 renderTaskProfiles();
 refresh();
 
-function identityFormElements() {
-  return Object.fromEntries(["SelfName", "Pronouns", "Development", "Values", "Commitments", "Relationships"]
-    .map(name => [name, document.getElementById("foundation" + name)]));
+function foundationIdentityText(value) {
+  if (value === null || value === undefined || value === "") return "Unknown";
+  if (Array.isArray(value)) return value.length ? value.map(foundationIdentityText).join("\n") : "None recorded";
+  if (typeof value === "object") {
+    return Object.entries(value).map(([key, detail]) => `${displayLabel(key)}: ${foundationIdentityText(detail)}`).join("\n") || "None recorded";
+  }
+  return String(value);
 }
 
 function renderIdentityConfiguration() {
-  const form = identityFormElements();
-  const saved = state.foundationIdentity;
-  const draft = state.foundationIdentityDraft;
-  const value = draft || saved;
+  const value = state.foundationIdentity;
   const identity = value?.identity || {};
-  form.SelfName.value = identity.self_name || "";
-  form.Pronouns.value = identity.pronouns || "";
-  form.Development.value = value?.developmental_state || "";
-  form.Values.value = (identity.foundational_values || []).join("\n");
-  form.Commitments.value = (identity.commitments || []).join("\n");
-  form.Relationships.value = JSON.stringify(identity.relationships || [], null, 2);
-  updateIdentityEditorState();
-}
-
-function identityFormPayload() {
-  const form = identityFormElements();
-  const relationships = JSON.parse(form.Relationships.value || "[]");
-  if (!Array.isArray(relationships) || relationships.some(item => !item || typeof item !== "object" || Array.isArray(item))) {
-    throw new Error("Relationships must be an array of relationship records.");
-  }
-  if (!form.Pronouns.value.trim() || !form.Development.value.trim()) throw new Error("Enter pronouns and a developmental state.");
-  return {
-    identity: {
-      self_name: form.SelfName.value.trim() || null,
-      pronouns: form.Pronouns.value.trim(),
-      foundational_values: form.Values.value.split("\n").map(value => value.trim()).filter(Boolean),
-      commitments: form.Commitments.value.split("\n").map(value => value.trim()).filter(Boolean),
-      relationships,
-    },
-    developmental_state: form.Development.value.trim(),
+  const fields = {
+    SelfName: value ? identity.self_name || "Not selected" : "Unknown",
+    Pronouns: identity.pronouns,
+    Development: value?.developmental_state,
+    Values: identity.foundational_values,
+    Commitments: identity.commitments,
+    Relationships: identity.relationships,
   };
-}
-
-function updateIdentityEditorState() {
-  const editing = Boolean(state.foundationIdentityDraft);
-  const busy = state.foundationIdentitySaving === true;
-  Object.values(identityFormElements()).forEach(input => { input.readOnly = !editing || busy; });
-  let valid = false;
-  let dirty = false;
-  if (editing) {
-    try {
-      const payload = identityFormPayload();
-      valid = true;
-      dirty = JSON.stringify(payload) !== state.foundationIdentityDraft.baseline;
-    } catch (error) { document.getElementById("foundationStatus").textContent = error.message; }
+  for (const [name, detail] of Object.entries(fields)) {
+    const output = document.getElementById("foundation" + name);
+    if (output) output.textContent = foundationIdentityText(detail);
   }
-  document.getElementById("foundationEdit").disabled = !state.foundationIdentity || editing || busy;
-  document.getElementById("foundationCancel").disabled = !editing || busy;
-  document.getElementById("foundationSave").disabled = !editing || busy || !valid || !dirty;
 }
 
 async function refreshIdentityConfiguration() {
-  if (state.foundationIdentityDraft || state.foundationIdentitySaving) return;
   const revision = state.identityConfigurationLoadRevision = (state.identityConfigurationLoadRevision || 0) + 1;
+  const status = document.getElementById("foundationStatus");
+  if (status) status.textContent = "Loading identity…";
   try {
     const result = await api("/v1/admin/identity", {}, true);
-    if (revision !== state.identityConfigurationLoadRevision || state.foundationIdentityDraft || state.foundationIdentitySaving) return;
+    if (revision !== state.identityConfigurationLoadRevision) return;
     state.foundationIdentity = result;
     renderIdentityConfiguration();
-    document.getElementById("foundationStatus").textContent = "Identity loaded.";
+    if (status) status.textContent = "Identity loaded.";
   } catch (error) {
-    if (revision === state.identityConfigurationLoadRevision && !state.foundationIdentityDraft && !state.foundationIdentitySaving) document.getElementById("foundationStatus").textContent = error.message;
-  }
-}
-
-function editIdentityConfiguration() {
-  if (!state.foundationIdentity || state.foundationIdentityDraft || state.foundationIdentitySaving) return;
-  state.identityConfigurationLoadRevision = (state.identityConfigurationLoadRevision || 0) + 1;
-  state.foundationIdentityDraft = JSON.parse(JSON.stringify(state.foundationIdentity));
-  renderIdentityConfiguration();
-  state.foundationIdentityDraft.baseline = JSON.stringify(identityFormPayload());
-  document.getElementById("foundationStatus").textContent = "Editing identity.";
-  updateIdentityEditorState();
-}
-
-function cancelIdentityConfiguration() {
-  if (state.foundationIdentitySaving) return;
-  state.foundationIdentityDraft = null;
-  renderIdentityConfiguration();
-  document.getElementById("foundationStatus").textContent = "Changes cancelled.";
-}
-
-async function saveIdentityConfiguration() {
-  updateIdentityEditorState();
-  if (document.getElementById("foundationSave").disabled) return;
-  const payload = { expected_revision: state.foundationIdentityDraft.revision, ...identityFormPayload() };
-  state.foundationIdentitySaving = true;
-  updateIdentityEditorState();
-  try {
-    state.foundationIdentity = await api("/v1/admin/identity", { method: "PUT", body: JSON.stringify(payload) }, true);
-    state.foundationIdentityDraft = null;
+    if (revision !== state.identityConfigurationLoadRevision) return;
+    state.foundationIdentity = null;
     renderIdentityConfiguration();
-    document.getElementById("foundationStatus").textContent = "Identity saved for this Mind.";
-    try { await refreshStatus(); } catch (error) { toast("Identity saved; status refresh failed: " + error.message, true); }
-  } catch (error) { document.getElementById("foundationStatus").textContent = error.message; }
-  finally { state.foundationIdentitySaving = false; updateIdentityEditorState(); }
-}
-
-function renderStartupConfiguration() {
-  const value = state.cognitiveDraft || state.cognitiveConfiguration;
-  document.getElementById("foundationContract").value = value?.base_contract ?? "";
-  document.getElementById("foundationStartup").value = value?.startup_instructions ?? "";
-  updateStartupEditorState();
-}
-
-function updateStartupEditorState() {
-  const editing = Boolean(state.cognitiveDraft);
-  const busy = state.cognitiveSaving === true;
-  const payload = {
-    base_contract: document.getElementById("foundationContract").value,
-    startup_instructions: document.getElementById("foundationStartup").value,
-  };
-  for (const id of ["foundationContract", "foundationStartup"]) document.getElementById(id).readOnly = !editing || busy;
-  document.getElementById("startupEdit").disabled = !state.cognitiveConfiguration || editing || busy;
-  document.getElementById("startupCancel").disabled = !editing || busy;
-  document.getElementById("startupSave").disabled = !editing || busy || JSON.stringify(payload) === state.cognitiveDraft?.baseline;
-}
-
-async function refreshStartupConfiguration() {
-  if (state.cognitiveDraft || state.cognitiveSaving) return;
-  const revision = state.startupConfigurationLoadRevision = (state.startupConfigurationLoadRevision || 0) + 1;
-  try {
-    const result = await api("/v1/admin/cognitive-configuration", {}, true);
-    if (revision !== state.startupConfigurationLoadRevision || state.cognitiveDraft || state.cognitiveSaving) return;
-    state.cognitiveConfiguration = result;
-    state.taskFoundations = state.cognitiveConfiguration.task_foundations || {};
-    renderStartupConfiguration();
-    document.getElementById("startupStatus").textContent = "Startup configuration loaded.";
-  } catch (error) {
-    if (revision === state.startupConfigurationLoadRevision && !state.cognitiveDraft && !state.cognitiveSaving) document.getElementById("startupStatus").textContent = error.message;
+    if (status) status.textContent = error.message;
   }
-}
-
-function editStartupConfiguration() {
-  if (!state.cognitiveConfiguration || state.cognitiveDraft || state.cognitiveSaving) return;
-  state.startupConfigurationLoadRevision = (state.startupConfigurationLoadRevision || 0) + 1;
-  const { base_contract, startup_instructions, revision } = state.cognitiveConfiguration;
-  state.cognitiveDraft = { base_contract, startup_instructions, revision, baseline: JSON.stringify({ base_contract, startup_instructions }) };
-  renderStartupConfiguration();
-  document.getElementById("startupStatus").textContent = "Editing startup configuration.";
-}
-
-function cancelStartupConfiguration() {
-  if (state.cognitiveSaving) return;
-  state.cognitiveDraft = null;
-  renderStartupConfiguration();
-  document.getElementById("startupStatus").textContent = "Changes cancelled.";
-}
-
-async function saveStartupConfiguration() {
-  updateStartupEditorState();
-  if (document.getElementById("startupSave").disabled) return;
-  const payload = {
-    expected_revision: state.cognitiveDraft.revision,
-    base_contract: document.getElementById("foundationContract").value,
-    startup_instructions: document.getElementById("foundationStartup").value,
-  };
-  state.cognitiveSaving = true;
-  updateStartupEditorState();
-  try {
-    state.cognitiveConfiguration = await api("/v1/admin/cognitive-configuration", { method: "PUT", body: JSON.stringify(payload) }, true);
-    state.cognitiveDraft = null;
-    renderStartupConfiguration();
-    document.getElementById("startupStatus").textContent = "Startup configuration saved for this Mind.";
-  } catch (error) { document.getElementById("startupStatus").textContent = error.message; }
-  finally { state.cognitiveSaving = false; updateStartupEditorState(); }
 }
 
 async function refreshFoundations() {
-  await Promise.all([refreshIdentityConfiguration(), refreshStartupConfiguration()]);
+  await refreshIdentityConfiguration();
 }
 
 function updateTaskFoundationEditor() {
@@ -3523,14 +3454,6 @@ async function saveTaskFoundation() {
   finally { state.taskFoundationSaving = false; updateTaskFoundationEditor(); }
 }
 
-for (const input of Object.values(identityFormElements())) input?.addEventListener("input", updateIdentityEditorState);
-for (const id of ["foundationContract", "foundationStartup"]) document.getElementById(id)?.addEventListener("input", updateStartupEditorState);
-document.getElementById("foundationEdit")?.addEventListener("click", editIdentityConfiguration);
-document.getElementById("foundationCancel")?.addEventListener("click", cancelIdentityConfiguration);
-document.getElementById("foundationSave")?.addEventListener("click", saveIdentityConfiguration);
-document.getElementById("startupEdit")?.addEventListener("click", editStartupConfiguration);
-document.getElementById("startupCancel")?.addEventListener("click", cancelStartupConfiguration);
-document.getElementById("startupSave")?.addEventListener("click", saveStartupConfiguration);
 el.taskFoundationEdit?.addEventListener("click", editTaskFoundation);
 el.taskFoundationCancel?.addEventListener("click", cancelTaskFoundationEdit);
 el.taskFoundationSave?.addEventListener("click", saveTaskFoundation);
