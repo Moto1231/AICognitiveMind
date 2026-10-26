@@ -23,7 +23,7 @@ from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
 class PortalTests(unittest.TestCase):
-    def test_foundations_displays_identity_without_editable_controls(self) -> None:
+    def test_foundations_keeps_identity_read_only_and_restores_the_startup_editor(self) -> None:
         class Foundations(HTMLParser):
             def __init__(self) -> None:
                 super().__init__()
@@ -51,12 +51,21 @@ class PortalTests(unittest.TestCase):
         for name in ("SelfName", "Pronouns", "Development", "Values", "Commitments", "Relationships"):
             with self.subTest(name=name):
                 self.assertEqual(foundations.fields["foundation" + name][0], "dd")
-        self.assertEqual(len(foundations.controls), 1)
+        self.assertEqual(len(foundations.controls), 6)
         tag, back = foundations.controls[0]
         self.assertEqual(tag, "button")
         self.assertIn("data-admin-back", back)
         self.assertEqual(back["aria-label"], "Back to System Overview")
         self.assertEqual(foundations.fields["foundationStatus"][1]["role"], "status")
+        for name in ("foundationContract", "foundationStartup"):
+            self.assertEqual(foundations.fields[name][0], "textarea")
+            self.assertIn("readonly", foundations.fields[name][1])
+        for name in ("startupEdit", "startupSave", "startupCancel"):
+            self.assertEqual(foundations.fields[name][0], "button")
+            self.assertIn("disabled", foundations.fields[name][1])
+        for name in ("foundationEdit", "foundationSave", "foundationCancel"):
+            self.assertNotIn(name, foundations.fields)
+        self.assertEqual(foundations.fields["startupStatus"][1]["role"], "status")
 
     def test_endpoint_api_key_is_an_accessible_masked_text_input(self) -> None:
         class Controls(HTMLParser):
