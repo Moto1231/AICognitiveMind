@@ -867,7 +867,7 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
                 **payload, "after_request_ids": ["ready-human", "ready-sensory"],
             })
             self.assertEqual(excluded.status_code, 200, excluded.text)
-            self.assertEqual(excluded.json(), {"requests": []})
+            self.assertEqual(excluded.json(), {"requests": [], "finished_request_ids": []})
             partial = await anonymous.post("/v1/host-events/ready", json={
                 **payload, "after_request_ids": ["ready-human"],
             })
