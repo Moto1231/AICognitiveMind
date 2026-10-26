@@ -42,7 +42,7 @@ function realtimeStartup({ status = { realtime: { available: true, scope: 'sessi
     setStatus: message => messages.push(message), cancelBodySpeech() {}, clearTimeout() {},
     bodyMediaConstraints: () => ({ audio: true }), requestedLookDuration: () => null,
     startAudioMeter: async () => {}, stopAudioMeter() {}, refreshToggleUi() {}, setSenseStatus() {}, startSensoryLoop() {},
-    connectMouthEvents() {}, refreshSharedVoiceSettings() {}, speakIntent: async () => { speech++; },
+    connectMouthEvents() {}, refreshSharedVoiceSettings() {}, cancelSensoryObservation() {}, speakIntent: async () => { speech++; },
     bodyFetch: async (url, options = {}) => {
       requests.push({ url, method: options.method || 'GET', body: options.body });
       if (options.signal?.aborted) throw new Error('Request timed out.');

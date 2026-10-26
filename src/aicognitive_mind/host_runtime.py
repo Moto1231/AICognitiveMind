@@ -355,10 +355,41 @@ class HostRuntime:
         current = time.time() if now is None else now
         return current - float(host["last_heartbeat_at"]) > cls.HEARTBEAT_STALE_AFTER_SECONDS
 
+    async def _pending_requests(self) -> list[dict]:
+        requests = await self.records.pending()
+        pending = []
+        now = time.time()
+        for request in requests:
+            if request.get("task") == "sensory_interpretation" and request.get("deadline") is None:
+                # Older passive jobs had no deadline. Their waiting HTTP bridge
+                # may have disappeared in a restart; do not retain those jobs
+                # forever or grant them a fresh lifetime on every host wake-up.
+                deadline = float(request["created"]) + self.timeout
+                revised = {
+                    **request,
+                    "deadline": deadline,
+                    "state": "expired" if deadline <= now else "pending",
+                }
+                if await self.records.replace(request["request_id"], request, revised):
+                    request = revised
+                else:
+                    latest = await self.records.get(request["request_id"])
+                    # A concurrent completion/claim owns its revision. Only use
+                    # a reconciled pending value; retry a legacy conflict on the
+                    # next bounded queue read instead of overwriting it.
+                    if not latest or latest.get("deadline") is None:
+                        continue
+                    request = latest
+            if request.get("state") == "pending" and (
+                request.get("deadline") is None or float(request["deadline"]) > now
+            ):
+                pending.append(request)
+        return pending
+
     async def _has_claimed_request(self, pending_requests: list[dict] | None = None) -> bool:
         now = time.time()
         if pending_requests is None:
-            pending_requests = await self.records.pending()
+            pending_requests = await self._pending_requests()
         for request in pending_requests:
             if not request.get("claim"):
                 continue
@@ -393,7 +424,7 @@ class HostRuntime:
     async def status(self) -> dict:
         now = time.time()
         raw_host = await self._raw_live_host()
-        requests = await self.records.pending()
+        requests = await self._pending_requests()
         stale = self._heartbeat_stale(raw_host, now) and not await self._has_claimed_request(requests)
         host = None if stale else (
             {key: raw_host.get(key) for key in ("name", "model", "expires", "attached_at", "last_heartbeat_at")}
@@ -530,6 +561,8 @@ class HostRuntime:
         if not notify and not await self.active():
             raise RuntimeError("No external reasoning host is attached")
         key = uuid4().hex
+        passive_sensory = task == "sensory_interpretation"
+        created = time.time()
         request = {
             "kind": "body_request",
             "request_id": key,
@@ -540,10 +573,12 @@ class HostRuntime:
             "priority": int(priority),
             "body_session": body_session.get(),
             "notify_message_event": notify,
-            "created": time.time(),
+            "created": created,
             # Main reasoning requests have no task-provider deadline. They remain
             # pending until the connected reasoning host explicitly completes them.
-            "deadline": None,
+            # Passive observations must release their HTTP caller even when an
+            # attached host stops consuming the queue.
+            "deadline": created + self.timeout if passive_sensory else None,
             "claim": "",
             "claim_until": 0.0,
             "result": {},
@@ -558,11 +593,40 @@ class HostRuntime:
             except Exception:
                 # The atomic queue marker lets the delivery worker repair this after a restart.
                 logger.warning("Message event enqueue deferred; queued request retained")
-        while True:
-            latest = await self.records.get(key)
-            if latest and latest["state"] == "complete":
-                return latest["result"]
-            await asyncio.sleep(0.2)
+        try:
+            while True:
+                latest = await self.records.get(key)
+                if latest and latest["state"] == "complete":
+                    return latest["result"]
+                if passive_sensory and latest:
+                    if latest.get("state") == "pending" and float(latest["deadline"]) <= time.time():
+                        expired = {**latest, "state": "expired"}
+                        if not await self.records.replace(key, latest, expired):
+                            # A completion that won this race must still be delivered.
+                            continue
+                        latest = expired
+                    if latest.get("state") == "expired":
+                        raise RuntimeError(
+                            "Sensory evidence was saved, but the reasoning host did not "
+                            f"complete its interpretation within {self.timeout:g} seconds."
+                        )
+                    if latest.get("state") != "pending":
+                        raise RuntimeError(f"Sensory interpretation request is {latest['state']}.")
+                await asyncio.sleep(0.2)
+        except asyncio.CancelledError:
+            if passive_sensory:
+                # The awaiting bridge owns interpreted journaling and presence.
+                # Once its caller is gone, a passive worker must not complete an
+                # orphaned request whose observation can no longer be admitted.
+                for _ in range(8):
+                    latest = await self.records.get(key)
+                    if not latest or latest.get("state") != "pending":
+                        break
+                    if await self.records.replace(key, latest, {**latest, "state": "cancelled"}):
+                        break
+                else:
+                    logger.warning("Passive sensory cancellation cleanup conflicted; deadline retained")
+            raise
 
     async def next_request(self, token: str) -> dict | None:
         # MCP cannot push an unsolicited tool call into a connected client. Use a
@@ -571,7 +635,7 @@ class HostRuntime:
         deadline = time.monotonic() + self.REQUEST_WAIT_SECONDS
         while True:
             host = await self.require(token)
-            requests = await self.records.pending()
+            requests = await self._pending_requests()
 
             def request_priority(request: dict) -> tuple[int, float]:
                 priority = request.get("priority")
@@ -660,6 +724,8 @@ class HostRuntime:
             if request["result"]["response_text"] != response_text:
                 raise CommitConflict("Body request already completed with another response")
             return request["result"]
+        if request["state"] != "pending":
+            raise CommitConflict(f"Body request is {request['state']}")
         deadlines = [
             float(value)
             for value in (request.get("deadline"), request.get("claim_until"))

@@ -531,6 +531,68 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await api.app.state.journal_store.read(), [])
         self.assertEqual(await api.app.state.evidence_store.read(), [])
 
+    async def test_automatic_sensory_timeout_preserves_original_evidence_without_interpreting(self):
+        storage = scope_storage(api.app.state.storage, self.alpha.mind_id)
+        host = HostRuntime(storage.mind, SimpleNamespace())
+        await host.attach("Synthetic idle host", "synthetic-multimodal")
+        beta_records = RuntimeRecords(scope_storage(api.app.state.storage, self.beta.mind_id).mind)
+        beta_request = {
+            "kind": "body_request", "request_id": "beta-human-unaffected", "state": "pending",
+            "message": "Synthetic other-account message", "priority": 0, "created": time.time(),
+            "deadline": None, "claim": "", "claim_until": 0.0, "result": {},
+        }
+        await beta_records.create(beta_request["request_id"], beta_request)
+        beta_before = await beta_records.get(beta_request["request_id"])
+        headers = {"X-Body-Session": "sensory-timeout"}
+        media_by_hash = {}
+
+        def short_lived_host(mind, service, timeout):
+            return HostRuntime(mind, service, timeout=0.02)
+
+        # Use the real authenticated routes, preservation, admission, queue and
+        # deadline logic. Only shorten the host wait; no interpreter is mocked.
+        with patch("aicognitive_mind.api.HostRuntime", side_effect=short_lived_host):
+            for modality, path, media, payload in (
+                ("vision", "/v1/body/eyes/observe", b"synthetic-timeout-image", {
+                    "width": 10, "height": 10,
+                }),
+                ("audio", "/v1/body/ears/observe", b"synthetic-timeout-audio", {
+                    "duration_ms": 1_000,
+                }),
+            ):
+                media_type = "image/jpeg" if modality == "vision" else "audio/webm"
+                payload["image_data_url" if modality == "vision" else "audio_data_url"] = (
+                    "data:" + media_type + ";base64," + base64.b64encode(media).decode()
+                )
+                media_by_hash[hashlib.sha256(media).hexdigest()] = media
+                response = await asyncio.wait_for(
+                    self.alpha_client.post(path, headers=headers, json=payload), timeout=5,
+                )
+                self.assertEqual(response.status_code, 503, response.text)
+                self.assertIn("Sensory evidence was saved", response.json()["detail"])
+                self.assertIn("within 0.02 seconds", response.json()["detail"])
+
+        evidence = await self.get_json(self.alpha_client, "/v1/portal/evidence")
+        self.assertEqual(evidence["total"], 2)
+        for item in evidence["items"]:
+            evidence_path = "/v1/evidence/" + item["sha256"]
+            params = {"captured_at": item["captured_at"]}
+            original = await self.alpha_client.get(evidence_path, params=params)
+            self.assertEqual(original.status_code, 200, original.text)
+            self.assertEqual(original.content, media_by_hash[item["sha256"]])
+            self.assertEqual((await self.beta_client.get(evidence_path, params=params)).status_code, 404)
+        journal = await self.get_json(self.alpha_client, "/v1/mind/journal")
+        self.assertEqual([entry["kind"] for entry in journal], ["sensory_evidence"] * 2)
+        self.assertEqual([entry["experience"]["status"] for entry in journal], ["admitted"] * 2)
+        self.assertEqual(await host.records.pending(), [])
+        self.assertEqual((await host.status())["requests"]["in_progress"], 0)
+        self.assertEqual(await beta_records.get(beta_request["request_id"]), beta_before)
+        self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 0)
+        for modality in ("mouth", "face"):
+            self.assertIsNone(await self.get_json(self.alpha_client, f"/v1/body/{modality}/next", headers=headers))
+        self.assertEqual(await api.app.state.journal_store.read(), [])
+        self.assertEqual(await api.app.state.evidence_store.read(), [])
+
     async def test_automatic_senses_without_own_host_do_not_use_another_account(self):
         alpha_host = HostRuntime(
             scope_storage(api.app.state.storage, self.alpha.mind_id).mind,

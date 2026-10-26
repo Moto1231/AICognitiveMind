@@ -125,6 +125,16 @@ preserving the artifact and its admitted journal record. A bounded host camera r
 its native frame before awaiting automatic interpretation, so the requesting host can consume
 the sensory work instead of waiting on itself.
 
+Passive host interpretation has an overall deadline (120 seconds by default). If no observation
+arrives before it expires, the endpoint returns an interpretation error and removes the request
+from pending work; the original evidence remains preserved. Cancelling the waiting task also
+cancels its passive request. Human reasoning requests retain their existing persistent lifetime.
+Legacy passive requests without a deadline are reconciled against their original creation time;
+reconnecting does not grant old observations a fresh processing lifetime.
+The browser separately bounds sensory requests, releases their busy state on failure, and cancels
+in-flight capture work when that sensor is turned off. A late result from an earlier sensor
+generation cannot overwrite the current display.
+
 After a completed See/Hear cycle, `/body/live` displays:
 
 - media type;
