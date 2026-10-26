@@ -442,13 +442,18 @@ class MindBodyBridge:
             ),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
+        # The saved artifact is authoritative. Give host workers a usable locator
+        # even when large inline media is omitted from their text handoff.
+        interpretation_percept = percept.model_copy(update={
+            "metadata": {**percept.metadata, "evidence": reference.model_dump(mode="json")},
+        })
         automatic_interpreter = getattr(self._interpreter, "interpret_automatically", None)
         if automatic:
             if automatic_interpreter is None:
                 raise RuntimeError("Automatic sensory interpretation is not supported by the configured interpreter.")
-            interpretation = await automatic_interpreter(percept)
+            interpretation = await automatic_interpreter(interpretation_percept)
         else:
-            interpretation = await self._interpreter.interpret(percept)
+            interpretation = await self._interpreter.interpret(interpretation_percept)
         await self._journal.append(
             JournalEntry(
                 kind=JournalKind.SENSORY_EVIDENCE,

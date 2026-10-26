@@ -431,7 +431,11 @@ async def renew_reasoning_host(lease_token: str, ctx: Context[AppState], detach:
 
 @mcp.tool()
 async def next_body_interaction(lease_token: str, ctx: Context[AppState]) -> dict[str, Any] | None:
-    """Claim a Body request and receive its identity/memory context; poll while attached."""
+    """Claim Body work; human inputs have Mind context, passive sensory tasks have media context.
+
+    A sensory_interpretation context is completed through complete_body_interaction without
+    starting another human conversation. Independent workers may share the owner's request queue.
+    """
     return await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
 
 @mcp.tool()
@@ -439,7 +443,8 @@ async def complete_body_interaction(lease_token: str, request_id: str, response_
     ctx: Context[AppState], proposed_memories: list[MemoryProposal] | None = None) -> dict[str, Any]:
     """Commit and deliver a claimed Body response exactly once; retry with unchanged input.
 
-    Memory suggestions are optional; the Steward independently reviews the whole interaction.
+    Human memory suggestions are optional; the Steward independently reviews the interaction.
+    Passive sensory tasks store observations without starting a conversation or speech.
     """
     return await ctx.request_context.lifespan_context.hosts.complete(
         lease_token, request_id, response_text, tuple(proposed_memories or ()))

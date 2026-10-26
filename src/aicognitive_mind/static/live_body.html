@@ -318,18 +318,8 @@
           const imageDataUrl = canvas.toDataURL("image/jpeg", 0.82);
           if (!visionEnabled) return;
 
-          const ingress = await bodyFetch("/v1/body/eyes/observe", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              image_data_url: imageDataUrl,
-              width: canvas.width,
-              height: canvas.height,
-              source: "browser-camera-mcp"
-            })
-          });
-          if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
-
+          // Release the requesting host with the captured frame before sensory
+          // admission can queue interpretation work back to that same host.
           const complete = await bodyFetch("/v1/body/camera/complete", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -342,6 +332,18 @@
           });
           if (!complete.ok) throw new Error(await responseErrorMessage(complete));
           setStatus("Axiom camera observation delivered to reasoning host.");
+
+          const ingress = await bodyFetch("/v1/body/eyes/observe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              image_data_url: imageDataUrl,
+              width: canvas.width,
+              height: canvas.height,
+              source: "browser-camera-mcp"
+            })
+          });
+          if (!ingress.ok) throw new Error(await responseErrorMessage(ingress));
         } finally {
           if (temporaryStream) stream?.getTracks().forEach((track) => track.stop());
         }

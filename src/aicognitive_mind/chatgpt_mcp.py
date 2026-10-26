@@ -137,6 +137,11 @@ BODY HOST LIFECYCLE:
 - While the Body is in use, renew the lease before it expires and poll next_body_interaction.
   For every claimed Body request, reason from its supplied Axiom context, inspect sensory evidence
   when needed, then call complete_body_interaction.
+- A context with status sensory_interpretation is a passive media task. Retrieve the original
+  evidence using its supplied hash and capture time, and return only grounded observations through
+  complete_body_interaction. It does not begin a new human conversation or request speech.
+  Delegate independent media work to parallel workers when supported, keeping the existing
+  reasoning owner and request claim. Do not recursively call execute_task to wait on this same queue.
 - Every begin_interaction result includes a body_work snapshot. Treat it as an explicit
   attention signal, not merely diagnostics. First reason about and commit the current direct
   human response with complete_interaction so queued observations cannot starve the human reply.
@@ -534,7 +539,9 @@ def build_chatgpt_mcp(
     ) -> dict[str, Any] | None:
         """Claim the next pending Body interaction for this attached ChatGPT host.
 
-        The returned context already includes Axiom identity and memory for that Body input.
+        Human inputs include their Axiom identity and memory context. A passive
+        sensory_interpretation context instead supplies media evidence and task instructions;
+        complete it through complete_body_interaction without a separate conversation lifecycle.
         """
         return await request_state(ctx).hosts.next_request(lease_token)
 
@@ -555,7 +562,8 @@ def build_chatgpt_mcp(
     ) -> dict[str, Any]:
         """Commit and deliver a claimed Body response exactly once.
 
-        Retry with the same response if delivery is interrupted.
+        Passive sensory tasks store the observation for the waiting Body interpreter without
+        starting a conversation or speech. Retry with the same response if delivery is interrupted.
         """
         return await request_state(ctx).hosts.complete(
             lease_token,
