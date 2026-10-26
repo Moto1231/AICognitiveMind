@@ -2,7 +2,7 @@
 
 [Manual index](README.md) · [Review record](review-record.md)
 
-> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. All sections on this page share this review revision. This is source review, not authenticated browser or physical-device certification.
+> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. Sections inherit this revision unless an explicit section review below overrides it. This is source review, not authenticated browser or physical-device certification.
 
 ## Enter Administration
 
@@ -17,12 +17,17 @@ A conversational claim such as “I am the administrator” does not grant API a
 
 ## Know which scope you are using
 
+> This section was reviewed against `275e9202313b2ba41fe092e2be0da16186cb5ce2` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
+
 | Boundary | Current behavior |
 | --- | --- |
 | Portal login | Selects the Mind associated with the verified account/session |
 | Cognitive configuration | Identity, skills, behaviors, endpoints and task settings bind to the request's authorized Mind |
 | Administrator PIN | Additional check when configured; not a replacement for account/runtime authentication |
-| Account-scoped Body access | Body and Body administration routes return an explicit 403 restriction |
+| Account-scoped Body access | Live and ordinary Body services bind to the verified Mind; provider configuration or a matching host is still needed |
+| Account-scoped Voice Settings | Authorized reads and saves affect that account's own voice preferences |
+| Account-scoped Realtime voice | Unavailable; startup checks capability before requesting the microphone |
+| Deployment Body fallback setting | Root administration only; account sessions do not call its endpoint |
 | Account-scoped GitHub skill drafts | Custom GitHub drafts are explicitly unavailable; Mind skill settings are separate |
 | Account-scoped backup | Backup route returns an explicit 403 restriction |
 | Deployment/root operations | Separate operator access; do not substitute it to bypass an account restriction |
@@ -30,7 +35,13 @@ A conversational claim such as “I am the administrator” does not grant API a
 
 An expired, unknown or ambiguous session is rejected rather than silently falling back to the root Mind. A static page loading is not proof that its protected data requests are authorized.
 
+Administration entry and Refresh read current status before loading settings. Authorized account-scoped sessions now load and save their own Voice Settings; they skip the deployment-wide Body fallback endpoint. Speech controls enable only after a permitted settings read succeeds. This replaces the interim PR329 behavior that disabled Voice Settings for all account-scoped sessions.
+
+Section sources: [account runtime and credentials](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L455-L514), [remaining scope guard](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L793-L832), [own voice settings](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L874-L927), [separate capabilities](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L1529-L1535), [portal gating](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/static/portal.js#L1426-L1524).
+
 ## Drafts are not saved configuration
+
+> This section was reviewed against `275e9202313b2ba41fe092e2be0da16186cb5ce2` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
 
 Most editors begin read-only and create a draft on **Edit** or **Add**. **Save** commits that editor's payload. **Cancel** discards its draft. **Refresh** reloads data; it does not commit unsaved input.
 
@@ -38,8 +49,8 @@ The implementation is not uniform across every form. Use the following reference
 
 | Editor | Start/change | Commit | Cancel/refresh detail |
 | --- | --- | --- | --- |
-| Foundations: Identity | Edit | Save Identity | Own draft and revision |
-| Foundations: Startup | Edit | Save Startup | Separate from Identity |
+| Foundations: Identity | Open and read | No editing actions | Displays loaded identity; Refresh reads it again |
+| Foundations: Startup | No form in this revision | No portal action | Saved configuration remains separate; see [Foundations](foundations-skills-and-behaviors.md#startup-configuration-availability) |
 | Mind skill | Select, Edit; or New Mind skill | Save Mind Skill | Own saved revision |
 | GitHub skill draft | Select, Edit; or New GitHub draft | Save Draft to GitHub | Does not activate a Mind skill |
 | Behavior catalog | Edit or Add Behavior | Save | Catalog draft; row Remove is staged |
@@ -47,9 +58,11 @@ The implementation is not uniform across every form. Use the following reference
 | Task Foundation | Edit | Foundation's own Save | Separate revisioned configuration |
 | Endpoint and model | Add/Edit; discovery can enter Edit | Endpoint Save | Requires valid changed draft |
 | MCP server and tools | Add/Edit; discovery can enter Edit | MCP Save | Separate from endpoint Save |
-| Speech Settings | Change fields/sliders | Save | No general Edit/Cancel workflow |
-| Devices | Choose device | Selection saves immediately in this browser | No server configuration Save |
+| Speech Settings | Change fields/sliders after a permitted settings read | Save | Account-owned preferences; no general Edit/Cancel workflow |
+| Devices | Choose device in a browser-local draft | Save | Cancel restores saved choices; see [Devices](body.md#select-devices) |
 | Memory inspector | Edit Memory | Save | Cancel exits memory editing |
+
+Section sources: [Foundations display](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/index.html#L168-L183), [voice loading and Save gating](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/static/portal.js#L1426-L1524), [device draft actions](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/portal.js#L3147-L3207).
 
 The endpoint Save handler also synchronizes task assignments that reference that endpoint. Changing its model may therefore affect several tasks. Endpoint removal removes those references. See [providers](providers-and-models.md).
 

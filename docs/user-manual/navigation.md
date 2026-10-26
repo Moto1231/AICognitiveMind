@@ -2,9 +2,11 @@
 
 [Manual index](README.md) · [Review record](review-record.md)
 
-> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. All sections on this page share this review revision. This is source review, not authenticated browser or physical-device certification.
+> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. Sections inherit this revision unless an explicit section review below overrides it. This is source review, not authenticated browser or physical-device certification.
 
 ## Current menu map
+
+> This section was reviewed against `275e9202313b2ba41fe092e2be0da16186cb5ce2` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
 
 Use this table when a heading differs from its navigation button. Button icons may replace visible text; hover or keyboard focus exposes labels/tooltips, and accessible labels identify the action.
 
@@ -12,14 +14,14 @@ Use this table when a heading differs from its navigation button. Button icons m
 | --- | --- | --- |
 | Top bar | Main | Mind name, continuity, durable-memory count and history count |
 | Top bar | Administration | Authorized settings and inspection views |
-| Top bar | Live | Browser Body at `/body/live` |
+| Top bar | Live | Browser Body at `/body/live`, scoped to the signed-in Mind |
 | Top bar | Return | Browser back when history exists; otherwise the public entry link |
 | Top bar | Log Out | End the portal session |
 | Administration | System Overview | Mind Details, Cognitive State, Current State Context, API Activity |
-| Administration | Foundations | Identity and Startup editors |
+| Administration | Foundations | Loaded identity as text; no identity or Startup editor |
 | Administration | Behavior | **Behaviors** shared catalog |
 | Administration | Devices | **Device Inventory** |
-| Administration | Speech Settings | Speech sliders and browser voice name |
+| Administration | Speech Settings | Speech sliders and browser voice name for the authorized Mind |
 | Administration | Task Profiles | **Task Configuration**, then an individual task |
 | Administration | Endpoints, Servers & Tools | **Endpoints → Models** and **MCP Servers → Tools** |
 | Administration | Skills | Mind skills, GitHub drafts and release-file preparation |
@@ -35,7 +37,13 @@ The Main HTML also contains hidden identity and memory panels. Their existence i
 
 For a visual example, see the [supplied earlier-interface Main overview capture](screenshots.md#main-overview). Its counts are historical; use the menu map above for current navigation.
 
+Account-scoped Live access uses its own Mind's services. Realtime voice remains unavailable for those accounts; see [Body access and limits](body.md#check-access-before-hardware).
+
+Section sources: [Administration views](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/static/index.html#L168-L220), [Speech Settings](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/static/index.html#L527-L551), [account runtime binding](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L455-L514).
+
 ## Read System Overview
+
+> This section was reviewed against `80a3a4105379bb6c95afb6c71483c8d556a0ccc3` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
 
 1. Open **Administration → System Overview**.
 2. Review **Mind Details**: Mind, creation time, Durable Memories and Journal Experiences.
@@ -43,7 +51,9 @@ For a visual example, see the [supplied earlier-interface Main overview capture]
 4. Inspect **Current State Context** when you need the stored field value, source, status or timestamp.
 5. Choose **Refresh** if the displayed information needs reloading.
 
-“Self-name not set” does not mean that identity or history is absent. **Unknown** is an honest missing answer, not a request to invent one. The state view is read-only; use conversation to supply context and the dedicated Foundations editor for authorized identity changes.
+“Self-name not set” does not mean that identity or history is absent. **Unknown** is an honest missing answer, not a request to invent one. The state view is read-only; use conversation to supply context. **Foundations** separately displays the loaded identity and has no editing controls.
+
+Section sources for this distinction: [Foundations identity display](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/index.html#L168-L183), [safe identity rendering and refresh](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/portal.js#L3357-L3403).
 
 **API Activity** contains the latest 200 completed HTTP requests in the process. Use **Filter calls → Errors** to narrow it. Expand an entry for route/operation, status, duration and trace information. It does **not** measure pending/running queue counts; a low average HTTP duration is not a complete conversation-latency measurement.
 

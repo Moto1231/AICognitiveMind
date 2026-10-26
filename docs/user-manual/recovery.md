@@ -2,9 +2,11 @@
 
 [Manual index](README.md) · [Review record](review-record.md)
 
-> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. All sections on this page share this review revision. This is source review, not authenticated browser or physical-device certification.
+> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. Sections inherit this revision unless an explicit section review below overrides it. This is source review, not authenticated browser or physical-device certification.
 
 ## Start with the smallest failing boundary
+
+> This section was reviewed against `275e9202313b2ba41fe092e2be0da16186cb5ce2` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
 
 Distinguish login, Mind access, Administrator authorization, provider discovery, task execution and interaction commit. Success at one boundary does not prove the next.
 
@@ -20,8 +22,11 @@ Distinguish login, Mind access, Administrator authorization, provider discovery,
 | Tool-call probe fails | Model function contract/access/quota | Use a compatible tested model; do not trust labels alone |
 | Save disabled | Edit mode, change, required fields, busy/revision state | Fix the specific form condition |
 | 409 conflict | Another save changed the record | Preserve draft, Cancel, Refresh and reconcile |
-| Account-scoped Body/backup 403 | Implemented scope restriction | Do not treat as device/DB failure |
+| Account Realtime voice unavailable / backup or deployment fallback 403 | Specific capability/scope restriction | Read the exact message; hardware permission does not grant that capability |
+| Live opens but Body reasoning fails | This account's task endpoints and matching host | Configure the needed tasks or attach a host to this Mind; deployment credentials are not an account fallback |
 | Completion failed | Persistence/Steward error | Keep the actual work result; retry completion with the same payload/key per protocol |
+
+For the reviewed account Body/Realtime distinction, see [Body access](body.md#check-access-before-hardware). Source: [account runtime/credentials](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L455-L514), [remaining restrictions](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L815-L832), [Realtime capability](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L1427-L1451).
 
 ## Recover from uncertain saves
 

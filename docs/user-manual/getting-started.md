@@ -2,7 +2,7 @@
 
 [Manual index](README.md) · [Review record](review-record.md)
 
-> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. All sections on this page share this review revision. This is source review, not authenticated browser or physical-device certification.
+> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. Sections inherit this revision unless an explicit section review below overrides it. This is source review, not authenticated browser or physical-device certification.
 
 ## Choose the right starting point
 
@@ -76,7 +76,11 @@ The current conversation can supply the answer without a durable-memory search. 
 
 ## Before opening Live
 
-Read [Body and devices](body.md) first. At this source revision, account-scoped sessions are explicitly denied the Body routes, Body administration routes and backup route. This is an implemented scope restriction, not a camera-permission problem. Do not use another account's resources to work around it.
+> This section was reviewed against `275e9202313b2ba41fe092e2be0da16186cb5ce2` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
+
+Read [Body and devices](body.md#check-access-before-hardware) first. A valid account session can open Live and use its Mind's ordinary Body services, subject to its own task/provider configuration or a host attached to that same Mind. Account Realtime voice remains unavailable, and the deployment fallback switch and backup remain restricted. Opening Live does not grant browser camera or microphone permission.
+
+Section sources: [account runtime and access boundary](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L455-L514), [remaining scope guard](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L815-L832), [Realtime restriction](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/deployment.py#L302-L320).
 
 ## Source references
 

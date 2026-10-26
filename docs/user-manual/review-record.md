@@ -23,7 +23,7 @@ All sections in each chapter inherit the revision/date in its opening review blo
 | [Operations](operations.md) | render.yaml, Project validation workflow, development/setup/backup notes | `57f38db876e63d45e37f58f57768e25396a75a8d` |
 | [Glossary](glossary.md) | lifecycle, effective skills, routing, working-context types | `57f38db876e63d45e37f58f57768e25396a75a8d` |
 
-The index and this record use the same baseline. Chapter source links are commit-pinned; relative links to repository reference documents follow the branch being viewed.
+The index and this record retain that initial baseline; focused later updates are recorded below. Chapter source links are commit-pinned; relative links to repository reference documents follow the branch being viewed.
 
 ## What was and was not verified
 
@@ -52,12 +52,34 @@ Devices now uses a browser-local draft with explicit Save/Cancel, a separate sav
 
 This maintenance pass reviewed the changed source and documentation links. It does not establish a new authenticated-browser, provider or physical-device test, nor does it close UM-01, UM-02, UM-03 or UM-09. Product PRs [327](https://github.com/Moto1231/AICognitiveMind/pull/327) and [328](https://github.com/Moto1231/AICognitiveMind/pull/328) record their separate implementation validation and delivery evidence. Existing screenshot provenance and limitations remain in force.
 
+## Foundations display and scope-safe Admin refresh
+
+Focused source review on **2026-10-25** at **`80a3a4105379bb6c95afb6c71483c8d556a0ccc3`** covers merged [PR329](https://github.com/Moto1231/AICognitiveMind/pull/329). Updated sections are [Read loaded Identity](foundations-skills-and-behaviors.md#read-loaded-identity), [Startup configuration availability](foundations-skills-and-behaviors.md#startup-configuration-availability), [Behavior authoring](foundations-skills-and-behaviors.md#create-a-reusable-behavior), [scope and editor reference](administration-and-editing.md), [navigation and System Overview](navigation.md), [Devices](body.md#select-devices), and [Speech Settings](body.md#configure-speech-settings). Their explicit section blocks override the opening chapter baseline only for those sections.
+
+Foundations now displays the loaded identity as text, retains **Identity loaded.**, and has no identity or Startup editing actions. Its refresh only reads identity. Authorized identity and cognitive-configuration API endpoints remain implemented. Behavior and Devices forms omit the redundant action/helper sentences; draft/error status remains.
+
+Administration entry and Refresh read status before requesting Body settings. The new capability makes account-scoped sessions skip deployment-wide Voice and Body fallback settings. Their voice form is unavailable, clears old values, ignores an earlier voice response and blocks Save; other supported Administration data continues refreshing. At this interim revision, the change did **not** implement account-scoped Body access. The later [account Body review](#account-scoped-body-and-voice-settings) supersedes its account Voice Settings restriction in the current workflow sections.
+
+[PR329](https://github.com/Moto1231/AICognitiveMind/pull/329) records its product-test evidence: 81 Node editor/device tests, 13 Python portal tests, 2 sensory-administration tests and 12 HTTP account-routing tests, plus JavaScript syntax and diff checks. This documentation pass reviewed the pinned implementation and corresponding regression sources; it did not rerun product tests or establish a signed-in-browser or physical-device result. Sources: [Foundations/voice UI regressions](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/tests/portal_editors.test.cjs#L1359-L1708), [account capability and scope regression](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/tests/test_http_account_routing.py#L152-L192). UM-01, UM-02, UM-03 and UM-09 remain open or restricted as recorded below.
+
+## Account-scoped Body and Voice Settings
+
+Focused source review on **2026-10-25** at **`275e9202313b2ba41fe092e2be0da16186cb5ce2`**, the merge source for [PR330](https://github.com/Moto1231/AICognitiveMind/pull/330), updates [Body access](body.md#check-access-before-hardware), [Speech Settings](body.md#configure-speech-settings), the [Administration scope/editor reference](administration-and-editing.md) [navigation map](navigation.md#current-menu-map), [Before opening Live](getting-started.md#before-opening-live) and the [recovery symptom table](recovery.md#start-with-the-smallest-failing-boundary). Foundations and the other chapter sections retain their own earlier pins.
+
+Account Live and ordinary Body routes now use the verified Mind's runtime, queues, evidence, host/camera requests, presence scope and voice settings. Session output notifications are separated by Mind. Account reasoning and interpretation use account task endpoints or a host attached to that Mind; deployment OpenAI/Gemini/Fish credentials are removed from the account fallback configuration.
+
+This supersedes the interim PR329 Voice Settings restriction: authorized account sessions now load and save their own preferences. The deployment Body fallback switch remains root-only and is skipped during account Refresh. An account's own saved Fish key can serve its speech path; missing account task/credential configuration remains an error.
+
+Realtime voice remains unavailable for account-scoped sessions. Capability preflight prevents microphone capture/session creation when unavailable; the session route independently refuses the account before deployment credentials or token minting. This is not documentation of completed account Realtime support.
+
+Reviewed regression sources cover [Body/account isolation and credential boundaries](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/tests/test_http_account_routing.py#L354-L558), [Realtime preflight](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/tests/live_body_realtime.test.cjs#L52-L89) and [Realtime route isolation](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/tests/test_deployment_mcp.py#L107-L148). [PR330](https://github.com/Moto1231/AICognitiveMind/pull/330) records its product test/CI and merge evidence. This documentation pass reviews the merged source; it does not establish deployment, signed-in-browser, hardware, real provider or host-handoff verification. UM-01, UM-03 and UM-09 remain open; UM-02 now records the narrower remaining restriction.
+
 ## Gaps and follow-up register
 
 | ID | Status | Gap / next evidence needed |
 | --- | --- | --- |
 | UM-01 | Open verification | Walk through signup/login and authorized Administration in a real browser using a deliberately authorized test account; record deployment/browser revision without credentials. |
-| UM-02 | Implemented limitation documented | Account-scoped Body, Body administration and backup routes return 403. Revise affected chapters only when scoped implementations change. |
+| UM-02 | Partially resolved; remaining restrictions documented | Reviewed account Body code binds Live and ordinary Body services/voice preferences to the verified Mind. Account Realtime, deployment fallback administration and backup remain restricted. This source update does not close live account/Body verification gaps. |
 | UM-03 | Open verification | Physical camera/microphone/speaker workflow on supported devices; distinguish local preview/meter from actual interpreted/synthesized results. |
 | UM-04 | Open verification | Current checkpoint recovery/restore drill for the actual Surreal backend. Existing Mongo restore instructions are not a substitute. |
 | UM-05 | Open reconciliation | Historical root README sections still describe a four-tool MCP server and older one-instance/storage assumptions. The new manual link establishes the current workflow entry point; broader historical prose needs a separate careful reconciliation. |
