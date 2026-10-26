@@ -15,11 +15,12 @@ const editorFunctions = [
   'selectedMcpServer', 'syncMcpServerForm', 'updateMcpEditorState', 'editMcpServer',
   'cancelMcpEdit', 'renderMcpServerOptions', 'loadMcpServerIntoForm', 'renderMcpTools',
   'addMcpServer', 'saveMcpServers', 'removeMcpServer', 'discoverMcpTools',
-  'allTaskNames', 'renderTaskProfiles', 'taskEndpointOptions', 'selectedTaskBehaviorIds',
+  'allTaskNames', 'renderTaskProfiles', 'taskProviderEndpoint', 'taskEndpointOptions', 'selectedTaskBehaviorIds',
   'taskBehaviorCatalog',
   'taskProfileConfiguration', 'updateTaskSaveState', 'renderTaskBehaviorSelection',
   'syncTaskProviderRotation',
-  'renderFallbackSelectors', 'openTaskProfile', 'closeTaskProfile', 'discardTaskProfileChanges',
+  'renderFallbackSelectors', 'selectTaskFallback', 'addTaskFallback', 'removeTaskFallback',
+  'moveTaskFallback', 'changeTaskFallbackEndpoint', 'openTaskProfile', 'closeTaskProfile', 'discardTaskProfileChanges',
   'saveTaskProfile',
   'updateTaskFoundationEditor', 'cancelTaskFoundationEdit', 'editTaskFoundation', 'saveTaskFoundation',
   'renderHostBehaviors', 'updateBehaviorSaveState', 'refreshHostBehaviors', 'editHostBehaviors',
@@ -107,6 +108,9 @@ function editor({ apiHandler } = {}) {
   const primaryHandler = source.indexOf('el.taskProviderSelect.addEventListener("change", () => {');
   const primaryHandlerEnd = source.indexOf('\n});', primaryHandler);
   vm.runInContext(source.slice(primaryHandler, primaryHandlerEnd + 4), context);
+  const fallbackBindings = source.indexOf('if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener');
+  const fallbackBindingsEnd = source.indexOf('if (el.taskProfileAddBehavior)', fallbackBindings);
+  vm.runInContext(source.slice(fallbackBindings, fallbackBindingsEnd), context);
   const behaviorBindings = source.indexOf('if (el.hostBehaviorSearch) el.hostBehaviorSearch.addEventListener');
   const behaviorBindingsEnd = source.indexOf('if (el.taskProfileBack)', behaviorBindings);
   vm.runInContext(source.slice(behaviorBindings, behaviorBindingsEnd), context);
@@ -827,11 +831,200 @@ test('task selection uses the endpoint saved model for primary and fallback', ()
   const assignment = ui.state.taskModelAssignments.find(item => item.task === 'vision');
   assert.equal(assignment.provider, 'next');
   assert.equal(assignment.model, 'next-model');
-  const fallbackSelect = ui.el.taskProfileFallbackList.children[0].children[0].children[0];
+  const fallbackSelect = ui.el.taskProfileFallbackEndpoint;
   fallbackSelect.value = 'next';
   fallbackSelect.listeners.change();
   assert.equal(assignment.fallbacks[0].provider, 'next');
   assert.equal(assignment.fallbacks[0].model, 'next-model');
+});
+
+function tenFallbackEditor(options) {
+  const ui = editor(options);
+  for (let number = 1; number <= 11; number += 1) {
+    ui.state.providerEndpoints.push({ id: `backup-${number}`, name: `Backup ${number}`,
+      model: `vision-${number}`, has_api_key: number % 2 === 1 });
+  }
+  ui.state.taskModelAssignments[0].fallbacks = Array.from({ length: 10 }, (_, index) => ({
+    provider: `backup-${index + 1}`, model: `vision-${index + 1}`,
+  }));
+  ui.state.taskModelAssignments.push({ task: 'audio_voice', provider: 'fish', model: 'voice-model',
+    voice_reference_id: 'voice-reference', fallbacks: [{ provider: 'backup-2', model: 'vision-2' }] });
+  ui.openTaskProfile('vision');
+  return ui;
+}
+
+test('ten fallbacks use one bounded ordered list and one selected endpoint editor', () => {
+  const ui = tenFallbackEditor();
+  const before = JSON.stringify(ui.state.taskModelAssignments);
+  assert.equal(ui.el.taskProfileFallbackList.options.length, 10);
+  assert.equal(ui.el.taskProfileFallbackList.size, 5);
+  assert.equal(ui.el.taskProfileFallbackList.options[9].textContent, '10. Backup 10 · vision-10');
+  assert.equal(ui.el.taskProfileFallbackList.options[0].classes.has('endpoint-has-key'), true);
+  assert.equal(ui.el.taskProfileFallbackList.options[1].classes.has('endpoint-has-key'), false);
+  assert.equal(ui.el.taskProfileFallbackEndpoint.value, 'backup-1');
+  ui.el.taskProfileFallbackList.value = '9';
+  ui.el.taskProfileFallbackList.listeners.change();
+  assert.equal(ui.state.activeTaskFallback, 9);
+  assert.equal(ui.el.taskProfileFallbackEndpoint.value, 'backup-10');
+  assert.equal(ui.el.taskProfileFallbackModel.textContent, 'vision-10');
+  assert.equal(ui.el.taskProfileFallbackUp.disabled, false);
+  assert.equal(ui.el.taskProfileFallbackDown.disabled, true);
+  assert.equal(ui.el.saveTaskProfile.disabled, true);
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments), before);
+});
+
+test('fallback navigation uses current endpoint models for case-insensitive names and base URL aliases', () => {
+  const ui = editor();
+  const endpoint = ui.state.providerEndpoints[0];
+  endpoint.model = 'current-model';
+  for (const alias of ['OPENAI', 'OPENAI - GPT', 'HTTPS://PROVIDER.EXAMPLE/V1']) {
+    ui.state.taskModelAssignments[0].fallbacks = [{ provider: alias, model: 'legacy-model' }];
+    ui.openTaskProfile('vision');
+    assert.equal(ui.el.taskProfileFallbackList.options[0].textContent, '1. OpenAI - GPT · current-model');
+    assert.equal(ui.el.taskProfileFallbackEndpoint.value, 'openai');
+    assert.equal(ui.el.taskProfileFallbackModel.textContent, 'current-model');
+    assert.equal(ui.el.taskProfileFallbackEndpoint.classes.has('endpoint-has-key'), true);
+    assert.equal(ui.state.taskModelAssignments[0].fallbacks[0].provider, alias);
+    assert.equal(ui.state.taskModelAssignments[0].fallbacks[0].model, 'legacy-model');
+    assert.equal(ui.el.saveTaskProfile.disabled, true);
+  }
+  endpoint.model = '';
+  ui.el.taskProfileFallbackEndpoint.value = 'openai';
+  ui.el.taskProfileFallbackEndpoint.listeners.change();
+  assert.equal(ui.state.taskModelAssignments[0].fallbacks[0].provider, 'openai');
+  assert.equal(ui.state.taskModelAssignments[0].fallbacks[0].model, 'legacy-model');
+});
+
+test('fallback priority moves preserve the selected entry and saved failure-only order', async () => {
+  const ui = tenFallbackEditor();
+  const voice = JSON.stringify(ui.state.taskModelAssignments[1]);
+  assert.equal(ui.el.taskProfileFallbackUp.disabled, true);
+  ui.moveTaskFallback(-1);
+  assert.equal(ui.state.activeTaskFallback, 0);
+  ui.el.taskProfileFallbackList.value = '9';
+  ui.el.taskProfileFallbackList.listeners.change();
+  ui.el.taskProfileFallbackUp.listeners.click();
+  assert.equal(ui.state.activeTaskFallback, 8);
+  assert.equal(ui.el.taskProfileFallbackEndpoint.value, 'backup-10');
+  assert.equal(ui.el.taskProfileFallbackList.value, '8');
+  assert.equal(ui.el.saveTaskProfile.disabled, false);
+  await ui.saveTaskProfile();
+  const saved = ui.calls[0].body.items.find(item => item.task === 'vision');
+  assert.deepEqual(saved.fallbacks.map(item => item.provider), [
+    'backup-1', 'backup-2', 'backup-3', 'backup-4', 'backup-5',
+    'backup-6', 'backup-7', 'backup-8', 'backup-10', 'backup-9',
+  ]);
+  assert.equal(saved.provider, 'openai');
+  assert.equal(saved.model, 'gpt-test');
+  assert.equal(saved.provider_rotation || 'ordered', 'ordered');
+  assert.equal(JSON.stringify(ui.calls[0].body.items.find(item => item.task === 'audio_voice')), voice);
+  assert.equal(ui.el.saveTaskProfile.disabled, true);
+});
+
+test('adding beyond ten selects the new fallback and unfinished entries still block Save', async () => {
+  const ui = tenFallbackEditor();
+  ui.el.taskProfileAddFallback.listeners.click();
+  assert.equal(ui.state.taskModelAssignments[0].fallbacks.length, 11);
+  assert.equal(ui.el.taskProfileFallbackList.size, 5);
+  assert.equal(ui.state.activeTaskFallback, 10);
+  assert.equal(ui.el.taskProfileFallbackEndpoint.value, '');
+  assert.equal(ui.el.taskProfileFallbackDown.disabled, true);
+  await ui.saveTaskProfile();
+  assert.equal(ui.calls.length, 0);
+  assert.match(ui.toasts.at(-1)[0], /Complete or remove unfinished/);
+  ui.el.taskProfileFallbackEndpoint.value = 'backup-11';
+  ui.el.taskProfileFallbackEndpoint.listeners.change();
+  assert.equal(ui.state.taskModelAssignments[0].fallbacks[10].model, 'vision-11');
+  assert.equal(ui.el.taskProfileFallbackList.options[10].textContent, '11. Backup 11 · vision-11');
+  assert.equal(ui.el.taskProfileFallbackModel.textContent, 'vision-11');
+  await ui.saveTaskProfile();
+  assert.equal(ui.calls[0].body.items[0].fallbacks.length, 11);
+});
+
+test('removing a selected fallback chooses its neighbor and None can clear the final entry', () => {
+  const ui = tenFallbackEditor();
+  ui.el.taskProfileFallbackList.value = '4';
+  ui.el.taskProfileFallbackList.listeners.change();
+  ui.el.taskProfileFallbackRemove.listeners.click();
+  assert.equal(ui.state.taskModelAssignments[0].fallbacks.length, 9);
+  assert.equal(ui.state.activeTaskFallback, 4);
+  assert.equal(ui.el.taskProfileFallbackEndpoint.value, 'backup-6');
+  while (ui.state.taskModelAssignments[0].fallbacks.length) {
+    ui.el.taskProfileFallbackEndpoint.value = '';
+    ui.el.taskProfileFallbackEndpoint.listeners.change();
+  }
+  assert.equal(ui.el.taskProfileFallbackList.disabled, true);
+  assert.equal(ui.el.taskProfileFallbackEditor.classes.has('hidden'), true);
+  assert.equal(ui.el.taskProfileFallbackModel.textContent, '');
+  assert.equal(ui.el.taskProfileFallbackRemove.disabled, true);
+  assert.equal(ui.el.taskProfileFallbackUp.disabled, true);
+  assert.equal(ui.el.taskProfileFallbackDown.disabled, true);
+  assert.equal(ui.el.taskProfileAddFallback.disabled, false);
+  assert.equal(ui.state.activeTaskFallback, 0);
+});
+
+test('task switching resets fallback navigation and discards unsaved ordering without touching voice', () => {
+  const ui = tenFallbackEditor();
+  const vision = JSON.stringify(ui.state.taskModelAssignments[0]);
+  const voice = JSON.stringify(ui.state.taskModelAssignments[1]);
+  ui.el.taskProfileFallbackList.value = '9';
+  ui.el.taskProfileFallbackList.listeners.change();
+  ui.el.taskProfileFallbackUp.listeners.click();
+  ui.openTaskProfile('audio_voice');
+  assert.equal(ui.state.activeTaskFallback, 0);
+  assert.equal(ui.el.taskProfileFallbackList.options.length, 1);
+  assert.equal(ui.el.taskProfileFallbackEndpoint.value, 'backup-2');
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments[0]), vision);
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments[1]), voice);
+  ui.openTaskProfile('vision');
+  assert.equal(ui.state.activeTaskFallback, 0);
+  assert.equal(ui.el.taskProfileFallbackList.options.length, 10);
+  assert.equal(ui.el.taskProfileFallbackEndpoint.value, 'backup-1');
+});
+
+test('pending task Save locks fallback navigation and rejects mutation until it finishes', async () => {
+  let resolveSave;
+  const ui = tenFallbackEditor({ apiHandler: async (_url, body) => new Promise(resolve => {
+    resolveSave = () => resolve(body);
+  }) });
+  ui.moveTaskFallback(1);
+  const save = ui.saveTaskProfile();
+  const before = JSON.stringify(ui.state.taskModelAssignments);
+  for (const name of ['taskProfileBack', 'taskProfileFallbackList', 'taskProfileFallbackEndpoint', 'taskProfileAddFallback',
+    'taskProfileFallbackUp', 'taskProfileFallbackDown', 'taskProfileFallbackRemove']) {
+    assert.equal(ui.el[name].disabled, true, `${name} locks during save`);
+  }
+  ui.addTaskFallback();
+  ui.removeTaskFallback();
+  ui.moveTaskFallback(1);
+  ui.el.taskProfileFallbackEndpoint.value = '';
+  ui.changeTaskFallbackEndpoint();
+  ui.closeTaskProfile();
+  ui.openTaskProfile('audio_voice');
+  assert.equal(ui.state.activeTaskProfile, 'vision');
+  assert.equal(JSON.stringify(ui.state.taskModelAssignments), before);
+  resolveSave();
+  await save;
+  assert.equal(ui.el.taskProfileFallbackList.disabled, false);
+  assert.equal(ui.el.taskProfileFallbackEndpoint.disabled, false);
+  assert.equal(ui.el.taskProfileAddFallback.disabled, false);
+  assert.equal(ui.el.taskProfileBack.disabled, false);
+});
+
+test('a failed task Save retains fallback order for retry and releases navigation controls', async () => {
+  const ui = tenFallbackEditor({ apiHandler: async () => { throw new Error('Provider save unavailable'); } });
+  ui.moveTaskFallback(1);
+  const order = ui.state.taskModelAssignments[0].fallbacks.map(item => item.provider);
+  await ui.saveTaskProfile();
+  assert.deepEqual(ui.state.taskModelAssignments[0].fallbacks.map(item => item.provider), order);
+  assert.equal(ui.el.saveTaskProfile.disabled, false);
+  assert.equal(ui.el.taskProfileBack.disabled, false);
+  assert.equal(ui.el.taskProfileFallbackList.disabled, false);
+  assert.equal(ui.el.taskProfileFallbackEndpoint.disabled, false);
+  assert.equal(ui.toasts.at(-1)[0], 'Provider save unavailable');
+  ui.closeTaskProfile();
+  assert.equal(ui.state.activeTaskProfile, null);
+  assert.equal(ui.state.taskModelAssignments[0].fallbacks[0].provider, 'backup-1');
 });
 
 test('Return discards unsaved task edits so another task Save cannot persist them', () => {
@@ -879,7 +1072,7 @@ test('clearing primary and fallback selections saves an unassigned task and pres
   ui.openTaskProfile('vision');
   ui.el.taskProviderSelect.value = '';
   ui.el.taskProviderSelect.listeners.change();
-  const fallback = ui.el.taskProfileFallbackList.children[0].children[0].children[0];
+  const fallback = ui.el.taskProfileFallbackEndpoint;
   fallback.value = '';
   fallback.listeners.change();
   assert.equal(ui.el.saveTaskProfile.disabled, false);

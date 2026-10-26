@@ -38,6 +38,8 @@ const state = {
   mcpServers: [],
   activeMcpServerId: null,
   activeTaskProfile: null,
+  activeTaskFallback: 0,
+  taskFallbackTask: null,
   activeEndpointId: null,
   activeEndpointOriginalName: "",
   endpointDraft: null,
@@ -220,6 +222,12 @@ const el = {
   taskProfileVoiceReferenceField: document.getElementById("taskProfileVoiceReferenceField"),
   taskProfileVoiceReferenceId: document.getElementById("taskProfileVoiceReferenceId"),
   taskProfileFallbackList: document.getElementById("taskProfileFallbackList"),
+  taskProfileFallbackEditor: document.getElementById("taskProfileFallbackEditor"),
+  taskProfileFallbackEndpoint: document.getElementById("taskProfileFallbackEndpoint"),
+  taskProfileFallbackModel: document.getElementById("taskProfileFallbackModel"),
+  taskProfileFallbackUp: document.getElementById("taskProfileFallbackUp"),
+  taskProfileFallbackDown: document.getElementById("taskProfileFallbackDown"),
+  taskProfileFallbackRemove: document.getElementById("taskProfileFallbackRemove"),
   taskProfileAddFallback: document.getElementById("taskProfileAddFallback"),
   taskProfileAddBehavior: document.getElementById("taskProfileAddBehavior"),
   voiceRate: document.getElementById("voiceRate"),
@@ -734,6 +742,13 @@ function fillSelect(select, values, selected, placeholder, capabilityMap = null)
   select.value = selected || "";
 }
 
+function taskProviderEndpoint(provider) {
+  const selected = String(provider || "").trim().toLowerCase();
+  if (!selected) return null;
+  return state.providerEndpoints.find(endpoint => [endpoint.id, endpoint.name, endpoint.base_url]
+    .some(value => String(value || "").trim().toLowerCase() === selected)) || null;
+}
+
 function taskEndpointOptions(select, selected, task = state.activeTaskProfile) {
   select.replaceChildren(new Option(task === "fallback" ? "None (remove fallback)" : "None (default routing)", ""));
   if (task === "reasoning") select.append(new Option("Connected reasoning host", "connected-host"));
@@ -743,7 +758,7 @@ function taskEndpointOptions(select, selected, task = state.activeTaskProfile) {
     if (option.dataset.hasKey === "true") option.style.color = "var(--success)";
     select.append(option);
   }
-  const endpoint = state.providerEndpoints.find(item => item.id === selected || item.name === selected);
+  const endpoint = taskProviderEndpoint(selected);
   if (selected && !endpoint && selected !== "connected-host") select.append(new Option(selected + " (saved)", selected));
   select.value = endpoint?.id || selected || "";
   select.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
@@ -822,51 +837,95 @@ function renderFallbackSelectors() {
   if (!el.taskProfileFallbackList) return;
   const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
   const fallbacks = assignment?.fallbacks || [];
+  const busy = state.taskProfileSaving === true;
+  if (state.taskFallbackTask !== state.activeTaskProfile) state.activeTaskFallback = 0;
+  state.taskFallbackTask = state.activeTaskProfile;
+  state.activeTaskFallback = Math.max(0, Math.min(state.activeTaskFallback || 0, fallbacks.length - 1));
   el.taskProfileFallbackList.replaceChildren();
+  el.taskProfileFallbackList.disabled = busy || !fallbacks.length;
+  el.taskProfileFallbackList.size = Math.min(5, Math.max(1, fallbacks.length));
+  el.taskProfileAddFallback.disabled = busy || !assignment;
+  if (el.taskProfileBack) el.taskProfileBack.disabled = busy;
+  el.taskProfileFallbackEditor.classList.toggle("hidden", !fallbacks.length);
   if (!fallbacks.length) {
-    const empty = document.createElement("p");
-    empty.className = "record-empty";
-    empty.textContent = "No fallback endpoints configured.";
-    el.taskProfileFallbackList.append(empty);
+    el.taskProfileFallbackList.append(new Option("No fallbacks", ""));
   }
   fallbacks.forEach((fallback, index) => {
-    const row = document.createElement("div");
-    row.className = "task-fallback-row";
-    const label = document.createElement("label");
-    label.className = "host-behavior-field";
-    label.textContent = "Fallback endpoint " + (index + 1);
-    const select = document.createElement("select");
-    select.setAttribute("aria-label", label.textContent);
-    taskEndpointOptions(select, fallback.provider, "fallback");
-    select.addEventListener("change", () => {
-      if (!select.value) {
-        assignment.fallbacks.splice(index, 1);
-        renderFallbackSelectors();
-        updateTaskSaveState();
-        return;
-      }
-      const endpoint = state.providerEndpoints.find(item => item.id === select.value);
-      const sameEndpoint = endpoint && (fallback.provider === endpoint.id || fallback.provider === endpoint.name);
-      fallback.provider = endpoint?.id || select.value;
-      fallback.model = endpoint?.model || (sameEndpoint ? fallback.model : "");
-      if (endpoint && !fallback.model) toast("Save a model for this endpoint in Endpoints, Servers & Tools first", true);
-      select.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
-      updateTaskSaveState();
-    });
-    label.append(select);
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "secondary-button";
-    remove.textContent = "Remove";
-    remove.setAttribute("aria-label", "Remove fallback " + (index + 1));
-    remove.addEventListener("click", () => {
-      assignment.fallbacks.splice(index, 1);
-      renderFallbackSelectors();
-      updateTaskSaveState();
-    });
-    row.append(label, remove);
-    el.taskProfileFallbackList.append(row);
+    const endpoint = taskProviderEndpoint(fallback.provider);
+    const name = endpoint?.name || fallback.provider || "New fallback";
+    const model = endpoint?.model || fallback.model || "Model not set";
+    const option = new Option(`${index + 1}. ${name} · ${model}`, String(index));
+    option.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
+    el.taskProfileFallbackList.append(option);
   });
+  el.taskProfileFallbackList.value = fallbacks.length ? String(state.activeTaskFallback) : "";
+  const selected = fallbacks[state.activeTaskFallback];
+  taskEndpointOptions(el.taskProfileFallbackEndpoint, selected?.provider || "", "fallback");
+  el.taskProfileFallbackEndpoint.disabled = busy || !selected;
+  const endpoint = taskProviderEndpoint(selected?.provider);
+  el.taskProfileFallbackModel.textContent = selected ? endpoint?.model || selected.model || "Model not set" : "";
+  el.taskProfileFallbackUp.disabled = busy || !selected || state.activeTaskFallback === 0;
+  el.taskProfileFallbackDown.disabled = busy || !selected || state.activeTaskFallback === fallbacks.length - 1;
+  el.taskProfileFallbackRemove.disabled = busy || !selected;
+}
+
+function selectTaskFallback() {
+  if (state.taskProfileSaving) return;
+  const index = Number(el.taskProfileFallbackList.value);
+  if (!Number.isInteger(index)) return;
+  state.activeTaskFallback = index;
+  renderFallbackSelectors();
+}
+
+function addTaskFallback() {
+  if (state.taskProfileSaving) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (!assignment) return;
+  assignment.fallbacks = assignment.fallbacks || [];
+  assignment.fallbacks.push({ provider: "", model: "" });
+  state.taskFallbackTask = state.activeTaskProfile;
+  state.activeTaskFallback = assignment.fallbacks.length - 1;
+  renderFallbackSelectors();
+  el.taskProfileFallbackEndpoint.focus();
+  updateTaskSaveState();
+}
+
+function removeTaskFallback() {
+  if (state.taskProfileSaving) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (!assignment?.fallbacks?.[state.activeTaskFallback]) return;
+  assignment.fallbacks.splice(state.activeTaskFallback, 1);
+  renderFallbackSelectors();
+  updateTaskSaveState();
+}
+
+function moveTaskFallback(offset) {
+  if (state.taskProfileSaving) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const index = state.activeTaskFallback;
+  const target = index + offset;
+  if (!assignment?.fallbacks?.[index] || !assignment.fallbacks[target]) return;
+  const [fallback] = assignment.fallbacks.splice(index, 1);
+  assignment.fallbacks.splice(target, 0, fallback);
+  state.activeTaskFallback = target;
+  renderFallbackSelectors();
+  updateTaskSaveState();
+}
+
+function changeTaskFallbackEndpoint() {
+  if (state.taskProfileSaving) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const fallback = assignment?.fallbacks?.[state.activeTaskFallback];
+  if (!fallback) return;
+  const provider = el.taskProfileFallbackEndpoint.value;
+  if (!provider) { removeTaskFallback(); return; }
+  const endpoint = taskProviderEndpoint(provider);
+  const sameEndpoint = endpoint && taskProviderEndpoint(fallback.provider) === endpoint;
+  fallback.provider = endpoint?.id || provider;
+  fallback.model = endpoint?.model || (sameEndpoint ? fallback.model : "");
+  if (endpoint && !fallback.model) toast("Save a model for this endpoint in Endpoints, Servers & Tools first", true);
+  renderFallbackSelectors();
+  updateTaskSaveState();
 }
 
 function loadEndpointIntoForm() {
@@ -1002,7 +1061,7 @@ function cancelEndpointEdit() {
 }
 
 function openTaskProfile(task) {
-  if (state.taskFoundationSaving) return;
+  if (state.taskFoundationSaving || (state.taskProfileSaving && task !== state.activeTaskProfile)) return;
   if (state.taskFoundationDraft?.task !== task) cancelTaskFoundationEdit();
   if (state.activeTaskProfile && state.activeTaskProfile !== task) discardTaskProfileChanges();
   state.activeTaskProfile = task;
@@ -1043,7 +1102,7 @@ function openTaskProfile(task) {
 }
 
 function closeTaskProfile() {
-  if (state.taskFoundationSaving) return;
+  if (state.taskFoundationSaving || state.taskProfileSaving) return;
   cancelTaskFoundationEdit();
   discardTaskProfileChanges();
   state.activeTaskProfile = null;
@@ -1184,6 +1243,7 @@ async function saveTaskProfile() {
   }
   state.taskProfileSaving = true;
   el.saveTaskProfile.disabled = true;
+  renderFallbackSelectors();
   try {
     const assignment = state.taskModelAssignments.find(item => item.task === task);
     assignment.voice_reference_id = task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : assignment.voice_reference_id || "";
@@ -1195,7 +1255,7 @@ async function saveTaskProfile() {
     renderTaskProfiles();
     openTaskProfile(task);
   } catch (error) { toast(error.message, true); }
-  finally { state.taskProfileSaving = false; updateTaskSaveState(); }
+  finally { state.taskProfileSaving = false; renderFallbackSelectors(); updateTaskSaveState(); }
 }
 
 async function discoverTaskProfileModels() {
@@ -3094,14 +3154,12 @@ if (el.endpointProbeButton) el.endpointProbeButton.addEventListener("click", pro
 if (el.taskProviderRotation) el.taskProviderRotation.addEventListener("change", syncTaskProviderRotation);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
 if (el.saveTaskEndpoints) el.saveTaskEndpoints.addEventListener("click", saveTaskProfile);
-if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", () => {
-  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
-  if (!assignment) return;
-  assignment.fallbacks = assignment.fallbacks || [];
-  assignment.fallbacks.push({ provider: "", model: "" });
-  renderFallbackSelectors();
-  updateTaskSaveState();
-});
+if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", addTaskFallback);
+if (el.taskProfileFallbackList) el.taskProfileFallbackList.addEventListener("change", selectTaskFallback);
+if (el.taskProfileFallbackEndpoint) el.taskProfileFallbackEndpoint.addEventListener("change", changeTaskFallbackEndpoint);
+if (el.taskProfileFallbackUp) el.taskProfileFallbackUp.addEventListener("click", () => moveTaskFallback(-1));
+if (el.taskProfileFallbackDown) el.taskProfileFallbackDown.addEventListener("click", () => moveTaskFallback(1));
+if (el.taskProfileFallbackRemove) el.taskProfileFallbackRemove.addEventListener("click", removeTaskFallback);
 if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click", () => {
   el.taskProfileBehaviorSelection?.querySelector("input:not(:disabled)")?.focus();
 });

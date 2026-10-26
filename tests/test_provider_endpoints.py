@@ -206,6 +206,22 @@ class ProviderEndpointTests(unittest.IsolatedAsyncioTestCase):
         with patch("aicognitive_mind.provider_endpoints.httpx.AsyncClient", FakeClient):
             return await discover_endpoint_model_details(endpoint)
 
+    async def test_groq_vision_documentation_enriches_sparse_discovery_without_overriding_denials(self):
+        model = "qwen/qwen3.8-27b"
+        endpoint = ProviderEndpoint(id="groq", name="Groq", model=model,
+                                    base_url="https://api.groq.com/openai/v1")
+        details = await self.discover_fixture(endpoint, {"data": [{"id": model}]})
+        self.assertEqual(details["model_capabilities"][model], ["Text", "Vision", "Tools"])
+        self.assertEqual(details["model_capability_sources"][model], "https://console.groq.com/docs/vision")
+        denied = await self.discover_fixture(endpoint, {"data": [{
+            "id": model, "capabilities": {"supports_vision": False},
+        }]})
+        self.assertNotIn("Vision", denied["model_capabilities"][model])
+        self.assertIn("Vision", denied["model_capability_exclusions"][model])
+        proxy = endpoint.model_copy(update={"base_url": "https://compatible.example/openai/v1"})
+        self.assertEqual(_documented_capabilities(proxy, model), ([], ""))
+        self.assertEqual(_documented_capabilities(endpoint, "qwen/qwen-future-vision"), ([], ""))
+
     def test_documented_modalities_are_scoped_to_actual_openai_endpoint(self):
         official = ProviderEndpoint(id="openai", name="OpenAI", base_url="https://api.openai.com/v1")
         labels, source = _documented_capabilities(official, "gpt-5.5-2026-04-23")

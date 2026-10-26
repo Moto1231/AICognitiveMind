@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261026-foundations-startup">
+  <link rel="stylesheet" href="/static/portal.css?v=20261026-fallback-navigation">
   <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
 </head>
 <body>
@@ -257,7 +257,18 @@
                   </label>
                   <div class="task-fallbacks-editor">
                     <div class="panel-heading"><h4>Fallback endpoints</h4><button id="taskProfileAddFallback" class="secondary-button" type="button">Add fallback</button></div>
-                    <div id="taskProfileFallbackList" class="task-fallback-list"></div>
+                    <div class="task-fallback-navigation">
+                      <label class="host-behavior-field">Fallback order<select id="taskProfileFallbackList" class="task-fallback-list" size="5" aria-label="Fallback order" aria-controls="taskProfileFallbackEditor"></select></label>
+                      <div id="taskProfileFallbackEditor" class="task-fallback-detail hidden" role="group" aria-label="Selected fallback">
+                        <label class="host-behavior-field">Endpoint<select id="taskProfileFallbackEndpoint" aria-label="Selected fallback endpoint"></select></label>
+                        <label class="host-behavior-field">Model<output id="taskProfileFallbackModel"></output></label>
+                        <div class="edit-actions task-fallback-actions">
+                          <button id="taskProfileFallbackUp" type="button" class="secondary-button" aria-label="Move fallback up" title="Move fallback up" disabled><svg viewBox="0 0 40 40" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 32V8 M10 18l10-10 10 10"/></svg></button>
+                          <button id="taskProfileFallbackDown" type="button" class="secondary-button" aria-label="Move fallback down" title="Move fallback down" disabled><svg viewBox="0 0 40 40" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 8v24 M10 22l10 10 10-10"/></svg></button>
+                          <button id="taskProfileFallbackRemove" type="button" class="secondary-button" aria-label="Remove fallback" title="Remove fallback" disabled>Remove</button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div class="edit-actions"><button id="saveTaskEndpoints" class="primary-button" type="button" disabled>Save</button></div>
@@ -722,6 +733,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261026-foundations-startup"></script>
+  <script src="/static/portal.js?v=20261026-fallback-navigation"></script>
 </body>
 </html>
