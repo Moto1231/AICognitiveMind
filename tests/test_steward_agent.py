@@ -484,6 +484,282 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         ])
         return records
 
+    async def configured_steward_pool(self, service, count=3):
+        records = RuntimeRecords(service._mind)
+        await ProviderEndpointRegistry(records).replace([
+            ProviderEndpoint(
+                id=f"provider-{index}", name=f"Provider {index}",
+                base_url=f"https://provider-{index}.example/v1", model=f"model-{index}",
+            )
+            for index in range(count)
+        ])
+        assignments = TaskModelAssignmentRegistry(records)
+        await assignments.replace([
+            item.model_copy(update={
+                "provider": "provider-0", "provider_rotation": "ordered",
+                "fallbacks": [
+                    TaskFallbackAssignment(provider=f"provider-{index}")
+                    for index in range(1, count)
+                ],
+            }) if item.task == "memory_recall" else item
+            for item in await assignments.list()
+        ])
+        return records
+
+    async def test_rejected_review_advances_provider_and_commits_only_grounded_learning(self):
+        rejected = [
+            self.learning(support=[{"source": "user_message", "quote": "Never supplied"}]),
+            self.learning(support=[{"source": "current_evidence", "quote": "Never supplied"}]),
+            self.learning(support=[{"source": "response_text", "quote": "Atlas uses SurrealDB"}]),
+            self.learning(memory_class="identity", support=[
+                {"source": "response_text", "quote": "Atlas uses SurrealDB"},
+            ]),
+            self.learning(memory_class="unknown"),
+            {**self.learning(), "references": ["missing_record"]},
+            {**self.learning(), "evidence_indices": [0]},
+        ]
+        for review in rejected:
+            with self.subTest(review=review):
+                service, journal, memory = await self.service(None)
+                records = await self.configured_steward_pool(service)
+                calls = []
+
+                def handle(request):
+                    calls.append(request.url.host)
+                    decision = review if request.url.host == "provider-0.example" else self.learning()
+                    return httpx.Response(200, json={
+                        "choices": [{"message": native_message(decision)}],
+                    })
+
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                    service._steward_runtime = TaskModelDispatcher(records, client=client)
+                    completed = await service.complete_interaction(
+                        "Atlas uses SurrealDB.", "Atlas uses SurrealDB.",
+                    )
+                self.assertEqual(calls, ["provider-0.example", "provider-1.example"])
+                self.assertEqual(completed["status"], "interaction_committed")
+                learned = await memory.read()
+                self.assertEqual(len(learned), 1)
+                self.assertEqual(learned[0].memory_class, MemoryClass.SEMANTIC)
+                self.assertEqual(learned[0].grounding, ("user_message: Atlas uses SurrealDB",))
+                self.assertEqual(len([e for e in await journal.read() if e.kind == "interaction"]), 1)
+
+    async def test_review_validation_failure_then_rate_limit_reaches_next_valid_provider(self):
+        service, journal, memory = await self.service(None)
+        records = await self.configured_steward_pool(service)
+        calls = []
+        invalid = self.learning(support=[{"source": "user_message", "quote": "Never supplied"}])
+
+        def handle(request):
+            calls.append(request.url.host)
+            if request.url.host == "provider-1.example":
+                return httpx.Response(429, json={"error": "busy"}, headers={"retry-after": "20"})
+            decision = invalid if request.url.host == "provider-0.example" else self.learning()
+            return httpx.Response(200, json={"choices": [{"message": native_message(decision)}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            dispatcher = TaskModelDispatcher(records, client=client)
+            service._steward_runtime = dispatcher
+            with patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep:
+                completed = await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+            sleep.assert_not_awaited()
+        self.assertEqual(calls, ["provider-0.example", "provider-1.example", "provider-2.example"])
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(len(await memory.read()), 1)
+        self.assertEqual(len([e for e in await journal.read() if e.kind == "interaction"]), 1)
+        pool = (await dispatcher.routing_status())["tasks"]
+        memory_pool = next(item for item in pool if item["task"] == "memory_recall")
+        self.assertEqual(memory_pool["candidates"][1]["cooldown_reason"], "rate_limited")
+
+    async def test_all_rejected_review_providers_fail_closed_without_partial_writes(self):
+        service, journal, memory = await self.service(None)
+        records = await self.configured_steward_pool(service)
+        original, before = await service._mind.load(), await journal.read()
+        invalid = self.learning()
+        invalid["memories"].append(self.learning(
+            content="An unsupported second decision", support=[
+                {"source": "user_message", "quote": "Never supplied"},
+            ],
+        )["memories"][0])
+        calls = []
+
+        def handle(request):
+            calls.append(request.url.host)
+            return httpx.Response(200, json={"choices": [{"message": native_message(invalid)}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            with self.assertRaises(TaskDispatchError):
+                await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+        self.assertEqual(calls, ["provider-0.example", "provider-1.example", "provider-2.example"])
+        self.assertEqual(await memory.read(), [])
+        self.assertEqual(await journal.read(), before)
+        self.assertEqual(await service._mind.load(), original)
+
+    async def test_review_search_does_not_restart_a_rejected_provider(self):
+        service, journal, memory = await self.service(None)
+        records = await self.configured_steward_pool(service)
+        calls = []
+        backup_steps = iter([SEARCH, self.learning()])
+        invalid = self.learning(support=[{"source": "user_message", "quote": "Never supplied"}])
+
+        def handle(request):
+            calls.append(request.url.host)
+            decision = invalid if request.url.host == "provider-0.example" else next(backup_steps)
+            return httpx.Response(200, json={"choices": [{"message": native_message(decision)}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            with patch("aicognitive_mind.steward_agent.candidates", new_callable=AsyncMock, return_value=[]) as search:
+                completed = await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+            search.assert_awaited_once()
+        self.assertEqual(calls, ["provider-0.example", "provider-1.example", "provider-1.example"])
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(len(await memory.read()), 1)
+        self.assertEqual(len([e for e in await journal.read() if e.kind == "interaction"]), 1)
+
+    async def test_review_failure_exclusion_is_local_and_healthy_primary_does_not_rotate(self):
+        service, _, memory = await self.service(None)
+        records = await self.configured_steward_pool(service)
+        calls = []
+        invalid = self.learning(support=[{"source": "user_message", "quote": "Never supplied"}])
+
+        def handle(request):
+            calls.append(request.url.host)
+            decision = invalid if len(calls) == 1 else self.learning()
+            return httpx.Response(200, json={"choices": [{"message": native_message(decision)}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            for _ in range(3):
+                completed = await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+                self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(calls, [
+            "provider-0.example", "provider-1.example", "provider-0.example", "provider-0.example",
+        ])
+        self.assertEqual(len(await memory.read()), 1)
+
+    async def test_review_rejections_share_four_decision_budget_across_large_provider_pool(self):
+        service, journal, memory = await self.service(None)
+        records = await self.configured_steward_pool(service, count=6)
+        before, original = await journal.read(), await service._mind.load()
+        calls, bodies = [], []
+        invalid = self.learning(support=[{"source": "user_message", "quote": "Never supplied"}])
+
+        def handle(request):
+            calls.append(request.url.host)
+            bodies.append(json.loads(request.content))
+            decision = self.learning() if request.url.host == "provider-4.example" else invalid
+            return httpx.Response(200, json={"choices": [{"message": native_message(decision)}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            with self.assertRaisesRegex(TaskDispatchError, "final call|budget|round limit"):
+                await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+        self.assertEqual(calls, [f"provider-{index}.example" for index in range(4)])
+        budgets = [json.loads(body["messages"][1]["content"])["assessment_budget"] for body in bodies]
+        self.assertEqual([budget["model_calls_remaining"] for budget in budgets], [4, 3, 2, 1])
+        self.assertTrue(all(budget["review_corrections_remaining"] >= 0 for budget in budgets))
+        self.assertEqual(await memory.read(), [])
+        self.assertEqual(await journal.read(), before)
+        self.assertEqual(await service._mind.load(), original)
+
+    async def test_transport_failures_can_reach_later_provider_without_consuming_decisions(self):
+        service, _, memory = await self.service(None)
+        records = await self.configured_steward_pool(service, count=6)
+        calls = []
+
+        def handle(request):
+            calls.append(request.url.host)
+            if request.url.host != "provider-5.example":
+                return httpx.Response(429, json={"error": "busy"}, headers={"retry-after": "20"})
+            return httpx.Response(200, json={"choices": [{"message": native_message(self.learning())}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            service._steward_runtime = TaskModelDispatcher(records, client=client)
+            with patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep:
+                completed = await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+            sleep.assert_not_awaited()
+        self.assertEqual(calls, [f"provider-{index}.example" for index in range(6)])
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(len(await memory.read()), 1)
+
+    async def test_review_validation_failover_skips_an_existing_provider_cooldown(self):
+        service, _, memory = await self.service(None)
+        records = await self.configured_steward_pool(service)
+        calls = []
+        invalid = self.learning(support=[{"source": "user_message", "quote": "Never supplied"}])
+
+        def handle(request):
+            calls.append(request.url.host)
+            decision = invalid if request.url.host == "provider-0.example" else self.learning()
+            return httpx.Response(200, json={"choices": [{"message": native_message(decision)}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            dispatcher = TaskModelDispatcher(records, client=client)
+            endpoints = await dispatcher.endpoints.list()
+            await dispatcher.routing.record_http_failure(
+                endpoints[1], "model-1", 429, {"retry-after": "20"},
+            )
+            service._steward_runtime = dispatcher
+            completed = await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+        self.assertEqual(calls, ["provider-0.example", "provider-2.example"])
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(len(await memory.read()), 1)
+
+    async def test_review_search_rechecks_new_cooldown_before_continuing_provider(self):
+        service, _, memory = await self.service(None)
+        records = await self.configured_steward_pool(service)
+        calls = []
+        invalid = self.learning(support=[{"source": "user_message", "quote": "Never supplied"}])
+
+        def handle(request):
+            calls.append(request.url.host)
+            if request.url.host == "provider-0.example":
+                decision = invalid
+            elif request.url.host == "provider-1.example":
+                decision = SEARCH
+            else:
+                decision = self.learning()
+            return httpx.Response(200, json={"choices": [{"message": native_message(decision)}]})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+            dispatcher = TaskModelDispatcher(records, client=client)
+            endpoints = await dispatcher.endpoints.list()
+            service._steward_runtime = dispatcher
+
+            async def cool_backup(*args, **kwargs):
+                await dispatcher.routing.record_http_failure(
+                    endpoints[1], "model-1", 429, {"retry-after": "20"},
+                )
+                return []
+
+            with patch("aicognitive_mind.steward_agent.candidates", side_effect=cool_backup):
+                completed = await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+        self.assertEqual(calls, ["provider-0.example", "provider-1.example", "provider-2.example"])
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(len(await memory.read()), 1)
+
+    async def test_invalid_recall_finish_advances_without_unsupported_recalled_content(self):
+        for invalid in ({**SKIP, "summary": "An unsupported brief"}, BRIEF):
+            with self.subTest(invalid=invalid):
+                service, _, memory = await self.service(None)
+                records = await self.configured_steward_pool(service)
+                calls = []
+
+                def handle(request):
+                    calls.append(request.url.host)
+                    decision = invalid if request.url.host == "provider-0.example" else SKIP
+                    return httpx.Response(200, json={"choices": [{"message": native_message(decision)}]})
+
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                    service._steward_runtime = TaskModelDispatcher(records, client=client)
+                    begun = await service.begin_interaction("Please format this text.")
+                self.assertEqual(calls, ["provider-0.example", "provider-1.example"])
+                self.assertEqual(begun["memory_assessment"]["outcome"], "no_recall_needed")
+                self.assertEqual(begun["recalled_context"]["summary"], "")
+                self.assertEqual(await memory.read(), [])
+
     async def test_http_final_round_finishes_grounded_recall_and_corrects_review(self):
         service, journal, memory = await self.service(None)
         await memory.remember(DurableMemory(

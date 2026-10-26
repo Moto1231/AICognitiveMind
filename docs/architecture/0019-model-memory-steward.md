@@ -32,10 +32,26 @@ depend on missing context. Task-specific skills are loaded when their task appli
 The exact intended response is committed by complete before it is presented to the
 human. Retrying complete with the same key and unchanged input reuses its receipt.
 
-Each assessment is limited to four model rounds and sixty seconds. The normal
-skip path uses one model round and no search. Provider failures, invalid JSON,
-invented references, missing grounding and exhausted budgets are explicit errors;
-none is reported as an intelligent no-recall or no-learning decision.
+Both recall and completion review use the saved Memory Recall provider pool.
+Within an assessment, a successful provider continues handling its search and
+finish decisions. A provider error or rejected decision advances to the next
+eligible fallback; a rejected provider is not revisited later in that assessment.
+Decision rejection includes invalid phase schemas, unsupported references and
+memory grounding that fails the existing evidence checks. These checks are not
+relaxed to make failover succeed. A single eligible provider retains one bounded
+review-correction attempt. Candidate state belongs to the assessment, not the
+shared dispatcher, and a new assessment starts with the configured priority and
+existing provider cooldowns. Successful traffic is not rotated by this failover
+mechanism; scheduled rotation remains a separate, explicitly selected option.
+
+Each assessment is limited to four returned model decisions and sixty seconds.
+Invalid decisions consume that same decision budget. HTTP, transport and action
+wrapper failures advance through the finite eligible pool within the shared time
+limit. The normal skip path uses one model decision and no search. Provider
+exhaustion, invalid JSON, invented references, missing grounding and exhausted
+budgets are explicit errors; none is reported as an intelligent no-recall or
+no-learning decision. An exhausted review does not commit memories or the
+interaction journal.
 
 Configure a working Memory Recall endpoint in Task Profiles before use. Model tests
 use scripted responses; the explicitly named `mcp_test_server.py` harness tests
