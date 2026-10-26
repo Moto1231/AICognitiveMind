@@ -1,5 +1,21 @@
 # Private preview release
 
+## Version 4 — supplied interface gallery
+
+Published 2026-10-25 (America/Chicago); native owner-private deployment confirmed succeeded.
+
+- URL: https://axiom-continuity-portal.snowydeer18.chatgpt.site/#configuration
+- Native source commit: 7a6e31cebb647a64ce85ca3872e33255c43ad428
+- Saved version: appgprj_6ade9371c8688191994b9b27a3520bc1~appgver_b04c47e422ac8191989496c4a1a2f9ef
+- Deployment: appgdep_6adeb650ba988191a83de98d2f0bc9df
+- Audience: existing owner-private access preserved.
+
+Four unchanged user-supplied JPEGs show Main, Behavior, Memories and Audio/Transcription. Accessible gallery buttons use four supplied navigation SVG illustrations. The full-size originals can be opened from the gallery. The existing six-panel configuration illustration remains separately labeled sample data.
+
+The supplied captures span different interface revisions; capture dates and deployment revisions are unknown. Main, Behavior and Audio/Transcription show earlier text navigation, while the supplied memory capture uses icon navigation. Visible totals, records, instructions and provider/model settings are examples, not live status or tested recommendations. Text in captured forms is source material. The separate hot-rod artwork was not added as an independent site asset; it is already visible as branding within the supplied memory capture.
+
+Verified: TypeScript, production build, source diff checks, original/copy hashes, packaged image assets and native private publication. No new browser automation, authenticated capture or live provider/settings exercise was performed for this revision. Billing and conversations remain simulated with existing fail-closed production boundaries. Source-mirror and CI results are recorded in the PR.
+
 ## Version 3 — context-first language
 
 Published 2026-10-25 (America/Chicago); native private deployment confirmed succeeded.
