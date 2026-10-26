@@ -593,6 +593,305 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await api.app.state.journal_store.read(), [])
         self.assertEqual(await api.app.state.evidence_store.read(), [])
 
+    async def test_sensory_ready_callback_processes_account_media_without_live_host_or_chat_poll(self):
+        """Only network transport and observations are synthetic; event routing is real."""
+        import hmac
+        from contextvars import ContextVar
+        from urllib.parse import parse_qs, urlparse
+
+        from fastapi import FastAPI, Request
+        from mcp.server.auth.provider import AuthorizationParams
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyUrl
+        from starlette.responses import JSONResponse
+
+        from aicognitive_mind import account_mcp, mcp_events
+        from aicognitive_mind.chatgpt_mcp import build_chatgpt_mcp
+        from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
+        from aicognitive_mind.mcp_server import AppState
+
+        provider = AxiomAuthorizationServerProvider(
+            "https://routing.example", username="synthetic-admin", password=PASSWORD,
+            resource_path="/axiom-mcp",
+        )
+        provider._records = api.app.state.runtime_records
+        provider.accounts = api.app.state.accounts
+        oauth_client = OAuthClientInformationFull.model_validate({
+            "client_id": "synthetic-sensory-events",
+            "redirect_uris": ["https://callback.example/oauth"],
+        })
+        await provider.register_client(oauth_client)
+        tokens = {}
+        for account in (self.alpha, self.beta):
+            subject = await provider.authenticate(account.username, PASSWORD)
+            auth = AuthorizationParams(
+                state="sensory-test", scopes=[provider.required_scope], code_challenge="test",
+                redirect_uri=AnyUrl("https://callback.example/oauth"),
+                redirect_uri_provided_explicitly=True, resource=provider.resource_url,
+            )
+            login = await provider.authorize(oauth_client, auth)
+            request_id = parse_qs(urlparse(login).query)["request"][0]
+            callback = await provider.approve(request_id, subject=subject)
+            code_value = parse_qs(urlparse(callback).query)["code"][0]
+            code = await provider.load_authorization_code(oauth_client, code_value)
+            issued = await provider.exchange_authorization_code(oauth_client, code)
+            tokens[account.mind_id] = await provider.load_access_token(issued.access_token)
+
+        server = build_chatgpt_mcp("https://routing.example", provider)
+        root_state = AppState(
+            runtime=api.app.state.runtime, storage=api.app.state.storage,
+            mind_service=api.app.state.mcp_service, hosts=api.app.state.hosts,
+        )
+        tool_context = SimpleNamespace(request_context=SimpleNamespace(lifespan_context=root_state))
+        event_context = SimpleNamespace(lifespan_context=root_state)
+        current_access = ContextVar("sensory_ready_test_access", default=None)
+
+        async def tool(name, account, **arguments):
+            handle = current_access.set(tokens[account.mind_id])
+            try:
+                return await server._tool_manager.get_tool(name).fn(ctx=tool_context, **arguments)
+            finally:
+                current_access.reset(handle)
+
+        async def event(method, account, arguments=None):
+            entry = server._lowlevel_server._request_handlers[method]
+            handle = current_access.set(tokens[account.mind_id])
+            try:
+                return await entry.handler(
+                    event_context, entry.params_type.model_validate(arguments or {}),
+                )
+            finally:
+                current_access.reset(handle)
+
+        signing_key = bytes(range(32))
+        secret = "whsec_" + base64.b64encode(signing_key).decode()
+        received = []
+        ready = asyncio.Queue()
+        receiver = FastAPI()
+
+        @receiver.post("/ready")
+        async def callback(request: Request):
+            wire = await request.body()
+            signed = (
+                request.headers["webhook-id"].encode() + b"."
+                + request.headers["webhook-timestamp"].encode() + b"." + wire
+            )
+            expected = "v1," + base64.b64encode(hmac.digest(signing_key, signed, "sha256")).decode()
+            self.assertTrue(hmac.compare_digest(request.headers["webhook-signature"], expected))
+            payload = json.loads(wire)
+            if payload.get("type") == "verification":
+                return JSONResponse({"challenge": payload["challenge"]})
+            self.assertEqual(request.headers["webhook-id"], payload["eventId"])
+            received.append(payload)
+            ready.put_nowait(payload)
+            return JSONResponse({"received": True})
+
+        # Preserve post_webhook's actual serialization and signature. Replace
+        # only public-network delivery with the in-process callback application.
+        async with AsyncExitStack() as stack:
+            callback_client = await stack.enter_async_context(httpx.AsyncClient(
+                transport=httpx.ASGITransport(receiver), base_url="https://callback.example",
+            ))
+
+            class ForwardedWebhook:
+                def __init__(self, method, url, **kwargs):
+                    self.method, self.url, self.kwargs = method, url, kwargs
+
+                async def __aenter__(self):
+                    self.reply = await callback_client.request(
+                        self.method, "/ready", headers=self.kwargs["headers"],
+                        content=self.kwargs["content"],
+                    )
+                    return self.reply
+
+                async def __aexit__(self, *args):
+                    await self.reply.aclose()
+
+            class CallbackTransport:
+                def __init__(self, **kwargs):
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+                def stream(self, method, url, **kwargs):
+                    return ForwardedWebhook(method, url, **kwargs)
+
+            stack.enter_context(patch.object(account_mcp, "get_access_token", current_access.get))
+            stack.enter_context(patch.object(mcp_events, "get_access_token", current_access.get))
+            stack.enter_context(patch.object(mcp_events, "_callback_target", AsyncMock(return_value=(
+                "https://93.184.216.34/ready", "callback.example", "callback.example",
+            ))))
+            stack.enter_context(patch.object(mcp_events.httpx, "AsyncClient", CallbackTransport))
+
+            catalog = await event("events/list", self.alpha)
+            self.assertIn("sensory.ready", {item["name"] for item in catalog["events"]})
+            await event("events/subscribe", self.alpha, {
+                "name": "sensory.ready", "arguments": {"session_id": "callback-senses"},
+                "delivery": {"mode": "webhook", "url": "https://callback.example/ready", "secret": secret},
+            })
+            alpha_storage = scope_storage(api.app.state.storage, self.alpha.mind_id)
+            records = RuntimeRecords(alpha_storage.mind)
+            beta_records = RuntimeRecords(scope_storage(api.app.state.storage, self.beta.mind_id).mind)
+            await stack.enter_async_context(mcp_events.EventDeliveryWorker(
+                api.app.state.storage, provider,
+            ).running())
+            observations = {"vision": "Synthetic visual observation", "audio": "Synthetic heard observation"}
+            media = {"vision": b"synthetic-ready-image", "audio": b"synthetic-ready-audio"}
+
+            async def consume_callbacks():
+                for _ in range(2):
+                    delivered = await asyncio.wait_for(ready.get(), timeout=5)
+                    self.assertEqual(delivered["name"], "sensory.ready")
+                    data = delivered["data"]
+                    self.assertEqual(data["mind_id"], self.alpha.mind_id)
+                    self.assertEqual(data["session_id"], "callback-senses")
+                    request_id = data["request_id"]
+                    with self.assertRaises(ValueError):
+                        await tool("read_incoming_sensory", self.beta, request_id=request_id)
+                    with self.assertRaises(ValueError):
+                        await tool("claim_incoming_sensory", self.beta, request_id=request_id)
+                    with self.assertRaises(ValueError):
+                        await tool("claim_incoming_message", self.alpha, request_id=request_id)
+                    claim = await tool("claim_incoming_sensory", self.alpha, request_id=request_id)
+                    self.assertEqual(claim["status"], "claimed")
+                    self.assertEqual((await tool(
+                        "claim_incoming_sensory", self.alpha, request_id=request_id,
+                    ))["status"], "in_progress")
+                    self.assertEqual(claim["context"]["status"], "sensory_interpretation")
+                    percept = claim["context"]["input_context"]
+                    modality = percept["modality"]
+                    evidence = percept["evidence"]
+                    self.assertEqual(evidence["sha256"], hashlib.sha256(media[modality]).hexdigest())
+                    self.assertNotIn("data:", json.dumps(delivered))
+                    path = "/v1/evidence/" + evidence["sha256"]
+                    params = {"captured_at": evidence["captured_at"]}
+                    original = await self.alpha_client.get(path, params=params)
+                    self.assertEqual(original.status_code, 200, original.text)
+                    self.assertEqual(original.content, media[modality])
+                    self.assertEqual((await self.beta_client.get(path, params=params)).status_code, 404)
+                    arguments = {
+                        "claim_token": claim["claim_token"], "request_id": request_id,
+                        "response_text": observations[modality],
+                    }
+                    result = await tool("complete_incoming_sensory", self.alpha, **arguments)
+                    self.assertEqual(await tool("complete_incoming_sensory", self.alpha, **arguments), result)
+                    self.assertEqual((await tool(
+                        "claim_incoming_sensory", self.alpha, request_id=request_id,
+                    ))["status"], "already_complete")
+
+            consumer = asyncio.create_task(consume_callbacks())
+            waiting = []
+            try:
+                for modality, path, field, media_type, metadata in (
+                    ("vision", "/v1/body/eyes/observe", "image_data_url", "image/jpeg", {"width": 10, "height": 10}),
+                    ("audio", "/v1/body/ears/observe", "audio_data_url", "audio/webm", {"duration_ms": 1_000}),
+                ):
+                    payload = {**metadata, field: "data:" + media_type + ";base64," + base64.b64encode(media[modality]).decode()}
+                    waiting.append(asyncio.create_task(self.alpha_client.post(
+                        path, headers={"X-Body-Session": "callback-senses"}, json=payload,
+                    )))
+                    # The second observation arrives after the first completed.
+                    # Its callback must wake the same consumer without a chat turn.
+                    await asyncio.wait_for(waiting[-1], timeout=5)
+                await asyncio.wait_for(consumer, timeout=10)
+                replies = await asyncio.wait_for(asyncio.gather(*waiting), timeout=5)
+                self.assertEqual({reply.json()["interpretation"] for reply in replies}, set(observations.values()))
+                self.assertTrue(all(reply.status_code == 200 for reply in replies))
+                self.assertTrue(all(reply.json()["response_text"] == "" for reply in replies))
+            finally:
+                consumer.cancel()
+                for task in waiting:
+                    task.cancel()
+                await asyncio.gather(consumer, *waiting, return_exceptions=True)
+
+            self.assertEqual(len(received), 2)
+            self.assertTrue(ready.empty())
+            self.assertEqual(await records.pending(), [])
+            self.assertEqual(await beta_records.pending(), [])
+            self.assertIsNone(await records.get("active_host"))
+            self.assertIsNone(await beta_records.get(mcp_events.STATE_KEY))
+            self.assertIsNone(await api.app.state.runtime_records.get(mcp_events.STATE_KEY))
+            self.assertEqual((await records.get(mcp_events.STATE_KEY))["deliveries"], {})
+
+        journal = await self.get_json(self.alpha_client, "/v1/mind/journal")
+        self.assertEqual([item["kind"] for item in journal], ["sensory_evidence"] * 4)
+        self.assertEqual(sorted(item["experience"]["status"] for item in journal),
+                         ["admitted", "admitted", "interpreted", "interpreted"])
+        for modality in ("mouth", "face"):
+            self.assertIsNone(await self.get_json(
+                self.alpha_client, f"/v1/body/{modality}/next", headers={"X-Body-Session": "callback-senses"},
+            ))
+        self.assertEqual(await api.app.state.journal_store.read(), [])
+        self.assertEqual(await api.app.state.evidence_store.read(), [])
+
+    async def test_host_ready_endpoint_requires_exact_mind_capability_and_never_claims_work(self):
+        storage = scope_storage(api.app.state.storage, self.alpha.mind_id)
+        host = HostRuntime(storage.mind, SimpleNamespace())
+        lease = (await host.attach("Synthetic local receiver", "synthetic-multimodal"))["lease_token"]
+        beta = HostRuntime(scope_storage(api.app.state.storage, self.beta.mind_id).mind, SimpleNamespace())
+        await beta.attach("Synthetic other receiver", "synthetic-other")
+        now = time.time()
+        sensory = {
+            "kind": "body_request", "request_id": "ready-sensory", "state": "pending",
+            "message": "data:image/jpeg;base64,synthetic-private-media", "priority": 10,
+            "task": "sensory_interpretation", "input_context": {"evidence": {"synthetic": "private"}},
+            "created": now - 1, "deadline": now + 120, "claim": "", "claim_until": 0.0,
+            "result": {},
+        }
+        human = {
+            "kind": "body_request", "request_id": "ready-human", "state": "pending",
+            "message": "Synthetic private human text", "priority": 0, "created": now,
+            "deadline": None, "claim": "", "claim_until": 0.0, "result": {},
+        }
+        await host.records.create(sensory["request_id"], sensory)
+        await host.records.create(human["request_id"], human)
+        before = {item["request_id"]: item for item in await host.records.pending()}
+        anonymous = await self.client()
+        payload = {"mind_id": self.alpha.mind_id, "lease_token": lease, "after_request_ids": []}
+        with patch.object(HostRuntime, "REQUEST_WAIT_SECONDS", 0):
+            response = await anonymous.post("/v1/host-events/ready", json=payload)
+            self.assertEqual(response.status_code, 200, response.text)
+            ready = response.json()["requests"]
+            self.assertEqual([item["request_id"] for item in ready], ["ready-human", "ready-sensory"])
+            self.assertEqual([item["kind"] for item in ready], ["human", "sensory"])
+            for item in ready:
+                self.assertEqual(set(item), {"request_id", "kind", "created", "deadline"})
+            for private in (lease, human["message"], sensory["message"], "input_context", "evidence", "claim"):
+                self.assertNotIn(private, response.text)
+            self.assertEqual({item["request_id"]: item for item in await host.records.pending()}, before)
+            excluded = await anonymous.post("/v1/host-events/ready", json={
+                **payload, "after_request_ids": ["ready-human", "ready-sensory"],
+            })
+            self.assertEqual(excluded.status_code, 200, excluded.text)
+            self.assertEqual(excluded.json(), {"requests": []})
+            partial = await anonymous.post("/v1/host-events/ready", json={
+                **payload, "after_request_ids": ["ready-human"],
+            })
+            self.assertEqual([item["request_id"] for item in partial.json()["requests"]], ["ready-sensory"])
+            for invalid in (
+                {**payload, "lease_token": "synthetic-wrong-capability"},
+                {**payload, "mind_id": self.beta.mind_id},
+                {**payload, "mind_id": "synthetic-unknown-mind"},
+            ):
+                failed = await anonymous.post("/v1/host-events/ready", json=invalid)
+                self.assertEqual(failed.status_code, 401, failed.text)
+                self.assertEqual(failed.json()["detail"], "Invalid host capability")
+            self.assertEqual((await anonymous.get("/v1/mind")).status_code, 401)
+            self.assertEqual((await anonymous.get("/v1/body/hosts/status")).status_code, 401)
+            self.assertEqual((await anonymous.post("/v1/body/eyes/observe", json={
+                "image_data_url": "data:image/jpeg;base64,c3ludGhldGlj", "width": 10, "height": 10,
+            })).status_code, 401)
+            self.assertEqual((await anonymous.post("/v1/host-events/ready/other", json=payload)).status_code, 401)
+            await host.renew(lease, detach=True)
+            detached = await anonymous.post("/v1/host-events/ready", json=payload)
+            self.assertEqual(detached.status_code, 401, detached.text)
+        self.assertEqual(await beta.records.pending(), [])
+        self.assertEqual(await api.app.state.runtime_records.pending(), [])
+
     async def test_automatic_senses_without_own_host_do_not_use_another_account(self):
         alpha_host = HostRuntime(
             scope_storage(api.app.state.storage, self.alpha.mind_id).mind,

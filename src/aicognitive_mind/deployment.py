@@ -38,7 +38,7 @@ from aicognitive_mind.chatgpt_oauth import (
 )
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.commit import CommitConflict
-from aicognitive_mind.mcp_events import MessageEvents
+from aicognitive_mind.mcp_events import EventDeliveryWorker
 
 
 def public_base_url() -> str:
@@ -508,21 +508,9 @@ async def _combined_lifespan(host_app):
         stack.push_async_callback(oauth_provider.close)
         await stack.enter_async_context(_mcp_lifespan(host_app))
         await stack.enter_async_context(portal_app.router.lifespan_context(portal_app))
-        records = getattr(portal_app.state, "runtime_records", None)
-        if records is not None:
-            async def subscription_authorized(sub):
-                client = await oauth_provider.get_client(sub["owner"]["client_id"])
-                return bool(
-                    client and sub["owner"]["subject"] in {
-                        oauth_provider.username, records.mind_id, "__legacy__",
-                    } and (
-                        not client.scope or oauth_provider.required_scope in client.scope.split()
-                    )
-                )
-
-            await stack.enter_async_context(MessageEvents(
-                records, authorized=subscription_authorized,
-            ).running())
+        storage = getattr(portal_app.state, "storage", None)
+        if storage is not None:
+            await stack.enter_async_context(EventDeliveryWorker(storage, oauth_provider).running())
         yield
 
 
