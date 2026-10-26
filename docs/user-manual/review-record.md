@@ -40,6 +40,10 @@ Documentation update date: **2026-10-25**. Four user-supplied JPEGs were added a
 
 The visual-reference page and chapter links do not change the implementation-review baseline above. The Main, Behavior and task images show older navigation and editor layouts; the supplied memory image shows icon navigation, with its deployed revision unknown. Visible counts, memory records, behavior text and provider/model selections are capture content; they do not establish current account state, policy, supported model capabilities or recommended configuration. No new login exercise, provider test or full chapter source review was performed for this image update.
 
+## Naming milestone clarification
+
+Focused source review on **2026-10-25** at **`dbbc246860115153f3c11d05b505014cfcb874b8`** added [Naming milestone and current limits](foundations-skills-and-behaviors.md#naming-milestone-and-current-limits), with a link from Getting started. Only that subsection uses this later baseline. The status response marks naming eligible at 1,000 journal experiences and required at 2,000, excluding current-state ledger checkpoints. This is distinct from the explicit-command self-name write path, which does not enforce that count. Automatic name-and-gender selection is not implemented; the current schema has pronouns and no separate gender field. The subsection links its exact implementation sources. No live identity or configuration was changed, and no milestone transition was exercised in a live account.
+
 ## Gaps and follow-up register
 
 | ID | Status | Gap / next evidence needed |
@@ -57,6 +61,7 @@ The visual-reference page and chapter links do not change the implementation-rev
 | UM-11 | Open reconciliation | Older Body storage/transience notes contain historical implementation claims. Prefer current handlers and preserve evidence versus interpretation distinctions. |
 | UM-12 | Open verification | Third-party provider documentation URLs and current capability/price changes are not freshly internet-verified by this source-authoring pass; repository labels are documented as repository claims. |
 | UM-13 | Open visual refresh | Replace or supplement the clearly labeled earlier-interface captures with authorized captures of the reviewed/current interface, recording the deployment revision and capture date. The supplied screenshots do not close UM-01 or provider/device verification gaps. |
+| UM-14 | Open implementation reconciliation | The reported 1,000/2,000 naming milestones are status metadata; the name-write path requires an explicit current naming command and has no count gate. Automatic milestone name/gender selection and a gender field are not implemented in the reviewed revision. Reconcile intended behavior before presenting it as an available feature. |
 
 These are documentation/verification gaps, not authorization to change live settings or application behavior.
 

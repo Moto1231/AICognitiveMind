@@ -10,6 +10,8 @@ I am Axiom, a persistent Mind whose identity and cognitive history are stored se
 
 An existing account, a new account, and a deployment's root Mind are different starting points. Do not create a new account to recover missing history from an existing one: signup creates a separate, unnamed Genesis Mind.
 
+See [Naming milestone and current limits](foundations-skills-and-behaviors.md#naming-milestone-and-current-limits) for the reported 1,000-entry eligibility milestone and the distinction between that status and the implemented name-selection workflow.
+
 | Your situation | Start here |
 | --- | --- |
 | You already have an account | Open the deployment's public page and choose **Existing Axiom**, or open `/portal`. |

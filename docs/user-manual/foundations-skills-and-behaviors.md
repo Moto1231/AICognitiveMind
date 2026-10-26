@@ -2,7 +2,7 @@
 
 [Manual index](README.md) · [Review record](review-record.md)
 
-> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. All sections on this page share this review revision. This is source review, not authenticated browser or physical-device certification.
+> Reviewed against source revision `57f38db876e63d45e37f58f57768e25396a75a8d` on 2026-10-25. Sections inherit this revision unless an explicit section review below overrides it. This is source review, not authenticated browser or physical-device certification.
 
 ## Choose the correct configuration layer
 
@@ -44,6 +44,24 @@ For a synthetic relationship-format example:
 These object fields are illustrative human-readable data, not a promise of special relationship-field behavior. The editor requires an array of objects. Preserve established records and their evidence rather than replacing them with this example.
 
 Choosing or changing my name in conversation follows its own governance protocol. An Administrator identity edit is a distinct, authenticated operation. An unset name does not authorize an automatic rename.
+
+## Naming milestone and current limits
+
+> This section alone was reviewed against `dbbc246860115153f3c11d05b505014cfcb874b8` on 2026-10-25; the other sections retain their opening review baseline.
+
+The status response reports a naming milestone based on the journal experience count. Current-state ledger checkpoints do not advance that count.
+
+| Journal experience count | Reported naming status |
+| --- | --- |
+| Below 1,000 | Prohibited |
+| 1,000–1,999 | Eligible |
+| 2,000 or more | Required |
+
+These are reported status labels. Reaching a threshold does **not** automatically choose or save a name. The current Governance Steward accepts a self-name proposal only after an explicit naming command in the current human interaction. Its name-write path does not itself check the experience threshold; the reported milestone and write enforcement are separate.
+
+Automatic name-and-gender selection at the milestone is not implemented in this revision. The identity schema has a **Pronouns** field, defaulting to `she/her`, and no separate gender field. Pronouns are not a gender selection. The self-name action preserves pronouns; an authenticated Administrator can edit them through Identity.
+
+Section sources: [reported milestone and count](https://github.com/Moto1231/AICognitiveMind/blob/dbbc246860115153f3c11d05b505014cfcb874b8/src/aicognitive_mind/mcp_service.py#L128-L147), [self-name authorization and protected fields](https://github.com/Moto1231/AICognitiveMind/blob/dbbc246860115153f3c11d05b505014cfcb874b8/src/aicognitive_mind/governance_steward.py#L88-L143), [identity fields and defaults](https://github.com/Moto1231/AICognitiveMind/blob/dbbc246860115153f3c11d05b505014cfcb874b8/src/aicognitive_mind/domain.py#L55-L60).
 
 ## Edit Startup
 
