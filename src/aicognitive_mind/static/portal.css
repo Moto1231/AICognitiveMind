@@ -125,8 +125,10 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 .admin-grid > #devicesSection,
 .admin-grid > #voiceSection,
 .admin-grid > #breakerSection { grid-column: 1 / -1; min-width: 0; }
-.host-behavior-fields.breaker-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.breaker-settings-grid small { color: var(--muted); font-size: 9px; font-weight: 450; line-height: 1.45; }
+.host-behavior-fields.breaker-settings-grid {
+  grid-template-columns: repeat(3, minmax(160px, 220px));
+  justify-content: start;
+}
 .breaker-health-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .breaker-health-details div { align-items: center; }
 .task-model-assignment-card { display: grid; gap: 12px; }
