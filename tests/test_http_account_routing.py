@@ -10,12 +10,13 @@ from types import SimpleNamespace
 import tempfile
 import time
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 
 from aicognitive_mind import api
 from aicognitive_mind.commit import CommitConflict
+from aicognitive_mind.codex_body_receiver import BodyReceiver, DeliveryState, ReceiverConfig, ReceiverError
 from aicognitive_mind.config import Settings
 from aicognitive_mind.domain import DiagnosticObservation, ReasoningProposal
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
@@ -738,6 +739,57 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored, winner)
         self.assertNotIn("derived_audio", stored["input_context"])
         self.assertEqual(stored["input_context"], original["input_context"])
+
+    async def test_private_preparation_recovers_after_transcript_transport_failure(self):
+        host, waiting, _media, capability, original = await self._queued_host_audio("private-asr-retry")
+        attempts = []
+        config = ReceiverConfig(
+            ready_url="http://testserver/v1/host-events/ready",
+            mind_id=capability["mind_id"], lease_token=capability["lease_token"],
+            thread_id="01a15495-861f-7602-ba9a-b63b3f4aeb10", app_tools_server=Path("fixture.mjs"),
+            node_executable="node", pipe_path="synthetic-private-pipe", state_path=Path("unused"),
+        )
+        transcriber = SimpleNamespace(transcribe=Mock(return_value={
+            "text": "Synthetic retry transcript",
+            "transcription": {"engine": "synthetic-asr", "model": "test", "segments": []},
+        }))
+        sender = SimpleNamespace(send=AsyncMock())
+        async with httpx.ASGITransport(app=api.app) as real_transport:
+            async def respond(request):
+                if request.url.path.endswith("/transcript"):
+                    attempts.append(request.url.path)
+                    if len(attempts) == 1:
+                        return httpx.Response(503, json={"detail": "Synthetic transient upload failure"})
+                return await real_transport.handle_async_request(request)
+
+            with tempfile.TemporaryDirectory() as directory, patch.object(HostRuntime, "REQUEST_WAIT_SECONDS", 0):
+                state = DeliveryState(Path(directory) / "delivery.json")
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(respond), base_url="http://testserver",
+                ) as client:
+                    receiver = BodyReceiver(config, client, sender, state, transcriber)
+                    with self.assertRaisesRegex(ReceiverError, "transcript could not be attached"):
+                        await receiver.once()
+                    stranded = await host.records.get(capability["request_id"])
+                    self.assertTrue(stranded["preparing_audio"])
+                    self.assertEqual(stranded["state"], "pending")
+                    sender.send.assert_not_awaited()
+                    self.assertEqual(await receiver.once(), 1)
+                    sender.send.assert_awaited_once()
+                    self.assertEqual(len(attempts), 2)
+                    after = await host.records.get(capability["request_id"])
+                    self.assertEqual(after["input_context"]["derived_audio"]["transcript"],
+                                     "Synthetic retry transcript")
+                    self.assertEqual(after["input_context"]["evidence"], original["input_context"]["evidence"])
+                    self.assertEqual(after["state"], "pending")
+                    self.assertEqual(after["claim"], "")
+                    self.assertFalse(waiting.done())
+        # Preprocessing still leaves interpretation and its result to the actual host.
+        claim = await host.next_request(capability["lease_token"])
+        self.assertEqual(claim["context"]["input_context"]["derived_audio"]["transcript"],
+                         "Synthetic retry transcript")
+        await host.fail(capability["lease_token"], capability["request_id"], "Synthetic observer unavailable.")
+        self.assertEqual((await asyncio.wait_for(waiting, timeout=3)).status_code, 503)
 
     async def test_automatic_sensory_timeout_preserves_original_evidence_without_interpreting(self):
         storage = scope_storage(api.app.state.storage, self.alpha.mind_id)

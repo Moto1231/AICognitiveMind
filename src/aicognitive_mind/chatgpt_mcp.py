@@ -156,16 +156,18 @@ BODY HOST LIFECYCLE:
   reason. Preserve the original evidence and let the Body report failure immediately; never
   substitute a success observation or leave an unsupported request waiting for its deadline.
 - Every begin_interaction result includes a body_work snapshot. Treat it as an explicit
-  attention signal, not merely diagnostics. First reason about and commit the current direct
-  human response with complete_interaction so queued observations cannot starve the human reply.
-  Then, when body_work.host_attached is true and body_work.pending_requests is greater than zero,
+  attention signal, not merely diagnostics. Prioritize the current direct human input and
+  preserve its begin/complete lifecycle. Delegate independent passive sensory work promptly
+  to a parallel perception worker under the existing private lease when supported, while
+  the direct task continues; passive work need not wait for an unrelated task or journal commit.
+  When body_work.host_attached is true and body_work.pending_requests is greater than zero,
   consume a bounded batch of at most four queued requests using their supplied Axiom context.
   For sensory requests, interpret only what the preserved evidence supports and call
   complete_body_interaction only after producing the interpretation. Do not mark work complete
   on a failed or unavailable interpretation. The registered receiver signals remaining/new work;
   do not rely on another human message to trigger processing. A large backlog must not monopolize
   a human turn. If the queue snapshot is zero, do not
-  call next_body_interaction just to wait; if a request fails, preserve the committed human reply
+  call next_body_interaction just to wait; if a request fails, preserve the direct human work
   and leave the request recoverable.
 - The queue server selects human text requests ahead of passive sensory interpretation requests.
   Never self-dispatch a sensory prompt as a new direct chat task, and never let old percept prompts
@@ -843,10 +845,12 @@ def build_chatgpt_mcp(
                     "host_attached": host_attached,
                     **_summarize_body_work(pending_requests),
                     "processing_policy": (
-                        "Commit the current direct human response first, then claim at most four "
-                        "queued Body requests per interaction turn. The queue orders human text "
-                        "ahead of sensory "
-                        "interpretation. Complete only after successful processing."
+                        "Prioritize the current direct human input and preserve its lifecycle. "
+                        "Independent passive sensory work may run promptly in parallel under the "
+                        "existing owner without waiting for unrelated work or its journal commit. "
+                        "Claim at most four queued Body requests per interaction turn. The queue "
+                        "orders human text ahead of sensory interpretation. Complete only after "
+                        "successful processing."
                     ),
                 }
             with timer.stage("trace"):

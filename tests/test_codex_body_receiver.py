@@ -4,9 +4,10 @@ import json
 import tempfile
 import time
 import unittest
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 
@@ -18,10 +19,13 @@ from aicognitive_mind.codex_body_receiver import (
     ReceiverConfig,
     ReceiverDeliveryError,
     ReceiverError,
+    ReconnectingAppSender,
     notification_prompt,
     ready_notices,
     receiver_lock,
+    receive_loop,
 )
+from aicognitive_mind.host_runtime import HostRuntime
 
 
 class CodexBodyReceiverTests(unittest.IsolatedAsyncioTestCase):
@@ -335,6 +339,84 @@ class CodexBodyReceiverTests(unittest.IsolatedAsyncioTestCase):
             )))
             with self.subTest(payload=payload), self.assertRaises(ReceiverDeliveryError):
                 await CodexAppSender(session, self.config).send([self.notice()])
+
+    async def test_persistent_official_transport_is_reused_and_reconnects_only_after_failure(self):
+        opened, closed, sessions = [], [], []
+
+        @asynccontextmanager
+        async def connect(config):
+            self.assertIs(config, self.config)
+            native = SimpleNamespace(check=AsyncMock(), send=AsyncMock())
+            sessions.append(native)
+            opened.append(len(sessions))
+            try:
+                yield native
+            finally:
+                closed.append(len(opened))
+
+        sender = ReconnectingAppSender(self.config)
+        with patch("aicognitive_mind.codex_body_receiver.codex_app_sender", connect):
+            await sender.check()
+            await sender.send([self.notice()])
+            await sender.check()
+            self.assertEqual(opened, [1])
+            self.assertEqual(closed, [])
+            sessions[0].check.assert_awaited()
+            sessions[0].send.assert_awaited_once()
+            sessions[0].send.side_effect = ReceiverDeliveryError("Synthetic broken connection")
+            with self.assertRaises(ReceiverDeliveryError):
+                await sender.send([self.notice(2)])
+            self.assertEqual(closed, [1])
+            await sender.check()
+            await sender.send([self.notice(2)])
+            self.assertEqual(opened, [1, 2])
+            await sender.aclose()
+            await sender.aclose()
+        self.assertEqual(closed, [1, 2])
+        sessions[1].send.assert_awaited_once()
+
+    async def test_receive_loop_closes_official_transport_when_capability_expires(self):
+        sender = SimpleNamespace(check=AsyncMock(), aclose=AsyncMock())
+        client = httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: httpx.Response(401),
+        ))
+        with patch("aicognitive_mind.codex_body_receiver.httpx.AsyncClient", return_value=client), patch(
+            "aicognitive_mind.codex_body_receiver.ReconnectingAppSender", return_value=sender,
+        ):
+            await receive_loop(self.config)
+        sender.check.assert_awaited_once()
+        sender.aclose.assert_awaited_once()
+
+    async def test_ready_only_resumes_exact_owners_passive_audio_preparation(self):
+        hosts = HostRuntime(SimpleNamespace(mind_id="synthetic-audio-recovery"), None)
+        hosts.REQUEST_WAIT_SECONDS = 0
+        token = (await hosts.attach("Synthetic preparation owner", "test"))["lease_token"]
+        owner = await hosts.require(token)
+        now = time.time()
+        base = {
+            "kind": "body_request", "state": "pending", "created": now,
+            "deadline": now + 120, "claim_until": now + 120,
+            "claim": owner["token_hash"], "preparing_audio": True,
+            "task": "sensory_interpretation", "priority": 10,
+            "input_context": {"modality": "audio"}, "result": {},
+        }
+        variants = [
+            {}, {"claim": "another-private-owner"}, {"preparing_audio": False},
+            {"preparing_audio": 1}, {"input_context": {"modality": "vision"}},
+            {"input_context": "malformed"}, {"task": None}, {"priority": 0},
+            {"kind": "another-record-kind"},
+        ]
+        for number, changes in enumerate(variants, 1):
+            await hosts.records.create(f"{number:032x}", {
+                **base, **changes, "request_id": f"{number:032x}",
+            })
+        ready = await hosts.ready_events(token)
+        self.assertEqual([item["request_id"] for item in ready["requests"]], [f"{1:032x}"])
+        self.assertEqual(ready["requests"][0]["kind"], "sensory")
+        # A notice already durably accepted by the app remains excluded.
+        suppressed = await hosts.ready_events(token, (f"{1:032x}",))
+        self.assertEqual(suppressed["requests"], [])
+        self.assertEqual(suppressed["finished_request_ids"], [])
 
     def test_receiver_lock_blocks_duplicate_listeners_and_releases_after_exit(self):
         with receiver_lock(self.config.state_path):
