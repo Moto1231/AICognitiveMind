@@ -8,6 +8,8 @@
   --text: #eaf1fb;
   --muted: #95a7c0;
   --accent: #68d8ff;
+  --icon-line-color: #83dffe;
+  --icon-line-glow: rgba(70,182,255,.65);
   --success: #72e0ad;
   --danger: #ff9a9a;
   --shadow: 0 24px 70px rgba(0,0,0,0.34);
@@ -689,6 +691,11 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   width: 100%;
   height: auto;
 }
+.admin-line-icon {
+  color: var(--icon-line-color);
+  stroke: currentColor;
+  filter: drop-shadow(0 0 3px var(--icon-line-glow));
+}
 .admin-section-icon-mcp { height: 40px; }
 .admin-section-button:hover {
   border-color: rgba(161,190,226,.22);
@@ -1106,7 +1113,7 @@ body {
 #skillsSection .panel-heading .eyebrow,#mcpSection .panel-heading .eyebrow,#memoriesSection .panel-heading .eyebrow,#journalsSection .panel-heading .eyebrow {color:var(--accent);}
 
 /* Skills icon: match the blue, light-outline treatment of the other admin artwork. */
-.admin-section-icon .skills-line-icon, .admin-form-icon .skills-line-icon { color:#60a5fa; stroke:#60a5fa; width:100%; height:auto; max-height:48px; }
+.admin-section-icon .skills-line-icon, .admin-form-icon .skills-line-icon { color:var(--icon-line-color); stroke:currentColor; width:100%; height:auto; max-height:48px; }
 /* Administration editors share compact, wrapping action controls. */
 #skillsSection .edit-actions,
 #taskProfileEditor .task-profile-foundation-section > .edit-actions,
@@ -1152,13 +1159,13 @@ body {
 #adminView {padding-bottom:96px;}
 .admin-section-nav {align-content:start;overflow:visible;padding-bottom:12px;}
 #adminView .admin-grid {padding-bottom:36px;}
-.admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:#8cdfe9!important;color:#8cdfe9!important;stroke-width:1.1;}
+.admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:currentColor!important;color:var(--icon-line-color)!important;stroke-width:1.1;}
 #clearMemoryFilters,#adminClearMemoryFilters {justify-self:end;align-self:end;margin-left:auto;}
 
 /* Skills navigation artwork: fine aqua outline with label directly underneath. */
 .admin-section-nav .admin-section-button[data-admin-section="skills"] {flex-direction:column;gap:3px;min-width:80px;padding:5px 10px;}
 .admin-section-nav .admin-section-button[data-admin-section="skills"] .admin-section-icon {display:grid;place-items:center;width:48px;height:48px;flex:0 0 48px;overflow:visible;}
-.admin-section-nav .admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:#8cdfe9!important;stroke-width:.8!important;width:42px;height:42px;}
+.admin-section-nav .admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:currentColor!important;stroke-width:.8!important;width:42px;height:42px;}
 .admin-section-nav .admin-section-button[data-admin-section="skills"] > span:last-child {display:block;text-align:center;}
 #taskProfileList .task-profile-card.axiom-icon-button > strong,#taskProfileList .task-profile-card > strong {color:var(--accent)!important;}
 

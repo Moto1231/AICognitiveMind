@@ -52,10 +52,10 @@
     .axiom-icon-button:not(.hidden):not([hidden]) { display: inline-flex; }
     [data-icon-button].axiom-icon-button:not(.hidden):not([hidden]) { display: inline-flex !important; }
     .axiom-icon-button.hidden, .axiom-icon-button[hidden] { display: none; }
-    .axiom-button-icon { width: 28px; height: 28px; flex: none; color: #83dffe; filter: drop-shadow(0 0 3px rgba(70,182,255,.65)); }
+    .axiom-button-icon { width: 28px; height: 28px; flex: none; color: var(--icon-line-color, #83dffe); filter: drop-shadow(0 0 3px var(--icon-line-glow, rgba(70,182,255,.65))); }
     .axiom-icon-button[aria-pressed="false"] .axiom-button-icon { opacity: .75; }
     .axiom-icon-button:disabled { opacity: .5; cursor: not-allowed; }
-    .axiom-icon-button:focus-visible { outline: 2px solid #83dffe; outline-offset: 3px; }
+    .axiom-icon-button:focus-visible { outline: 2px solid var(--icon-line-color, #83dffe); outline-offset: 3px; }
     .axiom-icon-button .axiom-button-label { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; clip-path: inset(50%) !important; white-space: nowrap !important; border: 0 !important; }
     .axiom-icon-button .axiom-button-text-container { display: contents; }
     .axiom-button-tooltip { position: fixed; z-index: 2147483647; box-sizing: border-box; width: max-content; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow-y: auto; padding: 8px 11px; border: 1px solid #4f91b5; border-radius: 7px; background: #102231; color: #e7f7ff; box-shadow: 0 4px 18px rgba(0,0,0,.4); font: 14px/1.4 system-ui, sans-serif; overflow-wrap: anywhere; pointer-events: auto; }

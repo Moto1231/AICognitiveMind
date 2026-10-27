@@ -63,6 +63,25 @@ class PortalPageMap(HTMLParser):
 
 
 class PortalTests(unittest.TestCase):
+    def test_admin_inline_icons_share_the_neon_icon_palette(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+        button_icons = (STATIC_DIR / "button_icons.js").read_text(encoding="utf-8")
+
+        for section in ("foundations", "tools", "skills"):
+            button = markup.split(f'data-admin-section="{section}"', 1)[1].split("</button>", 1)[0]
+            with self.subTest(section=section):
+                self.assertIn("admin-line-icon", button)
+                self.assertIn('stroke="currentColor"', button)
+                self.assertNotIn("#8cdfe9", button)
+
+        self.assertIn("--icon-line-color: #83dffe", stylesheet)
+        self.assertIn("--icon-line-glow: rgba(70,182,255,.65)", stylesheet)
+        self.assertIn(".admin-line-icon {", stylesheet)
+        self.assertIn("filter: drop-shadow(0 0 3px var(--icon-line-glow))", stylesheet)
+        self.assertIn("color: var(--icon-line-color, #83dffe)", button_icons)
+        self.assertIn("var(--icon-line-glow, rgba(70,182,255,.65))", button_icons)
+
     def test_tools_are_reachable_on_their_own_page_and_connection_controls_stay_separate(self) -> None:
         pages = PortalPageMap((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
