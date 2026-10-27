@@ -1,10 +1,12 @@
+import asyncio
 import base64
 import hashlib
+import io
 import json
 import tempfile
 import time
 import unittest
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -19,6 +21,7 @@ from aicognitive_mind.codex_body_receiver import (
     ReceiverConfig,
     ReceiverDeliveryError,
     ReceiverError,
+    ReceiverPermissionError,
     ReconnectingAppSender,
     notification_prompt,
     ready_notices,
@@ -376,18 +379,279 @@ class CodexBodyReceiverTests(unittest.IsolatedAsyncioTestCase):
         sessions[1].send.assert_awaited_once()
 
     async def test_receive_loop_closes_official_transport_when_capability_expires(self):
-        sender = SimpleNamespace(check=AsyncMock(), aclose=AsyncMock())
-        client = httpx.AsyncClient(transport=httpx.MockTransport(
-            lambda request: httpx.Response(401),
-        ))
+        for code in (401, 403):
+            with self.subTest(status=code):
+                sender = SimpleNamespace(check=AsyncMock(), aclose=AsyncMock())
+                client = httpx.AsyncClient(transport=httpx.MockTransport(
+                    lambda request: httpx.Response(code),
+                ))
+                with patch("aicognitive_mind.codex_body_receiver.httpx.AsyncClient", return_value=client), patch(
+                    "aicognitive_mind.codex_body_receiver.ReconnectingAppSender", return_value=sender,
+                ), patch(
+                    "aicognitive_mind.codex_body_receiver.time.monotonic", return_value=1.0,
+                ):
+                    await receive_loop(self.config)
+                sender.check.assert_awaited_once()
+                sender.aclose.assert_awaited_once()
+
+    async def test_four_native_failures_recover_same_lease_without_body_heartbeats_during_failure(self):
+        events = []
+        checks = 0
+
+        async def check():
+            nonlocal checks
+            checks += 1
+            if checks <= 4:
+                events.append("native_unavailable")
+                raise ReceiverDeliveryError("Synthetic transient native failure")
+            events.append("native_verified")
+
+        def ready(request):
+            events.append("body_ready")
+            self.assertEqual(checks, 5)
+            self.assertEqual(json.loads(request.content)["lease_token"], self.config.lease_token)
+            # Ownership replacement remains terminal after native recovery.
+            return httpx.Response(401)
+
+        sender = SimpleNamespace(check=AsyncMock(side_effect=check), aclose=AsyncMock())
+        client = httpx.AsyncClient(transport=httpx.MockTransport(ready))
+        log = io.StringIO()
         with patch("aicognitive_mind.codex_body_receiver.httpx.AsyncClient", return_value=client), patch(
             "aicognitive_mind.codex_body_receiver.ReconnectingAppSender", return_value=sender,
-        ), patch(
-            "aicognitive_mind.codex_body_receiver.time.monotonic", return_value=1.0,
-        ):
+        ), patch("aicognitive_mind.codex_body_receiver.asyncio.sleep", new_callable=AsyncMock) as sleep, redirect_stdout(log):
             await receive_loop(self.config)
-        sender.check.assert_awaited_once()
+        self.assertEqual(events, ["native_unavailable"] * 4 + ["native_verified", "body_ready"])
+        self.assertEqual([call.args[0] for call in sleep.await_args_list], [1, 2, 4, 8])
+        entries = [json.loads(line) for line in log.getvalue().splitlines()]
+        self.assertEqual([item["state"] for item in entries],
+                         ["waiting_for_app"] * 4 + ["app_receiver_recovered", "disconnected"])
+        self.assertEqual(entries[-1]["reason"], "authorization_expired")
         sender.aclose.assert_awaited_once()
+        self.assertNotIn(self.config.lease_token, log.getvalue())
+
+    async def test_app_wait_has_bounded_backoff_no_body_polling_and_cancellation_closes_transport(self):
+        attempts = 0
+        delays = []
+
+        async def wait(delay):
+            delays.append(delay)
+            if len(delays) == 7:
+                raise asyncio.CancelledError()
+
+        async def native_check():
+            nonlocal attempts
+            attempts += 1
+            raise ReceiverDeliveryError("Synthetic unavailable desktop")
+
+        sender = SimpleNamespace(check=AsyncMock(side_effect=native_check), aclose=AsyncMock())
+        post = Mock(return_value=httpx.Response(500))
+        client = httpx.AsyncClient(transport=httpx.MockTransport(post))
+        with patch("aicognitive_mind.codex_body_receiver.httpx.AsyncClient", return_value=client), patch(
+            "aicognitive_mind.codex_body_receiver.ReconnectingAppSender", return_value=sender,
+        ), patch("aicognitive_mind.codex_body_receiver.asyncio.sleep", side_effect=wait), redirect_stdout(io.StringIO()):
+            with self.assertRaises(asyncio.CancelledError):
+                await receive_loop(self.config)
+        self.assertEqual(attempts, 7)
+        self.assertEqual(delays, [1, 2, 4, 8, 16, 30, 30])
+        post.assert_not_called()
+        sender.aclose.assert_awaited_once()
+
+    async def test_accepted_notice_ledger_survives_native_recovery_without_duplicate_notification(self):
+        notice = ready_notices({"requests": [self.notice()]})
+        DeliveryState(self.config.state_path).accepted(notice, time.time())
+        checks = 0
+
+        async def check():
+            nonlocal checks
+            checks += 1
+            if checks <= 4:
+                raise ReceiverDeliveryError("Synthetic transient native failure")
+
+        def ready(request):
+            body = json.loads(request.content)
+            self.assertEqual(body["after_request_ids"], [self.notice()["request_id"]])
+            self.assertEqual(checks, 5)
+            return httpx.Response(200, json={"requests": [self.notice()]})
+
+        async def wait(delay):
+            if delay == 0.5:
+                raise asyncio.CancelledError()
+
+        sender = SimpleNamespace(check=AsyncMock(side_effect=check), send=AsyncMock(), aclose=AsyncMock())
+        client = httpx.AsyncClient(transport=httpx.MockTransport(ready))
+        with patch("aicognitive_mind.codex_body_receiver.httpx.AsyncClient", return_value=client), patch(
+            "aicognitive_mind.codex_body_receiver.ReconnectingAppSender", return_value=sender,
+        ), patch("aicognitive_mind.codex_body_receiver.asyncio.sleep", side_effect=wait), redirect_stdout(io.StringIO()):
+            with self.assertRaises(asyncio.CancelledError):
+                await receive_loop(self.config)
+        sender.send.assert_not_awaited()
+        sender.aclose.assert_awaited_once()
+        self.assertEqual(DeliveryState(self.config.state_path).exclusions(), [self.notice()["request_id"]])
+
+    async def test_native_failure_diagnostics_keep_only_fixed_metadata_and_mcp_code(self):
+        class SyntheticMcpFailure(Exception):
+            error = SimpleNamespace(code=-32001, message="private chat and token")
+
+        session = SimpleNamespace(call_tool=AsyncMock(side_effect=SyntheticMcpFailure(
+            self.config.lease_token + " " + self.config.pipe_path + " private returned chat",
+        )))
+        with self.assertRaises(ReceiverDeliveryError) as failure:
+            await CodexAppSender(session, self.config).check()
+        details = failure.exception.diagnostics()
+        self.assertEqual(set(details), {"operation", "exception_class", "mcp_code", "elapsed_ms"})
+        self.assertEqual(details["operation"], "read_thread")
+        self.assertEqual(details["exception_class"], "SyntheticMcpFailure")
+        self.assertEqual(details["mcp_code"], -32001)
+        self.assertIsInstance(details["elapsed_ms"], int)
+        serialized = json.dumps(details)
+        for private in (self.config.lease_token, self.config.pipe_path, "private returned chat"):
+            self.assertNotIn(private, serialized)
+
+    async def test_cancellation_during_native_check_closes_the_persistent_transport(self):
+        closed = []
+
+        @asynccontextmanager
+        async def connect(config):
+            try:
+                yield SimpleNamespace(check=AsyncMock(side_effect=asyncio.CancelledError()))
+            finally:
+                closed.append(True)
+
+        post = Mock(return_value=httpx.Response(500))
+        client = httpx.AsyncClient(transport=httpx.MockTransport(post))
+        with patch("aicognitive_mind.codex_body_receiver.httpx.AsyncClient", return_value=client), patch(
+            "aicognitive_mind.codex_body_receiver.codex_app_sender", connect,
+        ):
+            with self.assertRaises(asyncio.CancelledError):
+                await receive_loop(self.config)
+        self.assertEqual(closed, [True])
+        post.assert_not_called()
+
+    async def test_failed_native_connection_has_a_distinct_safe_diagnostic(self):
+        @asynccontextmanager
+        async def connect(config):
+            raise ConnectionError("private native pipe and chat context")
+            yield  # pragma: no cover - makes this the same async context protocol
+
+        sender = ReconnectingAppSender(self.config)
+        with patch("aicognitive_mind.codex_body_receiver.codex_app_sender", connect):
+            with self.assertRaises(ReceiverDeliveryError) as failure:
+                await sender.check()
+        details = failure.exception.diagnostics()
+        self.assertEqual(details["operation"], "native_connect")
+        self.assertEqual(details["exception_class"], "ConnectionError")
+        self.assertIsNone(details["mcp_code"])
+        self.assertIsInstance(details["elapsed_ms"], int)
+        self.assertNotIn("private native pipe", json.dumps(details))
+        await sender.aclose()
+
+    async def test_explicit_native_denial_stops_checks_or_sends_without_retry(self):
+        for denied_operation in ("read_thread", "send_message_to_thread"):
+            with self.subTest(operation=denied_operation):
+                closed = []
+                native_calls = []
+                ready_calls = []
+
+                async def native_call(name, arguments, **kwargs):
+                    native_calls.append(name)
+                    if name == denied_operation:
+                        result = {"isError": True, "structuredContent": {
+                            "error": {"code": "permission_denied", "message": "private native denial detail"},
+                        }}
+                    else:
+                        result = {"isError": False, "structuredContent": {"threadId": self.config.thread_id}}
+                    return SimpleNamespace(model_dump=lambda **kwargs: result)
+
+                @asynccontextmanager
+                async def connect(config):
+                    try:
+                        yield CodexAppSender(SimpleNamespace(call_tool=AsyncMock(side_effect=native_call)), config)
+                    finally:
+                        closed.append(True)
+
+                def ready(request):
+                    ready_calls.append(request.url.path)
+                    return httpx.Response(200, json={"requests": [self.notice()]})
+
+                client = httpx.AsyncClient(transport=httpx.MockTransport(ready))
+                log = io.StringIO()
+                with patch("aicognitive_mind.codex_body_receiver.httpx.AsyncClient", return_value=client), patch(
+                    "aicognitive_mind.codex_body_receiver.codex_app_sender", connect,
+                ), patch("aicognitive_mind.codex_body_receiver.asyncio.sleep", new_callable=AsyncMock) as sleep, redirect_stdout(log):
+                    await receive_loop(self.config)
+                self.assertEqual(native_calls, ["read_thread"] if denied_operation == "read_thread" else
+                                 ["read_thread", "send_message_to_thread"])
+                # A send denial occurs after the one ready request needed to learn
+                # that work exists; it must never trigger another Body heartbeat.
+                self.assertEqual(len(ready_calls), 0 if denied_operation == "read_thread" else 1)
+                self.assertEqual(closed, [True])
+                sleep.assert_not_awaited()
+                self.assertEqual(DeliveryState(self.config.state_path).exclusions(), [])
+                entries = [json.loads(line) for line in log.getvalue().splitlines()]
+                self.assertEqual(entries[-1]["state"], "disconnected")
+                self.assertEqual(entries[-1]["reason"], "native_permission_denied")
+                self.assertNotIn("private native denial detail", log.getvalue())
+
+    async def test_only_explicit_machine_readable_denials_are_terminal(self):
+        denied = [
+            {"isError": True, "structuredContent": {"error_code": "approval_denied"}},
+            {"isError": True, "structuredContent": {"error": {"code": "PERMISSION_DENIED"}}},
+            {"isError": True, "content": [{"type": "text", "text": json.dumps({"status": "declined"})}]},
+            {"structuredContent": {"threadId": self.config.thread_id, "status": "declined",
+                                   "error": {"code": "permission_denied"}}},
+            {"isError": False, "structuredContent": {"threadId": self.config.thread_id, "status": "declined",
+                                                     "error": {"code": "permission_denied"}}},
+        ]
+        recoverable = [
+            {"isError": True, "content": [{"type": "text", "text": "approval denied in arbitrary private text"}]},
+            {"isError": True, "structuredContent": {"error_code": "temporarily_unavailable"}},
+            {"isError": True, "structuredContent": {"message": "permission_denied"}},
+        ]
+        for payload in denied + recoverable:
+            session = SimpleNamespace(call_tool=AsyncMock(return_value=SimpleNamespace(
+                model_dump=lambda **kwargs: payload,
+            )))
+            with self.subTest(payload=payload), self.assertRaises(ReceiverDeliveryError) as error:
+                await CodexAppSender(session, self.config).check()
+            self.assertEqual(isinstance(error.exception, ReceiverPermissionError), payload in denied)
+        # Quoted markers in an ordinary read result are never native denials.
+        payload = {"isError": False, "structuredContent": {
+            "threadId": self.config.thread_id,
+            "turns": [{"status": "declined", "text": '{"error":{"code":"permission_denied"}}'}],
+        }, "content": [{"type": "text", "text": '{"error_code":"approval_denied"}'}]}
+        session = SimpleNamespace(call_tool=AsyncMock(return_value=SimpleNamespace(model_dump=lambda **kwargs: payload)))
+        await CodexAppSender(session, self.config).check()
+        await CodexAppSender(session, self.config).send([self.notice()])
+        # An acknowledgment mismatch remains recoverable without denial markers.
+        payload = {"isError": False, "structuredContent": {"threadId": "different-chat"}}
+        session = SimpleNamespace(call_tool=AsyncMock(return_value=SimpleNamespace(model_dump=lambda **kwargs: payload)))
+        with self.assertRaises(ReceiverDeliveryError) as mismatch:
+            await CodexAppSender(session, self.config).send([self.notice()])
+        self.assertNotIsInstance(mismatch.exception, ReceiverPermissionError)
+
+    async def test_missing_or_false_error_flag_cannot_turn_structured_denial_into_send_retry(self):
+        for flag in (None, False):
+            with self.subTest(is_error=flag):
+                payload = {"structuredContent": {"threadId": self.config.thread_id, "status": "declined",
+                                                 "error": {"code": "permission_denied"}}}
+                if flag is not None:
+                    payload["isError"] = flag
+                session = SimpleNamespace(call_tool=AsyncMock(return_value=SimpleNamespace(
+                    model_dump=lambda **kwargs: payload,
+                )))
+                with self.assertRaises(ReceiverPermissionError):
+                    await CodexAppSender(session, self.config).send([self.notice()])
+                session.call_tool.assert_awaited_once()
+
+    async def test_explicit_permission_code_in_mcp_error_data_is_terminal_without_logging_message(self):
+        class SyntheticMcpDenial(Exception):
+            error = SimpleNamespace(code=-32000, data={"code": "approval_denied"})
+
+        session = SimpleNamespace(call_tool=AsyncMock(side_effect=SyntheticMcpDenial("private policy detail")))
+        with self.assertRaises(ReceiverPermissionError) as denial:
+            await CodexAppSender(session, self.config).check()
+        self.assertEqual(denial.exception.diagnostics()["mcp_code"], -32000)
+        self.assertNotIn("private policy detail", json.dumps(denial.exception.diagnostics()))
 
     async def test_ready_only_resumes_exact_owners_passive_audio_preparation(self):
         hosts = HostRuntime(SimpleNamespace(mind_id="synthetic-audio-recovery"), None)

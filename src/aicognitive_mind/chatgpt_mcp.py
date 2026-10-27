@@ -16,7 +16,7 @@ from aicognitive_mind.body import (
     BrowserVoiceOutput,
 )
 from aicognitive_mind.body.runtime import configured_voice_intent
-from aicognitive_mind.body_sessions import BodyQueue, body_session
+from aicognitive_mind.body_sessions import BodyQueue, active_body_status, body_session
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.account_mcp import account_tools, request_state
@@ -403,6 +403,7 @@ def build_chatgpt_mcp(
         hosts = HostRuntime(state.storage.mind, state.mind_service)
         return {
             "active_external_host": await hosts.active(),
+            "active_body": await active_body_status(hosts.records),
             "wakeup": {
                 "mind_id": hosts.records.mind_id,
                 "ready_url": base_url + "/v1/host-events/ready",

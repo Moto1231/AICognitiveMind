@@ -53,6 +53,7 @@ from aicognitive_mind.body import (
 from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
 from aicognitive_mind.body_sessions import (
+    BodySessionHeartbeat,
     BodyQueue,
     body_session,
     subscribe_body_output,
@@ -1277,7 +1278,9 @@ async def mouth_page() -> FileResponse:
 
 
 @app.post("/v1/body/session/active")
-async def register_active_body_session(request: Request) -> dict[str, bool]:
+async def register_active_body_session(
+    request: Request, body: BodySessionHeartbeat | None = None,
+) -> dict[str, bool]:
     """Register the browser's live Body session for reasoning-host speech delivery."""
     session_id = body_session.get()
     if session_id == "legacy":
@@ -1287,6 +1290,8 @@ async def register_active_body_session(request: Request) -> dict[str, bool]:
         )
     records = cast(RuntimeRecords, _request_runtime(request).runtime_records)
     value = {"session_id": session_id, "updated_at": time_module.time()}
+    if body is not None and body.client_state is not None:
+        value["client_state"] = body.client_state.model_dump(exclude_none=True)
     for _ in range(10):
         before = await records.get("active_body_session")
         if before is None:

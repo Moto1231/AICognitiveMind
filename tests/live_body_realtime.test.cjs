@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const markup = fs.readFileSync(path.join(__dirname, '../src/aicognitive_mind/static/live_body.html'), 'utf8');
 const startup = markup.slice(markup.indexOf('    function stopTalking('), markup.indexOf('    async function consumeExpressionOutputs()'));
 const hearingControls = markup.slice(markup.indexOf('    async function enableHearing()'), markup.indexOf('    interactionForm.addEventListener'));
-const playback = markup.slice(markup.indexOf('    function cancelBodySpeech()'), markup.indexOf('    function resumeTalking()'));
+const playback = markup.slice(markup.indexOf('    function cancelBodySpeech('), markup.indexOf('    function resumeTalking()'));
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 function realtimeStartup({ status = { realtime: { available: true, scope: 'session-a' } }, statusOk = true, statusError = null,
@@ -35,7 +35,7 @@ function realtimeStartup({ status = { realtime: { available: true, scope: 'sessi
     navigator: { mediaDevices: { getUserMedia: async () => { microphoneRequests++; return stream; } } },
     RealtimeTurns: class { constructor(options) { Object.assign(this, options); controllers.push(this); } handle() { this.handled = true; } close() { this.closed = true; } },
     talkEnabled: false, talkBusy: false, talkListening: false, talkSpeaking: false, talkRestartTimer: null,
-    realtimeGeneration: 0, realtimeScope: null, realtimeTurns: null, realtimePeer: null, realtimeMicrophone: null, realtimeEvents: null, realtimeAudio: null,
+    realtimeRequested: false, realtimeGeneration: 0, realtimeScope: null, realtimeTurns: null, realtimePeer: null, realtimeMicrophone: null, realtimeEvents: null, realtimeAudio: null,
     microphoneStream: stream, hearingEnabled: true, voiceEnabled: true, hearingGeneration: 0,
     visionEnabled: false, recorder: null, activeSpeechAudio: null, audioMeter: { style: {} }, sensoryLoopGeneration: 0,
     hearingToggle: { disabled: false }, localStorage: { setItem() {} },
@@ -63,13 +63,33 @@ function realtimeStartup({ status = { realtime: { available: true, scope: 'sessi
 }
 test('unavailable or unreadable capability creates no RTC session and retains Hearing microphone', async () => {
   for (const options of [{ status: { realtime: { available: false } } }, { status: {} }, { statusOk: false }, { statusError: new Error('offline') }]) {
-    const ui = realtimeStartup(options); await ui.context.startTalking();
+    const ui = realtimeStartup(options); await ui.context.startTalking({ realtime: true });
     assert.equal(ui.peers.length, 0); assert.equal(ui.microphoneRequests(), 0); assert.equal(ui.tracksStopped(), 0);
     assert.equal(ui.context.talkEnabled, false); assert.equal(ui.context.talkBusy, false);
   }
 });
-test('Hearing and Voice start RTC using existing microphone; Voice off retains it', async () => {
-  const ui = realtimeStartup(); await ui.context.startTalking();
+
+test('automatic Hearing and Voice keep the current-host audio path even when Realtime is available', async () => {
+  for (const connected of [true, false]) {
+    const ui = realtimeStartup({ status: { connected, realtime: { available: true, scope: 'session-a' } } });
+    ui.context.hearingEnabled = false;
+    await ui.context.enableHearing();
+    await settle();
+    assert.equal(ui.context.hearingEnabled, true);
+    assert.equal(ui.context.talkEnabled, false);
+    assert.equal(ui.context.talkBusy, false);
+    assert.equal(ui.peers.length, 0);
+    assert.equal(ui.requests.length, 0, 'An available API key must not select another reasoning host.');
+    ui.context.voiceEnabled = false;
+    ui.context.toggleVoice();
+    await settle();
+    assert.equal(ui.context.voiceEnabled, true);
+    assert.equal(ui.requests.length, 0);
+    assert.equal(ui.peers.length, 0);
+  }
+});
+test('explicit Realtime uses the existing microphone; Voice off retains it', async () => {
+  const ui = realtimeStartup(); await ui.context.startTalking({ realtime: true });
   assert.equal(ui.microphoneRequests(), 0); assert.equal(ui.peers.length, 1); assert.equal(ui.peers[0].tracks[0], ui.track);
   assert.deepEqual(JSON.parse(JSON.stringify(ui.peers[0].remoteDescription)), { type: 'answer', sdp: 'synthetic-answer' });
   ui.context.toggleVoice(); assert.equal(ui.context.talkEnabled, false); assert.equal(ui.peers[0].closed, true);
@@ -77,7 +97,7 @@ test('Hearing and Voice start RTC using existing microphone; Voice off retains i
 });
 test('Hearing off releases microphone and stale SDP or events cannot revive connection', async () => {
   const wait = deferred(); const ui = realtimeStartup({ sdpWait: wait });
-  const starting = ui.context.startTalking(); await settle(); ui.context.disableHearing(); wait.resolve(); await starting;
+  const starting = ui.context.startTalking({ realtime: true }); await settle(); ui.context.disableHearing(); wait.resolve(); await starting;
   assert.equal(ui.context.talkEnabled, false); assert.equal(ui.tracksStopped(), 1); assert.equal(ui.peers[0].closed, true);
   assert.equal(ui.peers[0].remoteDescription, undefined);
   ui.peers[0].channel.listeners.open(); ui.peers[0].channel.listeners.message({ data: '{}' });
@@ -85,25 +105,27 @@ test('Hearing off releases microphone and stale SDP or events cannot revive conn
 });
 test('Voice off during capability lookup cannot acquire peer or post SDP', async () => {
   const wait = deferred(); const ui = realtimeStartup({ statusWait: wait });
-  const starting = ui.context.startTalking(); await settle(); ui.context.toggleVoice(); wait.resolve(); await starting;
+  const starting = ui.context.startTalking({ realtime: true }); await settle(); ui.context.toggleVoice(); wait.resolve(); await starting;
   assert.equal(ui.requests.length, 1); assert.equal(ui.peers.length, 0); assert.equal(ui.context.talkBusy, false);
 });
 test('a timed-out capability request fails closed and leaves the shared microphone usable', async () => {
-  const ui = realtimeStartup({ abortImmediately: true }); await ui.context.startTalking();
+  const ui = realtimeStartup({ abortImmediately: true }); await ui.context.startTalking({ realtime: true });
   assert.equal(ui.context.talkEnabled, false); assert.equal(ui.context.talkBusy, false);
   assert.equal(ui.peers.length, 0); assert.equal(ui.tracksStopped(), 0);
   assert.match(ui.messages.at(-1), /timed out/);
 });
 test('Hearing off control remains available while SDP is pending', async () => {
   const wait = deferred(); const ui = realtimeStartup({ sdpWait: wait }); ui.context.hearingEnabled = false;
-  await ui.context.enableHearing(); await settle(); assert.equal(ui.context.hearingToggle.disabled, false);
-  assert.equal(ui.requests.at(-1).url, '/v1/body/realtime/session'); ui.context.toggleHearing(); wait.resolve(); await settle();
+  await ui.context.enableHearing();
+  const connecting = ui.context.startTalking({ realtime: true });
+  await settle(); assert.equal(ui.context.hearingToggle.disabled, false);
+  assert.equal(ui.requests.at(-1).url, '/v1/body/realtime/session'); ui.context.toggleHearing(); wait.resolve(); await connecting;
   assert.equal(ui.context.hearingEnabled, false); assert.equal(ui.context.talkEnabled, false); assert.equal(ui.tracksStopped(), 1);
 });
 test('portal scope must match SDP and be freshly checked before committed speech', async () => {
-  const mismatch = realtimeStartup({ sdpScope: 'session-b' }); await mismatch.context.startTalking();
+  const mismatch = realtimeStartup({ sdpScope: 'session-b' }); await mismatch.context.startTalking({ realtime: true });
   assert.equal(mismatch.context.talkEnabled, false); assert.equal(mismatch.peers[0].remoteDescription, undefined);
-  const ui = realtimeStartup({ beforeSpeakStatus: { realtime: { available: true, scope: 'session-b' } } }); await ui.context.startTalking();
+  const ui = realtimeStartup({ beforeSpeakStatus: { realtime: { available: true, scope: 'session-b' } } }); await ui.context.startTalking({ realtime: true });
   await ui.controllers[0].speak('Committed answer.', () => true);
   assert.equal(ui.speech(), 0); assert.equal(ui.context.talkEnabled, false); assert.equal(ui.controllers[0].closed, true);
 });
@@ -117,7 +139,7 @@ function speechFixture({ pendingFetch = null } = {}) {
   }
   const context = vm.createContext({
     Audio, AbortSignal, URL: { createObjectURL: () => 'blob:voice', revokeObjectURL() {} }, window: { speechSynthesis: { cancel() {} } },
-    voiceEnabled: true, hearingEnabled: true, speechGeneration: 0, activeSpeechDone: null, activeSpeechAudio: null, talkSpeaking: false,
+    voiceEnabled: true, hearingEnabled: true, speechGeneration: 0, activeSpeechOwner: null, lastPlaybackState: "idle", activeSpeechDone: null, activeSpeechAudio: null, talkSpeaking: false,
     microphoneStream: { getAudioTracks: () => [track] }, sharedVoicePack: {}, setStatus() {}, applyBodyAudioOutput: async () => {},
     bodyFetch: async () => { if (pendingFetch) await pendingFetch.promise; return { ok: true, blob: async () => ({}) }; },
     setTimeout: () => 1, clearTimeout() {},
