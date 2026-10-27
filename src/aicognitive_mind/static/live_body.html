@@ -1054,6 +1054,9 @@
         let monitorTimer = null;
         let speechDetected = false;
         let silenceStartedAt = 0;
+        let energySum = 0;
+        let energySamples = 0;
+        let peakAmplitude = 0;
         const clearMonitor = () => {
           if (monitorTimer !== null) window.clearInterval(monitorTimer);
           monitorTimer = null;
@@ -1093,7 +1096,9 @@
               chunks,
               { type: activeRecorder.mimeType || chunks[0]?.type || "audio/webm" }
             ),
-            durationMs
+            durationMs,
+            hasSpeechEnergy: energySamples > 0 &&
+              Math.sqrt(energySum / energySamples) >= 0.008 && peakAmplitude >= 0.06
           });
         }, { once: true });
 
@@ -1120,7 +1125,10 @@
             for (const sample of samples) {
               const amplitude = (sample - 128) / 128;
               sum += amplitude * amplitude;
+              peakAmplitude = Math.max(peakAmplitude, Math.abs(amplitude));
             }
+            energySum += sum;
+            energySamples += samples.length;
             rms = Math.sqrt(sum / Math.max(1, samples.length));
           }
 
@@ -1143,16 +1151,6 @@
       });
     }
 
-    async function audioHasSpeechEnergy(blob) {
-      const context = new AudioContext();
-      try {
-        const buffer = await context.decodeAudioData(await blob.arrayBuffer());
-        const samples = buffer.getChannelData(0);
-        let sum = 0, peak = 0;
-        for (const sample of samples) { sum += sample * sample; peak = Math.max(peak, Math.abs(sample)); }
-        return Math.sqrt(sum / Math.max(samples.length, 1)) >= 0.008 && peak >= 0.06;
-      } finally { await context.close(); }
-    }
     let lastFrameSignature = null;
     let lastMotionCaptureAt = Number.NEGATIVE_INFINITY;
     function frameSignature() {
@@ -1253,19 +1251,18 @@
 
       setStatus("SENSES ON\nListening...");
       const recording = await recordAudioWindow(generation);
-      if (!recording || !hearingEnabled || talkEnabled || talkBusy || generation !== sensoryLoopGeneration) {
-        if (hearingEnabled && generation === sensoryLoopGeneration) {
-          setSenseStatus("audio", "No audio chunk received in this window; retrying.", "warning");
-        }
+      if (!hearingEnabled || talkEnabled || talkBusy || generation !== sensoryLoopGeneration) return;
+      if (!recording) {
+        setSenseStatus("audio", "No audio chunk received in this window; retrying.", "warning");
         return;
       }
 
-      if (!await audioHasSpeechEnergy(recording.blob)) {
+      if (!recording.hasSpeechEnergy) {
         setSenseStatus("audio", "Listening; no speech detected in this 4-second window. Nothing sent for interpretation.", "info");
         return;
       }
       const audioDataUrl = await blobToDataUrl(recording.blob);
-      if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
+      if (!hearingEnabled || talkEnabled || talkBusy || generation !== sensoryLoopGeneration) return;
       setSenseStatus("audio", "Processing audio…", "working");
       const interpreted = await requestSensoryObservation("audio", {
         audio_data_url: audioDataUrl,

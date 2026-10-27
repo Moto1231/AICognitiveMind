@@ -805,7 +805,7 @@ class HostRuntime:
         deadline = time.monotonic() + self.REQUEST_WAIT_SECONDS
         seen = set(after_request_ids)
         while True:
-            await self.require(token)
+            host = await self.require(token)
             now = time.time()
             finished = []
             for request_id in seen:
@@ -817,10 +817,19 @@ class HostRuntime:
                     finished.append(request_id)
             ready = []
             for request in await self._pending_requests():
+                context = request.get("input_context")
+                owned_audio_preparation = (
+                    request.get("kind") == "body_request"
+                    and request.get("task") == "sensory_interpretation"
+                    and request.get("priority") == 10
+                    and isinstance(context, dict) and context.get("modality") == "audio"
+                    and request.get("preparing_audio") is True
+                    and request.get("claim") == host["token_hash"]
+                )
                 if request["request_id"] in seen or (
                     request.get("claim") and (
                         request.get("claim_until") is None or request["claim_until"] > now
-                    )
+                    ) and not owned_audio_preparation
                 ):
                     continue
                 ready.append({

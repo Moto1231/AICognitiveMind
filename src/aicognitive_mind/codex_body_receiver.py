@@ -146,10 +146,15 @@ def notification_prompt(notices: list[dict[str, Any]]) -> str:
         "Claim pending work with next_body_interaction, inspect original sensory evidence "
         "or its explicitly derived local transcription in the returned context "
         "when needed, then finish through complete_body_interaction. Human Body messages "
-        "have priority. Process the bounded batch allowed by the current Body contract. "
+        "have priority. Dispatch ready passive sensory work promptly to an available "
+        "parallel perception worker under this same Mind and existing host ownership. "
+        "Keep unrelated foreground work moving; do not defer this batch until its "
+        "coding, checks, or deployment finish. Process at most four Body requests, "
+        "using the normal claim and completion lifecycle. "
         "Do not merely acknowledge this notice or repeat a connected-status message. "
         "Do not create a new reasoning owner or expose the private lease. "
-        "Passive sensory observations should return to the Body without a separate chat narration."
+        "Passive sensory observations are not new conscious interactions and should "
+        "return to the Body without a separate chat narration."
     )
 
 
@@ -366,6 +371,7 @@ class BodyReceiver:
                 await fail_audio(notice["request_id"], "Local audio preprocessing received invalid preserved evidence.")
                 continue
             try:
+                recognition_started = time.monotonic()
                 transcript = await asyncio.to_thread(
                     self.transcriber.transcribe, payload,
                     source_sha256=evidence["sha256"], captured_at=evidence["captured_at"],
@@ -377,6 +383,11 @@ class BodyReceiver:
                 # turn an exception or guessed words into sensory observations.
                 await fail_audio(notice["request_id"], "Local speech recognition could not process the preserved audio.")
                 continue
+            finally:
+                print(json.dumps({
+                    "state": "stage_timing", "stage": "local_audio_recognition",
+                    "elapsed_ms": round((time.monotonic() - recognition_started) * 1000),
+                }), flush=True)
             attached = await self.client.post(base_url + "/transcript", json={
                 **capability, "request_id": notice["request_id"],
                 "sha256": evidence["sha256"], "captured_at": evidence["captured_at"],
@@ -432,35 +443,54 @@ class BodyReceiver:
             notices = notices[:MAX_BATCH_SIZE]
         notices = await self._prepare_audio(notices)
         if notices:
+            notification_started = time.monotonic()
             await self.sender.send(notices)
+            print(json.dumps({
+                "state": "stage_timing", "stage": "chat_notification",
+                "elapsed_ms": round((time.monotonic() - notification_started) * 1000),
+            }), flush=True)
             # A failed or interrupted forward remains eligible on the next poll.
             self.state.accepted(notices, time.time())
         return len(notices)
 
 
 class ReconnectingAppSender:
-    """Use a fresh official MCP transport for each accepted readiness batch."""
+    """Reuse the official MCP transport until it fails, then reconnect safely."""
 
     def __init__(self, config: ReceiverConfig) -> None:
         self.config = config
+        self._context: Any = None
+        self._sender: Any = None
+
+    async def aclose(self) -> None:
+        context, self._context = self._context, None
+        self._sender = None
+        if context is not None:
+            try:
+                # The official transport owns shutdown of its own process tree.
+                await context.__aexit__(None, None, None)
+            except Exception:
+                # A broken transport must not mask the original delivery error.
+                pass
+
+    async def _invoke(self, operation: str, *arguments: Any) -> None:
+        try:
+            if self._sender is None:
+                context = codex_app_sender(self.config)
+                sender = await context.__aenter__()
+                self._context, self._sender = context, sender
+            await getattr(self._sender, operation)(*arguments)
+        except Exception as exc:
+            await self.aclose()
+            if isinstance(exc, ReceiverDeliveryError):
+                raise
+            raise ReceiverDeliveryError("The existing Codex app receiver is unavailable.") from exc
 
     async def send(self, notices: list[dict[str, Any]]) -> None:
-        try:
-            async with codex_app_sender(self.config) as sender:
-                await sender.send(notices)
-        except ReceiverDeliveryError:
-            raise
-        except Exception as exc:
-            raise ReceiverDeliveryError("The existing Codex app receiver is unavailable.") from exc
+        await self._invoke("send", notices)
 
     async def check(self) -> None:
-        try:
-            async with codex_app_sender(self.config) as sender:
-                await sender.check()
-        except ReceiverDeliveryError:
-            raise
-        except Exception as exc:
-            raise ReceiverDeliveryError("The existing Codex app receiver is unavailable.") from exc
+        await self._invoke("check")
 
 
 @contextmanager
@@ -525,37 +555,40 @@ async def receive_loop(config: ReceiverConfig) -> None:
         sender = ReconnectingAppSender(config)
         receiver = BodyReceiver(config, client, sender, state, transcriber=transcriber)
         backoff = 1.0
-        last_app_check = 0.0
+        last_app_check = float("-inf")
         delivery_failures = 0
-        while True:
-            try:
-                if time.monotonic() - last_app_check >= 60:
-                    await sender.check()
-                    last_app_check = time.monotonic()
-                count = await receiver.once()
-                backoff = 1.0
-                delivery_failures = 0
-                if count:
-                    print(json.dumps({"state": "forwarded", "request_count": count}), flush=True)
-                else:
-                    await asyncio.sleep(0.5)
-            except ReceiverAuthorizationError:
-                print(json.dumps({"state": "disconnected", "reason": "authorization_expired"}), flush=True)
-                return
-            except ReceiverDeliveryError:
-                delivery_failures += 1
-                last_app_check = 0.0
-                if delivery_failures >= 3:
-                    print(json.dumps({"state": "disconnected", "reason": "app_receiver_unavailable"}), flush=True)
+        try:
+            while True:
+                try:
+                    if time.monotonic() - last_app_check >= 60:
+                        await sender.check()
+                        last_app_check = time.monotonic()
+                    count = await receiver.once()
+                    backoff = 1.0
+                    delivery_failures = 0
+                    if count:
+                        print(json.dumps({"state": "forwarded", "request_count": count}), flush=True)
+                    else:
+                        await asyncio.sleep(0.5)
+                except ReceiverAuthorizationError:
+                    print(json.dumps({"state": "disconnected", "reason": "authorization_expired"}), flush=True)
                     return
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30)
-            except Exception:
-                # Native MCP/HTTP exceptions may contain private request data.
-                # Keep the operational log bounded and free of raw exceptions.
-                print(json.dumps({"state": "retrying", "delay_seconds": backoff}), flush=True)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30)
+                except ReceiverDeliveryError:
+                    delivery_failures += 1
+                    last_app_check = float("-inf")
+                    if delivery_failures >= 3:
+                        print(json.dumps({"state": "disconnected", "reason": "app_receiver_unavailable"}), flush=True)
+                        return
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 30)
+                except Exception:
+                    # Native MCP/HTTP exceptions may contain private request data.
+                    # Keep the operational log bounded and free of raw exceptions.
+                    print(json.dumps({"state": "retrying", "delay_seconds": backoff}), flush=True)
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, 30)
+        finally:
+            await sender.aclose()
 
 
 def main() -> None:
