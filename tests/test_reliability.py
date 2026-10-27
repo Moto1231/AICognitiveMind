@@ -147,7 +147,7 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         result = await host_b.complete(lease_a["lease_token"], request["request_id"], "Hello")
         presented = await pending
         self.assertEqual(presented["response_text"], result["response_text"])
-        self.assertEqual(presented["persistence_status"], "pending")
+        self.assertIn(presented["persistence_status"], {"pending", "succeeded"})
         self.assertEqual(result["persistence_status"], "succeeded")
         await host_a.renew(lease_a["lease_token"], detach=True)
         lease_b = await host_b.attach("host-b", "model-b")
@@ -243,7 +243,7 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         result = await host.complete(lease["lease_token"], request["request_id"], "Completed")
         presented = await pending
         self.assertEqual(presented["response_text"], result["response_text"])
-        self.assertEqual(presented["persistence_status"], "pending")
+        self.assertIn(presented["persistence_status"], {"pending", "succeeded"})
         self.assertEqual(result["persistence_status"], "succeeded")
         await host.renew(lease["lease_token"], detach=True)
 

@@ -751,10 +751,15 @@ class HostRuntime:
                             or latest_claim.get("state") != "pending"
                         ):
                             raise CommitConflict("Body request changed while beginning interaction")
+                        continuity_health = (
+                            context.get("continuity_health", {})
+                            if isinstance(context, dict)
+                            else {}
+                        )
                         enriched_claim = {
                             **latest_claim,
                             "continuity_circuit_open_at_begin": bool(
-                                context.get("continuity_health", {}).get("circuit_open")
+                                continuity_health.get("circuit_open")
                             ),
                         }
                         if not await self.records.replace(
