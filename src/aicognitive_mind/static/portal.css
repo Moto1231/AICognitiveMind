@@ -650,6 +650,13 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   flex: 0 0 auto;
   min-height: 42px;
 }
+.admin-icon-definitions {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
 .admin-section-nav {
   display: flex;
   align-items: center;
@@ -678,25 +685,26 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   letter-spacing: .005em;
   transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-/* The supplied tiles include captions; show the artwork above their baked-in text. */
+/* Every Administration icon is transparent line artwork on one shared palette. */
 .admin-section-icon {
-  display: block;
+  display: grid;
+  place-items: center;
   flex: 0 0 48px;
   width: 48px;
-  height: 42px;
-  overflow: hidden;
-}
-.admin-section-icon img {
-  display: block;
-  width: 100%;
-  height: auto;
+  height: 48px;
+  overflow: visible;
 }
 .admin-line-icon {
+  width: 48px;
+  height: 48px;
+  fill: none;
   color: var(--icon-line-color);
   stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   filter: drop-shadow(0 0 3px var(--icon-line-glow));
 }
-.admin-section-icon-mcp { height: 40px; }
 .admin-section-button:hover {
   border-color: rgba(161,190,226,.22);
   background: rgba(255,255,255,.035);
@@ -1015,7 +1023,7 @@ body {
 }
 /* Administration form headings, compact actions, and consistent filters. */
 .admin-form-icon { flex: 0 0 72px; width: 72px; height: 76px; display: grid; place-items: center; }
-.admin-form-icon img { width: 72px; height: 76px; object-fit: contain; }
+.admin-form-icon .admin-line-icon { width: 64px; height: 64px; }
 .admin-grid .panel-heading > .admin-form-icon + div { flex: 1; min-width: 0; }
 .admin-grid .panel-heading { align-items: center; }
 .admin-grid .edit-actions .primary-button,
@@ -1108,12 +1116,7 @@ body {
 
 /* Consistent admin header hierarchy and compact Task Configuration icons */
 #taskProfileList .task-profile-card.axiom-icon-button > .axiom-button-icon {width:26px!important;height:26px!important;max-width:26px;max-height:26px;}
-#skillsSection .admin-form-icon {color:var(--accent);font-size:38px;}
-#skillsSection .admin-form-icon svg {width:65px;height:65px;}
 #skillsSection .panel-heading .eyebrow,#mcpSection .panel-heading .eyebrow,#memoriesSection .panel-heading .eyebrow,#journalsSection .panel-heading .eyebrow {color:var(--accent);}
-
-/* Skills icon: match the blue, light-outline treatment of the other admin artwork. */
-.admin-section-icon .skills-line-icon, .admin-form-icon .skills-line-icon { color:var(--icon-line-color); stroke:currentColor; width:100%; height:auto; max-height:48px; }
 /* Administration editors share compact, wrapping action controls. */
 #skillsSection .edit-actions,
 #taskProfileEditor .task-profile-foundation-section > .edit-actions,
@@ -1159,14 +1162,7 @@ body {
 #adminView {padding-bottom:96px;}
 .admin-section-nav {align-content:start;overflow:visible;padding-bottom:12px;}
 #adminView .admin-grid {padding-bottom:36px;}
-.admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:currentColor!important;color:var(--icon-line-color)!important;stroke-width:1.1;}
 #clearMemoryFilters,#adminClearMemoryFilters {justify-self:end;align-self:end;margin-left:auto;}
-
-/* Skills navigation artwork: fine aqua outline with label directly underneath. */
-.admin-section-nav .admin-section-button[data-admin-section="skills"] {flex-direction:column;gap:3px;min-width:80px;padding:5px 10px;}
-.admin-section-nav .admin-section-button[data-admin-section="skills"] .admin-section-icon {display:grid;place-items:center;width:48px;height:48px;flex:0 0 48px;overflow:visible;}
-.admin-section-nav .admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:currentColor!important;stroke-width:.8!important;width:42px;height:42px;}
-.admin-section-nav .admin-section-button[data-admin-section="skills"] > span:last-child {display:block;text-align:center;}
 #taskProfileList .task-profile-card.axiom-icon-button > strong,#taskProfileList .task-profile-card > strong {color:var(--accent)!important;}
 
 /* Keep the read-only task foundation comfortably readable at every viewport. */

@@ -63,22 +63,36 @@ class PortalPageMap(HTMLParser):
 
 
 class PortalTests(unittest.TestCase):
-    def test_admin_inline_icons_share_the_neon_icon_palette(self) -> None:
+    def test_admin_icons_share_one_transparent_neon_component(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
         button_icons = (STATIC_DIR / "button_icons.js").read_text(encoding="utf-8")
 
-        for section in ("foundations", "tools", "skills"):
+        sections = {
+            "overview": "overview", "foundations": "foundations", "behaviors": "behaviors",
+            "devices": "devices", "voice": "voice", "tasks": "tasks", "mcp": "mcp",
+            "tools": "tools", "skills": "skills", "memories": "memories", "journals": "journals",
+        }
+        for section, icon in sections.items():
             button = markup.split(f'data-admin-section="{section}"', 1)[1].split("</button>", 1)[0]
             with self.subTest(section=section):
-                self.assertIn("admin-line-icon", button)
-                self.assertIn('stroke="currentColor"', button)
+                self.assertIn('<svg class="admin-line-icon"', button)
+                self.assertIn(f'<use href="#admin-icon-{icon}"/>', button)
+                self.assertNotIn("<img", button)
                 self.assertNotIn("#8cdfe9", button)
+                self.assertNotIn("style=", button)
 
         self.assertIn("--icon-line-color: #83dffe", stylesheet)
         self.assertIn("--icon-line-glow: rgba(70,182,255,.65)", stylesheet)
+        self.assertIn(".admin-icon-definitions {", stylesheet)
         self.assertIn(".admin-line-icon {", stylesheet)
+        icon_styles = stylesheet.split(".admin-line-icon {", 1)[1].split("}", 1)[0]
+        self.assertIn("fill: none", icon_styles)
         self.assertIn("filter: drop-shadow(0 0 3px var(--icon-line-glow))", stylesheet)
+        self.assertNotIn("background", icon_styles)
+        self.assertNotIn("admin-section-icon-mcp", stylesheet)
+        self.assertNotIn("skills-line-icon", stylesheet)
+        self.assertFalse(list(STATIC_DIR.glob("admin-*.svg")))
         self.assertIn("color: var(--icon-line-color, #83dffe)", button_icons)
         self.assertIn("var(--icon-line-glow, rgba(70,182,255,.65))", button_icons)
 
