@@ -116,7 +116,7 @@ function speechFixture({ pendingFetch = null } = {}) {
     pause() { this.paused = true; }
   }
   const context = vm.createContext({
-    Audio, URL: { createObjectURL: () => 'blob:voice', revokeObjectURL() {} }, window: { speechSynthesis: { cancel() {} } },
+    Audio, AbortSignal, URL: { createObjectURL: () => 'blob:voice', revokeObjectURL() {} }, window: { speechSynthesis: { cancel() {} } },
     voiceEnabled: true, hearingEnabled: true, speechGeneration: 0, activeSpeechDone: null, activeSpeechAudio: null, talkSpeaking: false,
     microphoneStream: { getAudioTracks: () => [track] }, sharedVoicePack: {}, setStatus() {}, applyBodyAudioOutput: async () => {},
     bodyFetch: async () => { if (pendingFetch) await pendingFetch.promise; return { ok: true, blob: async () => ({}) }; },

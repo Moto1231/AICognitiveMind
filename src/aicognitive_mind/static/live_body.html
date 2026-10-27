@@ -12,11 +12,12 @@
   <script>
     const bodySessionId = crypto.randomUUID();
     async function bodyFetch(url, options = {}) {
-      const headers = new Headers(options.headers || {});
+      const { acknowledgeDelivery = true, ...requestOptions } = options;
+      const headers = new Headers(requestOptions.headers || {});
       headers.set("X-Body-Session", bodySessionId);
-      const response = await fetch(url, { ...options, headers, signal: options.signal });
+      const response = await fetch(url, { ...requestOptions, headers, signal: requestOptions.signal });
       const receipt = response.headers.get("X-Body-Delivery");
-      if (response.ok && receipt) {
+      if (response.ok && receipt && acknowledgeDelivery) {
         await response.clone().arrayBuffer();
         const ack = await fetch(String(url).split("?")[0].replace(/\/next$/, "/ack") + "?delivery_id=" + encodeURIComponent(receipt),
           { method: "POST", headers, signal: AbortSignal.timeout(10000) });
@@ -361,6 +362,8 @@
     let pageSourceSnapshot = null;
     let pageRefreshPending = false;
     let mouthPollBusy = false;
+    let mouthDrainRequested = false;
+    const playedMouthDeliveries = new Set();
     let mouthEvents = null;
     let pageRefreshProbeBusy = false;
 
@@ -449,7 +452,7 @@
       const timeout = window.setTimeout(() => {
         timedOut = true;
         controller.abort();
-      }, SENSORY_REQUEST_TIMEOUT_MS);
+      }, payload.conversation === true ? 300_000 : SENSORY_REQUEST_TIMEOUT_MS);
       try {
         const response = await bodyFetch(
           modality === "vision" ? "/v1/body/eyes/observe" : "/v1/body/ears/observe", {
@@ -503,6 +506,7 @@
       return Boolean(
         recorder?.state === "recording" ||
         sensoryRequestInFlight ||
+        mouthPollBusy || talkSpeaking ||
         sendInteractionButton.disabled
       );
     }
@@ -557,7 +561,7 @@
     }
 
     async function speakIntent(intent, isCurrent = () => true, validateScope = async () => true) {
-      if (!voiceEnabled || !intent?.text) return;
+      if (!voiceEnabled || !intent?.text) return false;
       cancelBodySpeech();
       const generation = speechGeneration;
       const current = () => voiceEnabled && generation === speechGeneration && isCurrent();
@@ -570,20 +574,35 @@
       const requestedVolume = Number(metadata.volume ?? sharedVoicePack?.volume ?? 1);
       let audioUrl = null;
       const waitForPlayback = register => new Promise((resolve, reject) => {
-        let timer;
+        let startTimer, playbackTimer;
+        let playbackStarted = false;
+        let finished = false;
         const done = error => {
-          clearTimeout(timer);
+          if (finished) return;
+          finished = true;
+          clearTimeout(startTimer);
+          clearTimeout(playbackTimer);
           if (activeSpeechDone === done) activeSpeechDone = null;
+          if (!error && !playbackStarted && current()) error = new Error("Voice playback did not start.");
           error ? reject(error) : resolve();
         };
+        const started = () => {
+          if (finished) return false;
+          if (playbackStarted) return true;
+          playbackStarted = true;
+          clearTimeout(startTimer);
+          playbackTimer = setTimeout(() => done(new Error("Voice playback timed out.")), 180_000);
+          return true;
+        };
         activeSpeechDone = done;
-        timer = setTimeout(() => done(new Error("Voice playback timed out.")), 180_000);
-        try { register(done); } catch (error) { done(error); }
+        startTimer = setTimeout(() => done(new Error("Voice playback did not start.")), 10_000);
+        try { register(done, started); } catch (error) { done(error); }
       });
       try {
         try {
           const response = await bodyFetch("/v1/body/speech/fish-audio", {
             method: "POST",
+            signal: AbortSignal.timeout(15_000),
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               text: intent.text,
@@ -591,37 +610,37 @@
               volume: Number.isFinite(requestedVolume) ? requestedVolume : 1
             })
           });
-          if (!current()) return;
+          if (!current()) return false;
           if (!response.ok) throw new Error(await responseErrorMessage(response));
           const blob = await response.blob();
-          if (!current()) return;
-          if (!await validateScope() || !current()) return;
+          if (!current()) return false;
+          if (!await validateScope() || !current()) return false;
           audioUrl = URL.createObjectURL(blob);
           const audio = new Audio(audioUrl);
           activeSpeechAudio = audio;
           await applyBodyAudioOutput(audio);
-          if (!current()) { audio.pause(); return; }
+          if (!current()) { audio.pause(); return false; }
           audio.volume = 1;
           talkSpeaking = true;
-          await waitForPlayback(done => {
+          await waitForPlayback((done, started) => {
             audio.addEventListener("ended", () => done(), { once: true });
             audio.addEventListener("error", () => done(new Error("Fish Audio playback failed.")), { once: true });
             audio.play().then(() => {
-              if (current()) setStatus("VOICE PLAYBACK STARTED (Fish Audio)");
+              if (current() && started()) setStatus("VOICE PLAYBACK STARTED (Fish Audio)");
               else { audio.pause(); done(); }
             }, done);
           });
           if (current()) setStatus("VOICE PLAYBACK COMPLETE (Fish Audio)");
-          return;
+          return current();
         } catch (error) {
-          if (!current()) return;
+          if (!current()) return false;
           activeSpeechAudio?.pause();
           activeSpeechAudio = null;
           if (!window.speechSynthesis) throw error;
           setStatus("Fish Audio unavailable; falling back to browser speech: " + error.message);
         }
-        if (!current()) return;
-        if (!await validateScope() || !current()) return;
+        if (!current()) return false;
+        if (!await validateScope() || !current()) return false;
         loadVoices();
         const utterance = new SpeechSynthesisUtterance(intent.text);
         applyVoicePack(utterance, sharedVoicePack, voices);
@@ -631,17 +650,26 @@
           const requestedVoice = voices.find(item => item.name === metadata.voice_name);
           if (requestedVoice) utterance.voice = requestedVoice;
         }
-        await waitForPlayback(done => {
-          utterance.onstart = () => {
-            if (!current()) { window.speechSynthesis.cancel(); done(); return; }
-            talkSpeaking = true;
-            setStatus("VOICE PLAYBACK STARTED (browser speech)");
-          };
-          utterance.onend = () => done();
-          utterance.onerror = event => done(new Error("Browser speech playback failed: " + (event.error || "unknown speech error")));
-          window.speechSynthesis.speak(utterance);
-        });
+        try {
+          await waitForPlayback((done, started) => {
+            utterance.onstart = () => {
+              if (!current()) { done(); return; }
+              if (!started()) { window.speechSynthesis.cancel(); return; }
+              talkSpeaking = true;
+              setStatus("VOICE PLAYBACK STARTED (browser speech)");
+            };
+            utterance.onend = () => done();
+            utterance.onerror = event => done(new Error("Browser speech playback failed: " + (event.error || "unknown speech error")));
+            if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+            window.speechSynthesis.speak(utterance);
+            if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+          });
+        } catch (error) {
+          window.speechSynthesis.cancel();
+          throw error;
+        }
         if (current()) setStatus("VOICE PLAYBACK COMPLETE (browser speech)");
+        return current();
       } finally {
         if (audioUrl) URL.revokeObjectURL(audioUrl);
         if (generation === speechGeneration) {
@@ -813,24 +841,48 @@
     }
 
     async function consumeExpressionOutputs() {
-      if (!voiceEnabled || mouthPollBusy) return false;
+      if (!voiceEnabled) return false;
+      mouthDrainRequested = true;
+      if (mouthPollBusy) return false;
       mouthPollBusy = true;
       let consumed = false;
       try {
         // A single server event wakes this drain. Fetch only while durable queued
         // intents remain; there is no timer or repeated empty-queue request.
-        while (voiceEnabled) {
-          const mouthResponse = await bodyFetch("/v1/body/mouth/next", { cache: "no-store" });
-          if (!mouthResponse.ok) break;
-          const mouthIntent = await mouthResponse.json();
-          if (!mouthIntent) break;
-          await speakIntent(mouthIntent);
-          consumed = true;
-        }
+        do {
+          mouthDrainRequested = false;
+          while (voiceEnabled) {
+            const mouthResponse = await bodyFetch("/v1/body/mouth/next", {
+              cache: "no-store", acknowledgeDelivery: false, signal: AbortSignal.timeout(15_000)
+            });
+            if (!mouthResponse.ok) throw new Error(await responseErrorMessage(mouthResponse));
+            const mouthIntent = await mouthResponse.json();
+            if (!mouthIntent) break;
+            const receipt = mouthResponse.headers.get("X-Body-Delivery");
+            if (!receipt) throw new Error("Voice delivery receipt is missing.");
+            if (!playedMouthDeliveries.has(receipt)) {
+              if (!await speakIntent(mouthIntent)) return consumed;
+              playedMouthDeliveries.add(receipt);
+              if (playedMouthDeliveries.size > 64) {
+                playedMouthDeliveries.delete(playedMouthDeliveries.values().next().value);
+              }
+            }
+            const acknowledged = await bodyFetch(
+              "/v1/body/mouth/ack?delivery_id=" + encodeURIComponent(receipt),
+              { method: "POST", signal: AbortSignal.timeout(10_000) }
+            );
+            if (!acknowledged.ok) throw new Error("Voice delivery acknowledgment failed");
+            consumed = true;
+          }
+        } while (voiceEnabled && mouthDrainRequested);
         return consumed;
       } finally {
         mouthPollBusy = false;
       }
+    }
+
+    function reportVoiceFailure(error) {
+      if (voiceEnabled) setStatus("Voice playback failed: " + (error?.message || error));
     }
 
     function connectMouthEvents() {
@@ -845,9 +897,7 @@
       );
       mouthEvents.addEventListener("voice-ready", () => {
         if (!voiceEnabled) return;
-        consumeExpressionOutputs().catch(() => {
-          // EventSource reconnects automatically; pending voice remains in the durable queue.
-        });
+        consumeExpressionOutputs().catch(reportVoiceFailure);
       });
     }
 
@@ -943,10 +993,7 @@
           "Message:\n" + result.response_text
         );
         interactionHistory.scrollTop = interactionHistory.scrollHeight;
-        const expressionSpoken = await consumeExpressionOutputs();
-        if (talkEnabled && !expressionSpoken && !talkSpeaking) {
-          speakIntent({ text: result.response_text });
-        }
+        await consumeExpressionOutputs();
       } catch (error) {
         thinkingMessage.classList.add("error");
         thinkingMessage.textContent = "Interaction failed: " + error.message;
@@ -1267,11 +1314,16 @@
       const interpreted = await requestSensoryObservation("audio", {
         audio_data_url: audioDataUrl,
         duration_ms: recording.durationMs,
-        source: "browser-microphone"
+        source: "browser-microphone",
+        conversation: voiceEnabled
       });
       if (!hearingEnabled || generation !== sensoryLoopGeneration) return;
       setSenseStatus("audio", "Audio saved and interpreted.", "success");
       await showMindResult(interpreted, { modality: "audio", consumeOutputs: false });
+      if (typeof interpreted.response_text === "string" && interpreted.response_text.trim()) {
+        appendChatMessage("mind", interpreted.response_text);
+        await consumeExpressionOutputs().catch(reportVoiceFailure);
+      }
     }
 
     async function runVisionLoop(generation) {

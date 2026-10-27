@@ -34,7 +34,7 @@ function fixture() {
     frameSignature: () => [100], lastFrameSignature: [0], lastMotionCaptureAt: 0,
     performance: { now: () => 10_000 }, MOTION_PIXEL_DELTA: 22, MOTION_PIXEL_RATIO: 0.07, MOTION_CAPTURE_COOLDOWN_MS: 2500,
     VISION_INTERVAL_MS: 250, document: { hidden: false }, sendInteractionButton: { disabled: false },
-    talkEnabled: false, talkBusy: false, talkSpeaking: false,
+    talkEnabled: false, talkBusy: false, talkSpeaking: false, voiceEnabled: false,
     recordAudioWindow: async () => ({ blob: {}, durationMs: 1000, hasSpeechEnergy: true }),
     blobToDataUrl: async () => 'data:audio/webm;base64,speech',
     setStatus() {}, setSenseStatus: (modality, message, state) => statuses.push({ modality, message, state }),
@@ -88,6 +88,23 @@ test('both sensory requests stop waiting at the browser deadline and release the
     await recovered;
     assert.equal(ui.statuses.at(-1).state, 'success');
   }
+});
+
+test('an intentional audio conversation has its own bounded deadline and still releases capture on timeout', async () => {
+  const ui = fixture();
+  ui.context.voiceEnabled = true;
+  const pending = start(ui, 'audio');
+  const failure = assert.rejects(pending, /Interpretation timed out/);
+  await settle();
+  assert.equal(JSON.parse(ui.requests[0].options.body).conversation, true);
+  const timer = [...ui.timers.values()][0];
+  assert.equal(timer.ms, 300_000);
+  timer.callback();
+  await failure;
+  assert.equal(ui.requests[0].options.signal.aborted, true);
+  assert.equal(ui.context.sensoryRequestInFlight, false);
+  assert.equal(ui.context.sensoryRequests.size, 0);
+  assert.equal(ui.timers.size, 0);
 });
 
 test('a successful header does not show interpreted success before the JSON body finishes', async () => {

@@ -224,6 +224,7 @@ class BrowserAudioObservationRequest(BaseModel):
     audio_data_url: str = Field(min_length=32, max_length=12_000_000)
     duration_ms: int = Field(gt=0, le=30_000)
     source: str = Field(default="browser-microphone", min_length=1, max_length=120)
+    conversation: bool = False
 
 
 class FaceExpressionRequest(BaseModel):
@@ -1169,12 +1170,26 @@ async def receive_browser_audio_observation(
             source=body.source,
         )
         bridge = cast(MindBodyBridge, _request_runtime(request).mind_body)
-        return await bridge.perceive(
+        perception = bridge.perceive(
             percept,
             express=False,
             automatic=True,
+            conversation=body.conversation,
             presence_scope=_body_presence_scope(request),
         )
+        if not body.conversation:
+            return await perception
+        task = asyncio.create_task(perception)
+        try:
+            while not task.done():
+                await asyncio.wait({task}, timeout=0.1)
+                if not task.done() and await request.is_disconnected():
+                    raise HTTPException(status_code=499, detail="Spoken conversation was cancelled")
+            return await task
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE if isinstance(exc, RuntimeError)
@@ -1368,7 +1383,7 @@ async def fish_audio_speech(
 
     return Response(
         content=audio,
-        media_type="audio/mpeg",
+        media_type=getattr(audio, "media_type", "audio/mpeg"),
         headers={"Cache-Control": "no-store"},
     )
 

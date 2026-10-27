@@ -355,6 +355,27 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
             close.assert_not_awaited()
         await api.app.state.runtime.ping()
 
+    async def test_configured_voice_mime_matches_the_provider_audio(self):
+        class WavAudio(bytes):
+            media_type = "audio/wav"
+
+        dispatcher = SimpleNamespace(
+            is_configured=AsyncMock(return_value=True),
+            execute=AsyncMock(return_value=WavAudio(b"RIFFsynthetic-wave-audio")),
+        )
+        with patch("aicognitive_mind.api.TaskModelDispatcher", return_value=dispatcher), patch(
+            "aicognitive_mind.api.FishAudioRenderer",
+        ) as fish:
+            response = await self.alpha_client.post(
+                "/v1/body/speech/fish-audio", json={"text": "Synthetic configured voice"},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.headers["content-type"], "audio/wav")
+        self.assertEqual(response.content, b"RIFFsynthetic-wave-audio")
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        dispatcher.execute.assert_awaited_once()
+        fish.assert_not_called()
+
     async def test_account_body_pages_voice_preferences_and_output_receipts_are_isolated(self):
         for client in (self.alpha_client, self.beta_client, self.admin_client):
             for path in ("/body/live", "/body/eyes", "/body/ears", "/body/face", "/body/mouth"):
@@ -593,7 +614,7 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await api.app.state.journal_store.read(), [])
         self.assertEqual(await api.app.state.evidence_store.read(), [])
 
-    async def _queued_host_audio(self, session):
+    async def _queued_host_audio(self, session, *, conversation=False):
         storage = scope_storage(api.app.state.storage, self.alpha.mind_id)
         host = HostRuntime(storage.mind, SimpleNamespace())
         lease = (await host.attach("Synthetic private ASR receiver", "synthetic-asr-model"))["lease_token"]
@@ -602,6 +623,7 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
             "/v1/body/ears/observe", headers={"X-Body-Session": session}, json={
                 "audio_data_url": "data:audio/webm;base64," + base64.b64encode(media).decode(),
                 "duration_ms": 1000,
+                "conversation": conversation,
             },
         ))
 
@@ -620,6 +642,56 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
                 return host, task, media, capability, pending[0]
             await asyncio.sleep(0.01)
         self.fail("Preserved audio did not reach the private host queue")
+
+    async def test_intentional_audio_crosses_normal_host_lifecycle_and_returns_scoped_voice(self):
+        session = "intentional-spoken-conversation"
+        host, waiting, media, capability, original = await self._queued_host_audio(session, conversation=True)
+        host.service = SimpleNamespace(
+            begin_interaction=AsyncMock(return_value={"status": "ready_to_reason"}),
+            complete_interaction=AsyncMock(return_value={
+                "status": "interaction_committed", "occurred_at": "2026-10-27T05:00:00Z",
+            }),
+        )
+        anonymous = await self.client()
+        evidence = original["input_context"]["evidence"]
+        transcript = {
+            **capability, "sha256": evidence["sha256"], "captured_at": evidence["captured_at"],
+            "transcript": "Can you hear me?", "model": "synthetic-asr",
+            "segments": [{"text": "Can you hear me?", "avg_logprob": -0.2, "no_speech_probability": 0.01}],
+        }
+        self.assertEqual((await anonymous.post("/v1/host-events/input", json=capability)).status_code, 200)
+        attached = await anonymous.post("/v1/host-events/transcript", json=transcript)
+        self.assertEqual(attached.status_code, 200, attached.text)
+        sensory = await host.next_request(capability["lease_token"])
+        self.assertEqual(sensory["context"]["status"], "sensory_interpretation")
+        observed = await host.complete(capability["lease_token"], sensory["request_id"], "Speech observed.")
+        self.assertEqual(observed["derived_audio"], attached.json()["derived_audio"])
+        host.service.begin_interaction.assert_not_awaited()
+        for _ in range(200):
+            pending = await host.records.pending()
+            if pending:
+                break
+            await asyncio.sleep(0.01)
+        self.assertTrue(pending, "Intentional speech did not reach the conversation queue")
+        conversation = await host.next_request(capability["lease_token"])
+        self.assertEqual(conversation["user_message"], "Can you hear me?")
+        context = conversation["context"]["input_context"]
+        self.assertEqual(context["evidence"], evidence)
+        self.assertEqual(context["derived_audio"], attached.json()["derived_audio"])
+        self.assertEqual(context["speaker_identity"], "unresolved")
+        host.service.begin_interaction.assert_awaited_once()
+        await host.complete(capability["lease_token"], conversation["request_id"], "Yes, your recording reached me.")
+        response = await asyncio.wait_for(waiting, timeout=3)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["response_text"], "Yes, your recording reached me.")
+        host.service.complete_interaction.assert_awaited_once()
+        self.assertEqual(host.service.complete_interaction.await_args.kwargs["source"], "body:audio")
+        for modality in ("mouth", "face"):
+            intent = await self.get_json(self.alpha_client, f"/v1/body/{modality}/next", headers={"X-Body-Session": session})
+            self.assertEqual(intent["text"], "Yes, your recording reached me.")
+            self.assertIsNone(await self.get_json(self.beta_client, f"/v1/body/{modality}/next", headers={"X-Body-Session": session}))
+        self.assertEqual(await api.app.state.evidence_store.read(), [])
+
 
     async def test_private_audio_preprocessing_binds_capability_and_original_evidence(self):
         host, waiting, media, capability, original = await self._queued_host_audio("private-asr-boundary")

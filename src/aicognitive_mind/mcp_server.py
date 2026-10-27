@@ -128,7 +128,7 @@ async def execute_task(
     with base64-encoded audio, filename, and media_type for transcription. The provider,
     model, and behavior are resolved from Axiom's saved configuration, not supplied by
     the caller. Use operation="synthesize_voice", task="audio_voice", and text for
-    speech output. It returns base64 MP3 for playback by the current client, without
+    speech output. It returns base64 audio with its MIME type for the current client, without
     a Body session. Optional compact context references are included in the task prompt.
     """
     state = request_state(ctx)
@@ -290,7 +290,7 @@ async def execute_task(
             raise ValueError("Voice provider returned empty, invalid, or oversized audio.")
         result = {
             "audio_base64": base64.b64encode(result).decode("ascii"),
-            "media_type": "audio/mpeg",
+            "media_type": getattr(result, "media_type", "audio/mpeg"),
         }
     return {
         "status": "completed",

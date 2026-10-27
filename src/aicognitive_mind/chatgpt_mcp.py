@@ -772,7 +772,7 @@ def build_chatgpt_mcp(
         with base64-encoded audio, filename, and media_type. Provider, model, and behavior
         come from Axiom's saved configuration rather than caller-supplied model names.
         Use operation="synthesize_voice", task="audio_voice", and text to return
-        generated MP3 for local playback without a Body page or Body session.
+        generated audio with its MIME type, without a Body page or Body session.
         """
         return await execute_configured_task(
             task=task,

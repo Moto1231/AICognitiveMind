@@ -493,8 +493,8 @@ class MindBodyIntegrationV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("await speakIntent(mouthIntent)", markup)
         self.assertIn("return consumed;", markup)
         self.assertIn("/v1/body/mouth/events", markup)
-        self.assertIn("const expressionSpoken = await consumeExpressionOutputs()", markup)
-        self.assertIn("!expressionSpoken", markup)
+        self.assertIn("consumeExpressionOutputs().catch(reportVoiceFailure)", markup)
+        self.assertNotIn("!expressionSpoken", markup)
 
 
 if __name__ == "__main__":

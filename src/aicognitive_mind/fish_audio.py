@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -45,8 +46,13 @@ class FishAudioRenderer:
 
         try:
             endpoint_url = self.endpoint_url.rstrip("/")
-            if not endpoint_url.endswith("/tts"):
-                endpoint_url += "/tts"
+            address = urlsplit(endpoint_url)
+            if address.hostname == "api.fish.audio" and address.path in {"", "/tts"}:
+                # The official API serves speech at /v1/tts, including when an
+                # administrator saves just the provider's origin as its base URL.
+                endpoint_url = urlunsplit(address._replace(path="/v1/tts"))
+            elif not address.path.endswith("/tts"):
+                endpoint_url = urlunsplit(address._replace(path=address.path + "/tts"))
             async with httpx.AsyncClient(timeout=45.0) as client:
                 response = await client.post(endpoint_url, headers=headers, json=payload)
         except httpx.HTTPError as exc:

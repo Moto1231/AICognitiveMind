@@ -276,11 +276,13 @@ def speak(client: Any, text: str, path: Path, play: bool = True) -> dict[str, An
         route = "windows_default"
     else:
         result = response.get("result", {})
-        if result.get("media_type") != "audio/mpeg":
+        media_type = result.get("media_type")
+        if media_type not in {"audio/mpeg", "audio/wav", "audio/x-wav"}:
             raise MediaError("The voice task returned an unsupported audio type.")
         audio = base64.b64decode(result.get("audio_base64", ""), validate=True)
         if not audio or len(audio) > 20_000_000:
             raise MediaError("The voice task returned empty or oversized audio.")
+        path = path.with_suffix(".wav" if media_type in {"audio/wav", "audio/x-wav"} else ".mp3")
         path.write_bytes(audio)
         route = "configured_audio_voice"
     if play:

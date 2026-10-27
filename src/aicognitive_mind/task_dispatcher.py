@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
+from aicognitive_mind.gemini_audio import GeminiAudioError, GeminiAudioRenderer, SynthesizedAudio, uses_gemini_speech
 
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.provider_routing import ProviderRoutingRegistry
@@ -244,14 +245,26 @@ class TaskModelDispatcher:
         for assignment in await self._candidate_assignments("audio_voice"):
             try:
                 assignment, endpoint = await self._resolve("audio_voice", assignment)
+                if uses_gemini_speech(
+                    base_url=endpoint.base_url,
+                    provider_name=endpoint.provider_name or endpoint.name,
+                    model=assignment.model,
+                ):
+                    renderer = GeminiAudioRenderer(
+                        api_key=endpoint.api_key, model=assignment.model,
+                        endpoint_url=endpoint.base_url, timeout=self.timeout, client=self.client,
+                    )
+                    return await renderer.synthesize(text, speed=speed, volume=volume)
                 renderer = FishAudioRenderer(
                     api_key=endpoint.api_key,
                     model=assignment.model,
                     reference_id=assignment.voice_reference_id or None,
                     endpoint_url=endpoint.base_url,
                 )
-                return await renderer.synthesize(text, speed=speed, volume=volume)
-            except (TaskDispatchError, FishAudioError) as exc:
+                return SynthesizedAudio(
+                    await renderer.synthesize(text, speed=speed, volume=volume), media_type="audio/mpeg",
+                )
+            except (TaskDispatchError, FishAudioError, GeminiAudioError) as exc:
                 last_error = exc if isinstance(exc, TaskDispatchError) else TaskDispatchError(str(exc))
                 logger.warning(
                     "task_provider_fallback task=audio_voice provider=%s model=%s error=%s",

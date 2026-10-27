@@ -16,9 +16,10 @@ function deferred() {
 }
 
 function fixture() {
-  const intervals = new Map(), recorders = [], requests = [], statuses = [], results = [];
+  const intervals = new Map(), recorders = [], requests = [], statuses = [], results = [], chats = [];
   const raw = Uint8Array.from([0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x12, 0x34, 0x56]);
-  let now = 0, sample = 128, intervalSequence = 0, decoderConstructions = 0;
+  let now = 0, sample = 128, intervalSequence = 0, decoderConstructions = 0, mouthDrains = 0;
+  let response = { interpretation: 'Recorded speech.' };
   class Recorder {
     static isTypeSupported() { return true; }
     constructor(stream, options = {}) {
@@ -56,20 +57,25 @@ function fixture() {
     audioAnalyser: { fftSize: 16, getByteTimeDomainData(samples) { samples.fill(sample); } },
     AUDIO_MAX_DURATION_MS: 30_000, AUDIO_IDLE_WINDOW_MS: 4000,
     AUDIO_SILENCE_MS: 900, AUDIO_SPEECH_THRESHOLD: 0.012,
-    sensoryRequests: new Map(), talkEnabled: false, talkBusy: false, talkSpeaking: false,
+    sensoryRequests: new Map(), talkEnabled: false, talkBusy: false, talkSpeaking: false, voiceEnabled: false,
     preferredAudioMimeType: () => 'audio/webm;codecs=opus',
     delay: async () => {}, setStatus() {},
     setSenseStatus: (modality, message, state) => statuses.push({ modality, message, state }),
     blobToDataUrl: async blob => `data:${blob.type};base64,${Buffer.from(await blob.arrayBuffer()).toString('base64')}`,
     requestSensoryObservation: async (modality, payload) => {
       requests.push({ modality, payload });
-      return { interpretation: 'Recorded speech.' };
+      return response;
     },
     showMindResult: async result => results.push(result),
+    appendChatMessage: (role, text) => chats.push({ role, text }),
+    consumeExpressionOutputs: async () => { mouthDrains++; return true; },
+    reportVoiceFailure(error) { statuses.push({ state: 'error', message: error.message }); },
   });
   vm.runInContext(source, context);
-  return { context, raw, intervals, recorders, requests, statuses, results,
+  return { context, raw, intervals, recorders, requests, statuses, results, chats,
     get decoderConstructions() { return decoderConstructions; },
+    get mouthDrains() { return mouthDrains; },
+    response(value) { response = value; },
     tick(time, amplitude) {
       now = time;
       sample = amplitude;
@@ -107,9 +113,38 @@ test('speech reaches interpretation without a browser decoder or altered media b
   assert.equal(modality, 'audio');
   assert.equal(payload.duration_ms, 1500);
   assert.equal(payload.source, 'browser-microphone');
+  assert.equal(payload.conversation, false);
   assert.deepEqual(Buffer.from(payload.audio_data_url.split(',')[1], 'base64'), Buffer.from(ui.raw));
   assert.equal(ui.decoderConstructions, 0);
   assert.equal(ui.results.length, 1);
+  assert.equal(ui.chats.length, 0);
+  assert.equal(ui.mouthDrains, 0);
+});
+
+test('Voice-on fallback explicitly requests conversation and sends its reply through the existing Mouth queue', async () => {
+  const ui = fixture();
+  ui.context.voiceEnabled = true;
+  ui.response({ interpretation: 'Recognized question.', response_text: 'Yes, your recording reached me.' });
+  ui.context.speakIntent = () => { throw new Error('The response must not create duplicate direct speech.'); };
+  const pending = ui.context.perceiveAudio(1);
+  finishSpeech(ui);
+  await pending;
+  assert.equal(ui.requests[0].payload.conversation, true);
+  assert.deepEqual(ui.chats, [{ role: 'mind', text: 'Yes, your recording reached me.' }]);
+  assert.equal(ui.mouthDrains, 1);
+  assert.equal(ui.results.length, 1);
+});
+
+test('an observation without a conversational response does not create a chat reply or speech drain', async () => {
+  const ui = fixture();
+  ui.context.voiceEnabled = true;
+  ui.response({ interpretation: 'No intelligible speech recognized.', response_text: '' });
+  const pending = ui.context.perceiveAudio(1);
+  finishSpeech(ui);
+  await pending;
+  assert.equal(ui.requests[0].payload.conversation, true);
+  assert.equal(ui.chats.length, 0);
+  assert.equal(ui.mouthDrains, 0);
 });
 
 test('quiet and low-level microphone noise do not upload recordings', async () => {
