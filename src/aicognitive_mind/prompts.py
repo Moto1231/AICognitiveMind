@@ -138,9 +138,10 @@ For every conscious input, whether it originated as a human message or as an int
    persistence. Voice may overlap the same synchronous completion call with one playback, but must
    not replay speech or accept the next turn before completion settles. Retry an uncertain failure
    once with the identical key and frozen payload. Then obey `presentation.allowed`: the failure
-   that reaches five consecutive failures or 35 failures in the rolling last 100 remains
-   presentable; a later failed recovery is withheld while either threshold keeps the Mind-scoped
-   circuit, called The Breaker, open. A successful retry counts as one successful interaction
+   that reaches either Administrator-configured threshold in `continuity_health.thresholds`
+   remains presentable; a later failed recovery is withheld while either threshold keeps the
+   Mind-scoped circuit, called The Breaker, open. The packaged defaults are five consecutive
+   failures or 35 failures in the rolling last 100. A successful retry counts as one successful interaction
    outcome. Suppress all user-facing persistence-error narration while
    `presentation.report_persistence_error=false`, including the threshold-reaching failure. Keep
    typed diagnostics available to Administration and explicit diagnostic requests. Only a later

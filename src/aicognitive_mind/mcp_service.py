@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
 from aicognitive_mind.commit import atomic
 from aicognitive_mind.continuity_health import InteractionContinuityHealth
+from aicognitive_mind.continuity_settings import ContinuitySettingsRegistry
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -79,6 +80,7 @@ class CognitiveMcpService:
         records = RuntimeRecords(mind)
         self._records = records
         self._continuity_health = InteractionContinuityHealth(records)
+        self._continuity_settings = ContinuitySettingsRegistry(records)
         self._steward_factory = steward_factory
         self._steward_runtime = TaskModelDispatcher(records, timeout=30)
         self._host_behaviors = HostBehaviorRegistry(records)
@@ -163,6 +165,9 @@ class CognitiveMcpService:
         timer = StageTimer(f"begin_interaction source={source}")
         with timer.stage("mind"):
             mind = await self._require_mind()
+        interaction_id = uuid4().hex
+        with timer.stage("continuity_settings"):
+            continuity_settings = await self._continuity_settings.capture(interaction_id)
         with timer.stage("state_context"):
             state_context = await self._load_current_state()
         steward = self._steward_factory(
@@ -173,10 +178,13 @@ class CognitiveMcpService:
             working_context={**(host_working_context or {}),
                              "input_source": source, "input_context": input_context},
             current_state=state_context.as_context(),
-            runtime=self._steward_runtime,
+            runtime=self._steward_runtime_for(continuity_settings),
         )
         if isinstance(steward, ModelMemorySteward):
             steward.skill_records = self._records
+            steward.assessment_timeout_seconds = continuity_settings[
+                "steward_assessment_timeout_seconds"
+            ]
         with timer.stage("recall"):
             recalled = await steward.invoke(
                 {
@@ -195,11 +203,11 @@ class CognitiveMcpService:
                 source=source, input_context=input_context,
             )
         with timer.stage("continuity_health"):
-            continuity_health = await self._continuity_snapshot()
+            continuity_health = await self._continuity_snapshot(continuity_settings)
         timer.log()
         return {
             "status": "ready_to_reason",
-            "idempotency_key": uuid4().hex,
+            "idempotency_key": interaction_id,
             "mind": mind.model_dump(mode="json"),
             "recalled_context": recalled["context"],
             "memory_assessment": steward.assessment,
@@ -212,6 +220,7 @@ class CognitiveMcpService:
             "continuity_health": continuity_health,
             "presentation_policy": {
                 "name": "The Breaker",
+                "settings_revision": continuity_settings["revision"],
                 "mode": (
                     "recovery_required"
                     if continuity_health.get("circuit_open")
@@ -267,6 +276,7 @@ class CognitiveMcpService:
     ) -> dict[str, Any]:
         """Commit cognition, then record its final operational persistence outcome."""
         interaction_id = idempotency_key or f"legacy-{uuid4().hex}"
+        continuity_settings = await self._continuity_settings.for_interaction(interaction_id)
         try:
             result = await self._commit_interaction(
                 user_message=user_message,
@@ -289,6 +299,7 @@ class CognitiveMcpService:
                 raise
             health = await self._record_continuity_outcome(
                 interaction_id, succeeded=False, failure_class=type(exc).__name__,
+                settings=continuity_settings,
             )
             presentation_allowed = health.get("interaction_outcome", {}).get(
                 "presentation_allowed", True,
@@ -325,6 +336,7 @@ class CognitiveMcpService:
             interaction_id,
             succeeded=succeeded,
             failure_class=persistence.get("failure_class"),
+            settings=continuity_settings,
         )
         presentation_allowed = health.get("interaction_outcome", {}).get(
             "presentation_allowed", True,
@@ -371,6 +383,9 @@ class CognitiveMcpService:
             mind = await self._require_mind()
         with timer.stage("state_context"):
             state_context = await self._load_current_state()
+        continuity_settings = await self._continuity_settings.for_interaction(
+            idempotency_key or "",
+        ) if idempotency_key else await self._continuity_settings.effective()
         steward = self._steward_factory(
             mind=mind,
             input_text=user_message,
@@ -379,10 +394,13 @@ class CognitiveMcpService:
             working_context={**(host_working_context or {}),
                              "input_source": source, "input_context": input_context},
             current_state=state_context.as_context(),
-            runtime=self._steward_runtime,
+            runtime=self._steward_runtime_for(continuity_settings),
         )
         if isinstance(steward, ModelMemorySteward):
             steward.skill_records = self._records
+            steward.assessment_timeout_seconds = continuity_settings[
+                "steward_assessment_timeout_seconds"
+            ]
         try:
             with timer.stage("review"):
                 review = await steward.review_interaction(
@@ -526,9 +544,23 @@ class CognitiveMcpService:
             },
         }
 
-    async def _continuity_snapshot(self) -> dict[str, Any]:
+    def _steward_runtime_for(self, settings: dict[str, Any]) -> Any:
+        runtime = self._steward_runtime
+        if type(runtime) is not TaskModelDispatcher:
+            return runtime
+        return TaskModelDispatcher(
+            self._records,
+            timeout=settings["provider_request_timeout_seconds"],
+            client=runtime.client,
+            rate_limit_retry_wait_cap=settings["rate_limit_retry_wait_cap_seconds"],
+        )
+
+    async def _continuity_snapshot(
+        self, settings: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         try:
-            return await self._continuity_health.snapshot()
+            effective = settings or await self._continuity_settings.effective()
+            return await self._continuity_health.snapshot(settings=effective)
         except Exception as exc:
             return {
                 "status": "unavailable",
@@ -538,12 +570,14 @@ class CognitiveMcpService:
 
     async def _record_continuity_outcome(
         self, interaction_id: str, *, succeeded: bool, failure_class: str | None,
+        settings: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         try:
             return await self._continuity_health.record(
                 interaction_id,
                 succeeded=succeeded,
                 failure_class=failure_class,
+                settings=settings,
             )
         except Exception as exc:
             return {

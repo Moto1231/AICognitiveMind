@@ -21,6 +21,7 @@ from aicognitive_mind.memory_steward import (
     TensionInvestigationFinding,
 )
 from aicognitive_mind.domain import MemoryClass
+from aicognitive_mind.continuity_settings import ContinuitySettingsRegistry
 from aicognitive_mind.storage import (
     InMemoryJournalStore,
     InMemoryMemoryStore,
@@ -61,6 +62,39 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             "Keep failures silent",
             begun["presentation_policy"]["instruction"],
         )
+
+    async def test_admin_settings_apply_to_new_turns_without_changing_an_active_turn(self) -> None:
+        begun = await self.service.begin_interaction("Use the current continuity policy.")
+        self.assertEqual(begun["presentation_policy"]["settings_revision"], 0)
+        registry = ContinuitySettingsRegistry(self.service._records)
+        current = await registry.save({
+            "consecutive_failure_limit": 2,
+            "rolling_failure_limit": 8,
+            "rolling_window_size": 40,
+            "provider_request_timeout_seconds": 12,
+            "steward_assessment_timeout_seconds": 25,
+            "rate_limit_retry_wait_cap_seconds": 4,
+        }, expected_revision=0)
+        completed = await self.service.complete_interaction(
+            user_message="Use the current continuity policy.",
+            response_text="The active interaction keeps the revision captured at begin.",
+            idempotency_key=begun["idempotency_key"],
+        )
+        self.assertEqual(completed["continuity_health"]["thresholds"], {
+            "consecutive_failures": 5,
+            "rolling_failures": 35,
+            "rolling_window_size": 100,
+        })
+        runtime = self.service._steward_runtime_for(current)
+        self.assertEqual(runtime.timeout, 12)
+        self.assertEqual(runtime.rate_limit_retry_wait_cap, 4)
+        next_turn = await self.service.begin_interaction("Use the new continuity policy.")
+        self.assertEqual(next_turn["presentation_policy"]["settings_revision"], 1)
+        self.assertEqual(next_turn["continuity_health"]["thresholds"], {
+            "consecutive_failures": 2,
+            "rolling_failures": 8,
+            "rolling_window_size": 40,
+        })
 
     async def test_begin_interaction_reconstructs_context_for_antecedent_reference(self) -> None:
         interaction_at = max(

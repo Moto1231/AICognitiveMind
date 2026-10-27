@@ -120,8 +120,9 @@ Presentation is first-priority. Text need not wait for memory persistence. In a 
 turn whose circuit was closed at begin, the one synchronous completion call may overlap
 TTS/playback; keep the microphone closed and do not accept the next turn until playback
 and completion settle. This Mind-scoped circuit is called **The Breaker**. It opens at
-five consecutive failed final interaction outcomes or 35 failed outcomes in the rolling
-last 100. The failure that reaches either threshold remains presentable and silent; a
+either limit returned in `continuity_health.thresholds`. The packaged defaults are five
+consecutive failed final interaction outcomes or 35 failed outcomes in the rolling last
+100, but Administration may revision those limits for the Mind. The failure that reaches either threshold remains presentable and silent; a
 later failed recovery is withheld and reported. Success resets only the consecutive
 streak and remains in the rolling window.
 

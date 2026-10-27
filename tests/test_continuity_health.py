@@ -115,3 +115,30 @@ class InteractionContinuityHealthTests(unittest.IsolatedAsyncioTestCase):
                 "recovery_was_required",
             },
         )
+
+    async def test_configured_thresholds_and_window_apply_without_losing_history(self) -> None:
+        settings = {
+            "consecutive_failure_limit": 2,
+            "rolling_failure_limit": 3,
+            "rolling_window_size": 20,
+        }
+        first = await self.health.record(
+            "custom-1", succeeded=False, failure_class="ReviewUnavailable",
+            settings=settings,
+        )
+        self.assertFalse(first["circuit_open"])
+        second = await self.health.record(
+            "custom-2", succeeded=False, failure_class="ReviewUnavailable",
+            settings=settings,
+        )
+        self.assertTrue(second["circuit_open"])
+        self.assertEqual(second["thresholds"], {
+            "consecutive_failures": 2, "rolling_failures": 3, "rolling_window_size": 20,
+        })
+
+        for index in range(30):
+            await self.health.record(f"later-{index}", succeeded=True, settings=settings)
+        stored = await self.records.get(STATE_KEY)
+        self.assertEqual(len(stored["recent_outcomes"]), 32)
+        narrowed = await self.health.snapshot(settings=settings)
+        self.assertEqual(narrowed["rolling_sample_size"], 20)

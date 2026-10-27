@@ -66,7 +66,11 @@ identical retry. Successful idempotency receipts continue to prevent duplicate c
 The final persistence outcome is recorded separately in a content-free, Mind-scoped
 runtime record. One interaction key contributes at most one outcome: a failed attempt
 followed by a successful identical retry becomes success. The presentation circuit opens
-at five consecutive failures or 35 failures in the rolling last 100 outcomes. The failure
+at the revisioned, Mind-scoped thresholds managed on The Breaker's Administration form.
+The packaged defaults are five consecutive failures or 35 failures in the rolling last
+100 outcomes. The same form owns the provider-request timeout, total Steward-assessment
+deadline and bounded rate-limit retry wait. An interaction uses the settings revision
+captured when it began. The failure
 that reaches a threshold remains presentable; a later failed recovery is withheld. A
 success resets the consecutive streak but does not erase rolling history.
 

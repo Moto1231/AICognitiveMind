@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from aicognitive_mind.commit import CommitConflict
+from aicognitive_mind.continuity_settings import ContinuitySettings
 from aicognitive_mind.host_runtime import RuntimeRecords
 
 STATE_KEY = "interaction_continuity_health"
@@ -19,6 +20,7 @@ BREAKER_NAME = "The Breaker"
 CONSECUTIVE_FAILURE_LIMIT = 5
 ROLLING_FAILURE_LIMIT = 35
 ROLLING_WINDOW_SIZE = 100
+MAX_ROLLING_WINDOW_SIZE = 500
 
 
 class InteractionContinuityHealth:
@@ -55,14 +57,17 @@ class InteractionContinuityHealth:
     @classmethod
     def _public(
         cls, state: dict[str, Any], *, interaction_id: str | None = None,
+        settings: ContinuitySettings | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        policy = cls._settings(settings)
         outcomes = list(state.get("recent_outcomes", ()))
+        outcomes = outcomes[-policy.rolling_window_size:]
         consecutive = cls._consecutive_failures(outcomes)
         failures = cls._failure_count(outcomes)
         reasons = []
-        if consecutive >= CONSECUTIVE_FAILURE_LIMIT:
+        if consecutive >= policy.consecutive_failure_limit:
             reasons.append("consecutive_failures")
-        if failures >= ROLLING_FAILURE_LIMIT:
+        if failures >= policy.rolling_failure_limit:
             reasons.append("rolling_failures")
         result: dict[str, Any] = {
             "name": BREAKER_NAME,
@@ -70,13 +75,13 @@ class InteractionContinuityHealth:
             "circuit_open": bool(reasons),
             "open_reasons": reasons,
             "consecutive_failures": consecutive,
-            "rolling_window_size": ROLLING_WINDOW_SIZE,
+            "rolling_window_size": policy.rolling_window_size,
             "rolling_sample_size": len(outcomes),
             "rolling_failures": failures,
             "thresholds": {
-                "consecutive_failures": CONSECUTIVE_FAILURE_LIMIT,
-                "rolling_failures": ROLLING_FAILURE_LIMIT,
-                "rolling_window_size": ROLLING_WINDOW_SIZE,
+                "consecutive_failures": policy.consecutive_failure_limit,
+                "rolling_failures": policy.rolling_failure_limit,
+                "rolling_window_size": policy.rolling_window_size,
             },
             "last_interaction_id": state.get("last_interaction_id"),
             "last_failure_class": state.get("last_failure_class"),
@@ -103,8 +108,24 @@ class InteractionContinuityHealth:
                 }
         return result
 
-    async def snapshot(self) -> dict[str, Any]:
-        return self._public(await self.records.get(STATE_KEY) or self._empty())
+    @staticmethod
+    def _settings(settings: ContinuitySettings | dict[str, Any] | None) -> ContinuitySettings:
+        if isinstance(settings, ContinuitySettings):
+            return settings
+        if settings is None:
+            return ContinuitySettings()
+        return ContinuitySettings.model_validate({
+            key: settings[key]
+            for key in ContinuitySettings.model_fields
+            if key in settings
+        })
+
+    async def snapshot(
+        self, settings: ContinuitySettings | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._public(
+            await self.records.get(STATE_KEY) or self._empty(), settings=settings,
+        )
 
     async def record(
         self,
@@ -112,6 +133,7 @@ class InteractionContinuityHealth:
         *,
         succeeded: bool,
         failure_class: str | None = None,
+        settings: ContinuitySettings | dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not isinstance(interaction_id, str) or not interaction_id:
             raise ValueError("interaction_id must be a nonblank string")
@@ -129,10 +151,12 @@ class InteractionContinuityHealth:
             if existing_index is not None:
                 existing = outcomes[existing_index]
                 if existing.get("succeeded") is True or not succeeded:
-                    return self._public(base, interaction_id=interaction_id)
+                    return self._public(
+                        base, interaction_id=interaction_id, settings=settings,
+                    )
                 # An identical retry that succeeds replaces the provisional
                 # failure; attempts never count as separate interaction outcomes.
-                before_open = self._public(base)["circuit_open"]
+                before_open = self._public(base, settings=settings)["circuit_open"]
                 outcomes[existing_index] = {
                     **existing,
                     "succeeded": True,
@@ -143,7 +167,7 @@ class InteractionContinuityHealth:
                     "recovery_was_required": before_open,
                 }
             else:
-                before_open = self._public(base)["circuit_open"]
+                before_open = self._public(base, settings=settings)["circuit_open"]
                 outcomes.append({
                     "interaction_id": interaction_id,
                     "succeeded": succeeded,
@@ -155,7 +179,7 @@ class InteractionContinuityHealth:
                     "recovered_after_retry": False,
                     "recovery_was_required": before_open,
                 })
-            outcomes = outcomes[-ROLLING_WINDOW_SIZE:]
+            outcomes = outcomes[-MAX_ROLLING_WINDOW_SIZE:]
             failures = [item for item in outcomes if item.get("succeeded") is False]
             updated = {
                 **base,
@@ -174,7 +198,11 @@ class InteractionContinuityHealth:
                     if await self.records.get(STATE_KEY) is not None:
                         continue
                     raise
-                return self._public(updated, interaction_id=interaction_id)
+                return self._public(
+                    updated, interaction_id=interaction_id, settings=settings,
+                )
             if await self.records.replace(STATE_KEY, current, updated):
-                return self._public(updated, interaction_id=interaction_id)
+                return self._public(
+                    updated, interaction_id=interaction_id, settings=settings,
+                )
         raise CommitConflict("Interaction continuity health changed concurrently; retry")

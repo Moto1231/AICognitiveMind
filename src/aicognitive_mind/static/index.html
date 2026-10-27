@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261027-all-icon-palette">
+  <link rel="stylesheet" href="/static/portal.css?v=20261027-breaker-settings-2">
   <script src="/static/button_icons.js?v=20261027-all-icon-palette" defer></script>
 </head>
 <body>
@@ -181,6 +181,9 @@
           <symbol id="admin-icon-foundations" viewBox="0 0 48 48">
             <path d="m4 15 20-10 20 10-20 10ZM4 24l20 10 20-10M4 33l20 10 20-10"/>
           </symbol>
+          <symbol id="admin-icon-breaker" viewBox="0 0 48 48">
+            <path d="M24 4 41 11v12c0 10-7 17-17 21C14 40 7 33 7 23V11Z"/><path d="m25 11-7 13h7l-3 13 9-16h-7Z"/>
+          </symbol>
           <symbol id="admin-icon-behaviors" viewBox="0 0 48 48">
             <path d="M23 10c-2-4-8-3-9 2-5-1-8 5-5 9-3 4 0 9 5 9 1 5 7 6 10 3 3 3 9 2 10-3 5 0 8-5 5-9 3-4 0-10-5-9-1-5-7-6-9-2M24 10v28M17 17c4 0 6 2 7 5M14 29c4-1 7 1 10 4M31 16c-4 0-6 3-7 6M34 29c-4-1-7 1-10 4"/>
           </symbol>
@@ -215,6 +218,7 @@
         <nav class="admin-section-nav" aria-label="Administration sections">
           <button class="admin-section-button active" type="button" data-admin-section="overview"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-overview"/></svg></span><span>System Overview</span></button>
           <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Foundations</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="breaker"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-breaker"/></svg></span><span>The Breaker</span></button>
           <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><span>Behavior</span></button>
           <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-devices"/></svg></span><span>Devices</span></button>
           <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-voice"/></svg></span><span>Speech Settings</span></button>
@@ -247,6 +251,32 @@
             </div>
             <div class="edit-actions"><button id="startupEdit" class="secondary-button" type="button" aria-label="Edit startup instructions" title="Edit startup instructions" disabled>Edit</button><button id="startupSave" class="primary-button" type="button" aria-label="Save startup instructions" title="Save startup instructions" disabled>Save Startup</button><button id="startupCancel" class="secondary-button" type="button" aria-label="Cancel startup changes" title="Cancel startup changes" disabled>Cancel</button></div>
             <p id="startupStatus" role="status" aria-live="polite"></p></section>
+          </article>
+          <article id="breakerSection" class="panel breaker-settings-panel hidden">
+            <div class="panel-heading"><div><p class="eyebrow">CONTINUITY CONTROL</p><h3>The Breaker</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
+            <section class="overview-group">
+              <h4>Current State</h4>
+              <dl class="details breaker-health-details">
+                <div><dt>Status</dt><dd id="breakerHealthStatus">Loading…</dd></div>
+                <div><dt>Consecutive failures</dt><dd id="breakerHealthConsecutive">—</dd></div>
+                <div><dt>Rolling failures</dt><dd id="breakerHealthRolling">—</dd></div>
+                <div><dt>Last failure class</dt><dd id="breakerHealthLastFailure">—</dd></div>
+              </dl>
+            </section>
+            <section class="overview-group">
+              <h4>Parameters</h4>
+              <p class="record-empty">Each interaction keeps the settings revision captured when it began. Changes apply to new interactions only.</p>
+              <div class="host-behavior-fields breaker-settings-grid">
+                <label class="host-behavior-field">Consecutive failure limit<input id="breakerConsecutiveLimit" type="number" min="1" max="20" step="1" readonly><small>Open after this many consecutive failed interactions. Range 1–20.</small></label>
+                <label class="host-behavior-field">Rolling failure limit<input id="breakerRollingLimit" type="number" min="1" max="500" step="1" readonly><small>Open when this many failures occur in the rolling window.</small></label>
+                <label class="host-behavior-field">Rolling window size<input id="breakerRollingWindow" type="number" min="20" max="500" step="1" readonly><small>Interactions retained for rolling evaluation. Range 20–500.</small></label>
+                <label class="host-behavior-field">Provider request timeout (seconds)<input id="breakerProviderTimeout" type="number" min="1" max="120" step="0.1" readonly><small>Maximum time for one Memory Steward provider request.</small></label>
+                <label class="host-behavior-field">Steward assessment deadline (seconds)<input id="breakerAssessmentTimeout" type="number" min="5" max="300" step="0.1" readonly><small>Maximum total time for a recall or review assessment.</small></label>
+                <label class="host-behavior-field">Rate-limit retry wait cap (seconds)<input id="breakerRetryWaitCap" type="number" min="0" max="120" step="0.1" readonly><small>Honor Retry-After only at or below this wait; then retry once.</small></label>
+              </div>
+              <div class="edit-actions"><button id="breakerEdit" class="secondary-button" type="button" aria-label="Edit The Breaker settings" title="Edit The Breaker settings" disabled>Edit</button><button id="breakerSave" class="primary-button" type="button" aria-label="Save The Breaker settings" title="Save The Breaker settings" disabled>Save</button><button id="breakerCancel" class="secondary-button" type="button" aria-label="Cancel The Breaker changes" title="Cancel The Breaker changes" disabled>Cancel</button></div>
+              <p id="breakerSettingsStatus" role="status" aria-live="polite"></p>
+            </section>
           </article>
           <article id="skillsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
@@ -822,6 +852,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261026-tools-page"></script>
+  <script src="/static/portal.js?v=20261027-breaker-settings"></script>
 </body>
 </html>

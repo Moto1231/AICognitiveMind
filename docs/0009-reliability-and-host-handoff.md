@@ -19,7 +19,11 @@ with a typed unavailable review and zero cognitive learning writes.
 
 A separate Mind-scoped runtime record stores no conversation content and counts one
 final persistence outcome per interaction key. This circuit is called **The Breaker**.
-Five consecutive failures or 35 failures in the rolling last 100 opens it. The
+Its Mind-scoped, revisioned Administration form controls the consecutive limit, rolling
+failure limit and window, provider request timeout, overall Steward assessment deadline,
+and bounded `Retry-After` wait. Packaged defaults of five consecutive failures or 35
+failures in the rolling last 100 open it. Each interaction retains the settings revision
+captured at begin, so a mid-turn edit applies only to later interactions. The
 threshold-reaching failure is still presented and remains silent. A later interaction acts
 as the recovery check: success permits the frozen answer, while another failure withholds it
 and reports the continuity problem. Success resets only the consecutive streak. A failed

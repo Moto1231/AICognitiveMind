@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
 from aicognitive_mind.commit import CommitConflict, atomic
+from aicognitive_mind.continuity_health import InteractionContinuityHealth
+from aicognitive_mind.continuity_settings import ContinuitySettingsRegistry
 from aicognitive_mind.domain import CognitiveActor, CognitiveMind, JournalEntry, JournalKind, MindIdentity
 
 
@@ -35,6 +37,17 @@ class CognitiveConfigurationUpdate(BaseModel):
     base_contract: str = Field(default="", max_length=200_000)
     startup_instructions: str = Field(default="", max_length=200_000)
     task_foundations: dict[str, str] = Field(default_factory=dict)
+
+
+class ContinuitySettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=0, strict=True)
+    consecutive_failure_limit: int | None = Field(default=None, ge=1, le=20, strict=True)
+    rolling_failure_limit: int | None = Field(default=None, ge=1, le=500, strict=True)
+    rolling_window_size: int | None = Field(default=None, ge=20, le=500, strict=True)
+    provider_request_timeout_seconds: float | None = Field(default=None, ge=1, le=120)
+    steward_assessment_timeout_seconds: float | None = Field(default=None, ge=5, le=300)
+    rate_limit_retry_wait_cap_seconds: float | None = Field(default=None, ge=0, le=120)
 
 
 def identity_snapshot(mind: CognitiveMind) -> dict[str, Any]:
@@ -134,6 +147,36 @@ def create_admin_configuration_router(
                 changes, expected_revision=payload.expected_revision,
             )
         except (CommitConflict, ValueError) as exc:
+            raise handle_error(exc) from exc
+
+    async def continuity_snapshot(request: Request, settings: dict[str, Any]) -> dict[str, Any]:
+        health = await InteractionContinuityHealth(
+            request_runtime(request).runtime_records
+        ).snapshot(settings=settings)
+        return {**settings, "health": health}
+
+    @router.get("/v1/admin/continuity-settings")
+    async def get_continuity_settings(request: Request) -> dict[str, Any]:
+        require_admin(request)
+        settings = await ContinuitySettingsRegistry(
+            request_runtime(request).runtime_records
+        ).effective()
+        return await continuity_snapshot(request, settings)
+
+    @router.put("/v1/admin/continuity-settings")
+    async def save_continuity_settings(
+        payload: ContinuitySettingsUpdate, request: Request,
+    ) -> dict[str, Any]:
+        require_admin(request)
+        try:
+            changes = payload.model_dump(
+                exclude_unset=True, exclude_none=True, exclude={"expected_revision"},
+            )
+            settings = await ContinuitySettingsRegistry(
+                request_runtime(request).runtime_records
+            ).save(changes, expected_revision=payload.expected_revision)
+            return await continuity_snapshot(request, settings)
+        except (CommitConflict, ValueError, ValidationError) as exc:
             raise handle_error(exc) from exc
 
     return router
