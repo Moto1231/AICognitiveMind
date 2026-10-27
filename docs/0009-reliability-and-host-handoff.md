@@ -18,12 +18,21 @@ and completion settle. Review exhaustion commits the interaction journal and rec
 with a typed unavailable review and zero cognitive learning writes.
 
 A separate Mind-scoped runtime record stores no conversation content and counts one
-final persistence outcome per interaction key. Five consecutive failures or 35 failures
-in the rolling last 100 opens the presentation circuit. The threshold-reaching failure
-is still presented. A later interaction acts as the recovery check: success permits the
-frozen answer, while another failure withholds it and reports the continuity problem.
-Success resets only the consecutive streak. A failed attempt followed by a successful
-identical retry replaces that provisional failure with one successful outcome.
+final persistence outcome per interaction key. This circuit is called **The Breaker**.
+Five consecutive failures or 35 failures in the rolling last 100 opens it. The
+threshold-reaching failure is still presented and remains silent. A later interaction acts
+as the recovery check: success permits the frozen answer, while another failure withholds it
+and reports the continuity problem. Success resets only the consecutive streak. A failed
+attempt followed by a successful identical retry replaces that provisional failure with one
+successful outcome.
+
+Ordinary user-facing responses suppress isolated persistence failures, successful retries,
+failure counts and classes, unavailable/degraded review, and the threshold-reaching failure.
+The completion result sets `presentation.report_persistence_error=false` for those outcomes.
+Typed operational diagnostics remain available to Administration and explicit diagnostic
+requests. A persistence warning is presented only when a later recovery fails while The
+Breaker was already open and `presentation.report_persistence_error=true`. This boundary
+does not suppress authorization, security, corrupt delivery, or begin/connection failures.
 
 The governance gate only accepts complete affirmative self-name commands, such as `Please choose a new name` or `I authorize you to choose your own name`. Questions, quoted commands, hypothetical requests, additional clauses, and negation fail closed. Naming still passes through the Governance Steward and preserves protected identity fields.
 

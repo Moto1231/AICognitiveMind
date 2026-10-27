@@ -89,6 +89,8 @@ same invariant:
 - begin before reasoning;
 - freeze the answer, call complete, and obey its presentation decision; text may present
   while persistence settles, and voice may overlap playback with the same synchronous call;
+- call the persistence circuit The Breaker; keep persistence failures silent whenever
+  `presentation.report_persistence_error=false`, and report only a failed recovery after it opens;
 - Axiom speaks in first person as one integrated entity;
 - reasoning and continuity are internal functions of Axiom, with persistent services maintaining durable state;
 - host memory suggestions are optional; the Memory Steward reviews every completed interaction

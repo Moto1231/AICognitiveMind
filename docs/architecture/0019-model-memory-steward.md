@@ -70,6 +70,14 @@ at five consecutive failures or 35 failures in the rolling last 100 outcomes. Th
 that reaches a threshold remains presentable; a later failed recovery is withheld. A
 success resets the consecutive streak but does not erase rolling history.
 
+The presentation circuit is named **The Breaker**. It is also the user-facing persistence
+error boundary. Below it, and on the threshold-reaching failure, normal responses remain
+silent about persistence errors; typed details remain operational diagnostics. Completion
+sets `presentation.report_persistence_error=true` only when a later recovery fails while
+The Breaker was already open. Explicit diagnostic requests can still inspect the suppressed
+details, and non-persistence safety, authorization, delivery and connection errors are never
+hidden by this policy.
+
 Configure a working Memory Recall endpoint in Task Profiles before use. Model tests
 use scripted responses; the explicitly named `mcp_test_server.py` harness tests
 transport/storage without consuming API quota and is not used by production.

@@ -108,8 +108,10 @@ places into these universal startup instructions.
    uncertain completion, retry once with exactly the same key and frozen payload.
    A failed attempt followed by that successful retry is one successful interaction
    outcome. If persistence remains failed, stop retrying and obey
-   `presentation.allowed`: present the frozen answer when true without claiming it
-   was saved; withhold it and report the repeated continuity problem when false.
+   `presentation.allowed`: present the frozen answer when true, and keep the
+   persistence failure completely silent when
+   `presentation.report_persistence_error=false`; withhold the answer and report the
+   repeated continuity problem only when `presentation.report_persistence_error=true`.
    Never invent a replacement key, mutate/replay speech, or repeat completed external
    actions merely to retry journaling. Keep separate keys for separate actual user
    messages arriving during work.
@@ -117,10 +119,22 @@ places into these universal startup instructions.
 Presentation is first-priority. Text need not wait for memory persistence. In a voice
 turn whose circuit was closed at begin, the one synchronous completion call may overlap
 TTS/playback; keep the microphone closed and do not accept the next turn until playback
-and completion settle. The Mind-scoped circuit opens at five consecutive failed final
-interaction outcomes or 35 failed outcomes in the rolling last 100. The failure that
-reaches either threshold remains presentable; a later failed recovery is withheld.
-Success resets only the consecutive streak and remains in the rolling window.
+and completion settle. This Mind-scoped circuit is called **The Breaker**. It opens at
+five consecutive failed final interaction outcomes or 35 failed outcomes in the rolling
+last 100. The failure that reaches either threshold remains presentable and silent; a
+later failed recovery is withheld and reported. Success resets only the consecutive
+streak and remains in the rolling window.
+
+The Breaker is also the user-facing error boundary. While
+`presentation.report_persistence_error=false`, do not tell the human about an isolated
+persistence failure, a successful identical retry, current failure counts, error classes,
+an unavailable/degraded Memory Steward review, or the failure that opens The Breaker.
+Preserve those details in typed operational diagnostics for Administration and answer an
+explicit diagnostic request truthfully. In ordinary conversation, surface continuity
+trouble only when `presentation.report_persistence_error=true`, which means a later
+recovery failed while The Breaker was already open. This silence rule covers only
+interaction/memory persistence; it never hides authorization, security, corrupt response
+delivery, or inability to establish the interaction.
 
 Do not submit hidden reasoning, drafts, credentials, or an invented memory record.
 Do not claim that a requested state or durable record was saved without its

@@ -15,6 +15,7 @@ from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.host_runtime import RuntimeRecords
 
 STATE_KEY = "interaction_continuity_health"
+BREAKER_NAME = "The Breaker"
 CONSECUTIVE_FAILURE_LIMIT = 5
 ROLLING_FAILURE_LIMIT = 35
 ROLLING_WINDOW_SIZE = 100
@@ -64,6 +65,7 @@ class InteractionContinuityHealth:
         if failures >= ROLLING_FAILURE_LIMIT:
             reasons.append("rolling_failures")
         result: dict[str, Any] = {
+            "name": BREAKER_NAME,
             "status": "open" if reasons else "closed",
             "circuit_open": bool(reasons),
             "open_reasons": reasons,
@@ -93,6 +95,10 @@ class InteractionContinuityHealth:
                     "succeeded": outcome["succeeded"],
                     "failure_class": outcome.get("failure_class"),
                     "presentation_allowed": outcome["presentation_allowed"],
+                    "report_persistence_error": (
+                        outcome["succeeded"] is False
+                        and not outcome["presentation_allowed"]
+                    ),
                     "recorded_at": outcome["recorded_at"],
                 }
         return result

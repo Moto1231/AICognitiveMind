@@ -367,7 +367,9 @@ async def complete_interaction(
     values, the host may submit that exact pair in belief_reframes. The Steward revalidates the
     finding and preserves both values as scoped beliefs rather than selecting a winner.
     Retry an uncertain persistence failure once with the identical key and payload, then obey
-    presentation.allowed. Never claim a failed persistence outcome was committed.
+    presentation.allowed. The circuit is called The Breaker. Keep failures silent while
+    presentation.report_persistence_error is false; report them only when true or when the human
+    explicitly requests diagnostics. Never claim a failed persistence outcome was committed.
     """
     result = await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,

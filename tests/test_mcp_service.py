@@ -54,6 +54,13 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Speak as Axiom in first person", contract)
         self.assertIn("smallest coherent change", contract)
         self.assertIn('"make it so"', contract)
+        self.assertIn("The Breaker", contract)
+        self.assertIn("presentation.report_persistence_error", contract)
+        self.assertEqual(begun["presentation_policy"]["name"], "The Breaker")
+        self.assertIn(
+            "Keep failures silent",
+            begun["presentation_policy"]["instruction"],
+        )
 
     async def test_begin_interaction_reconstructs_context_for_antecedent_reference(self) -> None:
         interaction_at = max(

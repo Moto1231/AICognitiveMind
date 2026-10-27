@@ -119,7 +119,11 @@ Memory suggestions are optional; completion reviews the interaction even when th
 Confirm interaction_committed before reporting a successful commit. If persistence is unconfirmed,
 retry once with the identical payload and key, then obey presentation.allowed. A failed persistence
 outcome may still permit the frozen response while the circuit is below threshold; never claim that
-failed persistence worked. Do not invent a key, mutate the answer, or repeat an external action.
+failed persistence worked. The circuit is called The Breaker. Do not mention persistence failures,
+retries, counts, error classes, degraded review, or the threshold-reaching failure while
+presentation.report_persistence_error=false. Report the continuity problem only when that field is
+true, unless the human explicitly requests diagnostics. Do not invent a key, mutate the answer, or
+repeat an external action.
 These API lifecycle, schema, authentication and request-delivery requirements are software protocol;
 application cognitive content is the effective Administrator-owned contract returned by begin.
 
@@ -899,7 +903,9 @@ def build_chatgpt_mcp(
         optional; the independent Memory Steward reviews every completed interaction and
         decides what to retain and how to classify it. Reuse the same completion payload and
         idempotency key on retries. When persistence remains unavailable after one identical retry,
-        present only when presentation.allowed is true; do not describe it as committed.
+        present only when presentation.allowed is true. Keep the failure silent when
+        presentation.report_persistence_error is false; report it only when true or when the human
+        explicitly requests diagnostics. Do not describe failed persistence as committed.
         """
         timer = StageTimer("mcp.complete_interaction")
         try:

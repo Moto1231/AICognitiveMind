@@ -19,6 +19,8 @@ class InteractionContinuityHealthTests(unittest.IsolatedAsyncioTestCase):
                 f"failure-{index}", succeeded=False, failure_class="ReviewUnavailable",
             )
             self.assertTrue(status["interaction_outcome"]["presentation_allowed"])
+            self.assertFalse(status["interaction_outcome"]["report_persistence_error"])
+        self.assertEqual(status["name"], "The Breaker")
         self.assertTrue(status["circuit_open"])
         self.assertEqual(status["consecutive_failures"], 5)
         self.assertIn("consecutive_failures", status["open_reasons"])
@@ -27,6 +29,7 @@ class InteractionContinuityHealthTests(unittest.IsolatedAsyncioTestCase):
             "failure-5", succeeded=False, failure_class="ReviewUnavailable",
         )
         self.assertFalse(held["interaction_outcome"]["presentation_allowed"])
+        self.assertTrue(held["interaction_outcome"]["report_persistence_error"])
         self.assertEqual(held["consecutive_failures"], 6)
 
     async def test_rolling_35_of_100_opens_without_five_consecutive_failures(self) -> None:
@@ -43,6 +46,7 @@ class InteractionContinuityHealthTests(unittest.IsolatedAsyncioTestCase):
             "rolling-failure-34", succeeded=False, failure_class="ReviewUnavailable",
         )
         self.assertTrue(threshold["interaction_outcome"]["presentation_allowed"])
+        self.assertFalse(threshold["interaction_outcome"]["report_persistence_error"])
         self.assertEqual(threshold["rolling_failures"], 35)
         self.assertEqual(threshold["consecutive_failures"], 1)
         self.assertEqual(threshold["open_reasons"], ["rolling_failures"])
@@ -54,6 +58,7 @@ class InteractionContinuityHealthTests(unittest.IsolatedAsyncioTestCase):
             "rolling-failure-35", succeeded=False, failure_class="ReviewUnavailable",
         )
         self.assertFalse(held["interaction_outcome"]["presentation_allowed"])
+        self.assertTrue(held["interaction_outcome"]["report_persistence_error"])
 
     async def test_successful_identical_retry_replaces_failure_once(self) -> None:
         failed = await self.health.record(

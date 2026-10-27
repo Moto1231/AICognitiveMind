@@ -828,6 +828,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(completed["status"], "interaction_persistence_failed")
         self.assertEqual(completed["persistence_outcome"]["failure_class"], "TimeoutError")
         self.assertTrue(completed["presentation"]["allowed"])
+        self.assertFalse(completed["presentation"]["report_persistence_error"])
         self.assertEqual(completed["continuity_health"]["rolling_failures"], 1)
         self.assertEqual(calls, ["provider-0.example"])
         self.assertEqual(await memory.read(), [])

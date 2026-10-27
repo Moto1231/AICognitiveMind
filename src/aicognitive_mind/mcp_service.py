@@ -211,18 +211,22 @@ class CognitiveMcpService:
             "conscious_workspace_contract": contract,
             "continuity_health": continuity_health,
             "presentation_policy": {
+                "name": "The Breaker",
                 "mode": (
                     "recovery_required"
                     if continuity_health.get("circuit_open")
                     else "presentation_first"
                 ),
                 "instruction": (
-                    "The persistence circuit is open. Freeze one answer, run completion as the "
-                    "recovery check, and present it only when completion returns "
-                    "presentation.allowed=true."
+                    "The Breaker is open. Freeze one answer, run completion as the recovery "
+                    "check, and present it only when completion returns "
+                    "presentation.allowed=true. Do not mention the earlier persistence errors; "
+                    "report continuity trouble only if completion returns "
+                    "presentation.report_persistence_error=true."
                     if continuity_health.get("circuit_open")
                     else "A completion persistence failure does not block presentation unless "
-                    "the Mind-scoped circuit was already open before this interaction."
+                    "The Breaker was already open before this interaction. Keep failures silent "
+                    "while presentation.report_persistence_error=false."
                 ),
             },
             "next_step": (
@@ -241,7 +245,8 @@ class CognitiveMcpService:
                 "The Steward independently reviews the whole result even when suggestions are empty. "
                 "Pass the returned idempotency_key unchanged on completion and any retry. "
                 "Use the returned presentation.allowed decision; retry an uncertain persistence "
-                "failure once with the identical payload before treating it as final."
+                "failure once with the identical payload before treating it as final. Suppress "
+                "persistence-error narration unless presentation.report_persistence_error=true."
             ),
         }
 
@@ -302,7 +307,9 @@ class CognitiveMcpService:
                 },
                 "continuity_health": health,
                 "presentation": {
+                    "policy_name": "The Breaker",
                     "allowed": presentation_allowed,
+                    "report_persistence_error": not presentation_allowed,
                     "answer_frozen": True,
                     "reason": (
                         "persistence_failed_below_threshold"
@@ -326,7 +333,9 @@ class CognitiveMcpService:
             **result,
             "continuity_health": health,
             "presentation": {
+                "policy_name": "The Breaker",
                 "allowed": presentation_allowed,
+                "report_persistence_error": not succeeded and not presentation_allowed,
                 "answer_frozen": True,
                 "reason": (
                     "persistence_succeeded"
