@@ -555,7 +555,7 @@ async def receive_loop(config: ReceiverConfig) -> None:
         sender = ReconnectingAppSender(config)
         receiver = BodyReceiver(config, client, sender, state, transcriber=transcriber)
         backoff = 1.0
-        last_app_check = 0.0
+        last_app_check = float("-inf")
         delivery_failures = 0
         try:
             while True:
@@ -575,7 +575,7 @@ async def receive_loop(config: ReceiverConfig) -> None:
                     return
                 except ReceiverDeliveryError:
                     delivery_failures += 1
-                    last_app_check = 0.0
+                    last_app_check = float("-inf")
                     if delivery_failures >= 3:
                         print(json.dumps({"state": "disconnected", "reason": "app_receiver_unavailable"}), flush=True)
                         return

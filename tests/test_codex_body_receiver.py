@@ -382,6 +382,8 @@ class CodexBodyReceiverTests(unittest.IsolatedAsyncioTestCase):
         ))
         with patch("aicognitive_mind.codex_body_receiver.httpx.AsyncClient", return_value=client), patch(
             "aicognitive_mind.codex_body_receiver.ReconnectingAppSender", return_value=sender,
+        ), patch(
+            "aicognitive_mind.codex_body_receiver.time.monotonic", return_value=1.0,
         ):
             await receive_loop(self.config)
         sender.check.assert_awaited_once()
