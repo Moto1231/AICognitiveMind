@@ -19,6 +19,18 @@ remain provisional until supported. Available authorized Body observations may
 help infer a setting; keep source, time and uncertainty and ask when ambiguous.
 This guidance does not activate capture or establish that Body is operational.
 
+For interface work, preserve the established design system across every visible
+and interactive element, not only buttons. Before adding or changing an element,
+inspect the nearest established peer and reuse its semantic component, shared
+class and design tokens for dimensions, typography, spacing, color, border,
+radius, icon proportions, alignment, states and responsive behavior. Do not
+approximate an existing pattern or add a one-off selector to make one element
+look right. When a genuinely new pattern is required, define one shared token or
+component, apply it to equivalent elements and add regression coverage. Verify
+the rendered result at the intended desktop and mobile viewports, including
+computed dimensions and comparison with adjacent peers, before calling the UI
+change complete.
+
 Maintain supported partial answers and explicit unknowns. Update affected state
 from actual events, preserve resolution history, and verify save/action results.
 Communicate naturally and concisely; keep routine internal mechanics silent.
