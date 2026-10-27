@@ -531,6 +531,214 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await api.app.state.journal_store.read(), [])
         self.assertEqual(await api.app.state.evidence_store.read(), [])
 
+    async def test_explicit_passive_failure_returns_without_false_interpretation(self):
+        storage = scope_storage(api.app.state.storage, self.alpha.mind_id)
+        service = SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock())
+        host = HostRuntime(storage.mind, service)
+        lease = (await host.attach("Synthetic unsupported-media host", "test-model"))["lease_token"]
+        headers = {"X-Body-Session": "explicit-sensory-failure"}
+        waiting = []
+        expected = {}
+        try:
+            for modality, path, media_type, payload in (
+                ("vision", "/v1/body/eyes/observe", "image/jpeg", {"width": 10, "height": 10}),
+                ("audio", "/v1/body/ears/observe", "audio/webm", {"duration_ms": 1000}),
+            ):
+                media = ("preserved synthetic " + modality).encode()
+                expected[hashlib.sha256(media).hexdigest()] = media
+                payload["image_data_url" if modality == "vision" else "audio_data_url"] = (
+                    "data:" + media_type + ";base64," + base64.b64encode(media).decode()
+                )
+                waiting.append(asyncio.create_task(self.alpha_client.post(path, headers=headers, json=payload)))
+            for _ in range(200):
+                if len(await host.records.pending()) == 2:
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                self.fail("Both preserved sensory inputs must reach the host")
+            for _ in waiting:
+                claim = await asyncio.wait_for(host.next_request(lease), timeout=3)
+                result = await host.fail(
+                    lease, claim["request_id"], "The current host cannot interpret this media.",
+                )
+                self.assertEqual(result["status"], "failed")
+            for response in await asyncio.wait_for(asyncio.gather(*waiting), timeout=3):
+                self.assertEqual(response.status_code, 503, response.text)
+                self.assertIn("Sensory evidence was saved", response.json()["detail"])
+                self.assertIn("cannot interpret", response.json()["detail"])
+        finally:
+            for task in waiting:
+                task.cancel()
+            await asyncio.gather(*waiting, return_exceptions=True)
+
+        evidence = await self.get_json(self.alpha_client, "/v1/portal/evidence")
+        self.assertEqual(evidence["total"], 2)
+        for item in evidence["items"]:
+            endpoint = "/v1/evidence/" + item["sha256"]
+            params = {"captured_at": item["captured_at"]}
+            original = await self.alpha_client.get(endpoint, params=params)
+            self.assertEqual(original.status_code, 200, original.text)
+            self.assertEqual(original.content, expected[item["sha256"]])
+            self.assertEqual((await self.beta_client.get(endpoint, params=params)).status_code, 404)
+        journal = await self.get_json(self.alpha_client, "/v1/mind/journal")
+        self.assertEqual([entry["kind"] for entry in journal], ["sensory_evidence"] * 2)
+        self.assertEqual([entry["experience"]["status"] for entry in journal], ["admitted"] * 2)
+        self.assertEqual(await host.records.pending(), [])
+        service.begin_interaction.assert_not_awaited()
+        service.complete_interaction.assert_not_awaited()
+        for modality in ("mouth", "face"):
+            self.assertIsNone(await self.get_json(self.alpha_client, f"/v1/body/{modality}/next", headers=headers))
+        self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 0)
+        self.assertEqual(await api.app.state.journal_store.read(), [])
+        self.assertEqual(await api.app.state.evidence_store.read(), [])
+
+    async def _queued_host_audio(self, session):
+        storage = scope_storage(api.app.state.storage, self.alpha.mind_id)
+        host = HostRuntime(storage.mind, SimpleNamespace())
+        lease = (await host.attach("Synthetic private ASR receiver", "synthetic-asr-model"))["lease_token"]
+        media = b"synthetic preserved audio for private preprocessing"
+        task = asyncio.create_task(self.alpha_client.post(
+            "/v1/body/ears/observe", headers={"X-Body-Session": session}, json={
+                "audio_data_url": "data:audio/webm;base64," + base64.b64encode(media).decode(),
+                "duration_ms": 1000,
+            },
+        ))
+
+        async def cancel_waiter():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        self.stack.push_async_callback(cancel_waiter)
+        for _ in range(200):
+            pending = await host.records.pending()
+            if pending:
+                capability = {
+                    "mind_id": self.alpha.mind_id, "lease_token": lease,
+                    "request_id": pending[0]["request_id"],
+                }
+                return host, task, media, capability, pending[0]
+            await asyncio.sleep(0.01)
+        self.fail("Preserved audio did not reach the private host queue")
+
+    async def test_private_audio_preprocessing_binds_capability_and_original_evidence(self):
+        host, waiting, media, capability, original = await self._queued_host_audio("private-asr-boundary")
+        anonymous = await self.client()
+        route = "/v1/host-events/"
+        evidence = original["input_context"]["evidence"]
+        transcript = {
+            **capability, "sha256": evidence["sha256"], "captured_at": evidence["captured_at"],
+            "transcript": "Synthetic transcript only", "model": "synthetic-asr-model",
+            "segments": [{"start": 0.0, "end": 0.5, "text": "Synthetic transcript only"}],
+        }
+        for suffix, payload in (("input", capability), ("transcript", transcript),
+                                ("fail", {**capability, "reason": "Unavailable"})):
+            for invalid in ({"mind_id": self.beta.mind_id}, {"lease_token": "synthetic-wrong-capability"}):
+                rejected = await anonymous.post(route + suffix, json={**payload, **invalid})
+                self.assertEqual(rejected.status_code, 401, rejected.text)
+            self.assertEqual((await anonymous.post(route + suffix + "/other", json=payload)).status_code, 401)
+        self.assertEqual(await host.records.get(capability["request_id"]), original)
+
+        prepared = await anonymous.post(route + "input", json=capability)
+        self.assertEqual(prepared.status_code, 200, prepared.text)
+        self.assertEqual(base64.b64decode(prepared.json()["audio_base64"]), media)
+        self.assertEqual(prepared.json()["evidence"], evidence)
+        self.assertNotIn(capability["lease_token"], prepared.text)
+        owned = await host.records.get(capability["request_id"])
+        self.assertTrue(owned["preparing_audio"])
+        self.assertEqual(owned["claim"], (await host.require(capability["lease_token"]))["token_hash"])
+        for invalid in ({"sha256": "0" * 64}, {"captured_at": "2020-01-01T00:00:00Z"}):
+            rejected = await anonymous.post(route + "transcript", json={**transcript, **invalid})
+            self.assertEqual(rejected.status_code, 400, rejected.text)
+            self.assertEqual(await host.records.get(capability["request_id"]), owned)
+
+        attached = await anonymous.post(route + "transcript", json=transcript)
+        self.assertEqual(attached.status_code, 200, attached.text)
+        derived = attached.json()["derived_audio"]
+        self.assertEqual(derived["source"], "local_asr")
+        self.assertEqual(derived["model"], transcript["model"])
+        self.assertEqual(derived["sha256"], hashlib.sha256(media).hexdigest())
+        self.assertEqual(derived["captured_at"], evidence["captured_at"])
+        after = await host.records.get(capability["request_id"])
+        self.assertEqual(after["state"], "pending")
+        self.assertEqual(after["claim"], "")
+        self.assertFalse(after["preparing_audio"])
+        self.assertEqual(after["input_context"], {**original["input_context"], "derived_audio": derived})
+        self.assertFalse(waiting.done())
+        retry = await anonymous.post(route + "transcript", json=transcript)
+        self.assertEqual(retry.status_code, 200, retry.text)
+        self.assertEqual(retry.json(), attached.json())
+        changed = await anonymous.post(route + "transcript", json={**transcript, "transcript": "Replacement"})
+        self.assertEqual(changed.status_code, 409, changed.text)
+        self.assertEqual(await host.records.get(capability["request_id"]), after)
+
+        claim = await host.next_request(capability["lease_token"])
+        self.assertEqual(claim["context"]["input_context"]["derived_audio"], derived)
+        failed_payload = {**capability, "reason": "Synthetic boundary test cannot interpret the input."}
+        failed = await anonymous.post(route + "fail", json=failed_payload)
+        self.assertEqual(failed.status_code, 200, failed.text)
+        repeated = await anonymous.post(route + "fail", json=failed_payload)
+        self.assertEqual(repeated.json(), failed.json())
+        response = await asyncio.wait_for(waiting, timeout=3)
+        self.assertEqual(response.status_code, 503, response.text)
+        self.assertIn("evidence was saved", response.json()["detail"])
+        preserved = await self.alpha_client.get("/v1/evidence/" + evidence["sha256"], params={
+            "captured_at": evidence["captured_at"],
+        })
+        self.assertEqual(preserved.content, media)
+        journal = await self.get_json(self.alpha_client, "/v1/mind/journal")
+        self.assertEqual([item["experience"]["status"] for item in journal], ["admitted"])
+        for modality in ("mouth", "face"):
+            self.assertIsNone(await self.get_json(
+                self.alpha_client, f"/v1/body/{modality}/next", headers={"X-Body-Session": "private-asr-boundary"},
+            ))
+        self.assertEqual(await api.app.state.journal_store.read(), [])
+        self.assertEqual(await api.app.state.evidence_store.read(), [])
+
+    async def test_private_transcript_cannot_overwrite_a_claim_or_completion_that_wins_a_race(self):
+        host, _waiting, _media, capability, original = await self._queued_host_audio("private-asr-race")
+        anonymous = await self.client()
+        evidence = original["input_context"]["evidence"]
+        payload = {
+            **capability, "sha256": evidence["sha256"], "captured_at": evidence["captured_at"],
+            "transcript": "Stale transcript", "model": "synthetic-asr-model", "segments": [],
+        }
+        # A normal perception claim must never be silently replaced by preprocessing.
+        await host.next_request(capability["lease_token"])
+        before = await host.records.get(capability["request_id"])
+        for suffix, body in (("input", capability), ("transcript", payload)):
+            rejected = await anonymous.post("/v1/host-events/" + suffix, json=body)
+            self.assertEqual(rejected.status_code, 409, rejected.text)
+            self.assertEqual(await host.records.get(capability["request_id"]), before)
+        unclaimed = {**before, "claim": "", "claim_until": 0.0}
+        self.assertTrue(await host.records.replace(capability["request_id"], before, unclaimed))
+        prepared = await anonymous.post("/v1/host-events/input", json=capability)
+        self.assertEqual(prepared.status_code, 200, prepared.text)
+        before = await host.records.get(capability["request_id"])
+        stale = {**before, "claim_until": time.time() - 1}
+        self.assertTrue(await host.records.replace(capability["request_id"], before, stale))
+        expired = await anonymous.post("/v1/host-events/transcript", json=payload)
+        self.assertEqual(expired.status_code, 409, expired.text)
+        self.assertEqual(await host.records.get(capability["request_id"]), stale)
+        renewed = await anonymous.post("/v1/host-events/input", json=capability)
+        self.assertEqual(renewed.status_code, 200, renewed.text)
+        replace = RuntimeRecords.replace
+        winner = {}
+
+        async def complete_first(records, key, expected, replacement):
+            if key == capability["request_id"] and "derived_audio" in replacement.get("input_context", {}):
+                winner.update({**expected, "state": "complete", "result": {"synthetic": "race winner"}})
+                self.assertTrue(await replace(records, key, expected, winner))
+                return False
+            return await replace(records, key, expected, replacement)
+
+        with patch.object(RuntimeRecords, "replace", complete_first):
+            rejected = await anonymous.post("/v1/host-events/transcript", json=payload)
+        self.assertEqual(rejected.status_code, 409, rejected.text)
+        stored = await host.records.get(capability["request_id"])
+        self.assertEqual(stored, winner)
+        self.assertNotIn("derived_audio", stored["input_context"])
+        self.assertEqual(stored["input_context"], original["input_context"])
+
     async def test_automatic_sensory_timeout_preserves_original_evidence_without_interpreting(self):
         storage = scope_storage(api.app.state.storage, self.alpha.mind_id)
         host = HostRuntime(storage.mind, SimpleNamespace())

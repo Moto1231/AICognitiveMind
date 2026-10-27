@@ -455,6 +455,8 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "renew_reasoning_host",
                 "next_body_interaction",
                 "complete_body_interaction",
+                "fail_body_interaction",
+                "fail_incoming_sensory",
             }.issubset(names)
         )
         self.assertIn("speak_body_text", names)

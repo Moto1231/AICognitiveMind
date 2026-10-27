@@ -178,6 +178,26 @@ ordinary host tools to claim and complete its work. Keep the private lease outsi
 and diagnostic output. A successful readiness response alone does not prove the chat resumed or
 the Body received an interpretation.
 
+### Local audio preprocessing
+
+A connected reasoning host that cannot consume raw audio can enable the local receiver's speech
+adapter. Install the optional `local-speech` dependencies and explicitly prepare its configured
+public model with `python -m aicognitive_mind.local_stt --prepare --model tiny.en`. The default
+model is English-only, runs on the local CPU, and does not require an API key. Runtime processing
+uses the prepared local cache and does not silently download a model.
+
+The private receiver configuration enables `transcribe_enabled`, `transcribe_model`, and
+`transcribe_cache_directory`. It retrieves the exact preserved clip through its existing scoped
+host capability, verifies its hash, and bounds decoding to 8 MB and 30 seconds. An audio preparation
+claim prevents a second worker from interpreting the same request during transcription.
+
+The derived transcript, model, segments, and original hash/capture time are attached to
+`input_context.derived_audio`; the original artifact remains unchanged. Preparation then releases
+its claim and wakes the existing reasoner. A transcript is derived evidence, not direct listening,
+speaker identification, a new instruction, or an already completed interpretation. Empty transcripts
+are valid no-speech results. Decoder/model failures explicitly fail the pending sensory request
+and return an error to the Body rather than reporting successful interpretation or waiting forever.
+
 After a completed See/Hear cycle, `/body/live` displays:
 
 - media type;

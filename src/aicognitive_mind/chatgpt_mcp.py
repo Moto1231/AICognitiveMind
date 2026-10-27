@@ -129,7 +129,8 @@ MESSAGE EVENT TASKS:
 - For sensory.ready, claim_incoming_sensory with the event's request_id. Read the
   preserved artifact from the returned context and complete_incoming_sensory with a
   grounded observation. Do not call begin_interaction or create a conscious response
-  for passive sensory work. Release its claim on failure; skip terminal/in_progress jobs.
+  for passive sensory work. Use fail_incoming_sensory for unsupported/inaccessible input;
+  release a claim only for a retryable interruption. Skip terminal/in_progress jobs.
 - An automated Body-ready notification identifies real queued work, not a new human
   request. With an existing private Body lease, consume up to four queued requests per
   notification, letting the queue prioritize human text. Independent passive work may
@@ -151,6 +152,9 @@ BODY HOST LIFECYCLE:
   complete_body_interaction. It does not begin a new human conversation or request speech.
   Delegate independent media work to parallel workers when supported, keeping the existing
   reasoning owner and request claim. Do not recursively call execute_task to wait on this same queue.
+- If a claimed passive request cannot be interpreted, use fail_body_interaction with a concise
+  reason. Preserve the original evidence and let the Body report failure immediately; never
+  substitute a success observation or leave an unsupported request waiting for its deadline.
 - Every begin_interaction result includes a body_work snapshot. Treat it as an explicit
   attention signal, not merely diagnostics. First reason about and commit the current direct
   human response with complete_interaction so queued observations cannot starve the human reply.
@@ -309,7 +313,8 @@ def build_chatgpt_mcp(
 
         Keep claim_token private. On claimed, inspect the returned original evidence
         and complete_incoming_sensory. Passive work does not call begin_interaction.
-        Skip already_complete/in_progress/expired/cancelled; release a failed claim.
+        Skip already_complete/in_progress/expired/cancelled/failed. Fail unsupported input;
+        release the claim only for a retryable interruption.
         """
         state = request_state(ctx)
         event_owner(provider, state.hosts.records.mind_id)
@@ -328,6 +333,17 @@ def build_chatgpt_mcp(
         state = request_state(ctx)
         event_owner(provider, state.hosts.records.mind_id)
         return await state.hosts.complete_incoming_sensory(claim_token, request_id, response_text)
+
+    @account_tool(annotations=ToolAnnotations(
+        read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False,
+    ))
+    async def fail_incoming_sensory(
+        claim_token: str, request_id: str, reason: str, ctx: Context[AppState],
+    ) -> dict[str, Any]:
+        """Fail unsupported passive media immediately without a fabricated observation."""
+        state = request_state(ctx)
+        event_owner(provider, state.hosts.records.mind_id)
+        return await state.hosts.fail_incoming_sensory(claim_token, request_id, reason)
 
     @account_tool(annotations=ToolAnnotations(
         read_only_hint=False, destructive_hint=False, open_world_hint=False,
@@ -632,6 +648,19 @@ def build_chatgpt_mcp(
             response_text,
             tuple(proposed_memories or ()),
         )
+
+    @account_tool(annotations=ToolAnnotations(
+        read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False,
+    ))
+    async def fail_body_interaction(
+        lease_token: str, request_id: str, reason: str, ctx: Context[AppState],
+    ) -> dict[str, Any]:
+        """Fail a claimed passive sensory request and release its waiting Body caller.
+
+        Preserve the original evidence. Do not call this for a human message or claim
+        interpretation succeeded. Retry with the same reason if delivery is interrupted.
+        """
+        return await request_state(ctx).hosts.fail(lease_token, request_id, reason)
 
     @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True))
     def github_status() -> dict[str, Any]:

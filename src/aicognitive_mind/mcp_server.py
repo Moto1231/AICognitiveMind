@@ -450,6 +450,12 @@ async def complete_body_interaction(lease_token: str, request_id: str, response_
         lease_token, request_id, response_text, tuple(proposed_memories or ()))
 
 @mcp.tool()
+async def fail_body_interaction(lease_token: str, request_id: str, reason: str,
+    ctx: Context[AppState]) -> dict[str, Any]:
+    """Fail a claimed passive sensory request; no interpretation or conversation is created."""
+    return await ctx.request_context.lifespan_context.hosts.fail(lease_token, request_id, reason)
+
+@mcp.tool()
 async def propose_self_name(user_message: str, candidate_name: str, rationale: str,
     ctx: Context[AppState]) -> dict[str, Any]:
     """Submit an explicit human self-name command to the same Governance Steward as fallback reasoning."""
