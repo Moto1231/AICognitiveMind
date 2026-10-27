@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from aicognitive_mind.accounts import AccountService
 from aicognitive_mind.admin_configuration import create_admin_configuration_router
+from aicognitive_mind.body_host_events import create_host_events_router
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.backup import (
     backup_filename,
@@ -699,6 +700,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.include_router(create_admin_configuration_router(require_admin, _request_runtime))
+app.include_router(create_host_events_router())
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 performance_samples = deque(maxlen=200)
 
@@ -811,7 +813,10 @@ async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
         or request.url.path.startswith("/static/")
         # This endpoint authenticates its private, Mind-scoped host capability
         # in the handler. It exposes readiness metadata, never media or records.
-        or request.url.path == "/v1/host-events/ready"
+        or request.url.path in {
+            "/v1/host-events/ready", "/v1/host-events/fail",
+            "/v1/host-events/input", "/v1/host-events/transcript",
+        }
     )
     if public_path:
         return await call_next(request)

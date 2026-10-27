@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import binascii
 import hashlib
 import json
 import math
@@ -54,6 +56,9 @@ class ReceiverConfig:
     pipe_path: str = field(repr=False)
     state_path: Path
     host_id: str = "local"
+    transcribe_enabled: bool = False
+    transcribe_model: str = "tiny.en"
+    transcribe_cache_directory: Path | None = None
 
     @classmethod
     def load(cls, path: Path) -> ReceiverConfig:
@@ -83,7 +88,18 @@ class ReceiverConfig:
         values["state_path"] = Path(values["state_path"])
         if not values["app_tools_server"].is_file():
             raise ReceiverError("The installed Codex app tools MCP server was not found.")
-        return cls(**values, host_id=data.get("host_id", "local"))
+        transcribe_enabled = data.get("transcribe_enabled", False)
+        transcribe_model = data.get("transcribe_model", "tiny.en")
+        cache_directory = data.get("transcribe_cache_directory")
+        if not isinstance(transcribe_enabled, bool) or (
+            not isinstance(transcribe_model, str) or not transcribe_model.strip()
+        ) or cache_directory is not None and not isinstance(cache_directory, str):
+            raise ReceiverError("Local transcription configuration is invalid.")
+        return cls(
+            **values, host_id=data.get("host_id", "local"),
+            transcribe_enabled=transcribe_enabled, transcribe_model=transcribe_model,
+            transcribe_cache_directory=Path(cache_directory) if cache_directory else None,
+        )
 
 
 def ready_notices(payload: Any, *, now: float | None = None) -> list[dict[str, Any]]:
@@ -128,6 +144,7 @@ def notification_prompt(notices: list[dict[str, Any]]) -> str:
         + json.dumps(identifiers, separators=(",", ":"))
         + "\nUse the existing Live Body host connection and its stored private lease. "
         "Claim pending work with next_body_interaction, inspect original sensory evidence "
+        "or its explicitly derived local transcription in the returned context "
         "when needed, then finish through complete_body_interaction. Human Body messages "
         "have priority. Process the bounded batch allowed by the current Body contract. "
         "Do not merely acknowledge this notice or repeat a connected-status message. "
@@ -292,8 +309,94 @@ async def codex_app_sender(config: ReceiverConfig):
 
 
 class BodyReceiver:
-    def __init__(self, config: ReceiverConfig, client: Any, sender: Any, state: DeliveryState):
+    def __init__(
+        self, config: ReceiverConfig, client: Any, sender: Any, state: DeliveryState,
+        transcriber: Any = None,
+    ):
         self.config, self.client, self.sender, self.state = config, client, sender, state
+        self.transcriber = transcriber
+
+    async def _prepare_audio(self, notices: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Attach derived speech evidence before waking a text-only reasoner."""
+        if self.transcriber is None:
+            return notices
+        result = []
+        base_url = self.config.ready_url.rsplit("/", 1)[0]
+        capability = {"mind_id": self.config.mind_id, "lease_token": self.config.lease_token}
+
+        async def fail_audio(request_id: str, reason: str) -> None:
+            failed = await self.client.post(base_url + "/fail", json={
+                **capability, "request_id": request_id, "reason": reason[:500],
+            })
+            if failed.status_code in {401, 403}:
+                raise ReceiverAuthorizationError("Body audio capability no longer belongs to this host.")
+            if failed.status_code not in {409, 410} and not failed.is_success:
+                raise ReceiverError("The Body could not record local audio preprocessing failure.")
+
+        for notice in notices:
+            if notice["kind"] != "sensory":
+                result.append(notice)
+                continue
+            response = await self.client.post(base_url + "/input", json={
+                **capability, "request_id": notice["request_id"],
+            })
+            if response.status_code in {401, 403}:
+                raise ReceiverAuthorizationError("Body audio capability no longer belongs to this host.")
+            if response.status_code in {409, 410}:
+                continue
+            if not response.is_success:
+                raise ReceiverError("The Body audio evidence could not be retrieved.")
+            try:
+                artifact = response.json()
+                if artifact.get("request_id") != notice["request_id"]:
+                    raise ValueError("Wrong request")
+                if artifact.get("state") != "pending":
+                    continue
+                if artifact.get("modality") != "audio":
+                    result.append(notice)
+                    continue
+                if isinstance(artifact.get("derived_audio"), dict):
+                    result.append(notice)
+                    continue
+                evidence = artifact["evidence"]
+                payload = base64.b64decode(artifact["audio_base64"], validate=True)
+                if evidence.get("byte_length") != len(payload):
+                    raise ValueError("Wrong audio length")
+            except (ValueError, TypeError, KeyError, AttributeError, binascii.Error):
+                await fail_audio(notice["request_id"], "Local audio preprocessing received invalid preserved evidence.")
+                continue
+            try:
+                transcript = await asyncio.to_thread(
+                    self.transcriber.transcribe, payload,
+                    source_sha256=evidence["sha256"], captured_at=evidence["captured_at"],
+                    media_type=artifact.get("media_type") or evidence.get("media_type"),
+                )
+                derived = transcript["transcription"]
+            except Exception:
+                # A decoder/model error must finish its preparation claim. Never
+                # turn an exception or guessed words into sensory observations.
+                await fail_audio(notice["request_id"], "Local speech recognition could not process the preserved audio.")
+                continue
+            attached = await self.client.post(base_url + "/transcript", json={
+                **capability, "request_id": notice["request_id"],
+                "sha256": evidence["sha256"], "captured_at": evidence["captured_at"],
+                "transcript": transcript["text"], "model": derived["engine"] + ":" + derived["model"],
+                "segments": derived["segments"],
+            })
+            if attached.status_code in {401, 403}:
+                raise ReceiverAuthorizationError("Body audio capability no longer belongs to this host.")
+            if attached.status_code in {409, 410}:
+                continue
+            if not attached.is_success:
+                raise ReceiverError("The derived transcript could not be attached to its Body evidence.")
+            try:
+                ack = attached.json()
+                if ack.get("accepted") is not True or ack.get("request_id") != notice["request_id"]:
+                    raise ValueError("Transcript not accepted")
+            except (ValueError, TypeError) as exc:
+                raise ReceiverError("The Body did not acknowledge the derived transcript.") from exc
+            result.append(notice)
+        return result
 
     async def once(self) -> int:
         try:
@@ -327,6 +430,7 @@ class BodyReceiver:
                 return 0
         else:
             notices = notices[:MAX_BATCH_SIZE]
+        notices = await self._prepare_audio(notices)
         if notices:
             await self.sender.send(notices)
             # A failed or interrupted forward remains eligible on the next poll.
@@ -409,9 +513,17 @@ async def run(
 
 async def receive_loop(config: ReceiverConfig) -> None:
     state = DeliveryState(config.state_path)
+    transcriber = None
+    if config.transcribe_enabled:
+        from aicognitive_mind.local_stt import LocalAudioTranscriber, LocalSttConfig
+
+        transcriber = LocalAudioTranscriber(LocalSttConfig(
+            model=config.transcribe_model, cache_directory=config.transcribe_cache_directory,
+        ))
+        await asyncio.to_thread(transcriber.prepare)
     async with httpx.AsyncClient(timeout=httpx.Timeout(40, connect=10)) as client:
         sender = ReconnectingAppSender(config)
-        receiver = BodyReceiver(config, client, sender, state)
+        receiver = BodyReceiver(config, client, sender, state, transcriber=transcriber)
         backoff = 1.0
         last_app_check = 0.0
         delivery_failures = 0

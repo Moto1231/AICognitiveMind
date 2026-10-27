@@ -1,10 +1,12 @@
+import base64
+import hashlib
 import json
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 
@@ -41,7 +43,8 @@ class CodexBodyReceiverTests(unittest.IsolatedAsyncioTestCase):
                 "created": time.time(), "deadline": time.time() + 60, **extra}
 
     def config_payload(self):
-        return {key: str(value) for key, value in vars(self.config).items()}
+        return {key: str(value) if isinstance(value, Path) else value
+                for key, value in vars(self.config).items()}
 
     def test_ready_notices_minimize_data_expire_old_input_and_keep_human_priority(self):
         result = ready_notices({"requests": [
@@ -159,6 +162,146 @@ class CodexBodyReceiverTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(DeliveryState(self.config.state_path).kinds, {
             f"{1:032x}": "sensory", f"{2:032x}": "human",
         })
+
+    def audio_artifact(self, **updates):
+        payload = b"synthetic audio payload for injected recognition"
+        return {
+            "request_id": self.notice()["request_id"], "state": "pending", "modality": "audio",
+            "audio_base64": base64.b64encode(payload).decode(), "media_type": "audio/webm",
+            "evidence": {
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "captured_at": "2026-10-27T01:16:46Z", "byte_length": len(payload),
+                "media_type": "audio/webm",
+            }, **updates,
+        }
+
+    async def test_audio_is_derived_before_reasoner_notification_and_remains_bound_to_original(self):
+        calls = []
+        artifact = self.audio_artifact()
+        transcript = {
+            "text": "Synthetic recognized words.",
+            "transcription": {"engine": "faster-whisper", "model": "tiny.en", "segments": []},
+        }
+        transcriber = SimpleNamespace(transcribe=Mock(return_value=transcript))
+
+        def respond(request):
+            calls.append((request.url.path, json.loads(request.content)))
+            if request.url.path.endswith("/ready"):
+                return httpx.Response(200, json={"requests": [self.notice()]})
+            if request.url.path.endswith("/input"):
+                return httpx.Response(200, json=artifact)
+            return httpx.Response(200, json={"accepted": True, "request_id": self.notice()["request_id"]})
+
+        async def send(notices):
+            self.assertEqual([path.rsplit("/", 1)[-1] for path, _ in calls], ["ready", "input", "transcript"])
+            self.assertNotIn(transcript["text"], notification_prompt(notices))
+
+        sender = SimpleNamespace(send=AsyncMock(side_effect=send))
+        state = DeliveryState(self.config.state_path)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            self.assertEqual(await BodyReceiver(self.config, client, sender, state, transcriber).once(), 1)
+        transcriber.transcribe.assert_called_once_with(
+            base64.b64decode(artifact["audio_base64"]), source_sha256=artifact["evidence"]["sha256"],
+            captured_at=artifact["evidence"]["captured_at"], media_type="audio/webm",
+        )
+        uploaded = calls[-1][1]
+        self.assertEqual(uploaded["sha256"], artifact["evidence"]["sha256"])
+        self.assertEqual(uploaded["captured_at"], artifact["evidence"]["captured_at"])
+        self.assertEqual(uploaded["transcript"], transcript["text"])
+        self.assertEqual(uploaded["model"], "faster-whisper:tiny.en")
+        self.assertFalse(any(path.endswith("/complete") for path, _ in calls))
+        self.assertEqual(state.exclusions(), [self.notice()["request_id"]])
+
+    async def test_blank_transcript_is_attached_without_fabricating_speech(self):
+        uploads = []
+        transcriber = SimpleNamespace(transcribe=Mock(return_value={
+            "text": "", "transcription": {"engine": "faster-whisper", "model": "tiny.en", "segments": []},
+        }))
+
+        def respond(request):
+            if request.url.path.endswith("/ready"):
+                return httpx.Response(200, json={"requests": [self.notice()]})
+            if request.url.path.endswith("/input"):
+                return httpx.Response(200, json=self.audio_artifact())
+            uploads.append(json.loads(request.content))
+            return httpx.Response(200, json={"accepted": True, "request_id": self.notice()["request_id"]})
+
+        sender = SimpleNamespace(send=AsyncMock())
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            self.assertEqual(await BodyReceiver(
+                self.config, client, sender, DeliveryState(self.config.state_path), transcriber,
+            ).once(), 1)
+        self.assertEqual(uploads[0]["transcript"], "")
+        self.assertEqual(uploads[0]["segments"], [])
+        sender.send.assert_awaited_once()
+
+    async def test_audio_failure_finishes_preparation_without_success_notification_or_private_error(self):
+        for invalid_artifact in (False, True):
+            with self.subTest(invalid_artifact=invalid_artifact):
+                calls = []
+                artifact = self.audio_artifact()
+                if invalid_artifact:
+                    artifact["evidence"]["byte_length"] = 0
+                transcriber = SimpleNamespace(transcribe=Mock(side_effect=RuntimeError("private recognized words")))
+
+                def respond(request):
+                    calls.append((request.url.path, json.loads(request.content)))
+                    if request.url.path.endswith("/ready"):
+                        return httpx.Response(200, json={"requests": [self.notice()]})
+                    if request.url.path.endswith("/input"):
+                        return httpx.Response(200, json=artifact)
+                    return httpx.Response(200, json={"accepted": True})
+
+                state = DeliveryState(self.config.state_path)
+                sender = SimpleNamespace(send=AsyncMock())
+                async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                    self.assertEqual(await BodyReceiver(self.config, client, sender, state, transcriber).once(), 0)
+                self.assertTrue(calls[-1][0].endswith("/fail"))
+                self.assertNotIn("private recognized words", calls[-1][1]["reason"])
+                self.assertLessEqual(len(calls[-1][1]["reason"]), 500)
+                self.assertEqual(state.exclusions(), [])
+                sender.send.assert_not_awaited()
+                if invalid_artifact:
+                    transcriber.transcribe.assert_not_called()
+
+    async def test_visual_and_existing_derived_audio_wake_reasoning_without_recognition(self):
+        for artifact in (
+            self.audio_artifact(modality="vision"),
+            self.audio_artifact(derived_audio={"transcript": "Already prepared"}),
+        ):
+            with self.subTest(artifact=artifact["modality"]):
+                transcriber = SimpleNamespace(transcribe=Mock())
+                sender = SimpleNamespace(send=AsyncMock())
+                state = DeliveryState(self.config.state_path)
+
+                def respond(request):
+                    return httpx.Response(200, json=(
+                        {"requests": [self.notice()]} if request.url.path.endswith("/ready") else artifact
+                    ))
+
+                async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                    self.assertEqual(await BodyReceiver(self.config, client, sender, state, transcriber).once(), 1)
+                transcriber.transcribe.assert_not_called()
+                sender.send.assert_awaited_once()
+                self.config.state_path.unlink(missing_ok=True)
+
+    async def test_terminal_or_replaced_audio_does_not_notify_reasoner(self):
+        for code in (409, 410):
+            with self.subTest(code=code):
+                transcriber = SimpleNamespace(transcribe=Mock())
+                sender = SimpleNamespace(send=AsyncMock())
+                state = DeliveryState(self.config.state_path)
+
+                def respond(request):
+                    if request.url.path.endswith("/ready"):
+                        return httpx.Response(200, json={"requests": [self.notice()]})
+                    return httpx.Response(code)
+
+                async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                    self.assertEqual(await BodyReceiver(self.config, client, sender, state, transcriber).once(), 0)
+                transcriber.transcribe.assert_not_called()
+                sender.send.assert_not_awaited()
+                self.assertEqual(state.exclusions(), [])
 
     async def test_native_sender_preserves_owning_chat_and_reports_rejection(self):
         session = SimpleNamespace(call_tool=AsyncMock(return_value=SimpleNamespace(
