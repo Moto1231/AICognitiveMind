@@ -10,6 +10,7 @@
   --accent: #68d8ff;
   --icon-line-color: #83dffe;
   --icon-line-glow: rgba(70,182,255,.65);
+  --icon-line-stroke: 1.4;
   --success: #72e0ad;
   --danger: #ff9a9a;
   --shadow: 0 24px 70px rgba(0,0,0,0.34);
@@ -650,6 +651,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   flex: 0 0 auto;
   min-height: 42px;
 }
+.axiom-icon-definitions,
 .admin-icon-definitions {
   position: absolute;
   width: 0;
@@ -685,7 +687,24 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   letter-spacing: .005em;
   transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-/* Every Administration icon is transparent line artwork on one shared palette. */
+/* Every icon is transparent artwork on one shared palette. */
+.axiom-icon-art,
+.axiom-line-icon,
+.admin-line-icon {
+  color: var(--icon-line-color);
+  background: transparent;
+  filter: drop-shadow(0 0 3px var(--icon-line-glow));
+}
+.axiom-line-icon,
+.admin-line-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--icon-line-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.axiom-brand-palette { flood-color: var(--icon-line-color); }
+.top-menu-icon { width: 28px; height: 28px; flex: none; }
 .admin-section-icon {
   display: grid;
   place-items: center;
@@ -697,13 +716,6 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 .admin-line-icon {
   width: 48px;
   height: 48px;
-  fill: none;
-  color: var(--icon-line-color);
-  stroke: currentColor;
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 0 3px var(--icon-line-glow));
 }
 .admin-section-button:hover {
   border-color: rgba(161,190,226,.22);
@@ -1048,7 +1060,7 @@ body {
 .topbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px 32px; }
 .brand { gap: 12px; }
 .brand h1 { font-size: 20px; }
-.brand-logo { display: block; width: 88px; height: 66px; object-fit: contain; border-radius: 8px; }
+.brand-logo { display: block; width: 88px; height: 66px; overflow: visible; }
 .top-actions { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; width: 100%; gap: 12px; }
 .portal-return { justify-self: start; }
 .portal-menu { display: flex; align-items: center; justify-content: center; gap: 12px; min-width: 0; }

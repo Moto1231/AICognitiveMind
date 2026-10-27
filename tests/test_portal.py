@@ -63,7 +63,7 @@ class PortalPageMap(HTMLParser):
 
 
 class PortalTests(unittest.TestCase):
-    def test_admin_icons_share_one_transparent_neon_component(self) -> None:
+    def test_all_portal_icons_share_one_transparent_neon_component(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
         button_icons = (STATIC_DIR / "button_icons.js").read_text(encoding="utf-8")
@@ -82,19 +82,49 @@ class PortalTests(unittest.TestCase):
                 self.assertNotIn("#8cdfe9", button)
                 self.assertNotIn("style=", button)
 
+        top_menu = {
+            "mindTab": "home",
+            "adminTab": "administration",
+            'href="/body/live"': "live",
+            "portalReturnButton": "return",
+            "logoutButton": "logout",
+        }
+        for control, icon in top_menu.items():
+            control_markup = markup.split(control, 1)[1].split("</", 1)[0]
+            with self.subTest(top_menu_control=control):
+                self.assertIn('class="axiom-line-icon top-menu-icon"', control_markup)
+                self.assertIn(f'<use href="#menu-icon-{icon}"/>', control_markup)
+                self.assertNotIn("<img", control_markup)
+
+        brand = markup.split('class="brand-logo axiom-icon-art"', 1)[1].split("</svg>", 1)[0]
+        self.assertIn('href="/static/axiom-logo.png"', brand)
+        self.assertIn('filter="url(#axiom-brand-cutout)"', brand)
+        self.assertNotIn('<img class="brand-logo"', markup)
+        self.assertIn('<feFlood class="axiom-brand-palette"', markup)
+
         self.assertIn("--icon-line-color: #83dffe", stylesheet)
         self.assertIn("--icon-line-glow: rgba(70,182,255,.65)", stylesheet)
+        self.assertIn("--icon-line-stroke: 1.4", stylesheet)
+        self.assertIn(".axiom-icon-definitions,", stylesheet)
         self.assertIn(".admin-icon-definitions {", stylesheet)
+        self.assertIn(".axiom-icon-art,", stylesheet)
+        self.assertIn(".axiom-line-icon,", stylesheet)
         self.assertIn(".admin-line-icon {", stylesheet)
-        icon_styles = stylesheet.split(".admin-line-icon {", 1)[1].split("}", 1)[0]
+        icon_styles = stylesheet.rsplit(".axiom-line-icon,\n.admin-line-icon {", 1)[1].split("}", 1)[0]
         self.assertIn("fill: none", icon_styles)
+        self.assertIn("stroke-width: var(--icon-line-stroke)", icon_styles)
+        self.assertIn("background: transparent", stylesheet)
         self.assertIn("filter: drop-shadow(0 0 3px var(--icon-line-glow))", stylesheet)
-        self.assertNotIn("background", icon_styles)
+        self.assertIn(".top-menu-icon { width: 28px; height: 28px;", stylesheet)
+        self.assertIn(".brand-logo { width: 144px; height: 106px; }", stylesheet)
         self.assertNotIn("admin-section-icon-mcp", stylesheet)
         self.assertNotIn("skills-line-icon", stylesheet)
         self.assertFalse(list(STATIC_DIR.glob("admin-*.svg")))
         self.assertIn("color: var(--icon-line-color, #83dffe)", button_icons)
         self.assertIn("var(--icon-line-glow, rgba(70,182,255,.65))", button_icons)
+        self.assertIn("var(--icon-line-stroke, 1.4)", button_icons)
+        self.assertNotIn("const halo =", button_icons)
+        self.assertNotIn("const light =", button_icons)
 
     def test_tools_are_reachable_on_their_own_page_and_connection_controls_stay_separate(self) -> None:
         pages = PortalPageMap((STATIC_DIR / "index.html").read_text(encoding="utf-8"))

@@ -4,30 +4,53 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261027-icon-palette">
-  <script src="/static/button_icons.js?v=20261027-icon-palette" defer></script>
+  <link rel="stylesheet" href="/static/portal.css?v=20261027-all-icon-palette">
+  <script src="/static/button_icons.js?v=20261027-all-icon-palette" defer></script>
 </head>
 <body>
+  <svg class="axiom-icon-definitions" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="axiom-brand-cutout" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+        <feColorMatrix in="SourceGraphic" type="luminanceToAlpha" result="luminance"/>
+        <feComponentTransfer in="luminance" result="cutout">
+          <feFuncA type="linear" slope="1.8" intercept="-.25"/>
+        </feComponentTransfer>
+        <feFlood class="axiom-brand-palette" result="palette"/>
+        <feComposite in="palette" in2="cutout" operator="in"/>
+      </filter>
+    </defs>
+    <symbol id="menu-icon-home" viewBox="0 0 48 48">
+      <path d="M6 22 24 7l18 15M12 20v21h24V20M20 41V28h8v13"/>
+    </symbol>
+    <symbol id="menu-icon-administration" viewBox="0 0 48 48">
+      <path d="M24 5v6M24 37v6M5 24h6M37 24h6M10.5 10.5l4.5 4.5M33 33l4.5 4.5M10.5 37.5 15 33M33 15l4.5-4.5"/><circle cx="24" cy="24" r="13"/><circle cx="24" cy="24" r="5"/>
+    </symbol>
+    <symbol id="menu-icon-live" viewBox="0 0 48 48"><path d="m17 10 22 14-22 14Z"/></symbol>
+    <symbol id="menu-icon-return" viewBox="0 0 48 48"><path d="M36 24H12M24 12 12 24l12 12"/></symbol>
+    <symbol id="menu-icon-logout" viewBox="0 0 48 48"><path d="M27 8H11v32h16M31 15l10 9-10 9M41 24H19"/></symbol>
+  </svg>
   <div class="shell">
     <header class="topbar">
       <div class="brand">
         <h1>Axiom</h1>
-        <img class="brand-logo" src="/static/axiom-logo.png" alt="" width="88" height="66">
+        <svg class="brand-logo axiom-icon-art" aria-hidden="true" focusable="false" viewBox="0 0 1450 1086">
+          <image href="/static/axiom-logo.png" width="1450" height="1086" preserveAspectRatio="xMidYMid meet" filter="url(#axiom-brand-cutout)"/>
+        </svg>
       </div>
       <nav class="top-actions" aria-label="Main navigation">
         
         <div class="portal-menu">
         <div class="mode-switch" role="group" aria-label="Portal mode">
-          <button id="mindTab" class="mode-button active" type="button">Main</button>
-          <button id="adminTab" class="mode-button" type="button">Administration</button>
+          <button id="mindTab" class="mode-button active" type="button"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-home"/></svg>Main</button>
+          <button id="adminTab" class="mode-button" type="button"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-administration"/></svg>Administration</button>
         </div>
-        <a href="/body/live" class="secondary-button">Live</a>
+          <a href="/body/live" class="secondary-button"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-live"/></svg>Live</a>
         <div class="status-pill" role="status" aria-live="polite">
           <span class="status-dot"></span>
           <span id="connectionLabel">Connecting…</span>
         </div>
-        <a href="/" id="portalReturnButton" class="secondary-button portal-return">Return</a>
-        <button id="logoutButton" class="secondary-button" type="button">Log Out</button>
+        <a href="/" id="portalReturnButton" class="secondary-button portal-return"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-return"/></svg>Return</a>
+        <button id="logoutButton" class="secondary-button" type="button"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-logout"/></svg>Log Out</button>
         </div>
       </nav>
     </header>

@@ -52,7 +52,7 @@
     .axiom-icon-button:not(.hidden):not([hidden]) { display: inline-flex; }
     [data-icon-button].axiom-icon-button:not(.hidden):not([hidden]) { display: inline-flex !important; }
     .axiom-icon-button.hidden, .axiom-icon-button[hidden] { display: none; }
-    .axiom-button-icon { width: 28px; height: 28px; flex: none; color: var(--icon-line-color, #83dffe); filter: drop-shadow(0 0 3px var(--icon-line-glow, rgba(70,182,255,.65))); }
+    .axiom-button-icon { width: 28px; height: 28px; flex: none; color: var(--icon-line-color, #83dffe); background: transparent; fill: none; stroke: currentColor; stroke-width: var(--icon-line-stroke, 1.4); stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 3px var(--icon-line-glow, rgba(70,182,255,.65))); }
     .axiom-icon-button[aria-pressed="false"] .axiom-button-icon { opacity: .75; }
     .axiom-icon-button:disabled { opacity: .5; cursor: not-allowed; }
     .axiom-icon-button:focus-visible { outline: 2px solid var(--icon-line-color, #83dffe); outline-offset: 3px; }
@@ -113,24 +113,15 @@
     const svg = document.createElementNS(svgNamespace, 'svg');
     for (const [name, value] of Object.entries({ 'aria-hidden': 'true', focusable: 'false', class: 'axiom-button-icon', viewBox: '0 0 40 40', width: '28', height: '28' })) svg.setAttribute(name, value);
     const group = document.createElementNS(svgNamespace, 'g');
-    for (const [name, value] of Object.entries({ fill: 'none', stroke: 'currentColor', 'stroke-width': '2.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })) group.setAttribute(name, value);
-    const halo = document.createElementNS(svgNamespace, 'path');
-    halo.setAttribute('opacity', '.55');
-    halo.setAttribute('d', 'M5 12A17 17 0 0 1 28 5 M35 28A17 17 0 0 1 12 35');
-    group.appendChild(halo);
     const symbol = document.createElementNS(svgNamespace, 'path');
     symbol.setAttribute('d', shapes[type]);
     group.appendChild(symbol);
     if (off) {
       const slash = document.createElementNS(svgNamespace, 'path');
       slash.setAttribute('d', 'M8 33 32 7');
-      slash.setAttribute('stroke-width', '3.5');
       group.appendChild(slash);
     }
     svg.appendChild(group);
-    const light = document.createElementNS(svgNamespace, 'circle');
-    for (const [name, value] of Object.entries({ cx: '33', cy: '9', r: '1.4', fill: 'currentColor' })) light.setAttribute(name, value);
-    svg.appendChild(light);
     return svg;
   }
 
