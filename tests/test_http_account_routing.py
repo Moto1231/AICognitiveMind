@@ -1350,6 +1350,56 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(status["realtime"]["reason"], "Realtime voice is not configured.")
             root_status.assert_not_awaited()
 
+    async def test_active_body_client_state_is_bounded_scoped_and_cleared_by_legacy_heartbeat(self):
+        from aicognitive_mind.body_sessions import active_body_status
+
+        headers = {"X-Body-Session": "same-client-state-session"}
+        state = {
+            "client_revision": "20261027-host-recovery", "hearing": True, "voice": True,
+            "page_visible": True, "microphone_live": True, "microphone_enabled": False,
+            "voice_mode": "connected_host", "last_playback": "started",
+        }
+        alpha_records = RuntimeRecords(scope_storage(api.app.state.storage, self.alpha.mind_id).mind)
+        beta_records = RuntimeRecords(scope_storage(api.app.state.storage, self.beta.mind_id).mind)
+        self.assertEqual((await self.alpha_client.post(
+            "/v1/body/session/active", headers=headers, json={"client_state": state},
+        )).status_code, 200)
+        alpha = await alpha_records.get("active_body_session")
+        self.assertEqual(alpha["client_state"], state)
+        self.assertEqual(alpha["session_id"], headers["X-Body-Session"])
+        self.assertEqual((await active_body_status(alpha_records))["client_state"], state)
+        self.assertIsNone(await active_body_status(beta_records))
+        self.assertIsNone(await api.app.state.runtime_records.get("active_body_session"))
+
+        for invalid in (
+            {"client_state": {"audio": "private recording"}},
+            {"client_state": {"voice": "yes"}},
+            {"client_state": {"client_revision": "x" * 65}},
+            {"client_state": {"voice_mode": "arbitrary"}},
+            {"client_state": state, "identity": "not an operational field"},
+        ):
+            response = await self.alpha_client.post("/v1/body/session/active", headers=headers, json=invalid)
+            self.assertEqual(response.status_code, 422, response.text)
+            self.assertEqual(await alpha_records.get("active_body_session"), alpha)
+        rejected = await self.alpha_client.post("/v1/body/session/active", json={"client_state": state})
+        self.assertEqual(rejected.status_code, 400, rejected.text)
+
+        other = await self.beta_client.post("/v1/body/session/active", headers=headers, json={
+            "client_state": {"client_revision": "other-client", "hearing": False},
+        })
+        self.assertEqual(other.status_code, 200, other.text)
+        self.assertEqual((await active_body_status(alpha_records))["client_state"], state)
+        self.assertEqual((await active_body_status(beta_records))["client_state"]["hearing"], False)
+
+        # An old client cannot extend freshness of an earlier report it no longer sends.
+        legacy = await self.alpha_client.post("/v1/body/session/active", headers=headers)
+        self.assertEqual(legacy.status_code, 200, legacy.text)
+        self.assertNotIn("client_state", await alpha_records.get("active_body_session"))
+        self.assertIsNone((await active_body_status(alpha_records))["client_state"])
+        self.assertEqual((await self.alpha_client.post(
+            "/v1/body/session/active", headers=headers, json={},
+        )).status_code, 200)
+
     async def test_realtime_capability_uses_server_broker_without_exposing_its_key(self):
         for key in (None, "synthetic-server-realtime-key"):
             configured = self.settings.model_copy(update={"openai_api_key": key})

@@ -44,6 +44,69 @@ class ReceiverAuthorizationError(ReceiverError):
 class ReceiverDeliveryError(ReceiverError):
     """The existing desktop receiver cannot currently accept work."""
 
+    def __init__(
+        self, message: str, *, operation: str = "native_transport", cause: Exception | None = None,
+        exception_class: str | None = None, elapsed_ms: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.operation = operation if operation in {
+            "native_transport", "native_connect", "read_thread", "send_message_to_thread",
+        } else "native_transport"
+        name = exception_class or type(cause or self).__name__
+        self.exception_class = name if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", name) else "Exception"
+        self.mcp_code = None
+        current = cause
+        for _ in range(4):
+            if current is None:
+                break
+            code = getattr(getattr(current, "error", None), "code", None)
+            if type(code) is int:
+                self.mcp_code = code
+                break
+            current = current.__cause__ or current.__context__
+        self.elapsed_ms = elapsed_ms
+
+    def diagnostics(self) -> dict[str, Any]:
+        # Exception messages and native results can contain private chat data.
+        return {
+            "operation": self.operation, "exception_class": self.exception_class,
+            "mcp_code": self.mcp_code, "elapsed_ms": self.elapsed_ms,
+        }
+
+
+class ReceiverPermissionError(ReceiverDeliveryError):
+    """The native app explicitly denied permission or approval for this action."""
+
+
+def native_permission_denied(result: dict[str, Any]) -> bool:
+    """Recognize native denial markers without interpreting ordinary chat text."""
+    candidates = [result.get("structuredContent")]
+    # Structured native status/error fields remain authoritative when a wrapper
+    # omits isError. Text is parsed only when explicitly marked as a tool error;
+    # a read_thread result may quote arbitrary JSON supplied in a conversation.
+    if result.get("isError") is True:
+        for block in result.get("content", []):
+            if block.get("type") == "text":
+                try:
+                    candidates.append(json.loads(block["text"]))
+                except (KeyError, TypeError, ValueError):
+                    pass
+    denied_codes = {"approval_denied", "permission_denied", "policy_denied", "approval_rejected"}
+    denied_statuses = {"declined", "approval_denied", "permission_denied", "policy_denied"}
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        for value in (candidate, candidate.get("error")):
+            if not isinstance(value, dict):
+                continue
+            codes = (value.get("code"), value.get("error_code"))
+            if any(isinstance(code, str) and code.casefold() in denied_codes for code in codes):
+                return True
+            status = value.get("status")
+            if isinstance(status, str) and status.casefold() in denied_statuses:
+                return True
+    return False
+
 
 @dataclass(frozen=True)
 class ReceiverConfig:
@@ -215,16 +278,32 @@ class CodexAppSender:
         self.session, self.config = session, config
 
     async def _call(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        started = time.monotonic()
         try:
             result = await self.session.call_tool(
                 name, arguments, read_timeout_seconds=30,
                 meta={"openai/threadId": self.config.thread_id},
             )
         except Exception as exc:
-            raise ReceiverDeliveryError("The existing Codex app receiver is unavailable.") from exc
+            error = getattr(exc, "error", None)
+            error_type = ReceiverPermissionError if native_permission_denied({
+                "isError": True, "structuredContent": getattr(error, "data", None),
+            }) else ReceiverDeliveryError
+            raise error_type(
+                "The existing Codex app receiver is unavailable.", operation=name, cause=exc,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+            ) from exc
         data = result.model_dump(by_alias=True)
+        if native_permission_denied(data):
+            raise ReceiverPermissionError(
+                "The Codex app denied permission for the receiver request.", operation=name,
+                exception_class="NativePermissionError", elapsed_ms=round((time.monotonic() - started) * 1000),
+            )
         if data.get("isError"):
-            raise ReceiverDeliveryError("The Codex app declined the receiver request.")
+            raise ReceiverDeliveryError(
+                "The Codex app declined the receiver request.", operation=name,
+                exception_class="NativeToolError", elapsed_ms=round((time.monotonic() - started) * 1000),
+            )
         return data
 
     async def check(self) -> None:
@@ -234,11 +313,16 @@ class CodexAppSender:
         })
 
     async def send(self, notices: list[dict[str, Any]]) -> None:
+        started = time.monotonic()
         result = await self._call("send_message_to_thread", {
             "threadId": self.config.thread_id, "hostId": self.config.host_id,
             "prompt": notification_prompt(notices),
         })
-        require_target_acknowledgement(result, self.config.thread_id)
+        try:
+            require_target_acknowledgement(result, self.config.thread_id)
+        except ReceiverDeliveryError as exc:
+            exc.elapsed_ms = round((time.monotonic() - started) * 1000)
+            raise
 
     async def probe(self) -> dict[str, Any]:
         result = await self._call("send_message_to_thread", {
@@ -272,7 +356,10 @@ def require_target_acknowledgement(result: dict[str, Any], thread_id: str) -> No
             }
         ):
             return
-    raise ReceiverDeliveryError("The Codex app did not acknowledge delivery to the intended chat.")
+    raise ReceiverDeliveryError(
+        "The Codex app did not acknowledge delivery to the intended chat.",
+        operation="send_message_to_thread", exception_class="TargetAcknowledgementError",
+    )
 
 
 def acknowledgement_summary(result: dict[str, Any]) -> dict[str, Any]:
@@ -474,17 +561,23 @@ class ReconnectingAppSender:
                 pass
 
     async def _invoke(self, operation: str, *arguments: Any) -> None:
+        started = time.monotonic()
+        stage = "native_connect"
         try:
             if self._sender is None:
                 context = codex_app_sender(self.config)
                 sender = await context.__aenter__()
                 self._context, self._sender = context, sender
+            stage = "read_thread" if operation == "check" else "send_message_to_thread"
             await getattr(self._sender, operation)(*arguments)
         except Exception as exc:
             await self.aclose()
             if isinstance(exc, ReceiverDeliveryError):
                 raise
-            raise ReceiverDeliveryError("The existing Codex app receiver is unavailable.") from exc
+            raise ReceiverDeliveryError(
+                "The existing Codex app receiver is unavailable.", operation=stage, cause=exc,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+            ) from exc
 
     async def send(self, notices: list[dict[str, Any]]) -> None:
         await self._invoke("send", notices)
@@ -563,6 +656,11 @@ async def receive_loop(config: ReceiverConfig) -> None:
                     if time.monotonic() - last_app_check >= 60:
                         await sender.check()
                         last_app_check = time.monotonic()
+                        if delivery_failures:
+                            print(json.dumps({
+                                "state": "app_receiver_recovered", "previous_failures": delivery_failures,
+                            }), flush=True)
+                            delivery_failures = 0
                     count = await receiver.once()
                     backoff = 1.0
                     delivery_failures = 0
@@ -573,12 +671,24 @@ async def receive_loop(config: ReceiverConfig) -> None:
                 except ReceiverAuthorizationError:
                     print(json.dumps({"state": "disconnected", "reason": "authorization_expired"}), flush=True)
                     return
-                except ReceiverDeliveryError:
+                except ReceiverPermissionError as exc:
+                    print(json.dumps({
+                        "state": "disconnected", "reason": "native_permission_denied",
+                        **exc.diagnostics(),
+                    }), flush=True)
+                    return
+                except ReceiverDeliveryError as exc:
                     delivery_failures += 1
                     last_app_check = float("-inf")
-                    if delivery_failures >= 3:
-                        print(json.dumps({"state": "disconnected", "reason": "app_receiver_unavailable"}), flush=True)
-                        return
+                    print(json.dumps({
+                        "state": "waiting_for_app", "reason": "app_receiver_unavailable",
+                        "consecutive_failures": delivery_failures, "delay_seconds": backoff,
+                        **exc.diagnostics(),
+                    }), flush=True)
+                    # Retry only the native check. Until it succeeds, once() is
+                    # never reached and the Body lease receives no heartbeat.
+                    # The saved token may recover its own registration; a token
+                    # replaced by another owner still fails with 401/403 below.
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 2, 30)
                 except Exception:

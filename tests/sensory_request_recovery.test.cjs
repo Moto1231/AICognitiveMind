@@ -107,6 +107,25 @@ test('an intentional audio conversation has its own bounded deadline and still r
   assert.equal(ui.timers.size, 0);
 });
 
+test('explicitly enabled Hearing still uploads audio while the Body tab is hidden', async () => {
+  const ui = fixture();
+  ui.context.document.hidden = true;
+  const hearing = ui.context.runHearingLoop(1);
+  await settle();
+  assert.equal(ui.requests.length, 1);
+  assert.equal(ui.requests[0].url, '/v1/body/ears/observe');
+  ui.context.hearingEnabled = false;
+  ui.requests[0].response.resolve({ ok: true, json: async () => ({ interpretation: 'Saved audio.' }) });
+  await hearing;
+  assert.equal(ui.context.sensoryRequestInFlight, false);
+
+  const vision = fixture();
+  vision.context.document.hidden = true;
+  vision.context.delay = async () => { vision.context.visionEnabled = false; };
+  await vision.context.runVisionLoop(1);
+  assert.equal(vision.requests.length, 0, 'Vision retains its separate background capture policy.');
+});
+
 test('a successful header does not show interpreted success before the JSON body finishes', async () => {
   const ui = fixture();
   const pending = start(ui, 'vision');

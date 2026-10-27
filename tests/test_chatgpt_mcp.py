@@ -294,6 +294,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
             ) as hosts:
                 hosts.return_value.active = AsyncMock(return_value=None)
                 hosts.return_value.records.mind_id = "synthetic-account-mind"
+                hosts.return_value.records.get = AsyncMock(return_value=None)
                 result = await status(ctx=ctx)
             self.assertEqual(result["realtime"], {
                 "configured": bool(key), "model": "configured-realtime-model",
@@ -305,6 +306,43 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "authentication": "existing-private-host-lease",
             })
             self.assertNotIn("lease_token", str(result))
+            self.assertIsNone(result["active_body"])
+
+    async def test_reasoning_status_exposes_only_fresh_client_reported_body_state(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        status = server._tool_manager.get_tool("get_body_reasoning_status").fn
+        mind = object()
+        ctx = SimpleNamespace(request_context=SimpleNamespace(lifespan_context=SimpleNamespace(
+            storage=SimpleNamespace(mind=mind), mind_service=object(),
+        )))
+        configured = SimpleNamespace(
+            effective_standalone_reasoning_provider="none", openai_api_key="private-server-key",
+            openai_realtime_model="configured-realtime-model",
+        )
+        client_state = {
+            "client_revision": "synthetic-client", "hearing": True, "voice": False,
+            "microphone_live": True, "voice_mode": "connected_host", "last_playback": "failed",
+        }
+        with patch("aicognitive_mind.chatgpt_mcp.get_settings", return_value=configured), patch(
+            "aicognitive_mind.chatgpt_mcp.HostRuntime",
+        ) as hosts:
+            hosts.return_value.active = AsyncMock(return_value=None)
+            hosts.return_value.records.mind_id = "synthetic-current-mind"
+            hosts.return_value.records.get = AsyncMock(return_value={
+                "session_id": "private-session-identifier", "updated_at": time.time(),
+                "client_state": client_state,
+            })
+            result = await status(ctx=ctx)
+            self.assertEqual(result["active_body"]["client_state"], client_state)
+            self.assertTrue(result["active_body"]["fresh"])
+            self.assertEqual(result["active_body"]["client_state_source"], "client_reported")
+            self.assertNotIn("private-session-identifier", str(result))
+            self.assertNotIn("private-server-key", str(result))
+            self.assertIs(hosts.call_args.args[0], mind)
+            hosts.return_value.records.get.return_value["updated_at"] = time.time() - 121
+            stale = await status(ctx=ctx)
+            self.assertFalse(stale["active_body"]["fresh"])
+            self.assertIsNone(stale["active_body"]["client_state"])
             self.assertNotIn("token_hash", str(result))
 
     async def test_turn_tools_require_structured_host_working_context(self):

@@ -2,14 +2,70 @@
 
 import asyncio
 import hashlib
+import math
+import time
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aicognitive_mind.body import DeviceStatus, ExpressionIntent, Percept
 from aicognitive_mind.host_runtime import RuntimeRecords
 
 body_session: ContextVar[str] = ContextVar("body_session", default="legacy")
+
+ACTIVE_BODY_FRESH_SECONDS = 120
+
+
+class BodyClientState(BaseModel):
+    """Bounded browser-reported operational state, never media or identity."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    client_revision: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$")
+    hearing: bool | None = None
+    voice: bool | None = None
+    page_visible: bool | None = None
+    microphone_live: bool | None = None
+    microphone_enabled: bool | None = None
+    voice_mode: Literal["off", "connected_host", "realtime"] | None = None
+    last_playback: Literal["idle", "started", "completed", "failed", "cancelled"] | None = None
+
+
+class BodySessionHeartbeat(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    client_state: BodyClientState | None = None
+
+
+async def active_body_status(records: RuntimeRecords, *, now: float | None = None) -> dict[str, Any] | None:
+    """Expose only fresh client state from this Mind's active named Body."""
+    active = await records.get("active_body_session")
+    if not isinstance(active, dict):
+        return None
+    session = active.get("session_id")
+    updated_at = active.get("updated_at")
+    if (
+        not isinstance(session, str) or not session or session == "legacy" or len(session) > 128
+        or isinstance(updated_at, bool) or not isinstance(updated_at, (int, float))
+        or not math.isfinite(updated_at)
+    ):
+        return None
+    age = max(0.0, (time.time() if now is None else now) - updated_at)
+    fresh = age <= ACTIVE_BODY_FRESH_SECONDS
+    state = None
+    if fresh and isinstance(active.get("client_state"), dict):
+        try:
+            state = BodyClientState.model_validate(active["client_state"]).model_dump(exclude_none=True)
+        except ValidationError:
+            # Older or corrupt records must not expose arbitrary stored fields.
+            pass
+    return {
+        "fresh": fresh,
+        "last_heartbeat_age_seconds": round(age, 3),
+        "client_state": state,
+        "client_state_source": "client_reported" if state is not None else None,
+    }
 
 _body_output_subscribers: dict[tuple[str, str, str], set[asyncio.Queue[None]]] = {}
 

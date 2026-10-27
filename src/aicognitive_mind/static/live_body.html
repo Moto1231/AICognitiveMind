@@ -134,6 +134,9 @@
     let hearingGeneration = 0;
     let speechGeneration = 0;
     let activeSpeechDone = null;
+    let activeSpeechOwner = null;
+    let lastPlaybackState = "idle";
+    let realtimeRequested = false;
     let audioContext = null;
     let audioAnalyser = null;
     let audioMeterSource = null;
@@ -390,13 +393,18 @@
           refreshConnectedHostStatus.nextPollAt = Date.now() + refreshConnectedHostStatus.pollDelayMs;
           throw new Error("Host status rate limited");
         }
-        if (response.status === 401 || response.status === 403) stopTalking("Realtime account session ended.");
+        if (response.status === 401 || response.status === 403) {
+          stopTalking("Realtime account session ended.");
+          cancelBodySpeech();
+        }
         if (!response.ok) throw new Error(await responseErrorMessage(response));
         refreshConnectedHostStatus.pollDelayMs = 5_000;
         refreshConnectedHostStatus.nextPollAt = Date.now() + 5_000;
         const status = await response.json();
         if (realtimeScope && (status.realtime?.available !== true || status.realtime.scope !== realtimeScope)) {
+          const accountChanged = status.realtime?.scope !== realtimeScope;
           stopTalking("Realtime account session changed.");
+          if (accountChanged) cancelBodySpeech();
         }
         const requests = status.requests || {};
         const pending = Number(requests.pending || 0);
@@ -545,7 +553,9 @@
       voices = window.speechSynthesis?.getVoices?.() || [];
     }
 
-    function cancelBodySpeech() {
+    function cancelBodySpeech(owner = null) {
+      if (owner !== null && activeSpeechOwner !== owner) return false;
+      if (activeSpeechOwner !== null) lastPlaybackState = "cancelled";
       ++speechGeneration;
       window.speechSynthesis?.cancel();
       if (activeSpeechAudio) {
@@ -556,14 +566,18 @@
       }
       activeSpeechDone?.();
       activeSpeechDone = null;
+      activeSpeechOwner = null;
       talkSpeaking = false;
       if (hearingEnabled) for (const track of microphoneStream?.getAudioTracks() || []) track.enabled = true;
+      return true;
     }
 
-    async function speakIntent(intent, isCurrent = () => true, validateScope = async () => true) {
+    async function speakIntent(intent, isCurrent = () => true, validateScope = async () => true, owner = "mouth") {
       if (!voiceEnabled || !intent?.text) return false;
       cancelBodySpeech();
       const generation = speechGeneration;
+      activeSpeechOwner = owner;
+      lastPlaybackState = "idle";
       const current = () => voiceEnabled && generation === speechGeneration && isCurrent();
       const stream = microphoneStream;
       const tracks = stream?.getAudioTracks() || [];
@@ -584,12 +598,14 @@
           clearTimeout(playbackTimer);
           if (activeSpeechDone === done) activeSpeechDone = null;
           if (!error && !playbackStarted && current()) error = new Error("Voice playback did not start.");
+          if (current()) lastPlaybackState = error ? "failed" : "completed";
           error ? reject(error) : resolve();
         };
         const started = () => {
           if (finished) return false;
           if (playbackStarted) return true;
           playbackStarted = true;
+          lastPlaybackState = "started";
           clearTimeout(startTimer);
           playbackTimer = setTimeout(() => done(new Error("Voice playback timed out.")), 180_000);
           return true;
@@ -670,10 +686,14 @@
         }
         if (current()) setStatus("VOICE PLAYBACK COMPLETE (browser speech)");
         return current();
+      } catch (error) {
+        if (current()) lastPlaybackState = "failed";
+        throw error;
       } finally {
         if (audioUrl) URL.revokeObjectURL(audioUrl);
         if (generation === speechGeneration) {
           activeSpeechAudio = null;
+          activeSpeechOwner = null;
           talkSpeaking = false;
           if (microphoneStream === stream) for (const track of tracks) track.enabled = hearingEnabled;
         }
@@ -713,6 +733,7 @@
       talkEnabled = false;
       talkListening = false;
       talkBusy = false;
+      realtimeRequested = false;
       clearTimeout(talkRestartTimer);
       const events = realtimeEvents;
       const peer = realtimePeer;
@@ -721,7 +742,7 @@
       // Hearing owns the shared microphone. Closing voice must not release it.
       realtimeMicrophone = null;
       realtimeScope = null;
-      cancelBodySpeech();
+      cancelBodySpeech("realtime");
       events?.close();
       peer?.close();
       if (realtimeAudio) realtimeAudio.srcObject = null;
@@ -729,7 +750,10 @@
       setStatus(message);
     }
 
-    async function startTalking() {
+    async function startTalking({ realtime = false } = {}) {
+      // Hearing and Voice normally use the attached host's existing audio path.
+      // Realtime remains available to a caller that explicitly selects it.
+      if (!realtime) return;
       if (!hearingEnabled || !voiceEnabled || talkEnabled || talkBusy) return;
       if (!window.RTCPeerConnection || !navigator.mediaDevices?.getUserMedia) {
         setStatus("Realtime voice is unavailable in this browser.");
@@ -737,6 +761,7 @@
       }
       const generation = ++realtimeGeneration;
       const current = () => generation === realtimeGeneration && hearingEnabled && voiceEnabled;
+      realtimeRequested = true;
       talkBusy = true;
       let peer = null;
       try {
@@ -783,7 +808,7 @@
               }
               return true;
             };
-            if (await validateScope()) await speakIntent({ text }, () => current() && valid(), validateScope);
+            if (await validateScope()) await speakIntent({ text }, () => current() && valid(), validateScope, "realtime");
           },
           fail: message => { if (current()) stopTalking(message); }
         });
@@ -902,10 +927,29 @@
     }
 
     async function registerActiveBodySession() {
+      if (registerActiveBodySession.inFlight) return;
+      registerActiveBodySession.inFlight = true;
       try {
-        await bodyFetch("/v1/body/session/active", { method: "POST" });
+        const tracks = microphoneStream?.getAudioTracks() || [];
+        await bodyFetch("/v1/body/session/active", {
+          method: "POST",
+          signal: AbortSignal.timeout(10_000),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ client_state: {
+            client_revision: "20261027-host-recovery",
+            hearing: hearingEnabled,
+            voice: voiceEnabled,
+            page_visible: !document.hidden,
+            microphone_live: tracks.some(track => track.readyState === "live"),
+            microphone_enabled: tracks.some(track => track.readyState === "live" && track.enabled !== false),
+            voice_mode: !voiceEnabled ? "off" : realtimeRequested && (talkEnabled || talkBusy) ? "realtime" : "connected_host",
+            last_playback: lastPlaybackState
+          } })
+        });
       } catch (_) {
         // Keep the Body usable when session registration is temporarily unavailable.
+      } finally {
+        registerActiveBodySession.inFlight = false;
       }
     }
 
@@ -1343,7 +1387,7 @@
 
     async function runHearingLoop(generation) {
       while (hearingEnabled && generation === sensoryLoopGeneration) {
-        if (!document.hidden && !sendInteractionButton.disabled) {
+        if (!sendInteractionButton.disabled) {
           try {
             await perceiveAudio(generation);
           } catch (error) {
@@ -1511,6 +1555,7 @@
       if (!voiceEnabled) {
         connectMouthEvents();
         stopTalking();
+        cancelBodySpeech();
         setStatus("VOICE OFF\nSpoken output is disabled; vision and hearing are unchanged.");
       } else {
         connectMouthEvents();
@@ -1561,7 +1606,7 @@
     registerActiveBodySession();
     refreshSharedVoiceSettings();
     refreshConnectedHostStatus();
-    window.setInterval(registerActiveBodySession, 10_000);
+    window.setInterval(registerActiveBodySession, 5_000);
     connectMouthEvents();
     window.setInterval(refreshSharedVoiceSettings, 10_000);
     window.setInterval(refreshConnectedHostStatus, 5_000);

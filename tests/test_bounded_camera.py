@@ -117,10 +117,11 @@ def test_live_body_voice_off_stops_current_audio_playback():
     voice_toggle_end = source.index("interactionForm.addEventListener", voice_toggle_start)
     voice_toggle = source[voice_toggle_start:voice_toggle_end]
     assert "stopTalking();" in voice_toggle
+    assert "cancelBodySpeech();" in voice_toggle
     stop_start = source.index("function stopTalking(")
-    stop_end = source.index("async function startTalking()", stop_start)
-    assert "cancelBodySpeech();" in source[stop_start:stop_end]
-    cancel_start = source.index("function cancelBodySpeech()")
+    stop_end = source.index("async function startTalking(", stop_start)
+    assert 'cancelBodySpeech("realtime");' in source[stop_start:stop_end]
+    cancel_start = source.index("function cancelBodySpeech(")
     cancel_end = source.index("async function speakIntent", cancel_start)
     cancel = source[cancel_start:cancel_end]
     assert "activeSpeechAudio.pause()" in cancel
