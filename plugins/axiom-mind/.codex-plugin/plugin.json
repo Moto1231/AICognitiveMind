@@ -1,6 +1,6 @@
 {
   "name": "axiom-mind",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Use Axiom as the persistent Mind behind a replaceable AI reasoning host.",
   "author": {
     "name": "William Enright"
