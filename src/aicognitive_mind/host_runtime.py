@@ -582,6 +582,7 @@ class HostRuntime:
         priority: int = 0,
         task: str | None = None,
         input_context: dict | None = None,
+        source: str = "human",
     ) -> dict:
         from aicognitive_mind.body_sessions import body_session
         from aicognitive_mind.mcp_events import MessageEvents
@@ -598,6 +599,12 @@ class HostRuntime:
             raise RuntimeError("No external reasoning host is attached")
         key = uuid4().hex
         passive_sensory = task == "sensory_interpretation"
+        spoken_conversation = (
+            task is None and source == "body:audio"
+            and isinstance(input_context, dict)
+            and input_context.get("intentional_conversation") is True
+        )
+        bounded = passive_sensory or spoken_conversation
         created = time.time()
         request = {
             "kind": "body_request",
@@ -610,18 +617,21 @@ class HostRuntime:
             "body_session": body_session.get(),
             "notify_message_event": notify,
             "created": created,
-            # Main reasoning requests have no task-provider deadline. They remain
-            # pending until the connected reasoning host explicitly completes them.
+            # Typed reasoning requests remain pending until the host completes
+            # them. An intentional spoken turn belongs to its bounded HTTP caller.
             # Passive observations must release their HTTP caller even when an
             # attached host stops consuming the queue.
-            "deadline": created + self.timeout if passive_sensory else None,
+            "deadline": created + self.timeout if bounded else None,
             "claim": "",
             "claim_until": 0.0,
             "result": {},
         }
         if task is not None:
             request["task"] = task
+        if input_context is not None or task is not None:
             request["input_context"] = deepcopy(input_context or {})
+        if source != "human":
+            request["source"] = source
         await self.records.create(key, request)
         if notify:
             try:
@@ -634,7 +644,7 @@ class HostRuntime:
                 latest = await self.records.get(key)
                 if latest and latest["state"] == "complete":
                     return latest["result"]
-                if passive_sensory and latest:
+                if bounded and latest:
                     if latest.get("state") == "failed":
                         reason = latest.get("error", {}).get("reason", "No interpretation was produced.")
                         raise RuntimeError(
@@ -647,6 +657,11 @@ class HostRuntime:
                             continue
                         latest = expired
                     if latest.get("state") == "expired":
+                        if spoken_conversation:
+                            raise RuntimeError(
+                                "Spoken conversation was not completed by the reasoning host "
+                                f"within {self.timeout:g} seconds; its audio evidence was saved."
+                            )
                         raise RuntimeError(
                             "Sensory evidence was saved, but the reasoning host did not "
                             f"complete its interpretation within {self.timeout:g} seconds."
@@ -655,10 +670,10 @@ class HostRuntime:
                         raise RuntimeError(f"Sensory interpretation request is {latest['state']}.")
                 await asyncio.sleep(0.2)
         except asyncio.CancelledError:
-            if passive_sensory:
+            if bounded:
                 # The awaiting bridge owns interpreted journaling and presence.
-                # Once its caller is gone, a passive worker must not complete an
-                # orphaned request whose observation can no longer be admitted.
+                # Once its caller is gone, neither passive admission nor a spoken
+                # conversational reply may complete as an orphaned request.
                 for _ in range(8):
                     latest = await self.records.get(key)
                     if not latest or latest.get("state") != "pending":
@@ -666,7 +681,7 @@ class HostRuntime:
                     if await self.records.replace(key, latest, {**latest, "state": "cancelled"}):
                         break
                 else:
-                    logger.warning("Passive sensory cancellation cleanup conflicted; deadline retained")
+                    logger.warning("Bounded Body cancellation cleanup conflicted; deadline retained")
             raise
 
     async def next_request(self, token: str) -> dict | None:
@@ -713,7 +728,14 @@ class HostRuntime:
                     if request.get("task") == "sensory_interpretation":
                         context = self._sensory_context(request, "complete_body_interaction")
                     else:
-                        context = await self.service.begin_interaction(request["message"])
+                        options = {}
+                        if "source" in request:
+                            options["source"] = request["source"]
+                        if "input_context" in request:
+                            options["input_context"] = deepcopy(request["input_context"])
+                        context = await self.service.begin_interaction(request["message"], **options)
+                        if options:
+                            context = {**context, **deepcopy(options)}
                     return {
                         "request_id": request["request_id"],
                         "user_message": request["message"],
@@ -882,12 +904,30 @@ class HostRuntime:
                 "response_text": response_text,
                 "occurred_at": datetime.now(UTC).isoformat(),
             }
+            context = request.get("input_context", {})
+            derived = context.get("derived_audio")
+            if derived is not None:
+                evidence = context.get("evidence", {})
+                try:
+                    captured = datetime.fromisoformat(derived["captured_at"].replace("Z", "+00:00"))
+                    original = datetime.fromisoformat(evidence["captured_at"].replace("Z", "+00:00"))
+                except (KeyError, TypeError, ValueError, AttributeError) as exc:
+                    raise ValueError("Derived audio has an invalid evidence reference") from exc
+                if derived.get("sha256") != evidence.get("sha256") or captured != original:
+                    raise ValueError("Derived audio does not match the preserved evidence")
+                result["derived_audio"] = deepcopy(derived)
         else:
+            options = {}
+            if "source" in request:
+                options["source"] = request["source"]
+            if "input_context" in request:
+                options["input_context"] = deepcopy(request["input_context"])
             committed = await self.service.complete_interaction(
                 request["message"],
                 response_text,
                 proposed_memories=proposed_memories,
                 idempotency_key="body:" + request_id,
+                **options,
             )
             result = {"response_text": response_text, "occurred_at": committed["occurred_at"]}
         if not await self.records.replace(
@@ -1041,6 +1081,10 @@ class HostAwareCore:
 
             from aicognitive_mind.domain import InteractionResult
 
+            if input_context and input_context.get("intentional_conversation") is True:
+                return InteractionResult.model_validate(await self.hosts.submit(
+                    message, source=source, input_context=input_context,
+                ))
             if input_context:
                 message += "\nBody context: " + json.dumps(input_context, default=str)
             return InteractionResult.model_validate(await self.hosts.submit(message))
@@ -1129,9 +1173,55 @@ class HostAwareInterpreter:
             "Reconnect the reasoning host or configure an optional specialist task endpoint."
         )
 
+    async def interpret_spoken_automatically(self, percept: Any) -> dict[str, Any]:
+        """Return structured transcription for an explicitly requested spoken turn."""
+        if getattr(getattr(percept, "modality", None), "value", None) != "audio":
+            raise ValueError("Spoken interpretation requires audio")
+        if self.task_dispatcher is not None and await self.task_dispatcher.is_configured("audio"):
+            import base64
+            import binascii
+
+            try:
+                header, encoded = percept.content_ref.split(",", 1)
+                if not header.startswith("data:audio/") or not header.endswith(";base64"):
+                    raise ValueError("Invalid audio data URL")
+                media_type = header.removeprefix("data:").removesuffix(";base64").split(";", 1)[0]
+                raw = base64.b64decode(encoded, validate=True)
+                evidence = percept.metadata["evidence"]
+                if not raw or hashlib.sha256(raw).hexdigest() != evidence["sha256"]:
+                    raise ValueError("Audio does not match its preserved evidence")
+            except (ValueError, TypeError, KeyError, AttributeError, binascii.Error) as exc:
+                raise RuntimeError("Configured speech transcription requires preserved audio") from exc
+            extension = {"audio/ogg": "ogg", "audio/wav": "wav", "audio/mp4": "mp4", "audio/mpeg": "mp3"}.get(media_type, "webm")
+            try:
+                transcript = await self.task_dispatcher.transcribe(
+                    "audio", filename=f"percept.{extension}", audio_bytes=raw, media_type=media_type,
+                )
+            except TaskDispatchError as exc:
+                raise RuntimeError(f"Configured speech transcription failed: {exc}") from exc
+            return {
+                "interpretation": f"Auditory perception: {transcript}",
+                "derived_audio": {
+                    "source": "configured_asr", "transcript": transcript,
+                    "model": "configured audio task; provider model not reported",
+                    "sha256": evidence["sha256"], "captured_at": evidence["captured_at"],
+                    "segments": [],
+                },
+            }
+        sensory_events = getattr(self.hosts, "sensory_events_enabled", None)
+        if (sensory_events is not None and await sensory_events()) or await self.hosts.active():
+            return await self._interpret_with_host_result(percept, automatic=True)
+        raise RuntimeError("No external reasoning host is attached for spoken audio interpretation")
+
     async def _interpret_with_host(
         self, percept: Any, *, focus: str | None = None, automatic: bool = False,
     ) -> str:
+        result = await self._interpret_with_host_result(percept, focus=focus, automatic=automatic)
+        return result["interpretation"]
+
+    async def _interpret_with_host_result(
+        self, percept: Any, *, focus: str | None = None, automatic: bool = False,
+    ) -> dict[str, Any]:
         import json
 
         percept_payload = percept.model_dump(mode="json")
@@ -1180,7 +1270,10 @@ class HostAwareInterpreter:
             ) from exc
         response_text = result.get("response_text") if isinstance(result, dict) else None
         if isinstance(response_text, str) and response_text.strip():
-            return response_text.strip()
+            return {
+                "interpretation": response_text.strip(),
+                "derived_audio": deepcopy(result.get("derived_audio")),
+            }
         raise RuntimeError(
             f"Reasoning host returned no interpretation for {percept.modality.value} evidence."
         )

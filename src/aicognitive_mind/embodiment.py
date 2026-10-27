@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import math
+from copy import deepcopy
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -425,8 +427,11 @@ class MindBodyBridge:
         *,
         express: bool = True,
         automatic: bool = False,
+        conversation: bool = False,
         presence_scope: tuple[str, str] = ("legacy", "legacy"),
     ) -> EmbodiedInteractionResult:
+        if conversation and percept.modality != SensoryModality.AUDIO:
+            raise ValueError("Spoken conversation requires audio evidence")
         artifact = await self._preserve_evidence(percept)
         reference = artifact.reference()
         await self._journal.append(
@@ -448,7 +453,13 @@ class MindBodyBridge:
             "metadata": {**percept.metadata, "evidence": reference.model_dump(mode="json")},
         })
         automatic_interpreter = getattr(self._interpreter, "interpret_automatically", None)
-        if automatic:
+        spoken_interpreter = getattr(self._interpreter, "interpret_spoken_automatically", None)
+        derived_audio = None
+        if conversation and spoken_interpreter is not None:
+            spoken = await spoken_interpreter(interpretation_percept)
+            interpretation = spoken["interpretation"]
+            derived_audio = spoken.get("derived_audio")
+        elif automatic:
             if automatic_interpreter is None:
                 raise RuntimeError("Automatic sensory interpretation is not supported by the configured interpreter.")
             interpretation = await automatic_interpreter(interpretation_percept)
@@ -481,10 +492,33 @@ class MindBodyBridge:
             "evidence": reference.model_dump(mode="json"),
             "metadata": self._journal_safe_metadata(percept.metadata),
         }
+        transcript = self._supported_spoken_transcript(derived_audio, reference) if conversation else None
+        if transcript:
+            # The browser explicitly requested a spoken turn. Preserve the fact
+            # that its words are derived evidence, without inventing a speaker.
+            context.update({
+                "intentional_conversation": True,
+                "derived_audio": deepcopy(derived_audio),
+                "transcription_status": "derived_not_independently_verified",
+                "speaker_identity": "unresolved",
+                "addressee_identity": "unresolved",
+            })
+            interaction = await self._core.interact(
+                transcript,
+                source="body:audio",
+                input_context=self._with_presence_context(context, scope=presence_scope),
+            )
+            if interaction.response_text.strip():
+                await self._body.express(interaction.response_text)
+            return EmbodiedInteractionResult(
+                sensory_modality=percept.modality, sensory_source=percept.source,
+                evidence=reference, interpretation=interpretation,
+                response_text=interaction.response_text, occurred_at=interaction.occurred_at,
+            )
         # Passive sensory admission (used by continuous sensing) stops here.
         # The Body supplies perception; the Mind records and interprets it, but
         # does not enter a full conscious interaction for every observation.
-        if not express:
+        if not express or conversation:
             return EmbodiedInteractionResult(
                 sensory_modality=percept.modality,
                 sensory_source=percept.source,
@@ -509,6 +543,46 @@ class MindBodyBridge:
             response_text=interaction.response_text,
             occurred_at=interaction.occurred_at,
         )
+
+    @staticmethod
+    def _supported_spoken_transcript(
+        derived: Any, evidence: SensoryEvidenceReference,
+    ) -> str | None:
+        if derived is None:
+            return None
+        if not isinstance(derived, dict) or derived.get("source") not in {"local_asr", "configured_asr"}:
+            raise ValueError("Spoken input requires a supported derived transcription")
+        if not isinstance(derived.get("model"), str) or not derived["model"].strip():
+            raise ValueError("Spoken transcription must identify its model or configured task")
+        try:
+            captured_at = datetime.fromisoformat(derived["captured_at"].replace("Z", "+00:00"))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("Spoken transcription has an invalid capture time") from exc
+        if derived.get("sha256") != evidence.sha256 or captured_at != evidence.captured_at:
+            raise ValueError("Spoken transcription does not match its preserved audio")
+        transcript = derived.get("transcript")
+        if not isinstance(transcript, str) or len(transcript) > 16_000:
+            raise ValueError("Spoken transcription text is invalid")
+        transcript = transcript.strip()
+        if not transcript:
+            return None
+        segments = derived.get("segments", [])
+        if not isinstance(segments, list):
+            raise ValueError("Spoken transcription segments are invalid")
+        for segment in segments:
+            if not isinstance(segment, dict):
+                raise ValueError("Spoken transcription segment is invalid")
+            for key, threshold, high_is_bad in (
+                ("no_speech_probability", 0.6, True), ("avg_logprob", -1.0, False),
+            ):
+                value = segment.get(key)
+                if value is None:
+                    continue  # A provider may omit scores; never invent them.
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                    raise ValueError("Spoken transcription quality metadata is invalid")
+                if (high_is_bad and value >= threshold) or (not high_is_bad and value < threshold):
+                    return None
+        return transcript
 
     def _admit_presence_observation(
         self,

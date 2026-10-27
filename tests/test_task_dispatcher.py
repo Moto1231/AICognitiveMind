@@ -1,5 +1,8 @@
 import json
+import base64
+import io
 import unittest
+import wave
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -813,6 +816,72 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
                 TaskExecutionContext(task="audio"),
                 {"operation": "synthesize_voice", "text": "Hello there"},
             )
+
+    async def voice_pool(self, *, gemini_first=True):
+        records = FakeRecords()
+        await ProviderEndpointRegistry(records).replace([
+            ProviderEndpoint(id="gemini-voice", name="Saved Gemini voice", provider_name="Google Gemini",
+                             base_url="https://proxy.example/google/v1beta/openai",
+                             api_key="synthetic-google-key", model="models/gemini-3.8-flash-tts"),
+            ProviderEndpoint(id="fish-voice", name="Saved Fish voice", provider_name="Fish Audio",
+                             base_url="https://fish-proxy.example/v1", api_key="synthetic-fish-key",
+                             model="s2.1-pro-free"),
+        ])
+        registry = TaskModelAssignmentRegistry(records)
+        primary, fallback = (("gemini-voice", "fish-voice") if gemini_first else ("fish-voice", "gemini-voice"))
+        await registry.replace([
+            item.model_copy(update={"provider": primary, "fallbacks": [TaskFallbackAssignment(provider=fallback)]})
+            if item.task == "audio_voice" else item for item in await registry.list()
+        ])
+        return records
+
+    async def test_voice_dispatch_uses_native_gemini_protocol_and_real_wav_type(self):
+        output = io.BytesIO()
+        with wave.open(output, "wb") as stream:
+            stream.setnchannels(1)
+            stream.setsampwidth(2)
+            stream.setframerate(24_000)
+            stream.writeframes(b"\x00\x01" * 10)
+        audio = output.getvalue()
+        client = FakeClient(FakeResponse({"steps": [{"type": "model_output", "content": [{
+            "type": "audio", "mime_type": "audio/wav", "data": base64.b64encode(audio).decode(),
+        }]}]}))
+        records = await self.voice_pool()
+        before = dict(records.values)
+        dispatcher = TaskModelDispatcher(records, client=client)
+        with patch("aicognitive_mind.task_dispatcher.FishAudioRenderer") as fish:
+            result = await dispatcher.synthesize_voice("A configured spoken reply.")
+        fish.assert_not_called()
+        self.assertEqual(result, audio)
+        self.assertEqual(result.media_type, "audio/wav")
+        self.assertEqual(client.calls[0][1], "https://proxy.example/google/v1beta/interactions")
+        self.assertEqual(client.calls[0][2]["json"]["model"], "gemini-3.8-flash-tts")
+        self.assertEqual(client.calls[0][2]["headers"]["x-goog-api-key"], "synthetic-google-key")
+        self.assertEqual(records.values, before)
+
+    async def test_gemini_voice_failure_uses_saved_fish_fallback_with_mp3_type(self):
+        records = await self.voice_pool()
+        client = FakeClient(FakeResponse({}, status_code=429))
+        dispatcher = TaskModelDispatcher(records, client=client)
+        with patch("aicognitive_mind.task_dispatcher.FishAudioRenderer") as fish:
+            fish.return_value.synthesize = AsyncMock(return_value=b"synthetic-mp3")
+            with self.assertLogs("aicognitive_mind.task_dispatcher", level="WARNING"):
+                result = await dispatcher.synthesize_voice("Fallback speech", speed=1.2, volume=-3)
+        self.assertEqual(result, b"synthetic-mp3")
+        self.assertEqual(result.media_type, "audio/mpeg")
+        fish.assert_called_once_with(api_key="synthetic-fish-key", model="s2.1-pro-free",
+                                     reference_id=None, endpoint_url="https://fish-proxy.example/v1")
+        fish.return_value.synthesize.assert_awaited_once_with("Fallback speech", speed=1.2, volume=-3)
+
+    async def test_fish_primary_remains_fish_and_stops_after_success(self):
+        records = await self.voice_pool(gemini_first=False)
+        client = FakeClient(FakeResponse({}))
+        dispatcher = TaskModelDispatcher(records, client=client)
+        with patch("aicognitive_mind.task_dispatcher.FishAudioRenderer") as fish:
+            fish.return_value.synthesize = AsyncMock(return_value=b"synthetic-mp3")
+            result = await dispatcher.synthesize_voice("Fish remains selected")
+        self.assertEqual(result.media_type, "audio/mpeg")
+        self.assertEqual(client.calls, [])
 
 if __name__ == "__main__":
     unittest.main()
