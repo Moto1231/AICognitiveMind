@@ -17,7 +17,6 @@ from aicognitive_mind.commit import CommitConflict, backend, surreal_query
 from aicognitive_mind.pending_diagnostics import PendingReadDiagnostics
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 
-
 logger = logging.getLogger('aicognitive_mind.auth_diagnostics')
 
 
@@ -571,7 +570,7 @@ class HostRuntime:
 
     async def sensory_events_enabled(self) -> bool:
         from aicognitive_mind.body_sessions import body_session
-        from aicognitive_mind.mcp_events import MessageEvents, SENSORY_EVENT_NAME
+        from aicognitive_mind.mcp_events import SENSORY_EVENT_NAME, MessageEvents
 
         return await MessageEvents(self.records).enabled(body_session.get(), SENSORY_EVENT_NAME)
 
@@ -642,14 +641,23 @@ class HostRuntime:
         try:
             while True:
                 latest = await self.records.get(key)
-                if latest and latest["state"] == "complete":
+                if latest and (
+                    latest["state"] == "complete" or latest.get("presented") is True
+                ):
                     return latest["result"]
-                if bounded and latest:
-                    if latest.get("state") == "failed":
-                        reason = latest.get("error", {}).get("reason", "No interpretation was produced.")
+                if latest and latest.get("state") == "failed":
+                    reason = latest.get("error", {}).get(
+                        "reason", "No interpretation was produced."
+                    )
+                    if latest.get("task") != "sensory_interpretation":
                         raise RuntimeError(
-                            f"Sensory evidence was saved, but interpretation failed: {reason}"
+                            "The response was withheld because interaction persistence "
+                            f"remains unhealthy: {reason}"
                         )
+                    raise RuntimeError(
+                        f"Sensory evidence was saved, but interpretation failed: {reason}"
+                    )
+                if bounded and latest:
                     if latest.get("state") == "pending" and float(latest["deadline"]) <= time.time():
                         expired = {**latest, "state": "expired"}
                         if not await self.records.replace(key, latest, expired):
@@ -736,6 +744,25 @@ class HostRuntime:
                         context = await self.service.begin_interaction(request["message"], **options)
                         if options:
                             context = {**context, **deepcopy(options)}
+                        latest_claim = await self.records.get(request["request_id"])
+                        if (
+                            latest_claim is None
+                            or latest_claim.get("claim") != host["token_hash"]
+                            or latest_claim.get("state") != "pending"
+                        ):
+                            raise CommitConflict("Body request changed while beginning interaction")
+                        enriched_claim = {
+                            **latest_claim,
+                            "continuity_circuit_open_at_begin": bool(
+                                context.get("continuity_health", {}).get("circuit_open")
+                            ),
+                        }
+                        if not await self.records.replace(
+                            request["request_id"], latest_claim, enriched_claim,
+                        ):
+                            raise CommitConflict(
+                                "Body request changed while saving continuity state"
+                            )
                     return {
                         "request_id": request["request_id"],
                         "user_message": request["message"],
@@ -895,7 +922,7 @@ class HostRuntime:
             for value in (request.get("deadline"), request.get("claim_until"))
             if value is not None
         ]
-        if deadlines and min(deadlines) <= time.time():
+        if deadlines and min(deadlines) <= time.time() and not request.get("presented"):
             raise CommitConflict("Body request claim expired")
         if passive_sensory:
             # The awaiting bridge owns sensory journaling and presence admission.
@@ -922,16 +949,65 @@ class HostRuntime:
                 options["source"] = request["source"]
             if "input_context" in request:
                 options["input_context"] = deepcopy(request["input_context"])
-            committed = await self.service.complete_interaction(
+            completion = asyncio.create_task(self.service.complete_interaction(
                 request["message"],
                 response_text,
                 proposed_memories=proposed_memories,
                 idempotency_key="body:" + request_id,
                 **options,
+            ))
+            release_before_completion = (
+                not request.get("continuity_circuit_open_at_begin", False)
+                and not request.get("presented", False)
             )
-            result = {"response_text": response_text, "occurred_at": committed["occurred_at"]}
-        if not await self.records.replace(
-            request_id, request, {**request, "state": "complete", "result": result}
+            if release_before_completion:
+                provisional = {
+                    "response_text": response_text,
+                    "occurred_at": datetime.now(UTC).isoformat(),
+                    "persistence_status": "pending",
+                }
+                presented = {**request, "presented": True, "result": provisional}
+                if not await self.records.replace(request_id, request, presented):
+                    completion.cancel()
+                    await asyncio.gather(completion, return_exceptions=True)
+                    raise CommitConflict(
+                        "Body request changed before presentation; retry with the same response"
+                    )
+                request = presented
+            committed = await completion
+            presentation_allowed = committed.get("presentation", {}).get(
+                "allowed", committed.get("status") == "interaction_committed",
+            )
+            if not presentation_allowed and not request.get("presented"):
+                latest = await self.records.get(request_id)
+                if latest and latest.get("state") == "pending":
+                    failed = {
+                        **latest,
+                        "state": "failed",
+                        "error": {
+                            "reason": "The persistence circuit remained open after recovery.",
+                            "failure_class": committed.get("persistence_outcome", {}).get(
+                                "failure_class"
+                            ),
+                        },
+                    }
+                    await self.records.replace(request_id, latest, failed)
+                raise RuntimeError(
+                    "Interaction persistence remained unhealthy; the response was not presented"
+                )
+            result = {
+                "response_text": response_text,
+                "occurred_at": committed.get(
+                    "occurred_at", request.get("result", {}).get("occurred_at")
+                ),
+                "persistence_status": committed.get("persistence_outcome", {}).get(
+                    "status", "unknown"
+                ),
+                "continuity_health": committed.get("continuity_health", {}),
+            }
+        latest = await self.records.get(request_id)
+        if latest is None or not await self.records.replace(
+            request_id, latest, {**latest, "state": "complete", "result": result}
         ):
             raise CommitConflict("Body request changed; retry completion with the same response")
         return result
@@ -1127,10 +1203,16 @@ class HostAwareCore:
                 source=source, input_context=input_context,
                 runtime_source="configured_reasoning_endpoint",
             )
-            if committed.get("status") != "interaction_committed":
-                raise RuntimeError("Configured reasoning endpoint did not commit the Body interaction")
+            presentation_allowed = committed.get("presentation", {}).get(
+                "allowed", committed.get("status") == "interaction_committed",
+            )
+            if not presentation_allowed:
+                raise RuntimeError(
+                    "Configured reasoning endpoint persistence circuit withheld the interaction"
+                )
             return InteractionResult(
-                response_text=response_text, occurred_at=committed["occurred_at"],
+                response_text=response_text,
+                occurred_at=committed.get("occurred_at", datetime.now(UTC).isoformat()),
             )
         return await self.core.interact(message, source=source, input_context=input_context)
 

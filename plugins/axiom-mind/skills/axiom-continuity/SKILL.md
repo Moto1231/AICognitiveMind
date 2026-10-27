@@ -98,17 +98,29 @@ places into these universal startup instructions.
    evidence and the human's current instructions. Submit material new findings
    through the supported evidence channel. Keep current participants and unresolved
    references distinct from durable memory; historical mention is not presence.
-4. Before the final answer, call `axiom_complete_interaction` /
+4. Freeze the final answer and call `axiom_complete_interaction` /
    `complete_interaction` with the original actual message, the intended
    human-facing answer, the unchanged begin key, updated working context, and
    material `current_evidence` supported by the interface. Completion is mandatory
    even when `proposed_memories` is empty or omitted. The Steward independently
    reviews the whole interaction and decides what to retain.
-5. Confirm `interaction_committed`. On an uncertain completion, retry once with
-   exactly the same key and payload. If still unconfirmed, report the persistence
-   failure and stop retrying. Never invent a replacement key or repeat completed
-   external actions merely to retry journaling. Keep separate keys for separate
-   actual user messages arriving during work.
+5. Confirm `interaction_committed` before claiming persistence succeeded. On an
+   uncertain completion, retry once with exactly the same key and frozen payload.
+   A failed attempt followed by that successful retry is one successful interaction
+   outcome. If persistence remains failed, stop retrying and obey
+   `presentation.allowed`: present the frozen answer when true without claiming it
+   was saved; withhold it and report the repeated continuity problem when false.
+   Never invent a replacement key, mutate/replay speech, or repeat completed external
+   actions merely to retry journaling. Keep separate keys for separate actual user
+   messages arriving during work.
+
+Presentation is first-priority. Text need not wait for memory persistence. In a voice
+turn whose circuit was closed at begin, the one synchronous completion call may overlap
+TTS/playback; keep the microphone closed and do not accept the next turn until playback
+and completion settle. The Mind-scoped circuit opens at five consecutive failed final
+interaction outcomes or 35 failed outcomes in the rolling last 100. The failure that
+reaches either threshold remains presentable; a later failed recovery is withheld.
+Success resets only the consecutive streak and remains in the rolling window.
 
 Do not submit hidden reasoning, drafts, credentials, or an invented memory record.
 Do not claim that a requested state or durable record was saved without its

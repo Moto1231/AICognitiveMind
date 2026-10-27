@@ -87,7 +87,8 @@ The MCP server instructions and `plugins/axiom-mind/skills/axiom/SKILL.md` defin
 same invariant:
 
 - begin before reasoning;
-- complete before presenting the answer;
+- freeze the answer, call complete, and obey its presentation decision; text may present
+  while persistence settles, and voice may overlap playback with the same synchronous call;
 - Axiom speaks in first person as one integrated entity;
 - reasoning and continuity are internal functions of Axiom, with persistent services maintaining durable state;
 - host memory suggestions are optional; the Memory Steward reviews every completed interaction

@@ -8,7 +8,22 @@ Core interactions, MCP completions, initialization, governed self-name changes, 
 
 SurrealDB is the configured default storage backend and is the backend exercised by the standard CI workflow. MongoDB remains an optional compatibility backend; if selected, it must be a replica set or Atlas deployment because standalone MongoDB cannot provide multi-document atomicity. The Mongo transaction test is opt-in via `MONGODB_TEST_URI` and is not part of the standard SurrealDB CI run.
 
-`begin_interaction` returns an `idempotency_key`. Pass it to `complete_interaction` and reuse it with exactly the same input on retries. A committed receipt survives server restart and returns the original result. Reusing a key with different content is rejected. Legacy clients may omit the key, but then do not have retry deduplication. Receipts and transaction revisions are operational records, not attributes of the Mind.
+`begin_interaction` returns an `idempotency_key`. Pass it to `complete_interaction` and reuse it with exactly the same input on retries. A committed receipt survives server restart and returns the original result. Reusing a key with different content is rejected. Legacy clients may omit the key, but then do not have retry deduplication and retain fail-closed completion behavior because their attempts cannot safely become one final circuit outcome. Receipts and transaction revisions are operational records, not attributes of the Mind.
+
+Interaction presentation is independent from memory persistence. Freeze one answer and
+make one bounded synchronous completion call. Text may be presented while completion is
+settling. Voice may use actual playback time for the same completion or one identical
+retry, but speech is never replayed and the next turn stays closed until both playback
+and completion settle. Review exhaustion commits the interaction journal and receipt
+with a typed unavailable review and zero cognitive learning writes.
+
+A separate Mind-scoped runtime record stores no conversation content and counts one
+final persistence outcome per interaction key. Five consecutive failures or 35 failures
+in the rolling last 100 opens the presentation circuit. The threshold-reaching failure
+is still presented. A later interaction acts as the recovery check: success permits the
+frozen answer, while another failure withholds it and reports the continuity problem.
+Success resets only the consecutive streak. A failed attempt followed by a successful
+identical retry replaces that provisional failure with one successful outcome.
 
 The governance gate only accepts complete affirmative self-name commands, such as `Please choose a new name` or `I authorize you to choose your own name`. Questions, quoted commands, hypothetical requests, additional clauses, and negation fail closed. Naming still passes through the Governance Steward and preserves protected identity fields.
 
@@ -20,7 +35,7 @@ Configure the API and MCP process to use the same persistent database. Separate 
 2. Renew with `renew_reasoning_host` while working. The lease lasts 120 seconds.
 3. Poll `next_body_interaction`. It returns a request identifier, the user message, and the same identity/memory context as `begin_interaction`.
 4. Reason externally; inspect original media with `read_sensory_evidence` when its reference is present. The returned original media is hash-verified. Governed name proposals use `propose_self_name`.
-5. Call `complete_body_interaction` with the request identifier, response, and any optional memory suggestions. The same Memory Steward reviews the whole interaction and independently selects and classifies what to retain, then the committed response is delivered back to the waiting Body. Retry unchanged input if delivery is interrupted.
+5. Call `complete_body_interaction` with the request identifier, frozen response, and any optional memory suggestions. When the circuit was closed at begin, the waiting Body may receive that response while the same synchronous Memory Steward completion is settling. Retry unchanged input if persistence is uncertain; the response is not delivered twice. When the circuit was open at begin, hold delivery until the recovery completion permits presentation.
 6. Detach explicitly with `renew_reasoning_host(..., detach=true)` before another host attaches. An expired lease also permits handoff. Old tokens cannot complete requests after another host takes over.
 
 A live host takes precedence over standalone reasoning. A timed-out host request is not silently sent to a second model. The API reports actual active-host metadata separately from the configured primary architecture. Hosts must implement this polling protocol; displaying `External Host` alone does not attach a model.

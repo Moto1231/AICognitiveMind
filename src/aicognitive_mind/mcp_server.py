@@ -9,14 +9,14 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import CallToolResult, ImageContent, AudioContent, TextContent
+from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent
 
-from aicognitive_mind.config import get_settings
 from aicognitive_mind.account_mcp import request_state
+from aicognitive_mind.config import get_settings
+from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
-from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.mcp_service import (
     BeliefReframeProposal,
     BeliefTransitionProposal,
@@ -26,10 +26,10 @@ from aicognitive_mind.mcp_service import (
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.persistence import StorageRuntime, create_storage
 from aicognitive_mind.sleep import SleepConsolidator
-from aicognitive_mind.tenancy import verify_live_tenancy
 from aicognitive_mind.task_behaviors import TaskExecutionContext
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskKind
+from aicognitive_mind.tenancy import verify_live_tenancy
 from aicognitive_mind.voice_settings import VoiceSettings
 
 
@@ -348,7 +348,7 @@ async def complete_interaction(
     belief_transitions: list[BeliefTransitionProposal] | None = None,
     belief_reframes: list[BeliefReframeProposal] | None = None,
 ) -> dict[str, Any]:
-    """Mandatory final step after reasoning and before presenting the final answer.
+    """Mandatory final step after reasoning; returns the frozen answer's presentation decision.
 
     Supply the updated host_working_context and the idempotency_key returned by begin_interaction.
     The host context is returned to the host for its next turn and is not made durable. The
@@ -366,6 +366,8 @@ async def complete_interaction(
     When readiness is reframe_required and the tension finding contains explicit scopes for both
     values, the host may submit that exact pair in belief_reframes. The Steward revalidates the
     finding and preserves both values as scoped beliefs rather than selecting a winner.
+    Retry an uncertain persistence failure once with the identical key and payload, then obey
+    presentation.allowed. Never claim a failed persistence outcome was committed.
     """
     result = await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,

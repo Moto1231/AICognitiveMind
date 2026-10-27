@@ -7,9 +7,9 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
 from aicognitive_mind.commit import atomic
-from aicognitive_mind.journal_payload import journal_safe_value
-
+from aicognitive_mind.continuity_health import InteractionContinuityHealth
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -18,27 +18,26 @@ from aicognitive_mind.domain import (
     MemoryClass,
     MindIdentity,
 )
+from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+from aicognitive_mind.host_behaviors import HostBehaviorRegistry
+from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.journal_payload import journal_safe_value
 from aicognitive_mind.memory_steward import (
     MemoryArtifactProposal,
     MemoryStewardTool,
     ResearchObservation,
     SemanticScope,
 )
-from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
-from aicognitive_mind.effective_skills import EffectiveSkillRegistry
-from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
-from aicognitive_mind.steward_agent import ModelMemorySteward
-from aicognitive_mind.task_dispatcher import TaskModelDispatcher
-from aicognitive_mind.host_behaviors import HostBehaviorRegistry
-from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.state_context import CurrentStateLedger, CurrentStateLedgerRepository
-from aicognitive_mind.timing import StageTimer, emit
-
+from aicognitive_mind.steward_agent import ModelMemorySteward, StewardProtocolError
+from aicognitive_mind.storage import JournalStore, MemoryStore, MindStore
 from aicognitive_mind.task_behaviors import (
     TaskBehaviorRegistry,
     TaskExecutionContext,
     TaskPromptAssembler,
 )
+from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
+from aicognitive_mind.timing import StageTimer, emit
 
 
 class MemoryProposal(BaseModel):
@@ -79,6 +78,7 @@ class CognitiveMcpService:
         self._memory = memory
         records = RuntimeRecords(mind)
         self._records = records
+        self._continuity_health = InteractionContinuityHealth(records)
         self._steward_factory = steward_factory
         self._steward_runtime = TaskModelDispatcher(records, timeout=30)
         self._host_behaviors = HostBehaviorRegistry(records)
@@ -135,6 +135,7 @@ class CognitiveMcpService:
             "durable_memory_count": memory_count,
             "journal_experience_count": journal_count,
             "provider_routing": await TaskModelDispatcher(self._records).routing_status(),
+            "interaction_continuity": await self._continuity_snapshot(),
             "naming": {
                 "status": (
                     "prohibited" if journal_count < 1000
@@ -193,6 +194,8 @@ class CognitiveMcpService:
                 [item.model_dump(mode="json") for item in behaviors],
                 source=source, input_context=input_context,
             )
+        with timer.stage("continuity_health"):
+            continuity_health = await self._continuity_snapshot()
         timer.log()
         return {
             "status": "ready_to_reason",
@@ -206,6 +209,22 @@ class CognitiveMcpService:
                 and current_state.fields["who_is_speaking"].status == "unknown"
             ),
             "conscious_workspace_contract": contract,
+            "continuity_health": continuity_health,
+            "presentation_policy": {
+                "mode": (
+                    "recovery_required"
+                    if continuity_health.get("circuit_open")
+                    else "presentation_first"
+                ),
+                "instruction": (
+                    "The persistence circuit is open. Freeze one answer, run completion as the "
+                    "recovery check, and present it only when completion returns "
+                    "presentation.allowed=true."
+                    if continuity_health.get("circuit_open")
+                    else "A completion persistence failure does not block presentation unless "
+                    "the Mind-scoped circuit was already open before this interaction."
+                ),
+            },
             "next_step": (
                 "Use the Steward's assessment and any returned brief. A no_recall_needed outcome "
                 "means work can proceed using current context; do not force a lookup. "
@@ -220,12 +239,109 @@ class CognitiveMcpService:
                 "Before presenting the final answer, call complete_interaction with the response "
                 "text, updated host_working_context, evidence and optional memory suggestions. "
                 "The Steward independently reviews the whole result even when suggestions are empty. "
-                "Pass the returned idempotency_key unchanged on completion and any retry."
+                "Pass the returned idempotency_key unchanged on completion and any retry. "
+                "Use the returned presentation.allowed decision; retry an uncertain persistence "
+                "failure once with the identical payload before treating it as final."
             ),
         }
 
-    @atomic
     async def complete_interaction(
+        self,
+        user_message: str,
+        response_text: str,
+        proposed_memories: tuple[MemoryProposal, ...] = (),
+        current_evidence: tuple[ResearchObservation, ...] = (),
+        belief_transitions: tuple[BeliefTransitionProposal, ...] = (),
+        belief_reframes: tuple[BeliefReframeProposal, ...] = (),
+        idempotency_key: str | None = None,
+        *,
+        source: str = "human",
+        input_context: dict[str, Any] | None = None,
+        runtime_source: str = "connected_mcp_host",
+        host_working_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Commit cognition, then record its final operational persistence outcome."""
+        interaction_id = idempotency_key or f"legacy-{uuid4().hex}"
+        try:
+            result = await self._commit_interaction(
+                user_message=user_message,
+                response_text=response_text,
+                proposed_memories=proposed_memories,
+                current_evidence=current_evidence,
+                belief_transitions=belief_transitions,
+                belief_reframes=belief_reframes,
+                idempotency_key=idempotency_key,
+                source=source,
+                input_context=input_context,
+                runtime_source=runtime_source,
+                host_working_context=host_working_context,
+            )
+        except (TaskDispatchError, TimeoutError, OSError) as exc:
+            if idempotency_key is None:
+                # Legacy direct-core callers cannot deduplicate attempts into one
+                # final interaction outcome, so retain their existing fail-closed
+                # behavior instead of corrupting the circuit counters.
+                raise
+            health = await self._record_continuity_outcome(
+                interaction_id, succeeded=False, failure_class=type(exc).__name__,
+            )
+            presentation_allowed = health.get("interaction_outcome", {}).get(
+                "presentation_allowed", True,
+            )
+            return {
+                "status": "interaction_persistence_failed",
+                "memory_decisions": [],
+                "memory_review": {
+                    "outcome": "unavailable",
+                    "failure_class": type(exc).__name__,
+                },
+                "persistence_outcome": {
+                    "status": "failed",
+                    "failure_class": type(exc).__name__,
+                    "retry_with_identical_payload": True,
+                },
+                "continuity_health": health,
+                "presentation": {
+                    "allowed": presentation_allowed,
+                    "answer_frozen": True,
+                    "reason": (
+                        "persistence_failed_below_threshold"
+                        if presentation_allowed
+                        else "persistence_circuit_remains_open"
+                    ),
+                },
+            }
+
+        persistence = result.get("persistence_outcome", {"status": "succeeded"})
+        succeeded = persistence.get("status") == "succeeded"
+        health = await self._record_continuity_outcome(
+            interaction_id,
+            succeeded=succeeded,
+            failure_class=persistence.get("failure_class"),
+        )
+        presentation_allowed = health.get("interaction_outcome", {}).get(
+            "presentation_allowed", True,
+        )
+        return {
+            **result,
+            "continuity_health": health,
+            "presentation": {
+                "allowed": presentation_allowed,
+                "answer_frozen": True,
+                "reason": (
+                    "persistence_succeeded"
+                    if succeeded
+                    else (
+                        "memory_review_failed_below_threshold"
+                        if presentation_allowed
+                        else "persistence_circuit_remains_open"
+                    )
+                ),
+            },
+        }
+
+    @atomic(receipt_name="CognitiveMcpService.complete_interaction")
+    async def _commit_interaction(
         self,
         user_message: str,
         response_text: str,
@@ -258,11 +374,60 @@ class CognitiveMcpService:
         )
         if isinstance(steward, ModelMemorySteward):
             steward.skill_records = self._records
-        with timer.stage("review"):
-            review = await steward.review_interaction(
-                response_text, proposed_memories, current_evidence,
-                belief_transitions, belief_reframes,
-            )
+        try:
+            with timer.stage("review"):
+                review = await steward.review_interaction(
+                    response_text, proposed_memories, current_evidence,
+                    belief_transitions, belief_reframes,
+                )
+        except StewardProtocolError as exc:
+            if idempotency_key is None:
+                raise
+            with timer.stage("journal_append_degraded"):
+                journal_entry = await self._journal.append(
+                    JournalEntry(
+                        kind=JournalKind.INTERACTION,
+                        experience=journal_safe_value({
+                            "input": {
+                                "source": source,
+                                "content": user_message,
+                                **({"context": input_context} if input_context else {}),
+                            },
+                            "memory_steward": {
+                                "status": "unavailable",
+                                "failure_class": type(exc).__name__,
+                                "memory_writes_committed": 0,
+                            },
+                            "expression": {
+                                "source": "conscious_workspace",
+                                "content": response_text,
+                            },
+                            "reasoning_runtime": {"source": runtime_source},
+                        }),
+                    ),
+                    recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+                )
+            timer.log()
+            return {
+                "status": "interaction_committed",
+                "occurred_at": journal_entry.occurred_at.isoformat(),
+                "memory_decisions": [],
+                "tension_reassessments": [],
+                "belief_transition_decisions": [],
+                "belief_reframe_decisions": [],
+                "memory_review": {
+                    "outcome": "unavailable",
+                    "failure_class": type(exc).__name__,
+                    "memory_writes_committed": 0,
+                },
+                "persistence_outcome": {
+                    "status": "failed",
+                    "failure_class": type(exc).__name__,
+                    "interaction_journal_committed": True,
+                    "memory_writes_committed": 0,
+                    "retry_with_identical_payload": False,
+                },
+            }
 
         with timer.stage("evidence"):
             for evidence in review["current_evidence"]:
@@ -346,7 +511,37 @@ class CognitiveMcpService:
             "belief_transition_decisions": transition_decisions,
             "belief_reframe_decisions": reframe_decisions,
             "memory_review": steward.assessment,
+            "persistence_outcome": {
+                "status": "succeeded",
+                "interaction_journal_committed": True,
+            },
         }
+
+    async def _continuity_snapshot(self) -> dict[str, Any]:
+        try:
+            return await self._continuity_health.snapshot()
+        except Exception as exc:
+            return {
+                "status": "unavailable",
+                "circuit_open": False,
+                "failure_class": type(exc).__name__,
+            }
+
+    async def _record_continuity_outcome(
+        self, interaction_id: str, *, succeeded: bool, failure_class: str | None,
+    ) -> dict[str, Any]:
+        try:
+            return await self._continuity_health.record(
+                interaction_id,
+                succeeded=succeeded,
+                failure_class=failure_class,
+            )
+        except Exception as exc:
+            return {
+                "status": "unavailable",
+                "circuit_open": False,
+                "failure_class": type(exc).__name__,
+            }
 
     async def read_current_state(self) -> dict[str, Any]:
         return (await self._load_current_state()).as_context()

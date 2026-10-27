@@ -287,8 +287,11 @@ class CognitiveMindHost:
             ),
             "complete_interaction",
         )
-        if completed.get("status") != "interaction_committed":
-            raise RuntimeError(f"Mind did not commit interaction: {completed}")
+        presentation_allowed = completed.get("presentation", {}).get(
+            "allowed", completed.get("status") == "interaction_committed",
+        )
+        if not presentation_allowed:
+            raise RuntimeError(f"Mind persistence circuit withheld interaction: {completed}")
 
         self._working_context = HostWorkingContext.model_validate(
             completed.get("host_working_context", {})
