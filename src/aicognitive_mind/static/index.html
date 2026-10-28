@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261027-breaker-settings-3">
+  <link rel="stylesheet" href="/static/portal.css?v=20261028-device-inner-panel">
   <script src="/static/button_icons.js?v=20261027-all-icon-palette" defer></script>
+  <script src="/static/local_clock.js?v=20261028-local-clock" defer></script>
 </head>
 <body>
   <svg class="axiom-icon-definitions" aria-hidden="true" focusable="false">
@@ -37,6 +38,10 @@
           <image href="/static/axiom-logo.png" width="1450" height="1086" preserveAspectRatio="xMidYMid meet" filter="url(#axiom-brand-cutout)"/>
         </svg>
       </div>
+      <time id="portalLocalClock" class="local-clock portal-local-clock" data-local-clock aria-label="Current local date and time">
+        <span class="local-clock-date" data-local-clock-date>Current date</span>
+        <span class="local-clock-time" data-local-clock-time>Current time</span>
+      </time>
       <nav class="top-actions" aria-label="Main navigation">
         
         <div class="portal-menu">
@@ -664,22 +669,28 @@
               <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             
-            <div class="task-model-fields">
-              <label class="host-behavior-field voice-slider-field">Speech rate <output id="voiceRateValue" for="voiceRate">1.00</output>
-                <input id="voiceRate" type="range" min="0.5" max="1.75" step="0.05" value="1" disabled>
-              </label>
-              <label class="host-behavior-field voice-slider-field">Pitch (browser voices) <output id="voicePitchValue" for="voicePitch">1.00</output>
-                <input id="voicePitch" type="range" min="0.5" max="1.5" step="0.05" value="1" disabled>
-              </label>
-              <label class="host-behavior-field voice-slider-field">Volume <output id="voiceVolumeValue" for="voiceVolume">1.00</output>
-                <input id="voiceVolume" type="range" min="0" max="1" step="0.05" value="1" disabled>
-              </label>
-              <label class="host-behavior-field">Browser voice name
-                <input id="voiceName" type="text" disabled maxlength="120" placeholder="Blank uses browser default">
-              </label>
-            </div>
-            <p id="voiceSettingsStatus" role="status" aria-live="polite"></p>
-            <div class="edit-actions"><button id="saveVoiceSettings" class="primary-button" type="button" disabled>Save</button></div>
+            <section class="overview-group voice-settings-editor" aria-labelledby="voicePreferencesHeading">
+              <h4 id="voicePreferencesHeading">Voice Preferences</h4>
+              <div class="task-model-fields">
+                <label class="host-behavior-field voice-slider-field">Speech rate <output id="voiceRateValue" for="voiceRate">1.00</output>
+                  <input id="voiceRate" type="range" min="0.5" max="1.75" step="0.05" value="1" disabled>
+                </label>
+                <label class="host-behavior-field voice-slider-field">Pitch (browser voices) <output id="voicePitchValue" for="voicePitch">1.00</output>
+                  <input id="voicePitch" type="range" min="0.5" max="1.5" step="0.05" value="1" disabled>
+                </label>
+                <label class="host-behavior-field voice-slider-field">Volume <output id="voiceVolumeValue" for="voiceVolume">1.00</output>
+                  <input id="voiceVolume" type="range" min="0" max="1" step="0.05" value="1" disabled>
+                </label>
+                <label class="host-behavior-field">Browser voice name
+                  <input id="voiceName" type="text" disabled maxlength="120" placeholder="Blank uses browser default">
+                </label>
+              </div>
+              <p id="voiceSettingsStatus" role="status" aria-live="polite"></p>
+              <div class="edit-actions">
+                <button id="saveVoiceSettings" class="primary-button" type="button" disabled>Save</button>
+                <button id="cancelVoiceSettings" class="secondary-button" type="button" disabled>Cancel</button>
+              </div>
+            </section>
           </article>
 
           <article id="devicesSection" class="panel hidden">
@@ -688,14 +699,17 @@
               <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
             </div>
             
-            <div id="devicePermissionStatus" class="search-summary" aria-live="polite">Device inventory has not been queried.</div>
-            <div class="device-selection-summary" id="deviceSelectionSummary">Body device preferences have not been loaded.</div>
-            <div id="deviceInventoryList" class="record-list"></div>
-            <div class="edit-actions device-selection-actions">
-              <button id="saveDeviceSelections" class="primary-button" type="button" aria-label="Save device choices" title="Save device choices" disabled>Save</button>
-              <button id="cancelDeviceSelections" class="secondary-button" type="button" aria-label="Cancel device changes" title="Cancel device changes" disabled>Cancel</button>
-            </div>
-            <p id="deviceSelectionStatus" role="status" aria-live="polite"></p>
+            <section class="overview-group device-inventory-editor" aria-labelledby="devicePreferencesHeading">
+              <h4 id="devicePreferencesHeading">Device Preferences</h4>
+              <div id="devicePermissionStatus" class="search-summary" aria-live="polite">Device inventory has not been queried.</div>
+              <div class="device-selection-summary" id="deviceSelectionSummary">Body device preferences have not been loaded.</div>
+              <div id="deviceInventoryList" class="record-list"></div>
+              <div class="edit-actions device-selection-actions">
+                <button id="saveDeviceSelections" class="primary-button" type="button" aria-label="Save device choices" title="Save device choices" disabled>Save</button>
+                <button id="cancelDeviceSelections" class="secondary-button" type="button" aria-label="Cancel device changes" title="Cancel device changes" disabled>Cancel</button>
+              </div>
+              <p id="deviceSelectionStatus" role="status" aria-live="polite"></p>
+            </section>
           </article>
 
           <article id="overviewSection" class="panel admin-summary">
@@ -851,6 +865,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261027-breaker-settings"></script>
+  <script src="/static/portal.js?v=20261028-speech-cancel"></script>
 </body>
 </html>

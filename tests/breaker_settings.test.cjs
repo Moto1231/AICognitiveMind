@@ -79,6 +79,7 @@ test('The Breaker form loads locked and shows current operational counts', async
   assert.equal(ui.elements.breakerHealthConsecutive.textContent, '1 / 5');
   assert.equal(ui.elements.breakerHealthRolling.textContent, '7 / 35 in 52 of 100');
   assert.equal(ui.elements.breakerHealthLastFailure.textContent, 'StewardAssessmentTimeout');
+  assert.equal(ui.elements.breakerSettingsStatus.textContent, '');
 });
 
 test('The Breaker edits are isolated, validated, revisioned, and cancellable', async () => {

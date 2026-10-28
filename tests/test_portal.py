@@ -204,7 +204,9 @@ class PortalTests(unittest.TestCase):
                     self.active = False
 
         foundations = Foundations()
-        foundations.feed((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+        foundations.feed(markup)
         for name in ("SelfName", "Pronouns", "Development", "Values", "Commitments", "Relationships"):
             with self.subTest(name=name):
                 self.assertEqual(foundations.fields["foundation" + name][0], "dd")
@@ -223,6 +225,13 @@ class PortalTests(unittest.TestCase):
         for name in ("foundationEdit", "foundationSave", "foundationCancel"):
             self.assertNotIn(name, foundations.fields)
         self.assertEqual(foundations.fields["startupStatus"][1]["role"], "status")
+        self.assertIn("#foundationsSection .edit-actions,", stylesheet)
+        self.assertIn(
+            "#foundationsSection .edit-actions button.axiom-icon-button,", stylesheet
+        )
+        self.assertIn("#startupStatus:empty { display: none; }", stylesheet)
+        self.assertIn("/static/portal.css?v=20261028-device-inner-panel", markup)
+        self.assertIn("/static/portal.js?v=20261028-speech-cancel", markup)
 
     def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -256,6 +265,8 @@ class PortalTests(unittest.TestCase):
         self.assertNotIn("Changes apply to new interactions only", breaker_markup)
         self.assertIn("grid-template-columns: repeat(3, minmax(160px, 220px));", stylesheet)
         self.assertIn("#breakerSection .edit-actions button.axiom-icon-button", stylesheet)
+        self.assertIn("#breakerSettingsStatus:empty { display: none; }", stylesheet)
+        self.assertNotIn("Revision ${result.revision} loaded.", script)
 
     def test_endpoint_api_key_is_an_accessible_masked_text_input(self) -> None:
         class Controls(HTMLParser):
@@ -290,12 +301,47 @@ class PortalTests(unittest.TestCase):
             with self.subTest(element_id=element_id):
                 self.assertRegex(markup, rf'id="{element_id}"[^>]*class="primary-button"[^>]*>Save</button>')
 
+        self.assertRegex(
+            markup,
+            r'id="cancelVoiceSettings"[^>]*class="secondary-button"[^>]*>Cancel</button>',
+        )
+
         self.assertIn("function editMcpServer()", script)
         self.assertIn("function addMcpServer()", script)
         self.assertIn('name: "",\n    url: "",\n    bearer_token: "",', script)
 
+    def test_speech_settings_use_a_labeled_inner_panel(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+
+        self.assertIn(
+            '<section class="overview-group voice-settings-editor" aria-labelledby="voicePreferencesHeading">',
+            markup,
+        )
+        self.assertIn('<h4 id="voicePreferencesHeading">Voice Preferences</h4>', markup)
+        self.assertIn("#voiceSection > .overview-group,", stylesheet)
+        self.assertIn("#voiceSection > .overview-group > h4,", stylesheet)
+        self.assertIn(
+            "#voiceSection > .overview-group,#devicesSection > .overview-group,",
+            stylesheet,
+        )
+
+    def test_device_inventory_uses_a_labeled_inner_panel(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+
+        self.assertIn(
+            '<section class="overview-group device-inventory-editor" aria-labelledby="devicePreferencesHeading">',
+            markup,
+        )
+        self.assertIn('<h4 id="devicePreferencesHeading">Device Preferences</h4>', markup)
+        self.assertIn("#devicesSection > .overview-group,", stylesheet)
+        self.assertIn("#devicesSection > .overview-group > h4,", stylesheet)
+        self.assertIn("#devicesSection > .overview-group,#taskProfileEditor", stylesheet)
+
     def test_task_profile_controls_are_bound_and_renderable(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
         profile_ids = (
             "taskProfileList",
@@ -330,6 +376,7 @@ class PortalTests(unittest.TestCase):
             "voicePitch",
             "voiceVolume",
             "voiceName",
+            "cancelVoiceSettings",
         )
         for element_id in profile_ids:
             with self.subTest(element_id=element_id):
@@ -346,6 +393,15 @@ class PortalTests(unittest.TestCase):
         self.assertIn('audio_voice: "Audio/Voice"', script)
         self.assertIn("assignment.fallbacks.push({ provider: \"\", model: \"\" })", script)
         self.assertIn('id="taskProfileFallbackList"', markup)
+        self.assertIn("#taskProfileEditor .task-fallback-actions,", stylesheet)
+        self.assertIn(
+            "#taskProfileEditor .task-fallbacks-editor > .panel-heading button.axiom-icon-button,",
+            stylesheet,
+        )
+        self.assertIn(
+            "#taskProfileEditor .task-fallback-actions button.axiom-icon-button,",
+            stylesheet,
+        )
         self.assertIn('id="voiceRate"', markup)
         self.assertNotIn('id="fishAudioApiKey"', markup)
 

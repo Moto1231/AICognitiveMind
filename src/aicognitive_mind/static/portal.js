@@ -70,6 +70,7 @@ const state = {
   voiceSettingsRevision: 0,
   voiceSettingsLoaded: false,
   voiceSettingsBusy: false,
+  voiceSettingsBaseline: null,
   taskProfileSnapshot: "",
   hostBehaviorSnapshot: "",
 };
@@ -267,6 +268,7 @@ const el = {
   voiceSettingsRevision: document.getElementById("voiceSettingsRevision"),
   voiceSettingsStatus: document.getElementById("voiceSettingsStatus"),
   saveVoiceSettings: document.getElementById("saveVoiceSettings"),
+  cancelVoiceSettings: document.getElementById("cancelVoiceSettings"),
   taskProfileFoundation: document.getElementById("taskProfileFoundation"),
   taskFoundationEdit: document.getElementById("taskFoundationEdit"),
   taskFoundationSave: document.getElementById("taskFoundationSave"),
@@ -1513,6 +1515,38 @@ function updateVoiceSliderReadouts() {
   if (el.voiceVolumeValue) el.voiceVolumeValue.value = Number(el.voiceVolume.value).toFixed(2);
 }
 
+function normalizeVoiceSettings(settings = {}) {
+  return {
+    rate: Number(settings.rate ?? 1),
+    pitch: Number(settings.pitch ?? 1),
+    volume: Number(settings.volume ?? 1),
+    voiceName: String(settings.voiceName ?? ""),
+  };
+}
+
+function readVoiceSettingsForm() {
+  return normalizeVoiceSettings({
+    rate: el.voiceRate?.value,
+    pitch: el.voicePitch?.value,
+    volume: el.voiceVolume?.value,
+    voiceName: el.voiceName?.value.trim(),
+  });
+}
+
+function applyVoiceSettingsForm(settings) {
+  const normalized = normalizeVoiceSettings(settings);
+  if (el.voiceRate) el.voiceRate.value = String(normalized.rate);
+  if (el.voicePitch) el.voicePitch.value = String(normalized.pitch);
+  if (el.voiceVolume) el.voiceVolume.value = String(normalized.volume);
+  if (el.voiceName) el.voiceName.value = normalized.voiceName;
+  updateVoiceSliderReadouts();
+}
+
+function voiceSettingsDirty() {
+  if (!state.voiceSettingsBaseline) return false;
+  return JSON.stringify(readVoiceSettingsForm()) !== JSON.stringify(state.voiceSettingsBaseline);
+}
+
 function bodySettingsAvailable() {
   return state.adminAuthorized && state.status?.administration?.body_settings_available === true;
 }
@@ -1526,6 +1560,7 @@ function renderBodySettingsAvailability() {
   if (!available) {
     state.voiceSettingsLoaded = false;
     state.voiceSettingsRevision = 0;
+    state.voiceSettingsBaseline = null;
     for (const name of ["voiceRate", "voicePitch", "voiceVolume"]) {
       if (el[name]) el[name].value = "1";
     }
@@ -1539,9 +1574,12 @@ function renderBodySettingsAvailability() {
     if (el.bodyFallbackSource) el.bodyFallbackSource.textContent = message;
   }
   const enabled = available && state.voiceSettingsLoaded && !state.voiceSettingsBusy;
-  for (const name of ["voiceRate", "voicePitch", "voiceVolume", "voiceName", "saveVoiceSettings"]) {
+  for (const name of ["voiceRate", "voicePitch", "voiceVolume", "voiceName"]) {
     if (el[name]) el[name].disabled = !enabled;
   }
+  const dirty = enabled && voiceSettingsDirty();
+  if (el.saveVoiceSettings) el.saveVoiceSettings.disabled = !dirty;
+  if (el.cancelVoiceSettings) el.cancelVoiceSettings.disabled = !dirty;
   if (el.bodyFallbackEnabled) el.bodyFallbackEnabled.disabled = !bodyFallbackSettingsAvailable();
   if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = !bodyFallbackSettingsAvailable();
 }
@@ -1560,12 +1598,9 @@ async function loadVoiceSettings() {
     const settings = await api("/v1/admin/body/voice/settings", {}, true);
     if (revision !== state.voiceSettingsLoadRevision || !bodySettingsAvailable()) return;
     state.voiceSettingsRevision = Number(settings.revision || 0);
-    el.voiceRate.value = String(settings.rate ?? 1);
-    el.voicePitch.value = String(settings.pitch ?? 1);
-    el.voiceVolume.value = String(settings.volume ?? 1);
-    el.voiceName.value = settings.voiceName || "";
+    state.voiceSettingsBaseline = normalizeVoiceSettings(settings);
+    applyVoiceSettingsForm(state.voiceSettingsBaseline);
     state.voiceSettingsLoaded = true;
-    updateVoiceSliderReadouts();
     if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
     if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = "";
   } catch (error) {
@@ -1581,10 +1616,11 @@ async function loadVoiceSettings() {
 }
 
 async function saveVoiceSettings() {
-  if (!bodySettingsAvailable() || !state.voiceSettingsLoaded || state.voiceSettingsBusy) {
+  if (!bodySettingsAvailable() || !state.voiceSettingsLoaded || state.voiceSettingsBusy || !voiceSettingsDirty()) {
     renderBodySettingsAvailability();
     return;
   }
+  const draft = readVoiceSettingsForm();
   state.voiceSettingsBusy = true;
   renderBodySettingsAvailability();
   try {
@@ -1592,14 +1628,16 @@ async function saveVoiceSettings() {
       method: "POST",
       body: JSON.stringify({
         expected_revision: state.voiceSettingsRevision,
-        rate: Number(el.voiceRate.value),
-        pitch: Number(el.voicePitch.value),
-        volume: Number(el.voiceVolume.value),
-        voice_name: el.voiceName.value.trim(),
+        rate: draft.rate,
+        pitch: draft.pitch,
+        volume: draft.volume,
+        voice_name: draft.voiceName,
       }),
     }, true);
     if (!bodySettingsAvailable()) return;
     state.voiceSettingsRevision = Number(settings.revision || 0);
+    state.voiceSettingsBaseline = normalizeVoiceSettings({ ...draft, ...settings });
+    applyVoiceSettingsForm(state.voiceSettingsBaseline);
     if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
     if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = "";
     toast("Voice settings saved");
@@ -1611,6 +1649,16 @@ async function saveVoiceSettings() {
     state.voiceSettingsBusy = false;
     renderBodySettingsAvailability();
   }
+}
+
+function cancelVoiceSettings() {
+  if (!bodySettingsAvailable() || !state.voiceSettingsLoaded || state.voiceSettingsBusy || !state.voiceSettingsBaseline) {
+    renderBodySettingsAvailability();
+    return;
+  }
+  applyVoiceSettingsForm(state.voiceSettingsBaseline);
+  if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = "Changes cancelled.";
+  renderBodySettingsAvailability();
 }
 
 async function refreshBodyFallbackSettings() {
@@ -3363,9 +3411,14 @@ if (el.taskProfileVoiceReferenceId) el.taskProfileVoiceReferenceId.addEventListe
   updateTaskSaveState();
 });
 if (el.saveVoiceSettings) el.saveVoiceSettings.addEventListener("click", saveVoiceSettings);
+if (el.cancelVoiceSettings) el.cancelVoiceSettings.addEventListener("click", cancelVoiceSettings);
 [el.voiceRate, el.voicePitch, el.voiceVolume].forEach((slider) => {
-  if (slider) slider.addEventListener("input", updateVoiceSliderReadouts);
+  if (slider) slider.addEventListener("input", () => {
+    updateVoiceSliderReadouts();
+    renderBodySettingsAvailability();
+  });
 });
+if (el.voiceName) el.voiceName.addEventListener("input", renderBodySettingsAvailability);
 
 const BODY_DEVICE_STORAGE_KEYS = {
   videoinput: "aicognitive_mind.device.videoInput",
@@ -3686,7 +3739,7 @@ async function refreshStartupConfiguration() {
     state.cognitiveConfiguration = result;
     state.taskFoundations = state.cognitiveConfiguration.task_foundations || {};
     renderStartupConfiguration();
-    document.getElementById("startupStatus").textContent = "Startup configuration loaded.";
+    document.getElementById("startupStatus").textContent = "";
   } catch (error) {
     if (revision === state.startupConfigurationLoadRevision && !state.cognitiveDraft && !state.cognitiveSaving) document.getElementById("startupStatus").textContent = error.message;
   }
@@ -3798,7 +3851,7 @@ async function refreshBreakerSettings() {
     if (revision !== state.breakerLoadRevision || state.breakerDraft || state.breakerSaving) return;
     state.breakerSettings = result;
     renderBreakerSettings();
-    if (status) status.textContent = `Revision ${result.revision} loaded.`;
+    if (status) status.textContent = "";
   } catch (error) {
     if (revision === state.breakerLoadRevision && !state.breakerDraft && !state.breakerSaving && status) status.textContent = error.message;
   }
