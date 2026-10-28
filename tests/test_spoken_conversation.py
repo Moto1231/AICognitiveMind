@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from aicognitive_mind.body import BodyRuntime, BrowserAudioIngress, BrowserAvatarOutput, BrowserVoiceOutput
 from aicognitive_mind.domain import InteractionResult
 from aicognitive_mind.embodiment import MindBodyBridge
-from aicognitive_mind.host_runtime import HostAwareCore, HostAwareInterpreter, HostRuntime
+from aicognitive_mind.host_runtime import HostAwareCore, HostAwareInterpreter, HostRuntime, RuntimeRecords
 from aicognitive_mind.storage import InMemoryEvidenceStore, InMemoryJournalStore
 from aicognitive_mind import api
 from fastapi import HTTPException
@@ -216,20 +216,30 @@ class SpokenConversationTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 cancelled.set()
 
+        records = RuntimeRecords(SimpleNamespace(mind_id="synthetic-spoken-disconnect"))
+        await records.create("active_body_session", {
+            "session_id": "spoken-disconnect",
+            "updated_at": datetime.now(UTC).timestamp(),
+        })
         runtime = SimpleNamespace(
             browser_ears=SimpleNamespace(adapter=BrowserAudioIngress()),
             mind_body=SimpleNamespace(perceive=perceive),
+            runtime_records=records,
         )
         request = SimpleNamespace(is_disconnected=AsyncMock(return_value=True))
         payload = api.BrowserAudioObservationRequest(
             audio_data_url="data:audio/webm;base64," + base64.b64encode(b"disconnect speech").decode(),
             duration_ms=1000, conversation=True,
         )
-        with patch.object(api, "_request_runtime", return_value=runtime), patch.object(
-            api, "_body_presence_scope", return_value=("synthetic", "spoken-disconnect"),
-        ):
-            with self.assertRaises(HTTPException) as raised:
-                await api.receive_browser_audio_observation(payload, request)
+        token = api.body_session.set("spoken-disconnect")
+        try:
+            with patch.object(api, "_request_runtime", return_value=runtime), patch.object(
+                api, "_body_presence_scope", return_value=("synthetic", "spoken-disconnect"),
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    await api.receive_browser_audio_observation(payload, request)
+        finally:
+            api.body_session.reset(token)
         self.assertEqual(raised.exception.status_code, 499)
         self.assertTrue(cancelled.is_set())
 

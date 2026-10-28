@@ -52,7 +52,7 @@ function fixture() {
       setInterval(callback) { const id = ++intervalSequence; intervals.set(id, callback); return id; },
       clearInterval(id) { intervals.delete(id); } },
     performance: { now: () => now },
-    hearingEnabled: true, sensoryLoopGeneration: 1,
+    bodyOwnershipActive: true, hearingEnabled: true, sensoryLoopGeneration: 1,
     microphoneStream: { id: 'selected-microphone' }, recorder: null,
     audioAnalyser: { fftSize: 16, getByteTimeDomainData(samples) { samples.fill(sample); } },
     AUDIO_MAX_DURATION_MS: 30_000, AUDIO_IDLE_WINDOW_MS: 4000,

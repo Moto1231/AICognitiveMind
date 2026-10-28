@@ -53,6 +53,7 @@ from aicognitive_mind.body import (
 from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body.genesis_avatar import build_genesis_vrm
 from aicognitive_mind.body_sessions import (
+    ACTIVE_BODY_FRESH_SECONDS,
     BodySessionHeartbeat,
     BodyQueue,
     body_session,
@@ -1163,6 +1164,8 @@ async def receive_browser_audio_observation(
     body: BrowserAudioObservationRequest,
     request: Request,
 ) -> EmbodiedInteractionResult:
+    if body.conversation:
+        await require_active_body_owner(request)
     ears = cast(BodyQueue, _request_runtime(request).browser_ears)
     try:
         percept = type(ears.adapter)().accept(
@@ -1281,7 +1284,7 @@ async def mouth_page() -> FileResponse:
 async def register_active_body_session(
     request: Request, body: BodySessionHeartbeat | None = None,
 ) -> dict[str, bool]:
-    """Register the browser's live Body session for reasoning-host speech delivery."""
+    """Acquire, renew, transfer, or release this Mind's single live Body owner."""
     session_id = body_session.get()
     if session_id == "legacy":
         raise HTTPException(
@@ -1289,23 +1292,91 @@ async def register_active_body_session(
             detail="A named live Body session is required",
         )
     records = cast(RuntimeRecords, _request_runtime(request).runtime_records)
-    value = {"session_id": session_id, "updated_at": time_module.time()}
-    if body is not None and body.client_state is not None:
-        value["client_state"] = body.client_state.model_dump(exclude_none=True)
+    heartbeat = body or BodySessionHeartbeat()
     for _ in range(10):
+        now = time_module.time()
         before = await records.get("active_body_session")
+        if heartbeat.release:
+            if not isinstance(before, dict) or before.get("session_id") != session_id:
+                return {"registered": False, "active": False, "replaced": False}
+            released = {"session_id": "legacy", "updated_at": now}
+            if await records.replace("active_body_session", before, released):
+                return {"registered": False, "active": False, "replaced": False}
+            continue
+
+        existing_session = before.get("session_id") if isinstance(before, dict) else None
+        existing_updated_at = before.get("updated_at") if isinstance(before, dict) else None
+        existing_fresh = (
+            isinstance(existing_session, str)
+            and bool(existing_session)
+            and existing_session != "legacy"
+            and not isinstance(existing_updated_at, bool)
+            and isinstance(existing_updated_at, (int, float))
+            and math.isfinite(existing_updated_at)
+            and max(0.0, now - existing_updated_at) <= ACTIVE_BODY_FRESH_SECONDS
+        )
+        client_state = heartbeat.client_state
+        explicitly_inactive = client_state is not None and (
+            client_state.page_visible is False or client_state.page_focused is False
+        )
+        if existing_session == session_id and explicitly_inactive:
+            released = {"session_id": "legacy", "updated_at": now}
+            if await records.replace("active_body_session", before, released):
+                return {"registered": False, "active": False, "replaced": False}
+            continue
+        focused_claim = (
+            client_state is not None
+            and client_state.page_visible is True
+            and client_state.page_focused is True
+        )
+        if existing_session != session_id and not focused_claim:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A focused, visible Body window is required to acquire ownership",
+            )
+        replacing_other = existing_fresh and existing_session != session_id
+        if replacing_other and not heartbeat.takeover:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Another live Body window currently owns this Mind",
+            )
+
+        value = {"session_id": session_id, "updated_at": now}
+        if heartbeat.client_state is not None:
+            value["client_state"] = heartbeat.client_state.model_dump(exclude_none=True)
         if before is None:
             try:
                 await records.create("active_body_session", value)
-                return {"registered": True}
+                return {"registered": True, "active": True, "replaced": False}
             except CommitConflict:
                 continue
         if await records.replace("active_body_session", before, value):
-            return {"registered": True}
+            return {"registered": True, "active": True, "replaced": replacing_other}
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Could not register the active Body session; retry",
     )
+
+
+async def require_active_body_owner(request: Request) -> None:
+    """Reject speech-producing work from stale, hidden, or superseded Body windows."""
+    session_id = body_session.get()
+    records = cast(RuntimeRecords, _request_runtime(request).runtime_records)
+    active = await records.get("active_body_session")
+    updated_at = active.get("updated_at") if isinstance(active, dict) else None
+    if (
+        not isinstance(active, dict)
+        or active.get("session_id") != session_id
+        or session_id == "legacy"
+        or isinstance(updated_at, bool)
+        or not isinstance(updated_at, (int, float))
+        or not math.isfinite(updated_at)
+        or max(0.0, time_module.time() - updated_at) > ACTIVE_BODY_FRESH_SECONDS
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This Body window is not the active owner",
+        )
 
 
 @app.post("/v1/body/mouth/speak", response_model=ExpressionIntent)
@@ -1404,6 +1475,7 @@ async def next_mouth_intent(request: Request, response: Response) -> ExpressionI
     mouth = cast(BrowserVoiceOutput, _request_runtime(request).browser_mouth)
     if body_session.get() == "legacy":
         return await mouth.consume()
+    await require_active_body_owner(request)
     intent, receipt = await mouth.deliver()
     if receipt:
         response.headers["X-Body-Delivery"] = receipt
@@ -1419,6 +1491,7 @@ async def mouth_output_events(request: Request) -> StreamingResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A named live Body session is required",
         )
+    await require_active_body_owner(request)
 
     mouth = cast(BodyQueue, _request_runtime(request).browser_mouth)
     subscriber = subscribe_body_output(session_id, "mouth", mind_scope=mouth.output_scope)
@@ -2344,6 +2417,8 @@ async def embodied_text_interaction(
     request: Request,
     express: bool = True,
 ) -> InteractionResult:
+    if express:
+        await require_active_body_owner(request)
     try:
         bridge = cast(MindBodyBridge, _request_runtime(request).mind_body)
         return await bridge.interact(

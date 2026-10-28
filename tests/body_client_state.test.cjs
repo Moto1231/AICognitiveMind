@@ -5,15 +5,23 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const markup = fs.readFileSync(path.join(__dirname, '../src/aicognitive_mind/static/live_body.html'), 'utf8');
-const source = markup.slice(markup.indexOf('    async function registerActiveBodySession('), markup.indexOf('    async function showMindResult('));
+const source = markup.slice(markup.indexOf('    async function registerActiveBodySession('), markup.indexOf('    function releaseBodyOwnership('));
 function fixture() {
   const requests = [];
   const context = vm.createContext({
     AbortSignal,
-    hearingEnabled: true, voiceEnabled: true, document: { hidden: false },
+    hearingEnabled: true, voiceEnabled: true, document: { hidden: false, hasFocus: () => true },
     microphoneStream: { getAudioTracks: () => [{ readyState: 'live', enabled: true }] },
     realtimeRequested: false, talkEnabled: false, talkBusy: false, lastPlaybackState: 'idle',
-    bodyFetch: async (url, options) => { requests.push({ url, options }); },
+    bodyOwnershipActive: true, bodyOwnershipReleasePending: false,
+    bodyOwnershipStatus: { dataset: {}, textContent: '' },
+    bodyWindowCanOwn: () => !context.document.hidden && context.document.hasFocus(),
+    activateBodyOwnership: async () => {}, pauseBodyOwnership: () => {}, setBodyControlsEnabled: () => {},
+    responseErrorMessage: async () => 'registration failed',
+    bodyFetch: async (url, options) => {
+      requests.push({ url, options });
+      return { ok: true, status: 200, json: async () => ({ active: true, replaced: false }) };
+    },
   });
   vm.runInContext(source, context);
   return { context, requests, state: () => JSON.parse(requests.at(-1).options.body).client_state };
@@ -24,22 +32,28 @@ test('the active Body heartbeat reports only bounded operational flags for the c
   await ui.context.registerActiveBodySession();
   const state = ui.state();
   assert.deepEqual(state, {
-    client_revision: '20261027-host-recovery', hearing: true, voice: true, page_visible: true,
+    client_revision: '20261027-single-body-owner', hearing: true, voice: true,
+    page_visible: true, page_focused: true,
     microphone_live: true, microphone_enabled: true, voice_mode: 'connected_host', last_playback: 'idle',
   });
   assert.equal(ui.requests[0].url, '/v1/body/session/active');
   assert.equal(ui.requests[0].options.method, 'POST');
   assert.equal(ui.requests[0].options.headers['Content-Type'], 'application/json');
-  assert.deepEqual(Object.keys(JSON.parse(ui.requests[0].options.body)), ['client_state']);
+  assert.deepEqual(Object.keys(JSON.parse(ui.requests[0].options.body)), ['takeover', 'client_state']);
 });
 
-test('hidden, muted and stopped inputs remain distinct from voice selection and playback status', async () => {
+test('hidden Body windows do not renew ownership or report microphone state', async () => {
   const ui = fixture();
   ui.context.document.hidden = true;
+  await ui.context.registerActiveBodySession();
+  assert.equal(ui.requests.length, 0);
+});
+
+test('muted and stopped inputs remain distinct from voice selection and playback status', async () => {
+  const ui = fixture();
   ui.context.lastPlaybackState = 'completed';
   ui.context.microphoneStream = { getAudioTracks: () => [{ readyState: 'live', enabled: false }] };
   await ui.context.registerActiveBodySession();
-  assert.equal(ui.state().page_visible, false);
   assert.equal(ui.state().microphone_live, true);
   assert.equal(ui.state().microphone_enabled, false);
   assert.equal(ui.state().last_playback, 'completed');

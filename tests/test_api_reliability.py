@@ -31,6 +31,17 @@ class ApiReliability(unittest.IsolatedAsyncioTestCase):
                     )
                     headers = {"X-Body-Session": "one"}
                     response = await client.post(
+                        "/v1/body/session/active",
+                        headers=headers,
+                        json={
+                            "client_state": {
+                                "page_visible": True,
+                                "page_focused": True,
+                            }
+                        },
+                    )
+                    self.assertEqual(response.status_code, 200, response.text)
+                    response = await client.post(
                         "/v1/body/mouth/speak", headers=headers, json={"text": "First"}
                     )
                     self.assertLess(response.status_code, 300, response.text)
@@ -43,12 +54,13 @@ class ApiReliability(unittest.IsolatedAsyncioTestCase):
                         ],
                         receipt,
                     )
-                    self.assertIsNone(
+                    self.assertEqual(
                         (
                             await client.get(
                                 "/v1/body/mouth/next", headers={"X-Body-Session": "two"}
                             )
-                        ).json()
+                        ).status_code,
+                        409,
                     )
                     await client.post(
                         "/v1/body/mouth/ack",
