@@ -16,6 +16,7 @@ from aicognitive_mind.cognitive_configuration import (
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.domain import CognitiveActor, CognitiveMind, JournalKind, MindIdentity
 from aicognitive_mind.permissions import CognitiveOperation, CognitivePermissionError, PermissionPolicy
+from aicognitive_mind.prompts import DEFAULT_STARTUP_INSTRUCTIONS
 from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMindStore
 from aicognitive_mind.task_behaviors import TaskBehaviorRegistry, TaskExecutionContext, TaskPromptAssembler
 
@@ -41,6 +42,12 @@ class Records:
 
 
 class CognitiveConfigurationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_default_startup_requires_element_wide_visual_consistency(self):
+        self.assertIn("every visible\nand interactive element, not only buttons", DEFAULT_STARTUP_INSTRUCTIONS)
+        self.assertIn("reuse its semantic component, shared\nclass and design tokens", DEFAULT_STARTUP_INSTRUCTIONS)
+        self.assertIn("Do not\napproximate an existing pattern or add a one-off selector", DEFAULT_STARTUP_INSTRUCTIONS)
+        self.assertIn("desktop and mobile viewports", DEFAULT_STARTUP_INSTRUCTIONS)
+
     async def test_overrides_reload_preserve_blanks_and_unedited_task_foundations(self):
         records = Records()
         registry = CognitiveConfigurationRegistry(records)
