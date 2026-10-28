@@ -6,7 +6,7 @@
 
 ## Current menu map
 
-> This section was reviewed against `275e9202313b2ba41fe092e2be0da16186cb5ce2` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
+> This section was reviewed against `56dd9a5faefcc6adde578ed49a6aaad30e968153` on 2026-10-27. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
 
 Use this table when a heading differs from its navigation button. Button icons may replace visible text; hover or keyboard focus exposes labels/tooltips, and accessible labels identify the action.
 
@@ -18,12 +18,14 @@ Use this table when a heading differs from its navigation button. Button icons m
 | Top bar | Return | Browser back when history exists; otherwise the public entry link |
 | Top bar | Log Out | End the portal session |
 | Administration | System Overview | Mind Details, Cognitive State, Current State Context, API Activity |
-| Administration | Foundations | Loaded identity as text; no identity or Startup editor |
+| Administration | Foundations | Loaded identity plus the revisioned Startup editor |
+| Administration | The Breaker | Continuity circuit state, failure thresholds and wait limits |
 | Administration | Behavior | **Behaviors** shared catalog |
 | Administration | Devices | **Device Inventory** |
 | Administration | Speech Settings | Speech sliders and browser voice name for the authorized Mind |
 | Administration | Task Profiles | **Task Configuration**, then an individual task |
-| Administration | Endpoints, Servers & Tools | **Endpoints → Models** and **MCP Servers → Tools** |
+| Administration | Endpoints & MCP Servers | Provider **Endpoints → Models** and MCP server connections |
+| Administration | Tools | Discover, enable and run tools from saved MCP servers |
 | Administration | Skills | Mind skills, GitHub drafts and release-file preparation |
 | Administration | Memories | **Durable Memory** |
 | Administration | Journals | **History** |
@@ -39,7 +41,7 @@ For a visual example, see the [supplied earlier-interface Main overview capture]
 
 Account-scoped Live access uses its own Mind's services. Realtime voice remains unavailable for those accounts; see [Body access and limits](body.md#check-access-before-hardware).
 
-Section sources: [Administration views](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/static/index.html#L168-L220), [Speech Settings](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/static/index.html#L527-L551), [account runtime binding](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/api.py#L455-L514).
+Section sources: [Administration views](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/index.html), [navigation handlers](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/portal.js), [account runtime binding](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/api.py).
 
 ## Read System Overview
 
@@ -51,7 +53,7 @@ Section sources: [Administration views](https://github.com/Moto1231/AICognitiveM
 4. Inspect **Current State Context** when you need the stored field value, source, status or timestamp.
 5. Choose **Refresh** if the displayed information needs reloading.
 
-“Self-name not set” does not mean that identity or history is absent. **Unknown** is an honest missing answer, not a request to invent one. The state view is read-only; use conversation to supply context. **Foundations** separately displays the loaded identity and has no editing controls.
+“Self-name not set” does not mean that identity or history is absent. **Unknown** is an honest missing answer, not a request to invent one. The state view is read-only; use conversation to supply context. **Foundations** separately displays identity without identity-editing controls; its Startup editor changes cognitive configuration, not identity.
 
 Section sources for this distinction: [Foundations identity display](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/index.html#L168-L183), [safe identity rendering and refresh](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/portal.js#L3357-L3403).
 

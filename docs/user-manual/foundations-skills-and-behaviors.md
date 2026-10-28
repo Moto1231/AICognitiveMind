@@ -20,7 +20,7 @@ Packaged defaults supply unset settings. Saved Administrator overrides take prec
 
 ## Read loaded Identity
 
-> This section was reviewed against `80a3a4105379bb6c95afb6c71483c8d556a0ccc3` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
+> This section was reviewed against `56dd9a5faefcc6adde578ed49a6aaad30e968153` on 2026-10-27. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
 
 1. Open **Administration → Foundations**.
 2. Wait for **Identity loaded.**
@@ -28,11 +28,11 @@ Packaged defaults supply unset settings. Saved Administrator overrides take prec
 
 These are text displays. Foundations has no editable identity fields or Edit, Save or Cancel actions. An unset Self-name displays **Not selected**; empty value, commitment and relationship lists display **None recorded**. Missing data displays **Unknown**. If the identity request fails, the view clears the previous identity and shows the error.
 
-Refreshing Foundations reads the identity endpoint only. It does not fetch or write startup configuration. The authorized identity API remains available separately; this view does not provide an identity-editing workflow.
+Refreshing Foundations reads both the identity display and saved Startup configuration. Identity remains read-only in this view; Startup has its own editor below.
 
 Choosing or changing my name in conversation follows its own governance protocol. An unset name does not authorize an automatic rename.
 
-Section sources: [Foundations display](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/index.html#L168-L183), [identity rendering and refresh](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/portal.js#L3357-L3403), [authorized identity API](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/admin_configuration.py#L107-L121).
+Section sources: [Foundations display](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/index.html), [identity and Startup refresh](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/portal.js), [authorized identity API](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/admin_configuration.py).
 
 ## Naming milestone and current limits
 
@@ -52,15 +52,15 @@ Automatic name-and-gender selection at the milestone is not implemented in this 
 
 Section sources: [reported milestone and count](https://github.com/Moto1231/AICognitiveMind/blob/dbbc246860115153f3c11d05b505014cfcb874b8/src/aicognitive_mind/mcp_service.py#L128-L147), [self-name authorization and protected fields](https://github.com/Moto1231/AICognitiveMind/blob/dbbc246860115153f3c11d05b505014cfcb874b8/src/aicognitive_mind/governance_steward.py#L88-L143), [identity fields and defaults](https://github.com/Moto1231/AICognitiveMind/blob/dbbc246860115153f3c11d05b505014cfcb874b8/src/aicognitive_mind/domain.py#L55-L60).
 
-## Startup configuration availability
+## Edit Startup configuration
 
-> This section was reviewed against `80a3a4105379bb6c95afb6c71483c8d556a0ccc3` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
+> This section was reviewed against `56dd9a5faefcc6adde578ed49a6aaad30e968153` on 2026-10-27. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
 
-Foundations no longer includes a Startup editor or its Edit, Save and Cancel actions. The authorized cognitive-configuration API remains implemented, and saved startup settings remain separate from effective Mind skills and Task Foundations. There is no replacement Startup form in this reviewed portal revision.
+Foundations includes a revisioned **Startup** editor for **Base operating contract** and **Startup instructions**. The loaded values are read-only until **Edit**. **Save Startup** is enabled only for a changed, valid draft; **Cancel** restores both saved values. A failed save keeps the draft available, and an in-flight refresh cannot overwrite an active edit.
 
-A deliberately blank saved contract/startup value remains a meaningful configuration choice; removing a form does not reset that configuration. After an authorized configuration change through a supported interface, verify the effective instructions in a subsequent interaction.
+A deliberately blank saved contract or Startup value remains a meaningful configuration choice. Saving Startup does not edit identity, Mind skills or Task Foundations. After saving, verify the effective instructions in a subsequent interaction when the distinction matters.
 
-Section sources: [Foundations display](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/index.html#L168-L183), [identity-only refresh](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/portal.js#L3383-L3403), [authorized configuration API](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/admin_configuration.py#L123-L135).
+Section sources: [Foundations form](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/index.html), [Startup editor and refresh](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/portal.js), [authorized configuration API](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/admin_configuration.py).
 
 ## Edit an effective Mind skill
 

@@ -6,9 +6,9 @@
 
 ## Endpoints are model connections
 
-Open **Administration → Endpoints, Servers & Tools → Endpoints**. An endpoint stores a provider connection and selected model. Its **Models** subsection belongs to that endpoint.
+Open **Administration → Endpoints & MCP Servers → Endpoints**. An endpoint stores a provider connection and selected model. Its **Models** subsection belongs to that endpoint.
 
-**MCP Servers → Tools** on the same page configures external callable tools. A model endpoint is not an MCP server; discovering models is not discovering tools.
+**MCP Servers** on the same page configures external server connections; the separate Administration **Tools** section discovers, enables and runs their callable tools. A model endpoint is not an MCP server; discovering models is not discovering tools.
 
 ## Add a provider connection
 

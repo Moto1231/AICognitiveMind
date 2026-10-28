@@ -58,6 +58,8 @@ Live's **Return** points to the signed-in portal interface.
 
 ## Turn camera, hearing and voice on separately
 
+> Browser suspension recovery was reviewed against `56dd9a5faefcc6adde578ed49a6aaad30e968153` on 2026-10-27. Other sections retain their stated review revisions. This is source review, not a physical-device certification.
+
 | Control | Meaning |
 | --- | --- |
 | Vision Off / Vision On | Toggle camera capture |
@@ -76,7 +78,7 @@ Live's **Return** points to the signed-in portal interface.
 
 Turning Vision off leaves Hearing and Voice unchanged; turning Hearing off leaves Vision and Voice unchanged. Capture loops are separate, but processing can be gated by busy/in-flight state. Do not describe this as guaranteed simultaneous unlimited inference.
 
-The browser remembers toggle preferences. Returning to Live can attempt to resume previously enabled inputs, subject to browser permission and policy.
+The browser remembers toggle preferences. Returning to Live can attempt to resume previously enabled inputs, subject to browser permission and policy. When a suspended page returns to the foreground, becomes visible again or has Voice enabled, it re-registers the Body, reopens the Mouth event stream and checks for queued speech. Voice Off remains off, and overlapping wake-up events share one recovery attempt.
 
 ## Camera and audio limits
 

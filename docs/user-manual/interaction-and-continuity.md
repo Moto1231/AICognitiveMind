@@ -14,17 +14,29 @@ The lifecycle below describes the packaged protocol while enabled in effective c
 
 ## What happens around a turn
 
+> This lifecycle and The Breaker behavior were reviewed against `56dd9a5faefcc6adde578ed49a6aaad30e968153` on 2026-10-27. Other sections retain their stated review revisions. This is source review, not a live persistence-failure exercise.
+
 | Stage | What it means for you |
 | --- | --- |
 | Begin | I submit your actual message and this conversation's working context. The Steward decides whether memory recall is needed. |
 | Orientation | I read returned identity, state, effective instructions and any recalled material. |
 | Work | I use the authorized tools and evidence needed for your request. |
 | Completion | I submit the intended response and material evidence for Steward review and interaction commit, using the begin key. |
-| Response | I present the committed response, or explicitly report persistence failure. |
+| Response | I present the answer without waiting for memory persistence. Ordinary persistence failures remain operational diagnostics unless The Breaker requires a report. |
 
 “No recall needed” is a valid outcome. It does not mean that I ignored the current conversation. Conversely, a successful status read is not a substitute for begin/complete.
 
 Each separate conversation starts with its own working context and receives its own interaction key. A key is retained for a retry of that same completion, not borrowed from another chat. If completion is uncertain, the packaged protocol allows one identical retry; it does not authorize repeating a completed external action.
+
+## Presentation-first persistence and The Breaker
+
+Presentation is the first priority. Text does not wait for memory persistence. During a voice turn, the one completion call may overlap speech playback, but the next turn waits until playback and completion settle.
+
+The Mind-scoped persistence circuit is **The Breaker**. Packaged defaults open it after either five consecutive failed final interaction outcomes or 35 failed outcomes in the rolling last 100. A success resets the consecutive streak but remains part of the rolling window. The failure that reaches a threshold is still presented without a persistence warning. If a later recovery also fails while the circuit is open, the runtime reports the continuity problem.
+
+An isolated persistence failure, a successful identical retry, a degraded Steward review, failure counts and the failure that opens The Breaker stay out of ordinary conversation. They remain available in typed diagnostics and Administration. This suppression covers interaction and memory persistence only; it does not hide authorization, security, corrupt response delivery or failure to establish the interaction.
+
+An Administrator can change both thresholds, the rolling window, provider request timeout, Steward assessment deadline and rate-limit retry wait cap in **Administration → The Breaker**. Each interaction keeps the settings snapshot captured when it began.
 
 ## Working context versus durable memory
 
@@ -72,7 +84,7 @@ The default state protocol calls for a short context check and bounded retrieval
 
 If required startup fails, I should state the specific failure and pause dependent work unless you explicitly authorize a fallback for that task. An exception in another project does not silently apply here.
 
-If a response cannot be committed, distinguish the work result from persistence: a file may have been created even though journaling failed. Preserve the actual external result and avoid recreating it merely to retry completion.
+If a response cannot be committed, preserve the actual external result and avoid recreating it merely to retry completion. Routine persistence trouble remains silent until The Breaker requires reporting; an explicit diagnostic request can still inspect it.
 
 ## A practical continuity check
 
@@ -86,9 +98,10 @@ This is a procedure to perform, not a claim that every host/model combination ha
 
 ## Source references
 
-- [plugins/axiom-mind/skills/axiom/SKILL.md](https://github.com/Moto1231/AICognitiveMind/blob/57f38db876e63d45e37f58f57768e25396a75a8d/plugins/axiom-mind/skills/axiom/SKILL.md)
-- [plugins/axiom-mind/skills/axiom-continuity/SKILL.md](https://github.com/Moto1231/AICognitiveMind/blob/57f38db876e63d45e37f58f57768e25396a75a8d/plugins/axiom-mind/skills/axiom-continuity/SKILL.md)
-- [plugins/axiom-mind/skills/axiom-current-state/SKILL.md](https://github.com/Moto1231/AICognitiveMind/blob/57f38db876e63d45e37f58f57768e25396a75a8d/plugins/axiom-mind/skills/axiom-current-state/SKILL.md)
-- [src/aicognitive_mind/mcp_service.py](https://github.com/Moto1231/AICognitiveMind/blob/57f38db876e63d45e37f58f57768e25396a75a8d/src/aicognitive_mind/mcp_service.py)
-- [src/aicognitive_mind/state_context.py](https://github.com/Moto1231/AICognitiveMind/blob/57f38db876e63d45e37f58f57768e25396a75a8d/src/aicognitive_mind/state_context.py)
-- [src/aicognitive_mind/host_context.py](https://github.com/Moto1231/AICognitiveMind/blob/57f38db876e63d45e37f58f57768e25396a75a8d/src/aicognitive_mind/host_context.py)
+- [plugins/axiom-mind/skills/axiom/SKILL.md](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/plugins/axiom-mind/skills/axiom/SKILL.md)
+- [plugins/axiom-mind/skills/axiom-continuity/SKILL.md](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/plugins/axiom-mind/skills/axiom-continuity/SKILL.md)
+- [plugins/axiom-mind/skills/axiom-current-state/SKILL.md](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/plugins/axiom-mind/skills/axiom-current-state/SKILL.md)
+- [src/aicognitive_mind/mcp_service.py](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/mcp_service.py)
+- [src/aicognitive_mind/continuity_settings.py](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/continuity_settings.py)
+- [src/aicognitive_mind/state_context.py](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/state_context.py)
+- [src/aicognitive_mind/host_context.py](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/host_context.py)

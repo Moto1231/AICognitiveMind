@@ -6,7 +6,7 @@
 
 ## Configure a tool server
 
-Open **Administration → Endpoints, Servers & Tools → MCP Servers**. This section is separate from the model-provider Endpoints section above it.
+Open **Administration → Endpoints & MCP Servers → MCP Servers**. This connection editor is separate from the provider Endpoints section above it. Open **Administration → Tools** to discover, enable or run tools from the saved servers.
 
 1. Choose **Add**.
 2. Enter a **Server name** and absolute **Streamable HTTP URL**.

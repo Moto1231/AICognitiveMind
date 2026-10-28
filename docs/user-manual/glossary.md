@@ -41,6 +41,7 @@
 | Draft | Unsaved form or repository skill content, depending on context |
 | Revision conflict | A save cannot safely use an older loaded version |
 | Idempotency key | Begin-issued key used to commit/retry one interaction without duplication |
+| The Breaker | Mind-scoped persistence circuit that suppresses routine continuity errors and reports only a failed recovery after configured thresholds open it |
 | Checkpoint | Verified recovery assets; not merely an unverified copied ZIP |
 | Source reviewed | Behavior checked against implementation at a recorded commit |
 | Device verified | A specific actual hardware/browser workflow was successfully tested |

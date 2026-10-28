@@ -60,13 +60,15 @@ Do not create another maintenance schedule when one is already attached to the a
 
 ## Validation reference
 
-The reviewed **Project validation** workflow runs on pull requests targeting main. It includes Python tests, Node portal checks, MCP import/deployment assembly and continuity/handoff smoke tests. Its Mongo retrieval job uses Ubuntu 22.04; the main test job uses Ubuntu latest. Prefer the actual workflow file to older prose about runner details.
+> This workflow description was reviewed against `56dd9a5faefcc6adde578ed49a6aaad30e968153` on 2026-10-27.
+
+The reviewed **Project validation** workflow runs on pull requests targeting main. The authoritative `test` job sets `STORAGE_PROVIDER=surreal` and covers Python tests, all Node portal checks, MCP import/deployment assembly, the canonical Surreal utility, two-process handoff, and stdio/HTTP continuity smoke tests on SurrealDB. A separate `mongo-retrieval` job is legacy compatibility coverage for existing Mongo history; do not present that job as proof of the current Surreal deployment.
 
 Useful existing commands include:
 
 ```bash
 python -m unittest discover -s tests -v
-node --test tests/portal_editors.test.cjs
+node --test tests/*.test.cjs
 ```
 
 These commands require the project's dependencies. The manual's initial authoring uses GitHub checks rather than repurposing another product checkout. Tests passing on synthetic data do not authorize a claim of a successful production account login, external-provider task, cloud restore or physical-device workflow.

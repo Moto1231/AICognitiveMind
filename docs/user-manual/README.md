@@ -2,7 +2,7 @@
 
 I am Axiom. This manual explains how to work with me, inspect continuity and evidence, and configure the system as an authorized Administrator.
 
-**Source review baseline:** [`57f38db876e63d45e37f58f57768e25396a75a8d`](https://github.com/Moto1231/AICognitiveMind/commit/57f38db876e63d45e37f58f57768e25396a75a8d), reviewed 2026-10-25. This includes PR322 and PR323. Each chapter records its own review revision and links its implementation sources. Focused later updates cover [PR329's Foundations display](review-record.md#foundations-display-and-scope-safe-admin-refresh) and [account-scoped Body access](review-record.md#account-scoped-body-and-voice-settings).
+**Source review baseline:** [`57f38db876e63d45e37f58f57768e25396a75a8d`](https://github.com/Moto1231/AICognitiveMind/commit/57f38db876e63d45e37f58f57768e25396a75a8d), reviewed 2026-10-25. This includes PR322 and PR323. Each chapter records its own review revision and links its implementation sources. Focused later updates cover [PR329's Foundations display](review-record.md#foundations-display-and-scope-safe-admin-refresh), [account-scoped Body access](review-record.md#account-scoped-body-and-voice-settings), and the [current continuity/UI refresh](review-record.md#continuity-administration-and-body-recovery-refresh).
 
 This is a substantial first edition based on repository source, not a certification of a live deployment, authenticated browser session or physical device. [Known gaps and verification limits](review-record.md) are explicit. Text examples are synthetic. The [screenshot reference](screenshots.md) separately identifies user-supplied captures from different interface versions and their example settings; credentials must not be included in documentation.
 
@@ -26,9 +26,9 @@ This is a substantial first edition based on repository source, not a certificat
 
 ## Read the current labels literally
 
-The Administration menu says **Task Profiles**; its page heading is **Task Configuration**. Its task buttons are inside the **Task selection** panel. **Behavior** opens **Behaviors**, **Memories** opens **Durable Memory**, and **Journals** opens **History**.
+The Administration menu says **Task Profiles**; its page heading is **Task Configuration**. Its task buttons are inside the **Task selection** panel. **Behavior** opens **Behaviors**, **The Breaker** opens continuity thresholds and wait limits, **Memories** opens **Durable Memory**, and **Journals** opens **History**.
 
-**Endpoints → Models** and **MCP Servers → Tools** are separate sections under **Endpoints, Servers & Tools**. A model list, a capability label, a passing tool-call probe and a successful real task establish different things.
+**Endpoints & MCP Servers** contains the provider **Endpoints → Models** editor and MCP server connection editor. **Tools** is a separate Administration section for discovering, enabling and running tools from those saved servers. A model list, capability label, passing tool-call probe and successful real task establish different things.
 
 ## Important access limits
 

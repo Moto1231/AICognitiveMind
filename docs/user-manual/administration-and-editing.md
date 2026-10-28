@@ -41,7 +41,7 @@ Section sources: [account runtime and credentials](https://github.com/Moto1231/A
 
 ## Drafts are not saved configuration
 
-> This section was reviewed against `275e9202313b2ba41fe092e2be0da16186cb5ce2` on 2026-10-25. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
+> This section was reviewed against `56dd9a5faefcc6adde578ed49a6aaad30e968153` on 2026-10-27. Other sections retain their stated review revisions. This is source review, not authenticated-browser or physical-device certification.
 
 Most editors begin read-only and create a draft on **Edit** or **Add**. **Save** commits that editor's payload. **Cancel** discards its draft. **Refresh** reloads data; it does not commit unsaved input.
 
@@ -50,7 +50,8 @@ The implementation is not uniform across every form. Use the following reference
 | Editor | Start/change | Commit | Cancel/refresh detail |
 | --- | --- | --- | --- |
 | Foundations: Identity | Open and read | No editing actions | Displays loaded identity; Refresh reads it again |
-| Foundations: Startup | No form in this revision | No portal action | Saved configuration remains separate; see [Foundations](foundations-skills-and-behaviors.md#startup-configuration-availability) |
+| Foundations: Startup | Edit | Save Startup | Revisioned draft for Base operating contract and Startup instructions; Cancel restores saved values |
+| The Breaker | Edit | Save | Revisioned thresholds and wait limits; Cancel restores saved values |
 | Mind skill | Select, Edit; or New Mind skill | Save Mind Skill | Own saved revision |
 | GitHub skill draft | Select, Edit; or New GitHub draft | Save Draft to GitHub | Does not activate a Mind skill |
 | Behavior catalog | Edit or Add Behavior | Save | Catalog draft; row Remove is staged |
@@ -62,7 +63,7 @@ The implementation is not uniform across every form. Use the following reference
 | Devices | Choose device in a browser-local draft | Save | Cancel restores saved choices; see [Devices](body.md#select-devices) |
 | Memory inspector | Edit Memory | Save | Cancel exits memory editing |
 
-Section sources: [Foundations display](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/index.html#L168-L183), [voice loading and Save gating](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/src/aicognitive_mind/static/portal.js#L1426-L1524), [device draft actions](https://github.com/Moto1231/AICognitiveMind/blob/80a3a4105379bb6c95afb6c71483c8d556a0ccc3/src/aicognitive_mind/static/portal.js#L3147-L3207).
+Section sources: [Foundations and The Breaker forms](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/index.html), [current editor gating](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/portal.js), [The Breaker settings model](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/continuity_settings.py).
 
 The endpoint Save handler also synchronizes task assignments that reference that endpoint. Changing its model may therefore affect several tasks. Endpoint removal removes those references. See [providers](providers-and-models.md).
 
@@ -73,6 +74,21 @@ A disabled control can mean the editor is not in edit mode, nothing changed, a r
 For an endpoint, the UI requires name, provider name, an absolute HTTP(S) Base URL and Model ID. For a behavior, name and instruction must be nonblank and priority must be an integer from 0 through 10000. A task assignment Save becomes actionable after a change; clicking it can then explain an incomplete primary/fallback model.
 
 Check the specific status message. Do not repeatedly change unrelated values to force a save.
+
+## Configure The Breaker
+
+Open **Administration → The Breaker** to read the current circuit status, consecutive and rolling counts, and last failure class. Choose **Edit** to change these parameters:
+
+| Parameter | Packaged default |
+| --- | ---: |
+| Consecutive failure limit | 5 |
+| Rolling failure limit | 35 |
+| Rolling window size | 100 |
+| Provider request timeout | 30 seconds |
+| Steward assessment deadline | 60 seconds |
+| Rate-limit retry wait cap | 45 seconds |
+
+Save requires a changed, valid draft and the loaded revision. The rolling limit must be at least the consecutive limit and cannot exceed the rolling window. **Cancel** restores the saved values. A concurrent edit requires refresh before saving.
 
 ## Handle a stale revision
 

@@ -54,9 +54,11 @@ This maintenance pass reviewed the changed source and documentation links. It do
 
 ## Foundations display and scope-safe Admin refresh
 
-Focused source review on **2026-10-25** at **`80a3a4105379bb6c95afb6c71483c8d556a0ccc3`** covers merged [PR329](https://github.com/Moto1231/AICognitiveMind/pull/329). Updated sections are [Read loaded Identity](foundations-skills-and-behaviors.md#read-loaded-identity), [Startup configuration availability](foundations-skills-and-behaviors.md#startup-configuration-availability), [Behavior authoring](foundations-skills-and-behaviors.md#create-a-reusable-behavior), [scope and editor reference](administration-and-editing.md), [navigation and System Overview](navigation.md), [Devices](body.md#select-devices), and [Speech Settings](body.md#configure-speech-settings). Their explicit section blocks override the opening chapter baseline only for those sections.
+Focused source review on **2026-10-25** at **`80a3a4105379bb6c95afb6c71483c8d556a0ccc3`** covers merged [PR329](https://github.com/Moto1231/AICognitiveMind/pull/329). Updated sections are [Read loaded Identity](foundations-skills-and-behaviors.md#read-loaded-identity), [Startup configuration](foundations-skills-and-behaviors.md#edit-startup-configuration), [Behavior authoring](foundations-skills-and-behaviors.md#create-a-reusable-behavior), [scope and editor reference](administration-and-editing.md), [navigation and System Overview](navigation.md), [Devices](body.md#select-devices), and [Speech Settings](body.md#configure-speech-settings). Their explicit section blocks override the opening chapter baseline only for those sections.
 
 Foundations now displays the loaded identity as text, retains **Identity loaded.**, and has no identity or Startup editing actions. Its refresh only reads identity. Authorized identity and cognitive-configuration API endpoints remain implemented. Behavior and Devices forms omit the redundant action/helper sentences; draft/error status remains.
+
+That Startup statement records PR329's interim behavior and is superseded by the current refresh below.
 
 Administration entry and Refresh read status before requesting Body settings. The new capability makes account-scoped sessions skip deployment-wide Voice and Body fallback settings. Their voice form is unavailable, clears old values, ignores an earlier voice response and blocks Save; other supported Administration data continues refreshing. At this interim revision, the change did **not** implement account-scoped Body access. The later [account Body review](#account-scoped-body-and-voice-settings) supersedes its account Voice Settings restriction in the current workflow sections.
 
@@ -73,6 +75,16 @@ This supersedes the interim PR329 Voice Settings restriction: authorized account
 Realtime voice remains unavailable for account-scoped sessions. Capability preflight prevents microphone capture/session creation when unavailable; the session route independently refuses the account before deployment credentials or token minting. This is not documentation of completed account Realtime support.
 
 Reviewed regression sources cover [Body/account isolation and credential boundaries](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/tests/test_http_account_routing.py#L354-L558), [Realtime preflight](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/tests/live_body_realtime.test.cjs#L52-L89) and [Realtime route isolation](https://github.com/Moto1231/AICognitiveMind/blob/275e9202313b2ba41fe092e2be0da16186cb5ce2/tests/test_deployment_mcp.py#L107-L148). [PR330](https://github.com/Moto1231/AICognitiveMind/pull/330) records its product test/CI and merge evidence. This documentation pass reviews the merged source; it does not establish deployment, signed-in-browser, hardware, real provider or host-handoff verification. UM-01, UM-03 and UM-09 remain open; UM-02 now records the narrower remaining restriction.
+
+## Continuity, Administration and Body recovery refresh
+
+Focused source review on **2026-10-27** at **`56dd9a5faefcc6adde578ed49a6aaad30e968153`** updates the current interaction lifecycle, Administration editor map, Foundations/Startup workflow, navigation, validation wording and browser Body recovery. The first-person current-state rules are merged in [PR345](https://github.com/Moto1231/AICognitiveMind/pull/345); the still-relevant browser-suspension recovery from old draft PR294 was adapted to current source and merged in [PR349](https://github.com/Moto1231/AICognitiveMind/pull/349).
+
+Presentation no longer waits for memory persistence. **The Breaker** suppresses isolated persistence failures and opens at either configured threshold; only a later failed recovery is reported in ordinary interaction. Administration exposes revisioned consecutive/rolling thresholds, the rolling window and three wait limits. Packaged defaults are 5 consecutive, 35 of 100 rolling, 30-second provider timeout, 60-second Steward deadline and 45-second rate-limit wait cap.
+
+Foundations keeps identity read-only and restores a separate revisioned Startup editor. Current navigation uses inline transparent SVG icons and consistent button/input sizing, with labels available through titles and accessible names. The primary validation job is Surreal-backed; the Mongo retrieval job is secondary legacy-compatibility coverage. Live Body now re-registers, reopens Mouth events and drains queued speech after foreground/page restoration without enabling Voice Off or duplicating simultaneous recovery.
+
+This was source and automated-test review. It does not establish a new authenticated-browser, physical-device, provider-quota or restore-drill result. Existing screenshot limitations and open verification gaps remain.
 
 ## Gaps and follow-up register
 
