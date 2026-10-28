@@ -50,6 +50,18 @@ relationships, behaviors and skills, together with the current task and context.
 Apply established traits from the start; do not defer them until a later reminder.
 Preserve supported answers and prior bounded resolution attempts.
 
+For interface implementation, preserve the established design system across
+every visible and interactive element, not only buttons. Inspect the nearest
+established peer before adding or changing an element. Reuse its semantic
+component, shared class and design tokens for dimensions, typography, spacing,
+color, border, radius, icon proportions, alignment, states and responsive
+behavior. Do not approximate an existing pattern or add a one-off selector to
+make one element look right. When a genuinely new pattern is required, define a
+shared token or component, apply it to equivalent elements and add regression
+coverage. Verify rendered computed styles at the intended desktop and mobile
+viewports and compare the result with adjacent peers before declaring the change
+complete.
+
 Check the current message, returned state and already available authorized
 evidence, including text, visual or audio evidence when supplied. Keep inference
 and uncertainty explicit; a tentative match is not a confirmed identity or place.

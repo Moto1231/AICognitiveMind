@@ -4,30 +4,53 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261026-tools-page">
-  <script src="/static/button_icons.js?v=20261016-profile-labels" defer></script>
+  <link rel="stylesheet" href="/static/portal.css?v=20261027-breaker-settings-3">
+  <script src="/static/button_icons.js?v=20261027-all-icon-palette" defer></script>
 </head>
 <body>
+  <svg class="axiom-icon-definitions" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="axiom-brand-cutout" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+        <feColorMatrix in="SourceGraphic" type="luminanceToAlpha" result="luminance"/>
+        <feComponentTransfer in="luminance" result="cutout">
+          <feFuncA type="linear" slope="1.8" intercept="-.25"/>
+        </feComponentTransfer>
+        <feFlood class="axiom-brand-palette" result="palette"/>
+        <feComposite in="palette" in2="cutout" operator="in"/>
+      </filter>
+    </defs>
+    <symbol id="menu-icon-home" viewBox="0 0 48 48">
+      <path d="M6 22 24 7l18 15M12 20v21h24V20M20 41V28h8v13"/>
+    </symbol>
+    <symbol id="menu-icon-administration" viewBox="0 0 48 48">
+      <path d="M24 5v6M24 37v6M5 24h6M37 24h6M10.5 10.5l4.5 4.5M33 33l4.5 4.5M10.5 37.5 15 33M33 15l4.5-4.5"/><circle cx="24" cy="24" r="13"/><circle cx="24" cy="24" r="5"/>
+    </symbol>
+    <symbol id="menu-icon-live" viewBox="0 0 48 48"><path d="m17 10 22 14-22 14Z"/></symbol>
+    <symbol id="menu-icon-return" viewBox="0 0 48 48"><path d="M36 24H12M24 12 12 24l12 12"/></symbol>
+    <symbol id="menu-icon-logout" viewBox="0 0 48 48"><path d="M27 8H11v32h16M31 15l10 9-10 9M41 24H19"/></symbol>
+  </svg>
   <div class="shell">
     <header class="topbar">
       <div class="brand">
         <h1>Axiom</h1>
-        <img class="brand-logo" src="/static/axiom-logo.png" alt="" width="88" height="66">
+        <svg class="brand-logo axiom-icon-art" aria-hidden="true" focusable="false" viewBox="0 0 1450 1086">
+          <image href="/static/axiom-logo.png" width="1450" height="1086" preserveAspectRatio="xMidYMid meet" filter="url(#axiom-brand-cutout)"/>
+        </svg>
       </div>
       <nav class="top-actions" aria-label="Main navigation">
         
         <div class="portal-menu">
         <div class="mode-switch" role="group" aria-label="Portal mode">
-          <button id="mindTab" class="mode-button active" type="button">Main</button>
-          <button id="adminTab" class="mode-button" type="button">Administration</button>
+          <button id="mindTab" class="mode-button active" type="button"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-home"/></svg>Main</button>
+          <button id="adminTab" class="mode-button" type="button"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-administration"/></svg>Administration</button>
         </div>
-        <a href="/body/live" class="secondary-button">Live</a>
+          <a href="/body/live" class="secondary-button"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-live"/></svg>Live</a>
         <div class="status-pill" role="status" aria-live="polite">
           <span class="status-dot"></span>
           <span id="connectionLabel">Connecting…</span>
         </div>
-        <a href="/" id="portalReturnButton" class="secondary-button portal-return">Return</a>
-        <button id="logoutButton" class="secondary-button" type="button">Log Out</button>
+        <a href="/" id="portalReturnButton" class="secondary-button portal-return"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-return"/></svg>Return</a>
+        <button id="logoutButton" class="secondary-button" type="button"><svg class="axiom-line-icon top-menu-icon" aria-hidden="true" focusable="false" viewBox="0 0 48 48"><use href="#menu-icon-logout"/></svg>Log Out</button>
         </div>
       </nav>
     </header>
@@ -150,18 +173,61 @@
       <section id="adminView" class="view hidden">
         
 
+        <svg class="admin-icon-definitions" aria-hidden="true" focusable="false">
+          <symbol id="admin-icon-overview" viewBox="0 0 48 48">
+            <rect x="10" y="10" width="28" height="28" rx="5"/><rect x="18" y="18" width="12" height="12" rx="2"/>
+            <path d="M16 5v5M24 5v5M32 5v5M16 38v5M24 38v5M32 38v5M5 16h5M5 24h5M5 32h5M38 16h5M38 24h5M38 32h5M21 22h6M21 26h6"/>
+          </symbol>
+          <symbol id="admin-icon-foundations" viewBox="0 0 48 48">
+            <path d="m4 15 20-10 20 10-20 10ZM4 24l20 10 20-10M4 33l20 10 20-10"/>
+          </symbol>
+          <symbol id="admin-icon-breaker" viewBox="0 0 48 48">
+            <path d="M24 4 41 11v12c0 10-7 17-17 21C14 40 7 33 7 23V11Z"/><path d="m25 11-7 13h7l-3 13 9-16h-7Z"/>
+          </symbol>
+          <symbol id="admin-icon-behaviors" viewBox="0 0 48 48">
+            <path d="M23 10c-2-4-8-3-9 2-5-1-8 5-5 9-3 4 0 9 5 9 1 5 7 6 10 3 3 3 9 2 10-3 5 0 8-5 5-9 3-4 0-10-5-9-1-5-7-6-9-2M24 10v28M17 17c4 0 6 2 7 5M14 29c4-1 7 1 10 4M31 16c-4 0-6 3-7 6M34 29c-4-1-7 1-10 4"/>
+          </symbol>
+          <symbol id="admin-icon-devices" viewBox="0 0 48 48">
+            <rect x="4" y="9" width="27" height="21" rx="3"/><path d="M11 39h13M17.5 30v9M8 25h19"/>
+            <rect x="34" y="17" width="10" height="21" rx="2"/><path d="M37 21h4M38 34h2M35 12c3-3 7-3 10 0M37 14c2-2 4-2 6 0"/>
+          </symbol>
+          <symbol id="admin-icon-voice" viewBox="0 0 48 48">
+            <rect x="18" y="7" width="12" height="24" rx="6"/><path d="M12 23a12 12 0 0 0 24 0M24 35v7M17 42h14M8 17v12M4 20v6M40 17v12M44 20v6"/>
+          </symbol>
+          <symbol id="admin-icon-tasks" viewBox="0 0 48 48">
+            <rect x="8" y="6" width="27" height="34" rx="4"/><path d="M14 14h14M14 21h14M14 28h8M14 35h8M35 13h5v29H15v-2M27 32l3 3 7-8"/>
+          </symbol>
+          <symbol id="admin-icon-mcp" viewBox="0 0 48 48">
+            <rect x="13" y="5" width="22" height="10" rx="2"/><rect x="13" y="19" width="22" height="10" rx="2"/><rect x="13" y="33" width="22" height="10" rx="2"/>
+            <path d="M18 10h.1M22 10h8M18 24h.1M22 24h8M18 38h.1M22 38h8M7 10h6M35 10h6M7 24h6M35 24h6M7 38h6M35 38h6M5 10v28M43 10v28"/>
+          </symbol>
+          <symbol id="admin-icon-tools" viewBox="0 0 48 48">
+            <path d="M19 8a12 12 0 0 0 15 15L17 40a6.4 6.4 0 0 1-9-9l17-17A12 12 0 0 0 40 8l-8 8-7-1-1-7 8-6A12 12 0 0 0 19 8Z"/><circle cx="12" cy="35" r="2"/>
+          </symbol>
+          <symbol id="admin-icon-skills" viewBox="0 0 48 48">
+            <path d="M24 3 43 13v22L24 45 5 35V13ZM24 7 39 15v18l-15 8-15-8V15Z"/><path d="M16 15h8v5a3 3 0 1 1 4 3h6v8h-6a3 3 0 1 1-4 3h-8v-8a3 3 0 1 1 0-4Z"/>
+          </symbol>
+          <symbol id="admin-icon-memories" viewBox="0 0 48 48">
+            <ellipse cx="24" cy="10" rx="15" ry="6"/><path d="M9 10v10c0 3 7 6 15 6s15-3 15-6V10M9 20v10c0 3 7 6 15 6s15-3 15-6V20M9 30v8c0 3 7 6 15 6s15-3 15-6v-8M18 15h12M18 31h12"/>
+          </symbol>
+          <symbol id="admin-icon-journals" viewBox="0 0 48 48">
+            <path d="M5 9c7-2 13-1 19 4v30c-6-5-12-6-19-4ZM43 9c-7-2-13-1-19 4v30c6-5 12-6 19-4Z"/><path d="M10 16c4 0 7 1 10 3M10 23c4 0 7 1 10 3M10 30c4 0 7 1 10 3M38 16c-4 0-7 1-10 3M38 23c-4 0-7 1-10 3M38 30c-4 0-7 1-10 3"/>
+          </symbol>
+        </svg>
+
         <nav class="admin-section-nav" aria-label="Administration sections">
-          <button class="admin-section-button active" type="button" data-admin-section="overview"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-overview.svg" alt="" width="48" height="52"></span><span>System Overview</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="#8cdfe9" stroke-width="1.4"><path d="m4 15 20-10 20 10-20 10Z M4 24l20 10 20-10 M4 33l20 10 20-10"/></svg></span><span>Foundations</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-behavior.svg" alt="" width="48" height="52"></span><span>Behavior</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-devices.svg" alt="" width="48" height="52"></span><span>Devices</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-speech.svg" alt="" width="48" height="52"></span><span>Speech Settings</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-task-profiles.svg" alt="" width="48" height="52"></span><span>Task Profiles</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon admin-section-icon-mcp" aria-hidden="true"><img src="/static/admin-mcp.svg" alt="" width="48" height="49"></span><span>Endpoints &amp; MCP Servers</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="tools"><span class="admin-section-icon" aria-hidden="true"><svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="#8cdfe9" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 8a12 12 0 0 0 15 15L17 40a6.4 6.4 0 0 1-9-9l17-17A12 12 0 0 0 40 8l-8 8-7-1-1-7 8-6A12 12 0 0 0 19 8Z"/><circle cx="12" cy="35" r="2"/></svg></span><span>Tools</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="skills-line-icon" viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="#8cdfe9" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M24 2.5 43 13v22L24 45.5 5 35V13Z"/><path d="M24 6.5 39.5 15v18L24 41.5 8.5 33V15Z"/><path d="M16.5 14.5h8v4.5a3.4 3.4 0 1 1 4.8 3.1H34v8h-5.1a3.4 3.4 0 1 1-4.8 3.1h-7.6v-7.6a3.4 3.4 0 1 1 0-4.8Z"/><path d="M13 10.8h6M29 10.8h6M13 37.2h6M29 37.2h6M3 24h5M40 24h5"/><circle cx="13" cy="10.8" r="1.2"/><circle cx="35" cy="10.8" r="1.2"/><circle cx="13" cy="37.2" r="1.2"/><circle cx="35" cy="37.2" r="1.2"/><circle cx="3" cy="24" r=".9"/><circle cx="45" cy="24" r=".9"/></svg></span><span>Skills</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-memories.svg" alt="" width="48" height="52"></span><span>Memories</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><img src="/static/admin-journals.svg" alt="" width="48" height="52"></span><span>Journals</span></button>
+          <button class="admin-section-button active" type="button" data-admin-section="overview"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-overview"/></svg></span><span>System Overview</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Foundations</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="breaker"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-breaker"/></svg></span><span>The Breaker</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><span>Behavior</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-devices"/></svg></span><span>Devices</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-voice"/></svg></span><span>Speech Settings</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tasks"/></svg></span><span>Task Profiles</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-mcp"/></svg></span><span>Endpoints &amp; MCP Servers</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="tools"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tools"/></svg></span><span>Tools</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-skills"/></svg></span><span>Skills</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-memories"/></svg></span><span>Memories</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-journals"/></svg></span><span>Journals</span></button>
           <button id="adminRefreshButton" class="secondary-button" type="button" aria-label="Refresh" title="Refresh">Refresh</button>
         </nav>
 
@@ -185,6 +251,31 @@
             </div>
             <div class="edit-actions"><button id="startupEdit" class="secondary-button" type="button" aria-label="Edit startup instructions" title="Edit startup instructions" disabled>Edit</button><button id="startupSave" class="primary-button" type="button" aria-label="Save startup instructions" title="Save startup instructions" disabled>Save Startup</button><button id="startupCancel" class="secondary-button" type="button" aria-label="Cancel startup changes" title="Cancel startup changes" disabled>Cancel</button></div>
             <p id="startupStatus" role="status" aria-live="polite"></p></section>
+          </article>
+          <article id="breakerSection" class="panel breaker-settings-panel hidden">
+            <div class="panel-heading"><div><p class="eyebrow">CONTINUITY CONTROL</p><h3>The Breaker</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
+            <section class="overview-group">
+              <h4>Current State</h4>
+              <dl class="details breaker-health-details">
+                <div><dt>Status</dt><dd id="breakerHealthStatus">Loading…</dd></div>
+                <div><dt>Consecutive failures</dt><dd id="breakerHealthConsecutive">—</dd></div>
+                <div><dt>Rolling failures</dt><dd id="breakerHealthRolling">—</dd></div>
+                <div><dt>Last failure class</dt><dd id="breakerHealthLastFailure">—</dd></div>
+              </dl>
+            </section>
+            <section class="overview-group">
+              <h4>Parameters</h4>
+              <div class="host-behavior-fields breaker-settings-grid">
+                <label class="host-behavior-field">Consecutive failure limit<input id="breakerConsecutiveLimit" type="number" min="1" max="20" step="1" readonly></label>
+                <label class="host-behavior-field">Rolling failure limit<input id="breakerRollingLimit" type="number" min="1" max="500" step="1" readonly></label>
+                <label class="host-behavior-field">Rolling window size<input id="breakerRollingWindow" type="number" min="20" max="500" step="1" readonly></label>
+                <label class="host-behavior-field">Provider request timeout (seconds)<input id="breakerProviderTimeout" type="number" min="1" max="120" step="0.1" readonly></label>
+                <label class="host-behavior-field">Steward assessment deadline (seconds)<input id="breakerAssessmentTimeout" type="number" min="5" max="300" step="0.1" readonly></label>
+                <label class="host-behavior-field">Rate-limit retry wait cap (seconds)<input id="breakerRetryWaitCap" type="number" min="0" max="120" step="0.1" readonly></label>
+              </div>
+              <div class="edit-actions"><button id="breakerEdit" class="secondary-button" type="button" aria-label="Edit The Breaker settings" title="Edit The Breaker settings" disabled>Edit</button><button id="breakerSave" class="primary-button" type="button" aria-label="Save The Breaker settings" title="Save The Breaker settings" disabled>Save</button><button id="breakerCancel" class="secondary-button" type="button" aria-label="Cancel The Breaker changes" title="Cancel The Breaker changes" disabled>Cancel</button></div>
+              <p id="breakerSettingsStatus" role="status" aria-live="polite"></p>
+            </section>
           </article>
           <article id="skillsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
@@ -760,6 +851,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261026-tools-page"></script>
+  <script src="/static/portal.js?v=20261027-breaker-settings"></script>
 </body>
 </html>

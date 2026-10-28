@@ -338,8 +338,15 @@ async def commit(
         db._commit_receipts[key] = saved
 
 
-def atomic(method: Any) -> Any:
-    """Run a service method on staging stores; publish only on success."""
+def atomic(method: Any | None = None, *, receipt_name: str | None = None) -> Any:
+    """Run a service method on staging stores; publish only on success.
+
+    ``receipt_name`` lets a public operation keep its established receipt namespace
+    when its atomic implementation is moved behind a presentation-policy wrapper.
+    """
+
+    if method is None:
+        return lambda operation: atomic(operation, receipt_name=receipt_name)
 
     @wraps(method)
     async def wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:
@@ -366,7 +373,9 @@ def atomic(method: Any) -> Any:
                 if token is not None and (not isinstance(token, str) or not 1 <= len(token) <= 128):
                     raise ValueError("idempotency_key must contain 1 to 128 characters")
                 key = (
-                    hashlib.sha256(f"{method.__qualname__}:{token}".encode()).hexdigest()
+                    hashlib.sha256(
+                        f"{receipt_name or method.__qualname__}:{token}".encode()
+                    ).hexdigest()
                     if token else None
                 )
                 fingerprint = hashlib.sha256(

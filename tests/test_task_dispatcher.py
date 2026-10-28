@@ -391,6 +391,41 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 1)
         sleep.assert_not_awaited()
 
+    async def test_steward_rate_limit_retry_wait_respects_configured_cap(self):
+        endpoint = ProviderEndpoint(
+            id="memory", name="Memory", base_url="https://memory.example/v1",
+            api_key="test-key", model="memory-model",
+        )
+        blocked_client = FakeClient(FakeResponse(
+            {}, status_code=429, text="wait", headers={"retry-after": "3"},
+        ))
+        blocked = TaskModelDispatcher(
+            FakeRecords(), client=blocked_client, rate_limit_retry_wait_cap=2,
+        )
+        with patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            with self.assertRaisesRegex(TaskDispatchError, "HTTP 429"):
+                await blocked._request(
+                    endpoint, "/chat/completions", json_body={"model": "memory-model"},
+                    retry_steward_rate_limit=True,
+                )
+        self.assertEqual(len(blocked_client.calls), 1)
+        sleep.assert_not_awaited()
+
+        retrying_client = SequencedFakeClient([
+            FakeResponse({}, status_code=429, headers={"retry-after": "2"}),
+            FakeResponse({"ok": True}),
+        ])
+        retrying = TaskModelDispatcher(
+            FakeRecords(), client=retrying_client, rate_limit_retry_wait_cap=2,
+        )
+        with patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            result = await retrying._request(
+                endpoint, "/chat/completions", json_body={"model": "memory-model"},
+                retry_steward_rate_limit=True,
+            )
+        self.assertEqual(result, {"ok": True})
+        sleep.assert_awaited_once_with(2.0)
+
     async def test_json_response_option_rejects_other_tasks_and_unsupported_formats(self):
         client = FakeClient(FakeResponse({}))
         dispatcher = TaskModelDispatcher(FakeRecords(), client=client)

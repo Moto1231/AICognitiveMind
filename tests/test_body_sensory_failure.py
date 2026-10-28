@@ -12,7 +12,13 @@ from aicognitive_mind.host_runtime import HostRuntime
 
 class BodySensoryFailureTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.service = SimpleNamespace(begin_interaction=AsyncMock(), complete_interaction=AsyncMock())
+        self.service = SimpleNamespace(
+            begin_interaction=AsyncMock(return_value={
+                "status": "ready_to_reason",
+                "continuity_health": {"circuit_open": False},
+            }),
+            complete_interaction=AsyncMock(),
+        )
         self.runtime = HostRuntime(SimpleNamespace(mind_id="synthetic-failed-media"), self.service)
         self.token = (await self.runtime.attach("Synthetic media host", "test-model"))["lease_token"]
         self.tasks = []

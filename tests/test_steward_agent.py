@@ -758,16 +758,27 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
             service._steward_runtime = TaskModelDispatcher(records, client=client)
-            with (
-                patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep,
-                self.assertRaisesRegex(StewardAssessmentExhausted, "exhaust") as failure,
-            ):
-                await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+            with patch(
+                "aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock
+            ) as sleep:
+                completed = await service.complete_interaction(
+                    "Atlas uses SurrealDB.", "Understood.", idempotency_key="exhausted-review",
+                )
+                retried = await service.complete_interaction(
+                    "Atlas uses SurrealDB.", "Understood.", idempotency_key="exhausted-review",
+                )
             sleep.assert_not_awaited()
         self.assertEqual(calls, [f"provider-{index}.example" for index in range(6)])
-        self.assertIn("Reviewed memory 1", str(failure.exception.last_error))
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(completed["memory_review"]["outcome"], "unavailable")
+        self.assertEqual(
+            completed["memory_review"]["failure_class"], "StewardAssessmentExhausted"
+        )
+        self.assertTrue(completed["presentation"]["allowed"])
+        self.assertEqual(completed, retried)
+        self.assertEqual(completed["continuity_health"]["rolling_failures"], 1)
         self.assertEqual(await memory.read(), [])
-        self.assertEqual(await journal.read(), before)
+        self.assertEqual(len(await journal.read()), len(before) + 1)
         self.assertEqual(await service._mind.load(), original)
 
     async def test_assessment_deadline_stops_before_untried_models_without_reporting_pool_exhaustion(self):
@@ -783,15 +794,20 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
             service._steward_runtime = TaskModelDispatcher(records, client=client)
-            with (
-                patch("aicognitive_mind.steward_agent.asyncio.timeout", side_effect=lambda _: real_timeout(0.05)),
-                self.assertRaisesRegex(StewardAssessmentTimeout, "deadline|timed out") as failure,
+            with patch(
+                "aicognitive_mind.steward_agent.asyncio.timeout",
+                side_effect=lambda _: real_timeout(0.05),
             ):
-                await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
-        self.assertNotIn("exhaust", str(failure.exception).lower())
+                completed = await service.complete_interaction(
+                    "Atlas uses SurrealDB.", "Understood.", idempotency_key="timed-out-review",
+                )
+        self.assertEqual(completed["status"], "interaction_committed")
+        self.assertEqual(
+            completed["memory_review"]["failure_class"], "StewardAssessmentTimeout"
+        )
         self.assertEqual(calls, ["provider-0.example"])
         self.assertEqual(await memory.read(), [])
-        self.assertEqual(await journal.read(), before)
+        self.assertEqual(len(await journal.read()), len(before) + 1)
         self.assertEqual(await service._mind.load(), original)
 
     async def test_provider_raised_timeout_is_not_misreported_as_assessment_deadline(self):
@@ -806,8 +822,14 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
             service._steward_runtime = TaskModelDispatcher(records, client=client)
-            with self.assertRaisesRegex(TimeoutError, "Provider-raised timeout"):
-                await service.complete_interaction("Atlas uses SurrealDB.", "Understood.")
+            completed = await service.complete_interaction(
+                "Atlas uses SurrealDB.", "Understood.", idempotency_key="provider-timeout",
+            )
+        self.assertEqual(completed["status"], "interaction_persistence_failed")
+        self.assertEqual(completed["persistence_outcome"]["failure_class"], "TimeoutError")
+        self.assertTrue(completed["presentation"]["allowed"])
+        self.assertFalse(completed["presentation"]["report_persistence_error"])
+        self.assertEqual(completed["continuity_health"]["rolling_failures"], 1)
         self.assertEqual(calls, ["provider-0.example"])
         self.assertEqual(await memory.read(), [])
         self.assertEqual(await journal.read(), before)

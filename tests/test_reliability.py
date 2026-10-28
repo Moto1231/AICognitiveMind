@@ -145,7 +145,10 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.01)
         self.assertIsNotNone(request)
         result = await host_b.complete(lease_a["lease_token"], request["request_id"], "Hello")
-        self.assertEqual(await pending, result)
+        presented = await pending
+        self.assertEqual(presented["response_text"], result["response_text"])
+        self.assertIn(presented["persistence_status"], {"pending", "succeeded"})
+        self.assertEqual(result["persistence_status"], "succeeded")
         await host_a.renew(lease_a["lease_token"], detach=True)
         lease_b = await host_b.attach("host-b", "model-b")
         with self.assertRaises(PermissionError):
@@ -238,7 +241,10 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status["requests"]["in_progress"], 1)
         self.assertNotIn("message", status["requests"]["items"][0])
         result = await host.complete(lease["lease_token"], request["request_id"], "Completed")
-        self.assertEqual(await pending, result)
+        presented = await pending
+        self.assertEqual(presented["response_text"], result["response_text"])
+        self.assertIn(presented["persistence_status"], {"pending", "succeeded"})
+        self.assertEqual(result["persistence_status"], "succeeded")
         await host.renew(lease["lease_token"], detach=True)
 
     async def test_body_queues_are_isolated_fifo_across_instances(self):

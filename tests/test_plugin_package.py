@@ -88,6 +88,13 @@ class AxiomPluginPackageTests(unittest.TestCase):
                 self.assertIn("## First-person state ownership", skill)
                 self.assertIn("do not narrate consulting them as outside authorities", skill)
 
+    def test_interface_work_requires_shared_element_design_tokens(self):
+        bootstrap = Path("plugins/axiom-mind/skills/axiom/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("every visible and interactive element, not only buttons", bootstrap)
+        self.assertIn("Reuse its semantic\ncomponent, shared class and design tokens", bootstrap)
+        self.assertIn("Do not approximate an existing pattern or add a one-off selector", bootstrap)
+        self.assertIn("desktop and mobile\nviewports", bootstrap)
+
     def test_bundle_sync_check_detects_drift_without_writes_and_preserves_other_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

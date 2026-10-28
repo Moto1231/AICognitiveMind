@@ -8,6 +8,9 @@
   --text: #eaf1fb;
   --muted: #95a7c0;
   --accent: #68d8ff;
+  --icon-line-color: #83dffe;
+  --icon-line-glow: rgba(70,182,255,.65);
+  --icon-line-stroke: 1.4;
   --success: #72e0ad;
   --danger: #ff9a9a;
   --shadow: 0 24px 70px rgba(0,0,0,0.34);
@@ -120,7 +123,14 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 .admin-task-model-panel { grid-column: 1 / -1; min-width: 0; }
 /* Device and speech preferences are full-width admin sections, like task profiles. */
 .admin-grid > #devicesSection,
-.admin-grid > #voiceSection { grid-column: 1 / -1; min-width: 0; }
+.admin-grid > #voiceSection,
+.admin-grid > #breakerSection { grid-column: 1 / -1; min-width: 0; }
+.host-behavior-fields.breaker-settings-grid {
+  grid-template-columns: repeat(3, minmax(160px, 220px));
+  justify-content: start;
+}
+.breaker-health-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.breaker-health-details div { align-items: center; }
 .task-model-assignment-card { display: grid; gap: 12px; }
 .task-model-assignment-card h4 { margin: 0; font-size: 13px; font-weight: 750; }
 .task-model-fields {
@@ -260,7 +270,8 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   .identity-panel, .memory-panel, .admin-summary { grid-column: auto; grid-row: auto; }
 }
 @media (max-width: 560px) {
-  .host-behavior-fields, .task-model-fields { grid-template-columns: minmax(0, 1fr); }
+  .host-behavior-fields, .task-model-fields, .host-behavior-fields.breaker-settings-grid,
+  .breaker-health-details { grid-template-columns: minmax(0, 1fr); }
   .task-model-notes { grid-column: auto; }
   .host-behavior-instruction { grid-column: auto; }
   .host-behavior-card { padding: 13px; }
@@ -648,6 +659,14 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   flex: 0 0 auto;
   min-height: 42px;
 }
+.axiom-icon-definitions,
+.admin-icon-definitions {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
 .admin-section-nav {
   display: flex;
   align-items: center;
@@ -676,20 +695,36 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   letter-spacing: .005em;
   transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .15s ease;
 }
-/* The supplied tiles include captions; show the artwork above their baked-in text. */
+/* Every icon is transparent artwork on one shared palette. */
+.axiom-icon-art,
+.axiom-line-icon,
+.admin-line-icon {
+  color: var(--icon-line-color);
+  background: transparent;
+  filter: drop-shadow(0 0 3px var(--icon-line-glow));
+}
+.axiom-line-icon,
+.admin-line-icon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--icon-line-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.axiom-brand-palette { flood-color: var(--icon-line-color); }
+.top-menu-icon { width: 28px; height: 28px; flex: none; }
 .admin-section-icon {
-  display: block;
+  display: grid;
+  place-items: center;
   flex: 0 0 48px;
   width: 48px;
-  height: 42px;
-  overflow: hidden;
+  height: 48px;
+  overflow: visible;
 }
-.admin-section-icon img {
-  display: block;
-  width: 100%;
-  height: auto;
+.admin-line-icon {
+  width: 48px;
+  height: 48px;
 }
-.admin-section-icon-mcp { height: 40px; }
 .admin-section-button:hover {
   border-color: rgba(161,190,226,.22);
   background: rgba(255,255,255,.035);
@@ -1008,7 +1043,7 @@ body {
 }
 /* Administration form headings, compact actions, and consistent filters. */
 .admin-form-icon { flex: 0 0 72px; width: 72px; height: 76px; display: grid; place-items: center; }
-.admin-form-icon img { width: 72px; height: 76px; object-fit: contain; }
+.admin-form-icon .admin-line-icon { width: 64px; height: 64px; }
 .admin-grid .panel-heading > .admin-form-icon + div { flex: 1; min-width: 0; }
 .admin-grid .panel-heading { align-items: center; }
 .admin-grid .edit-actions .primary-button,
@@ -1033,7 +1068,7 @@ body {
 .topbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px 32px; }
 .brand { gap: 12px; }
 .brand h1 { font-size: 20px; }
-.brand-logo { display: block; width: 88px; height: 66px; object-fit: contain; border-radius: 8px; }
+.brand-logo { display: block; width: 88px; height: 66px; overflow: visible; }
 .top-actions { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; width: 100%; gap: 12px; }
 .portal-return { justify-self: start; }
 .portal-menu { display: flex; align-items: center; justify-content: center; gap: 12px; min-width: 0; }
@@ -1101,18 +1136,15 @@ body {
 
 /* Consistent admin header hierarchy and compact Task Configuration icons */
 #taskProfileList .task-profile-card.axiom-icon-button > .axiom-button-icon {width:26px!important;height:26px!important;max-width:26px;max-height:26px;}
-#skillsSection .admin-form-icon {color:var(--accent);font-size:38px;}
-#skillsSection .admin-form-icon svg {width:65px;height:65px;}
 #skillsSection .panel-heading .eyebrow,#mcpSection .panel-heading .eyebrow,#memoriesSection .panel-heading .eyebrow,#journalsSection .panel-heading .eyebrow {color:var(--accent);}
-
-/* Skills icon: match the blue, light-outline treatment of the other admin artwork. */
-.admin-section-icon .skills-line-icon, .admin-form-icon .skills-line-icon { color:#60a5fa; stroke:#60a5fa; width:100%; height:auto; max-height:48px; }
 /* Administration editors share compact, wrapping action controls. */
 #skillsSection .edit-actions,
+#breakerSection .edit-actions,
 #taskProfileEditor .task-profile-foundation-section > .edit-actions,
 #behaviorsSection .behavior-library-actions,
 #devicesSection .device-selection-actions { display: flex; flex-wrap: wrap; align-items: center; }
 #skillsSection button.axiom-icon-button,
+#breakerSection .edit-actions button.axiom-icon-button,
 #taskProfileEditor .task-profile-foundation-section > .edit-actions button.axiom-icon-button,
 #behaviorsSection .behavior-library-actions button.axiom-icon-button,
 #devicesSection .device-selection-actions button.axiom-icon-button {
@@ -1152,14 +1184,7 @@ body {
 #adminView {padding-bottom:96px;}
 .admin-section-nav {align-content:start;overflow:visible;padding-bottom:12px;}
 #adminView .admin-grid {padding-bottom:36px;}
-.admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:#8cdfe9!important;color:#8cdfe9!important;stroke-width:1.1;}
 #clearMemoryFilters,#adminClearMemoryFilters {justify-self:end;align-self:end;margin-left:auto;}
-
-/* Skills navigation artwork: fine aqua outline with label directly underneath. */
-.admin-section-nav .admin-section-button[data-admin-section="skills"] {flex-direction:column;gap:3px;min-width:80px;padding:5px 10px;}
-.admin-section-nav .admin-section-button[data-admin-section="skills"] .admin-section-icon {display:grid;place-items:center;width:48px;height:48px;flex:0 0 48px;overflow:visible;}
-.admin-section-nav .admin-section-button[data-admin-section="skills"] .skills-line-icon {stroke:#8cdfe9!important;stroke-width:.8!important;width:42px;height:42px;}
-.admin-section-nav .admin-section-button[data-admin-section="skills"] > span:last-child {display:block;text-align:center;}
 #taskProfileList .task-profile-card.axiom-icon-button > strong,#taskProfileList .task-profile-card > strong {color:var(--accent)!important;}
 
 /* Keep the read-only task foundation comfortably readable at every viewport. */

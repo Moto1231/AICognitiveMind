@@ -198,6 +198,8 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("current reasoning faculty", HOST_INSTRUCTIONS)
         self.assertIn("begin_interaction", HOST_INSTRUCTIONS)
         self.assertIn("complete_interaction", HOST_INSTRUCTIONS)
+        self.assertIn("The Breaker", HOST_INSTRUCTIONS)
+        self.assertIn("presentation.report_persistence_error", HOST_INSTRUCTIONS)
         self.assertIn("open_live_body", HOST_INSTRUCTIONS)
         self.assertIn("Every begin_interaction result includes a body_work snapshot", HOST_INSTRUCTIONS)
         self.assertIn("queue server selects human text requests ahead", HOST_INSTRUCTIONS)
