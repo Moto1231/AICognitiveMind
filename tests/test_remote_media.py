@@ -53,6 +53,23 @@ class RemoteMediaTests(unittest.TestCase):
         self.assertEqual(result["route"], "windows_default")
         self.assertEqual(windows.call_args.args[2], {"rate": 1.2})
 
+    def test_configured_wav_keeps_provider_bytes_and_uses_wav_file_type(self):
+        client = Mock()
+        client.execute.return_value = {
+            "status": "completed",
+            "result": {"audio_base64": base64.b64encode(b"RIFF synthetic WAV").decode(),
+                       "media_type": "audio/wav"},
+        }
+        with tempfile.TemporaryDirectory() as folder, patch(
+            "aicognitive_mind.remote_media.windows_voice"
+        ) as windows:
+            result = speak(client, "Hello", Path(folder) / "reply.mp3", play=False)
+            path = Path(result["path"])
+            self.assertEqual(path.suffix, ".wav")
+            self.assertEqual(path.read_bytes(), b"RIFF synthetic WAV")
+            self.assertEqual(result["route"], "configured_audio_voice")
+            windows.assert_not_called()
+
     def test_auth_or_provider_error_does_not_use_windows(self):
         client = Mock()
         client.execute.side_effect = MediaError("Provider request rejected")

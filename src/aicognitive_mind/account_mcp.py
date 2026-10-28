@@ -37,6 +37,12 @@ async def authorized_account(provider: Any, token: Any) -> Any:
     ):
         raise MCPError(code=-32001, message="An authenticated Axiom account is required")
 
+    # A persistent MCP transport can retain the verified token between calls.
+    # Recheck its originating portal session before every Realtime tool call,
+    # including calls whose access token is still valid in the OAuth cache.
+    if token.client_id == "axiom-realtime" and not await provider.access_token_session_active(token):
+        raise MCPError(code=-32001, message="The Realtime portal session has ended")
+
     account = None
     accounts = getattr(provider, "accounts", None)
     if accounts is not None:
@@ -56,9 +62,9 @@ async def authorized_account(provider: Any, token: Any) -> Any:
     return account
 
 
-async def _authorized_state(ctx: Any, provider: Any) -> Any:
+async def authorized_state(root: Any, provider: Any) -> Any:
+    """Select the same verified tenant for tools and raw MCP protocol methods."""
     account = await authorized_account(provider, get_access_token())
-    root = ctx.request_context.lifespan_context
     if account is None or account.mind_id == "__legacy__":
         return root
 
@@ -89,6 +95,10 @@ async def _authorized_state(ctx: Any, provider: Any) -> Any:
         task_dispatcher=TaskModelDispatcher(RuntimeRecords(storage.mind)),
         tenancy_probe=verification,
     )
+
+
+async def _authorized_state(ctx: Any, provider: Any) -> Any:
+    return await authorized_state(ctx.request_context.lifespan_context, provider)
 
 
 def account_tools(server: Any, provider: Any) -> Any:

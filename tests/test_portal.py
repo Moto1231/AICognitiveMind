@@ -22,7 +22,241 @@ from aicognitive_mind.domain import (
 from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore
 
 
+class PortalPageMap(HTMLParser):
+    """Locate controls by their actual Administration page, including duplicates."""
+
+    def __init__(self, markup: str) -> None:
+        super().__init__()
+        self.articles = []
+        self.elements = {}
+        self.duplicate_ids = set()
+        self.page_controls = {}
+        self.navigation = {}
+        self.active_navigation = None
+        self.feed(markup)
+
+    def handle_starttag(self, tag, attrs) -> None:
+        attributes = dict(attrs)
+        if tag == "article":
+            self.articles.append(attributes.get("id"))
+        page = self.articles[-1] if self.articles else None
+        if page:
+            self.page_controls.setdefault(page, []).append((tag, attributes))
+        element_id = attributes.get("id")
+        if element_id:
+            if element_id in self.elements:
+                self.duplicate_ids.add(element_id)
+            self.elements[element_id] = (tag, attributes, page)
+        if tag == "button" and "data-admin-section" in attributes:
+            self.active_navigation = attributes["data-admin-section"]
+            self.navigation[self.active_navigation] = {"attributes": attributes, "text": ""}
+
+    def handle_data(self, data) -> None:
+        if self.active_navigation:
+            self.navigation[self.active_navigation]["text"] += data
+
+    def handle_endtag(self, tag) -> None:
+        if tag == "article":
+            self.articles.pop()
+        if tag == "button":
+            self.active_navigation = None
+
+
 class PortalTests(unittest.TestCase):
+    def test_all_portal_icons_share_one_transparent_neon_component(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+        button_icons = (STATIC_DIR / "button_icons.js").read_text(encoding="utf-8")
+
+        sections = {
+            "overview": "overview", "foundations": "foundations", "breaker": "breaker",
+            "behaviors": "behaviors",
+            "devices": "devices", "voice": "voice", "tasks": "tasks", "mcp": "mcp",
+            "tools": "tools", "skills": "skills", "memories": "memories", "journals": "journals",
+        }
+        for section, icon in sections.items():
+            button = markup.split(f'data-admin-section="{section}"', 1)[1].split("</button>", 1)[0]
+            with self.subTest(section=section):
+                self.assertIn('<svg class="admin-line-icon"', button)
+                self.assertIn(f'<use href="#admin-icon-{icon}"/>', button)
+                self.assertNotIn("<img", button)
+                self.assertNotIn("#8cdfe9", button)
+                self.assertNotIn("style=", button)
+
+        top_menu = {
+            "mindTab": "home",
+            "adminTab": "administration",
+            'href="/body/live"': "live",
+            "portalReturnButton": "return",
+            "logoutButton": "logout",
+        }
+        for control, icon in top_menu.items():
+            control_markup = markup.split(control, 1)[1].split("</", 1)[0]
+            with self.subTest(top_menu_control=control):
+                self.assertIn('class="axiom-line-icon top-menu-icon"', control_markup)
+                self.assertIn(f'<use href="#menu-icon-{icon}"/>', control_markup)
+                self.assertNotIn("<img", control_markup)
+
+        brand = markup.split('class="brand-logo axiom-icon-art"', 1)[1].split("</svg>", 1)[0]
+        self.assertIn('href="/static/axiom-logo.png"', brand)
+        self.assertIn('filter="url(#axiom-brand-cutout)"', brand)
+        self.assertNotIn('<img class="brand-logo"', markup)
+        self.assertIn('<feFlood class="axiom-brand-palette"', markup)
+
+        self.assertIn("--icon-line-color: #83dffe", stylesheet)
+        self.assertIn("--icon-line-glow: rgba(70,182,255,.65)", stylesheet)
+        self.assertIn("--icon-line-stroke: 1.4", stylesheet)
+        self.assertIn(".axiom-icon-definitions,", stylesheet)
+        self.assertIn(".admin-icon-definitions {", stylesheet)
+        self.assertIn(".axiom-icon-art,", stylesheet)
+        self.assertIn(".axiom-line-icon,", stylesheet)
+        self.assertIn(".admin-line-icon {", stylesheet)
+        icon_styles = stylesheet.rsplit(".axiom-line-icon,\n.admin-line-icon {", 1)[1].split("}", 1)[0]
+        self.assertIn("fill: none", icon_styles)
+        self.assertIn("stroke-width: var(--icon-line-stroke)", icon_styles)
+        self.assertIn("background: transparent", stylesheet)
+        self.assertIn("filter: drop-shadow(0 0 3px var(--icon-line-glow))", stylesheet)
+        self.assertIn(".top-menu-icon { width: 28px; height: 28px;", stylesheet)
+        self.assertIn(".brand-logo { width: 144px; height: 106px; }", stylesheet)
+        self.assertNotIn("admin-section-icon-mcp", stylesheet)
+        self.assertNotIn("skills-line-icon", stylesheet)
+        self.assertFalse(list(STATIC_DIR.glob("admin-*.svg")))
+        self.assertIn("color: var(--icon-line-color, #83dffe)", button_icons)
+        self.assertIn("var(--icon-line-glow, rgba(70,182,255,.65))", button_icons)
+        self.assertIn("var(--icon-line-stroke, 1.4)", button_icons)
+        self.assertNotIn("const halo =", button_icons)
+        self.assertNotIn("const light =", button_icons)
+
+    def test_tools_are_reachable_on_their_own_page_and_connection_controls_stay_separate(self) -> None:
+        pages = PortalPageMap((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+
+        self.assertFalse(pages.duplicate_ids, f"Duplicate DOM controls: {pages.duplicate_ids}")
+        self.assertEqual(pages.navigation["tools"]["text"].strip(), "Tools")
+        self.assertEqual(pages.navigation["tools"]["attributes"]["type"], "button")
+        self.assertIn("Endpoints", pages.navigation["mcp"]["text"])
+        self.assertIn("MCP", pages.navigation["mcp"]["text"])
+        self.assertNotIn("Tools", pages.navigation["mcp"]["text"])
+        self.assertRegex(script, r'\btools:\s*"toolsSection"')
+
+        for element_id in (
+            "mcpToolsServerFilter", "mcpToolsSearch", "mcpToolList", "mcpToolDetail",
+            "mcpToolName", "mcpToolServerName", "mcpToolDescription", "mcpToolSchema",
+            "mcpToolEnabled", "mcpToolStatus", "mcpDiscoverTools", "mcpEditTools",
+            "saveMcpTools", "mcpCancelTools", "mcpToolArguments", "mcpRunTool", "mcpToolOutput",
+        ):
+            with self.subTest(tool_control=element_id):
+                self.assertEqual(pages.elements[element_id][2], "toolsSection")
+        self.assertNotIn("mcpToolRunnerSelect", pages.elements)
+
+        for element_id in (
+            "taskProfileEndpointSelect", "taskProfileAddEndpoint", "endpointModelSelect",
+            "endpointModelId", "endpointEditButton", "endpointRemoveButton", "saveProviderEndpoints",
+            "mcpServerSelect", "mcpServerName", "mcpServerUrl", "mcpServerToken",
+            "mcpServerEnabled", "mcpAddServer", "mcpEditServer", "mcpDeleteServer",
+            "mcpCancelEdit", "saveMcpServers",
+        ):
+            with self.subTest(connection_control=element_id):
+                self.assertEqual(pages.elements[element_id][2], "mcpSection")
+
+        for page in ("toolsSection", "mcpSection"):
+            back_controls = [attrs for tag, attrs in pages.page_controls[page]
+                             if tag == "button" and "data-admin-back" in attrs]
+            self.assertEqual(len(back_controls), 1)
+            self.assertEqual(back_controls[0]["aria-label"], "Back to System Overview")
+
+    def test_tools_page_exposes_search_selection_and_a_locked_runner(self) -> None:
+        pages = PortalPageMap((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+
+        self.assertEqual(pages.elements["mcpToolsServerFilter"][0], "select")
+        self.assertEqual(pages.elements["mcpToolsSearch"][1]["type"], "search")
+        self.assertEqual(pages.elements["mcpToolList"][0], "select")
+        self.assertGreater(int(pages.elements["mcpToolList"][1]["size"]), 1)
+        self.assertTrue(pages.elements["mcpToolList"][1].get("aria-label"))
+        self.assertEqual(pages.elements["mcpToolArguments"][0], "textarea")
+        self.assertEqual(pages.elements["mcpToolEnabled"][1]["type"], "checkbox")
+        for element_id in ("mcpToolEnabled", "mcpRunTool", "saveMcpTools", "mcpCancelTools"):
+            with self.subTest(element_id=element_id):
+                self.assertIn("disabled", pages.elements[element_id][1])
+        self.assertEqual(pages.elements["mcpToolOutput"][1]["aria-live"], "polite")
+
+    def test_foundations_keeps_identity_read_only_and_restores_the_startup_editor(self) -> None:
+        class Foundations(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__()
+                self.active = False
+                self.fields = {}
+                self.controls = []
+
+            def handle_starttag(self, tag, attrs) -> None:
+                attributes = dict(attrs)
+                if tag == "article":
+                    self.active = attributes.get("id") == "foundationsSection"
+                if not self.active:
+                    return
+                if attributes.get("id"):
+                    self.fields[attributes["id"]] = (tag, attributes)
+                if tag in ("input", "textarea", "select", "button"):
+                    self.controls.append((tag, attributes))
+
+            def handle_endtag(self, tag) -> None:
+                if tag == "article":
+                    self.active = False
+
+        foundations = Foundations()
+        foundations.feed((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        for name in ("SelfName", "Pronouns", "Development", "Values", "Commitments", "Relationships"):
+            with self.subTest(name=name):
+                self.assertEqual(foundations.fields["foundation" + name][0], "dd")
+        self.assertEqual(len(foundations.controls), 6)
+        tag, back = foundations.controls[0]
+        self.assertEqual(tag, "button")
+        self.assertIn("data-admin-back", back)
+        self.assertEqual(back["aria-label"], "Back to System Overview")
+        self.assertEqual(foundations.fields["foundationStatus"][1]["role"], "status")
+        for name in ("foundationContract", "foundationStartup"):
+            self.assertEqual(foundations.fields[name][0], "textarea")
+            self.assertIn("readonly", foundations.fields[name][1])
+        for name in ("startupEdit", "startupSave", "startupCancel"):
+            self.assertEqual(foundations.fields[name][0], "button")
+            self.assertIn("disabled", foundations.fields[name][1])
+        for name in ("foundationEdit", "foundationSave", "foundationCancel"):
+            self.assertNotIn(name, foundations.fields)
+        self.assertEqual(foundations.fields["startupStatus"][1]["role"], "status")
+
+    def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        pages = PortalPageMap(markup)
+        stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+        script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+
+        self.assertEqual(pages.navigation["breaker"]["text"].strip(), "The Breaker")
+        self.assertRegex(script, r'\bbreaker:\s*"breakerSection"')
+        field_ids = (
+            "breakerConsecutiveLimit", "breakerRollingLimit", "breakerRollingWindow",
+            "breakerProviderTimeout", "breakerAssessmentTimeout", "breakerRetryWaitCap",
+        )
+        for field_id in field_ids:
+            with self.subTest(field_id=field_id):
+                tag, attributes, page = pages.elements[field_id]
+                self.assertEqual((tag, page), ("input", "breakerSection"))
+                self.assertEqual(attributes["type"], "number")
+                self.assertIn("readonly", attributes)
+        for control_id in ("breakerEdit", "breakerSave", "breakerCancel"):
+            self.assertIn("disabled", pages.elements[control_id][1])
+        back_controls = [
+            attrs for tag, attrs in pages.page_controls["breakerSection"]
+            if tag == "button" and "data-admin-back" in attrs
+        ]
+        self.assertEqual(len(back_controls), 1)
+        self.assertEqual(back_controls[0]["aria-label"], "Back to System Overview")
+        self.assertEqual(pages.elements["breakerSettingsStatus"][1]["role"], "status")
+        breaker_markup = markup.split('id="breakerSection"', 1)[1].split('id="skillsSection"', 1)[0]
+        self.assertNotIn("<small>", breaker_markup)
+        self.assertNotIn("Changes apply to new interactions only", breaker_markup)
+        self.assertIn("grid-template-columns: repeat(3, minmax(160px, 220px));", stylesheet)
+        self.assertIn("#breakerSection .edit-actions button.axiom-icon-button", stylesheet)
+
     def test_endpoint_api_key_is_an_accessible_masked_text_input(self) -> None:
         class Controls(HTMLParser):
             def __init__(self) -> None:
@@ -52,7 +286,7 @@ class PortalTests(unittest.TestCase):
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
 
-        for element_id in ("saveHostBehaviors", "saveTaskProfile", "saveMcpServers", "saveVoiceSettings"):
+        for element_id in ("saveHostBehaviors", "saveTaskProfile", "saveMcpServers", "saveMcpTools", "saveVoiceSettings"):
             with self.subTest(element_id=element_id):
                 self.assertRegex(markup, rf'id="{element_id}"[^>]*class="primary-button"[^>]*>Save</button>')
 

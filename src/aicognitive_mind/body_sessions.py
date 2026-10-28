@@ -2,43 +2,105 @@
 
 import asyncio
 import hashlib
+import math
+import time
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aicognitive_mind.body import DeviceStatus, ExpressionIntent, Percept
 from aicognitive_mind.host_runtime import RuntimeRecords
 
 body_session: ContextVar[str] = ContextVar("body_session", default="legacy")
 
-_body_output_subscribers: dict[tuple[str, str], set[asyncio.Queue[None]]] = {}
+ACTIVE_BODY_FRESH_SECONDS = 120
 
 
-def subscribe_body_output(session_id: str, modality: str) -> asyncio.Queue[None]:
+class BodyClientState(BaseModel):
+    """Bounded browser-reported operational state, never media or identity."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    client_revision: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$")
+    hearing: bool | None = None
+    voice: bool | None = None
+    page_visible: bool | None = None
+    microphone_live: bool | None = None
+    microphone_enabled: bool | None = None
+    voice_mode: Literal["off", "connected_host", "realtime"] | None = None
+    last_playback: Literal["idle", "started", "completed", "failed", "cancelled"] | None = None
+
+
+class BodySessionHeartbeat(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    client_state: BodyClientState | None = None
+
+
+async def active_body_status(records: RuntimeRecords, *, now: float | None = None) -> dict[str, Any] | None:
+    """Expose only fresh client state from this Mind's active named Body."""
+    active = await records.get("active_body_session")
+    if not isinstance(active, dict):
+        return None
+    session = active.get("session_id")
+    updated_at = active.get("updated_at")
+    if (
+        not isinstance(session, str) or not session or session == "legacy" or len(session) > 128
+        or isinstance(updated_at, bool) or not isinstance(updated_at, (int, float))
+        or not math.isfinite(updated_at)
+    ):
+        return None
+    age = max(0.0, (time.time() if now is None else now) - updated_at)
+    fresh = age <= ACTIVE_BODY_FRESH_SECONDS
+    state = None
+    if fresh and isinstance(active.get("client_state"), dict):
+        try:
+            state = BodyClientState.model_validate(active["client_state"]).model_dump(exclude_none=True)
+        except ValidationError:
+            # Older or corrupt records must not expose arbitrary stored fields.
+            pass
+    return {
+        "fresh": fresh,
+        "last_heartbeat_age_seconds": round(age, 3),
+        "client_state": state,
+        "client_state_source": "client_reported" if state is not None else None,
+    }
+
+_body_output_subscribers: dict[tuple[str, str, str], set[asyncio.Queue[None]]] = {}
+
+
+def subscribe_body_output(
+    session_id: str, modality: str, *, mind_scope: str = "legacy"
+) -> asyncio.Queue[None]:
     subscriber: asyncio.Queue[None] = asyncio.Queue()
-    _body_output_subscribers.setdefault((session_id, modality), set()).add(subscriber)
+    _body_output_subscribers.setdefault((mind_scope, session_id, modality), set()).add(subscriber)
     return subscriber
 
 
 def unsubscribe_body_output(
-    session_id: str, modality: str, subscriber: asyncio.Queue[None]
+    session_id: str, modality: str, subscriber: asyncio.Queue[None], *, mind_scope: str = "legacy"
 ) -> None:
-    subscribers = _body_output_subscribers.get((session_id, modality))
+    subscribers = _body_output_subscribers.get((mind_scope, session_id, modality))
     if subscribers is None:
         return
     subscribers.discard(subscriber)
     if not subscribers:
-        _body_output_subscribers.pop((session_id, modality), None)
+        _body_output_subscribers.pop((mind_scope, session_id, modality), None)
 
 
-def notify_body_output(session_id: str, modality: str) -> None:
-    for subscriber in tuple(_body_output_subscribers.get((session_id, modality), ())):
+def notify_body_output(session_id: str, modality: str, *, mind_scope: str = "legacy") -> None:
+    for subscriber in tuple(_body_output_subscribers.get((mind_scope, session_id, modality), ())):
         subscriber.put_nowait(None)
 
 
 class BodyQueue:
     def __init__(self, records: RuntimeRecords, modality: str, adapter: Any) -> None:
         self.records, self.modality, self.adapter = records, modality, adapter
+
+    @property
+    def output_scope(self) -> str:
+        return str(getattr(self.records, "mind_id", "legacy"))
 
     def key(self) -> str:
         return (
@@ -93,7 +155,7 @@ class BodyQueue:
         adapter = type(self.adapter)()
         await adapter.speak(intent)
         await self.change({**adapter.consume().model_dump(mode="json"), "delivery_id": uuid4().hex})
-        notify_body_output(body_session.get(), self.modality)
+        notify_body_output(body_session.get(), self.modality, mind_scope=self.output_scope)
 
     async def render(self, intent: ExpressionIntent) -> None:
         adapter = type(self.adapter)()

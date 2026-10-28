@@ -22,12 +22,16 @@ const state = {
   hostBehaviorDraft: null,
   hostBehaviorRevision: null,
   hostBehaviorSaving: false,
+  activeHostBehaviorId: null,
+  hostBehaviorQuery: "",
   cognitiveConfiguration: null,
   cognitiveDraft: null,
   cognitiveSaving: false,
+  breakerSettings: null,
+  breakerDraft: null,
+  breakerSaving: false,
+  breakerLoadRevision: 0,
   foundationIdentity: null,
-  foundationIdentityDraft: null,
-  foundationIdentitySaving: false,
   taskFoundationDraft: null,
   taskFoundationSaving: false,
   taskModelAssignments: [],
@@ -38,6 +42,8 @@ const state = {
   mcpServers: [],
   activeMcpServerId: null,
   activeTaskProfile: null,
+  activeTaskFallback: 0,
+  taskFallbackTask: null,
   activeEndpointId: null,
   activeEndpointOriginalName: "",
   endpointDraft: null,
@@ -48,9 +54,22 @@ const state = {
   providerSetupDraft: null,
   mcpServerDraft: null,
   mcpEditBaseline: "",
+  mcpToolsServerId: "",
+  mcpToolsQuery: "",
+  activeMcpToolKey: "",
+  mcpToolsDraft: null,
+  mcpToolsError: "",
+  mcpToolsSaving: false,
+  mcpToolsDiscovering: false,
+  mcpToolsDiscoveryRevision: 0,
+  mcpToolsRefreshRevision: 0,
+  mcpToolRunRevision: 0,
+  mcpToolRunning: false,
   integrationSaving: false,
   deviceInventory: [],
   voiceSettingsRevision: 0,
+  voiceSettingsLoaded: false,
+  voiceSettingsBusy: false,
   taskProfileSnapshot: "",
   hostBehaviorSnapshot: "",
 };
@@ -140,8 +159,20 @@ const el = {
   mcpEditServer: document.getElementById("mcpEditServer"),
   mcpCancelEdit: document.getElementById("mcpCancelEdit"),
   mcpServerStatus: document.getElementById("mcpServerStatus"),
+  mcpToolsServerFilter: document.getElementById("mcpToolsServerFilter"),
+  mcpToolsSearch: document.getElementById("mcpToolsSearch"),
   mcpToolList: document.getElementById("mcpToolList"),
-  mcpToolRunnerSelect: document.getElementById("mcpToolRunnerSelect"),
+  mcpToolCount: document.getElementById("mcpToolCount"),
+  mcpToolDetail: document.getElementById("mcpToolDetail"),
+  mcpToolName: document.getElementById("mcpToolName"),
+  mcpToolServerName: document.getElementById("mcpToolServerName"),
+  mcpToolDescription: document.getElementById("mcpToolDescription"),
+  mcpToolSchema: document.getElementById("mcpToolSchema"),
+  mcpToolEnabled: document.getElementById("mcpToolEnabled"),
+  mcpToolStatus: document.getElementById("mcpToolStatus"),
+  mcpEditTools: document.getElementById("mcpEditTools"),
+  saveMcpTools: document.getElementById("saveMcpTools"),
+  mcpCancelTools: document.getElementById("mcpCancelTools"),
   mcpToolArguments: document.getElementById("mcpToolArguments"),
   mcpRunTool: document.getElementById("mcpRunTool"),
   mcpToolOutput: document.getElementById("mcpToolOutput"),
@@ -174,6 +205,9 @@ const el = {
   editGrounding: document.getElementById("editGrounding"),
   cancelMemoryEdit: document.getElementById("cancelMemoryEdit"),
   hostBehaviorList: document.getElementById("hostBehaviorList"),
+  hostBehaviorSearch: document.getElementById("hostBehaviorSearch"),
+  hostBehaviorSelect: document.getElementById("hostBehaviorSelect"),
+  hostBehaviorSummary: document.getElementById("hostBehaviorSummary"),
   addHostBehavior: document.getElementById("addHostBehavior"),
   saveHostBehaviors: document.getElementById("saveHostBehaviors"),
   editHostBehaviors: document.getElementById("editHostBehaviors"),
@@ -215,6 +249,12 @@ const el = {
   taskProfileVoiceReferenceField: document.getElementById("taskProfileVoiceReferenceField"),
   taskProfileVoiceReferenceId: document.getElementById("taskProfileVoiceReferenceId"),
   taskProfileFallbackList: document.getElementById("taskProfileFallbackList"),
+  taskProfileFallbackEditor: document.getElementById("taskProfileFallbackEditor"),
+  taskProfileFallbackEndpoint: document.getElementById("taskProfileFallbackEndpoint"),
+  taskProfileFallbackModel: document.getElementById("taskProfileFallbackModel"),
+  taskProfileFallbackUp: document.getElementById("taskProfileFallbackUp"),
+  taskProfileFallbackDown: document.getElementById("taskProfileFallbackDown"),
+  taskProfileFallbackRemove: document.getElementById("taskProfileFallbackRemove"),
   taskProfileAddFallback: document.getElementById("taskProfileAddFallback"),
   taskProfileAddBehavior: document.getElementById("taskProfileAddBehavior"),
   voiceRate: document.getElementById("voiceRate"),
@@ -225,6 +265,7 @@ const el = {
   voiceVolumeValue: document.getElementById("voiceVolumeValue"),
   voiceName: document.getElementById("voiceName"),
   voiceSettingsRevision: document.getElementById("voiceSettingsRevision"),
+  voiceSettingsStatus: document.getElementById("voiceSettingsStatus"),
   saveVoiceSettings: document.getElementById("saveVoiceSettings"),
   taskProfileFoundation: document.getElementById("taskProfileFoundation"),
   taskFoundationEdit: document.getElementById("taskFoundationEdit"),
@@ -332,6 +373,7 @@ function toast(message, error = false) {
 }
 
 function setMode(mode) {
+  if (mode === "mind" && typeof discardDeviceSelectionChanges === "function") discardDeviceSelectionChanges();
   if (mode === "mind" && state.activeTaskProfile) closeTaskProfile();
   state.mode = mode;
   const admin = mode === "admin";
@@ -370,8 +412,43 @@ async function validateAdmin() {
 
 function renderHostBehaviors() {
   el.hostBehaviorList.replaceChildren();
+  const items = state.hostBehaviorDraft || state.hostBehaviors;
+  const query = (state.hostBehaviorQuery || "").trim().toLocaleLowerCase();
+  const matches = items.filter(behavior => !query || `${behavior.name}\n${behavior.instruction}`.toLocaleLowerCase().includes(query));
+  if (!matches.some(behavior => behavior.id === state.activeHostBehaviorId)) {
+    state.activeHostBehaviorId = matches[0]?.id || null;
+  }
+  state.hostBehaviorMatchCount = matches.length;
+  if (el.hostBehaviorSearch) {
+    el.hostBehaviorSearch.value = state.hostBehaviorQuery || "";
+    el.hostBehaviorSearch.disabled = state.hostBehaviorSaving;
+  }
+  if (el.hostBehaviorSelect) {
+    el.hostBehaviorSelect.replaceChildren();
+    if (!matches.length) {
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = items.length ? "No matching behaviors" : "No behaviors yet";
+      el.hostBehaviorSelect.append(emptyOption);
+    }
+    for (const behavior of matches) {
+      const option = document.createElement("option");
+      option.value = behavior.id;
+      option.textContent = behavior.name || "Unnamed behavior";
+      el.hostBehaviorSelect.append(option);
+    }
+    el.hostBehaviorSelect.value = state.activeHostBehaviorId || "";
+    el.hostBehaviorSelect.disabled = state.hostBehaviorSaving || !matches.length;
+  }
   const editing = Boolean(state.hostBehaviorDraft) && !state.hostBehaviorSaving;
-  for (const behavior of state.hostBehaviorDraft || state.hostBehaviors) {
+  const selected = matches.find(behavior => behavior.id === state.activeHostBehaviorId);
+  if (!selected) {
+    const empty = document.createElement("p");
+    empty.className = "record-empty";
+    empty.textContent = items.length ? "No behaviors match this search. Clear the search to browse the library." : "No behaviors yet. Add a behavior to start.";
+    el.hostBehaviorList.append(empty);
+  }
+  for (const behavior of selected ? [selected] : []) {
     const row = document.createElement("div");
     row.className = "memory-card host-behavior-card";
     const fields = document.createElement("div");
@@ -441,6 +518,7 @@ function renderHostBehaviors() {
     remove.addEventListener("click", () => {
       if (!state.hostBehaviorDraft || state.hostBehaviorSaving) return;
       state.hostBehaviorDraft = state.hostBehaviorDraft.filter(item => item.id !== behavior.id);
+      state.activeHostBehaviorId = null;
       renderHostBehaviors();
     });
     const controls = document.createElement("div");
@@ -454,13 +532,25 @@ function renderHostBehaviors() {
 
 function updateBehaviorSaveState() {
   const editing = Boolean(state.hostBehaviorDraft);
+  const items = state.hostBehaviorDraft || state.hostBehaviors;
+  const dirty = editing && JSON.stringify(state.hostBehaviorDraft) !== state.hostBehaviorSnapshot;
+  const invalid = editing && state.hostBehaviorDraft.some(item => !item.name.trim() || !item.instruction.trim()
+    || !Number.isInteger(item.priority) || item.priority < 0 || item.priority > 10000);
   if (el.saveHostBehaviors) el.saveHostBehaviors.disabled =
-    !editing || state.hostBehaviorSaving || JSON.stringify(state.hostBehaviorDraft) === state.hostBehaviorSnapshot ||
-    state.hostBehaviorDraft.some(item => !item.name.trim() || !item.instruction.trim()
-      || !Number.isInteger(item.priority) || item.priority < 0 || item.priority > 10000);
+    !editing || state.hostBehaviorSaving || !dirty || invalid;
   if (el.editHostBehaviors) el.editHostBehaviors.disabled = !Number.isInteger(state.hostBehaviorRevision) || editing || state.hostBehaviorSaving;
   if (el.cancelHostBehaviors) el.cancelHostBehaviors.disabled = !editing || state.hostBehaviorSaving;
   if (el.addHostBehavior) el.addHostBehavior.disabled = !Number.isInteger(state.hostBehaviorRevision) || state.hostBehaviorSaving;
+  if (el.hostBehaviorSelect) {
+    const selected = items.find(item => item.id === state.activeHostBehaviorId);
+    const option = [...el.hostBehaviorSelect.options].find(item => item.value === state.activeHostBehaviorId);
+    if (selected && option) option.textContent = selected.name || "Unnamed behavior";
+  }
+  if (el.hostBehaviorSummary) {
+    const count = state.hostBehaviorMatchCount ?? items.length;
+    const mode = state.hostBehaviorSaving ? "Saving…" : editing ? dirty ? "Unsaved changes" : "Editing · No changes" : "Read-only";
+    el.hostBehaviorSummary.textContent = `${items.length} behavior${items.length === 1 ? "" : "s"} · ${count} match${count === 1 ? "" : "es"} · ${mode}${invalid ? " · Complete all draft fields before saving." : ""}`;
+  }
 }
 
 async function refreshHostBehaviors() {
@@ -499,6 +589,8 @@ function addHostBehavior() {
     priority: 100,
     protected: false,
   });
+  state.hostBehaviorQuery = "";
+  state.activeHostBehaviorId = id;
   renderHostBehaviors();
 }
 
@@ -677,6 +769,13 @@ function fillSelect(select, values, selected, placeholder, capabilityMap = null)
   select.value = selected || "";
 }
 
+function taskProviderEndpoint(provider) {
+  const selected = String(provider || "").trim().toLowerCase();
+  if (!selected) return null;
+  return state.providerEndpoints.find(endpoint => [endpoint.id, endpoint.name, endpoint.base_url]
+    .some(value => String(value || "").trim().toLowerCase() === selected)) || null;
+}
+
 function taskEndpointOptions(select, selected, task = state.activeTaskProfile) {
   select.replaceChildren(new Option(task === "fallback" ? "None (remove fallback)" : "None (default routing)", ""));
   if (task === "reasoning") select.append(new Option("Connected reasoning host", "connected-host"));
@@ -686,7 +785,7 @@ function taskEndpointOptions(select, selected, task = state.activeTaskProfile) {
     if (option.dataset.hasKey === "true") option.style.color = "var(--success)";
     select.append(option);
   }
-  const endpoint = state.providerEndpoints.find(item => item.id === selected || item.name === selected);
+  const endpoint = taskProviderEndpoint(selected);
   if (selected && !endpoint && selected !== "connected-host") select.append(new Option(selected + " (saved)", selected));
   select.value = endpoint?.id || selected || "";
   select.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
@@ -765,51 +864,95 @@ function renderFallbackSelectors() {
   if (!el.taskProfileFallbackList) return;
   const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
   const fallbacks = assignment?.fallbacks || [];
+  const busy = state.taskProfileSaving === true;
+  if (state.taskFallbackTask !== state.activeTaskProfile) state.activeTaskFallback = 0;
+  state.taskFallbackTask = state.activeTaskProfile;
+  state.activeTaskFallback = Math.max(0, Math.min(state.activeTaskFallback || 0, fallbacks.length - 1));
   el.taskProfileFallbackList.replaceChildren();
+  el.taskProfileFallbackList.disabled = busy || !fallbacks.length;
+  el.taskProfileFallbackList.size = Math.min(5, Math.max(1, fallbacks.length));
+  el.taskProfileAddFallback.disabled = busy || !assignment;
+  if (el.taskProfileBack) el.taskProfileBack.disabled = busy;
+  el.taskProfileFallbackEditor.classList.toggle("hidden", !fallbacks.length);
   if (!fallbacks.length) {
-    const empty = document.createElement("p");
-    empty.className = "record-empty";
-    empty.textContent = "No fallback endpoints configured.";
-    el.taskProfileFallbackList.append(empty);
+    el.taskProfileFallbackList.append(new Option("No fallbacks", ""));
   }
   fallbacks.forEach((fallback, index) => {
-    const row = document.createElement("div");
-    row.className = "task-fallback-row";
-    const label = document.createElement("label");
-    label.className = "host-behavior-field";
-    label.textContent = "Fallback endpoint " + (index + 1);
-    const select = document.createElement("select");
-    select.setAttribute("aria-label", label.textContent);
-    taskEndpointOptions(select, fallback.provider, "fallback");
-    select.addEventListener("change", () => {
-      if (!select.value) {
-        assignment.fallbacks.splice(index, 1);
-        renderFallbackSelectors();
-        updateTaskSaveState();
-        return;
-      }
-      const endpoint = state.providerEndpoints.find(item => item.id === select.value);
-      const sameEndpoint = endpoint && (fallback.provider === endpoint.id || fallback.provider === endpoint.name);
-      fallback.provider = endpoint?.id || select.value;
-      fallback.model = endpoint?.model || (sameEndpoint ? fallback.model : "");
-      if (endpoint && !fallback.model) toast("Save a model for this endpoint in Endpoints, Servers & Tools first", true);
-      select.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
-      updateTaskSaveState();
-    });
-    label.append(select);
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "secondary-button";
-    remove.textContent = "Remove";
-    remove.setAttribute("aria-label", "Remove fallback " + (index + 1));
-    remove.addEventListener("click", () => {
-      assignment.fallbacks.splice(index, 1);
-      renderFallbackSelectors();
-      updateTaskSaveState();
-    });
-    row.append(label, remove);
-    el.taskProfileFallbackList.append(row);
+    const endpoint = taskProviderEndpoint(fallback.provider);
+    const name = endpoint?.name || fallback.provider || "New fallback";
+    const model = endpoint?.model || fallback.model || "Model not set";
+    const option = new Option(`${index + 1}. ${name} · ${model}`, String(index));
+    option.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
+    el.taskProfileFallbackList.append(option);
   });
+  el.taskProfileFallbackList.value = fallbacks.length ? String(state.activeTaskFallback) : "";
+  const selected = fallbacks[state.activeTaskFallback];
+  taskEndpointOptions(el.taskProfileFallbackEndpoint, selected?.provider || "", "fallback");
+  el.taskProfileFallbackEndpoint.disabled = busy || !selected;
+  const endpoint = taskProviderEndpoint(selected?.provider);
+  el.taskProfileFallbackModel.textContent = selected ? endpoint?.model || selected.model || "Model not set" : "";
+  el.taskProfileFallbackUp.disabled = busy || !selected || state.activeTaskFallback === 0;
+  el.taskProfileFallbackDown.disabled = busy || !selected || state.activeTaskFallback === fallbacks.length - 1;
+  el.taskProfileFallbackRemove.disabled = busy || !selected;
+}
+
+function selectTaskFallback() {
+  if (state.taskProfileSaving) return;
+  const index = Number(el.taskProfileFallbackList.value);
+  if (!Number.isInteger(index)) return;
+  state.activeTaskFallback = index;
+  renderFallbackSelectors();
+}
+
+function addTaskFallback() {
+  if (state.taskProfileSaving) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (!assignment) return;
+  assignment.fallbacks = assignment.fallbacks || [];
+  assignment.fallbacks.push({ provider: "", model: "" });
+  state.taskFallbackTask = state.activeTaskProfile;
+  state.activeTaskFallback = assignment.fallbacks.length - 1;
+  renderFallbackSelectors();
+  el.taskProfileFallbackEndpoint.focus();
+  updateTaskSaveState();
+}
+
+function removeTaskFallback() {
+  if (state.taskProfileSaving) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (!assignment?.fallbacks?.[state.activeTaskFallback]) return;
+  assignment.fallbacks.splice(state.activeTaskFallback, 1);
+  renderFallbackSelectors();
+  updateTaskSaveState();
+}
+
+function moveTaskFallback(offset) {
+  if (state.taskProfileSaving) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const index = state.activeTaskFallback;
+  const target = index + offset;
+  if (!assignment?.fallbacks?.[index] || !assignment.fallbacks[target]) return;
+  const [fallback] = assignment.fallbacks.splice(index, 1);
+  assignment.fallbacks.splice(target, 0, fallback);
+  state.activeTaskFallback = target;
+  renderFallbackSelectors();
+  updateTaskSaveState();
+}
+
+function changeTaskFallbackEndpoint() {
+  if (state.taskProfileSaving) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const fallback = assignment?.fallbacks?.[state.activeTaskFallback];
+  if (!fallback) return;
+  const provider = el.taskProfileFallbackEndpoint.value;
+  if (!provider) { removeTaskFallback(); return; }
+  const endpoint = taskProviderEndpoint(provider);
+  const sameEndpoint = endpoint && taskProviderEndpoint(fallback.provider) === endpoint;
+  fallback.provider = endpoint?.id || provider;
+  fallback.model = endpoint?.model || (sameEndpoint ? fallback.model : "");
+  if (endpoint && !fallback.model) toast("Save a model for this endpoint in Endpoints & MCP Servers first", true);
+  renderFallbackSelectors();
+  updateTaskSaveState();
 }
 
 function loadEndpointIntoForm() {
@@ -945,7 +1088,7 @@ function cancelEndpointEdit() {
 }
 
 function openTaskProfile(task) {
-  if (state.taskFoundationSaving) return;
+  if (state.taskFoundationSaving || (state.taskProfileSaving && task !== state.activeTaskProfile)) return;
   if (state.taskFoundationDraft?.task !== task) cancelTaskFoundationEdit();
   if (state.activeTaskProfile && state.activeTaskProfile !== task) discardTaskProfileChanges();
   state.activeTaskProfile = task;
@@ -986,7 +1129,7 @@ function openTaskProfile(task) {
 }
 
 function closeTaskProfile() {
-  if (state.taskFoundationSaving) return;
+  if (state.taskFoundationSaving || state.taskProfileSaving) return;
   cancelTaskFoundationEdit();
   discardTaskProfileChanges();
   state.activeTaskProfile = null;
@@ -1127,6 +1270,7 @@ async function saveTaskProfile() {
   }
   state.taskProfileSaving = true;
   el.saveTaskProfile.disabled = true;
+  renderFallbackSelectors();
   try {
     const assignment = state.taskModelAssignments.find(item => item.task === task);
     assignment.voice_reference_id = task === "audio_voice" ? el.taskProfileVoiceReferenceId.value.trim() : assignment.voice_reference_id || "";
@@ -1138,7 +1282,7 @@ async function saveTaskProfile() {
     renderTaskProfiles();
     openTaskProfile(task);
   } catch (error) { toast(error.message, true); }
-  finally { state.taskProfileSaving = false; updateTaskSaveState(); }
+  finally { state.taskProfileSaving = false; renderFallbackSelectors(); updateTaskSaveState(); }
 }
 
 async function discoverTaskProfileModels() {
@@ -1369,22 +1513,80 @@ function updateVoiceSliderReadouts() {
   if (el.voiceVolumeValue) el.voiceVolumeValue.value = Number(el.voiceVolume.value).toFixed(2);
 }
 
+function bodySettingsAvailable() {
+  return state.adminAuthorized && state.status?.administration?.body_settings_available === true;
+}
+
+function bodyFallbackSettingsAvailable() {
+  return state.adminAuthorized && state.status?.administration?.body_fallback_settings_available === true;
+}
+
+function renderBodySettingsAvailability() {
+  const available = bodySettingsAvailable();
+  if (!available) {
+    state.voiceSettingsLoaded = false;
+    state.voiceSettingsRevision = 0;
+    for (const name of ["voiceRate", "voicePitch", "voiceVolume"]) {
+      if (el[name]) el[name].value = "1";
+    }
+    if (el.voiceName) el.voiceName.value = "";
+    updateVoiceSliderReadouts();
+    if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "";
+    const message = state.status?.administration?.body_settings_available === false
+      ? "Unavailable for this account." : "Voice settings unavailable.";
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = message;
+    if (el.bodyFallbackEnabled) el.bodyFallbackEnabled.checked = false;
+    if (el.bodyFallbackSource) el.bodyFallbackSource.textContent = message;
+  }
+  const enabled = available && state.voiceSettingsLoaded && !state.voiceSettingsBusy;
+  for (const name of ["voiceRate", "voicePitch", "voiceVolume", "voiceName", "saveVoiceSettings"]) {
+    if (el[name]) el[name].disabled = !enabled;
+  }
+  if (el.bodyFallbackEnabled) el.bodyFallbackEnabled.disabled = !bodyFallbackSettingsAvailable();
+  if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = !bodyFallbackSettingsAvailable();
+}
+
 async function loadVoiceSettings() {
+  const revision = state.voiceSettingsLoadRevision = (state.voiceSettingsLoadRevision || 0) + 1;
+  if (!bodySettingsAvailable()) {
+    renderBodySettingsAvailability();
+    return;
+  }
+  state.voiceSettingsLoaded = false;
+  state.voiceSettingsBusy = true;
+  renderBodySettingsAvailability();
+  if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = "Loading voice settings…";
   try {
     const settings = await api("/v1/admin/body/voice/settings", {}, true);
+    if (revision !== state.voiceSettingsLoadRevision || !bodySettingsAvailable()) return;
     state.voiceSettingsRevision = Number(settings.revision || 0);
     el.voiceRate.value = String(settings.rate ?? 1);
     el.voicePitch.value = String(settings.pitch ?? 1);
     el.voiceVolume.value = String(settings.volume ?? 1);
     el.voiceName.value = settings.voiceName || "";
+    state.voiceSettingsLoaded = true;
     updateVoiceSliderReadouts();
     if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = "";
   } catch (error) {
+    if (revision !== state.voiceSettingsLoadRevision || !bodySettingsAvailable()) return;
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = error.message;
     toast("Could not load voice settings: " + error.message, true);
+  } finally {
+    if (revision === state.voiceSettingsLoadRevision) {
+      state.voiceSettingsBusy = false;
+      renderBodySettingsAvailability();
+    }
   }
 }
 
 async function saveVoiceSettings() {
+  if (!bodySettingsAvailable() || !state.voiceSettingsLoaded || state.voiceSettingsBusy) {
+    renderBodySettingsAvailability();
+    return;
+  }
+  state.voiceSettingsBusy = true;
+  renderBodySettingsAvailability();
   try {
     const settings = await api("/v1/admin/body/voice/settings", {
       method: "POST",
@@ -1396,16 +1598,23 @@ async function saveVoiceSettings() {
         voice_name: el.voiceName.value.trim(),
       }),
     }, true);
+    if (!bodySettingsAvailable()) return;
     state.voiceSettingsRevision = Number(settings.revision || 0);
     if (el.voiceSettingsRevision) el.voiceSettingsRevision.textContent = "Revision: " + state.voiceSettingsRevision;
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = "";
     toast("Voice settings saved");
   } catch (error) {
+    if (!bodySettingsAvailable()) return;
+    if (el.voiceSettingsStatus) el.voiceSettingsStatus.textContent = error.message;
     toast("Could not save voice settings: " + error.message, true);
+  } finally {
+    state.voiceSettingsBusy = false;
+    renderBodySettingsAvailability();
   }
 }
 
 async function refreshBodyFallbackSettings() {
-  if (!state.adminAuthorized || !el.bodyFallbackEnabled) return;
+  if (!bodyFallbackSettingsAvailable() || !el.bodyFallbackEnabled) return;
   try {
     const settings = await api("/v1/admin/body/fallback", {}, true);
     el.bodyFallbackEnabled.checked = Boolean(settings.enabled);
@@ -1418,7 +1627,7 @@ async function refreshBodyFallbackSettings() {
 }
 
 async function saveBodyFallbackSettings() {
-  if (!el.bodyFallbackEnabled) return;
+  if (!bodyFallbackSettingsAvailable() || !el.bodyFallbackEnabled) return;
   if (el.saveBodyFallbackSetting) el.saveBodyFallbackSetting.disabled = true;
   try {
     const settings = await api("/v1/admin/body/fallback", {
@@ -1440,6 +1649,7 @@ async function saveBodyFallbackSettings() {
 
 async function enterAdminMode() {
   try {
+    await refreshStatus();
     const allowed = await validateAdmin();
     if (!allowed) return;
     setMode("admin");
@@ -1462,6 +1672,7 @@ async function enterAdminMode() {
 
 function renderStatus(status) {
   state.status = status;
+  renderBodySettingsAvailability();
   const mind = status.mind;
   const integration = status.integration;
   const selfName = typeof mind.identity.self_name === "string" && mind.identity.self_name.trim()
@@ -2242,9 +2453,9 @@ async function refreshStatus() {
 
 async function refresh() {
   try {
+    await refreshStatus();
     const admin = state.mode === "admin" && state.adminAuthorized;
     await Promise.all([
-      refreshStatus(),
       refreshMemory(admin ? filters.admin : filters.mind, true),
       refreshJournal(true),
       ...(admin ? [
@@ -2371,6 +2582,16 @@ if (el.addHostBehavior) el.addHostBehavior.addEventListener("click", addHostBeha
 if (el.saveHostBehaviors) el.saveHostBehaviors.addEventListener("click", saveHostBehaviors);
 if (el.editHostBehaviors) el.editHostBehaviors.addEventListener("click", editHostBehaviors);
 if (el.cancelHostBehaviors) el.cancelHostBehaviors.addEventListener("click", cancelHostBehaviorEdit);
+if (el.hostBehaviorSearch) el.hostBehaviorSearch.addEventListener("input", () => {
+  if (state.hostBehaviorSaving) return;
+  state.hostBehaviorQuery = el.hostBehaviorSearch.value;
+  renderHostBehaviors();
+});
+if (el.hostBehaviorSelect) el.hostBehaviorSelect.addEventListener("change", () => {
+  if (state.hostBehaviorSaving) return;
+  state.activeHostBehaviorId = el.hostBehaviorSelect.value;
+  renderHostBehaviors();
+});
 if (el.taskProfileBack) el.taskProfileBack.addEventListener("click", closeTaskProfile);
 
 let diagnosticsRevision = 0;
@@ -2467,6 +2688,7 @@ document.getElementById("apiActivityFilter")?.addEventListener("change", refresh
 
 const adminSectionIds = {
   mcp: "mcpSection",
+  tools: "toolsSection",
   tasks: "tasksSection",
   behaviors: "behaviorsSection",
   skills: "skillsSection",
@@ -2474,6 +2696,7 @@ const adminSectionIds = {
   journals: "journalsSection",
   overview: "overviewSection",
   foundations: "foundationsSection",
+  breaker: "breakerSection",
   devices: "devicesSection",
   voice: "voiceSection",
 };
@@ -2503,6 +2726,7 @@ document.getElementById("continuityRefreshButton")?.addEventListener("click", re
 async function refreshAdmin() {
   const updates = [refresh()];
   if (document.getElementById("foundationsSection")?.classList.contains("hidden") === false) updates.push(refreshFoundations());
+  if (typeof refreshBreakerSettings === "function" && document.getElementById("breakerSection")?.classList.contains("hidden") === false) updates.push(refreshBreakerSettings());
   if (document.getElementById("skillsSection")?.classList.contains("hidden") === false) {
     updates.push(refreshSkillDrafts());
   }
@@ -2611,7 +2835,7 @@ function syncMcpServerForm() {
 function updateMcpEditorState() {
   const editing = !!state.mcpServerDraft;
   const saved = state.mcpServers.some(server => server.id === state.activeMcpServerId);
-  const busy = Boolean(state.integrationSaving || state.endpointDiscovering || state.endpointProbing);
+  const busy = Boolean(state.integrationSaving || state.endpointDiscovering || state.endpointProbing || state.mcpToolsSaving || state.mcpToolsDiscovering);
   [el.mcpServerName, el.mcpServerUrl, el.mcpServerToken, el.mcpServerEnabled].forEach(input => {
     input.disabled = !editing || busy;
   });
@@ -2622,9 +2846,8 @@ function updateMcpEditorState() {
   el.mcpCancelEdit.disabled = !editing || busy;
   const server = selectedMcpServer();
   const valid = !!(server?.name && /^https?:\/\/\S+$/i.test(server?.url || ""));
-  el.mcpDiscoverTools.disabled = busy || !valid;
   el.saveMcpServers.disabled = !editing || busy || !valid || JSON.stringify(server) === state.mcpEditBaseline;
-  el.mcpRunTool.disabled = editing || busy || !saved;
+  updateMcpToolsState();
 }
 
 function editMcpServer() {
@@ -2667,76 +2890,159 @@ function loadMcpServerIntoForm() {
   el.mcpServerUrl.value = server?.url || "";
   el.mcpServerToken.value = server?.bearer_token || "";
   el.mcpServerEnabled.checked = server ? server.enabled !== false : true;
-  el.mcpServerStatus.textContent = server
-    ? `${server.tools?.length || 0} discovered tool(s). ${state.mcpServerDraft ? "Save to apply server and tool changes." : "Choose Edit to change this server or its tools."}`
-    : "Choose Add to configure an MCP server.";
+  el.mcpServerStatus.textContent = state.mcpServerDraft ? "Unsaved changes" : "";
+  updateMcpEditorState();
+}
+
+function mcpToolKey(serverId, toolName) {
+  return JSON.stringify([serverId, toolName]);
+}
+
+function mcpToolEntries() {
+  return state.mcpServers.flatMap(server => {
+    const tools = state.mcpToolsDraft?.serverId === server.id ? state.mcpToolsDraft.tools : server.tools;
+    return (tools || []).map(tool => ({ server, tool, key: mcpToolKey(server.id, tool.name) }));
+  });
+}
+
+function selectedMcpTool() {
+  return mcpToolEntries().find(entry => entry.key === state.activeMcpToolKey) || null;
+}
+
+function mcpToolsTargetServer() {
+  const id = state.mcpToolsDraft?.serverId || state.mcpToolsServerId || selectedMcpTool()?.server.id;
+  return state.mcpServers.find(server => server.id === id) || null;
+}
+
+function invalidateMcpToolRun() {
+  state.mcpToolRunRevision = (state.mcpToolRunRevision || 0) + 1;
+  state.mcpToolRunning = false;
+  el.mcpToolArguments.value = "{}";
+  el.mcpToolOutput.textContent = "";
+}
+
+function selectMcpTool(key) {
+  if (state.activeMcpToolKey !== key) invalidateMcpToolRun();
+  state.activeMcpToolKey = key;
+  el.mcpToolList.value = key;
+  renderMcpToolDetail();
+}
+
+function renderMcpTools() {
+  if (!el.mcpToolList) return;
+  el.mcpToolsServerFilter.replaceChildren(new Option("All servers", ""));
+  for (const server of state.mcpServers) el.mcpToolsServerFilter.append(new Option(server.name, server.id));
+  if (state.mcpToolsDraft && !state.mcpServers.some(server => server.id === state.mcpToolsDraft.serverId)) {
+    el.mcpToolsServerFilter.append(new Option("Unavailable server", state.mcpToolsDraft.serverId));
+  } else if (!state.mcpServers.some(server => server.id === state.mcpToolsServerId)) {
+    state.mcpToolsServerId = "";
+  }
+  el.mcpToolsServerFilter.value = state.mcpToolsServerId || "";
+  el.mcpToolsSearch.value = state.mcpToolsQuery || "";
+  const query = (state.mcpToolsQuery || "").trim().toLowerCase();
+  const entries = mcpToolEntries().filter(({ server, tool }) =>
+    (!state.mcpToolsServerId || server.id === state.mcpToolsServerId)
+    && (!query || `${tool.name} ${tool.description || ""} ${server.name}`.toLowerCase().includes(query)))
+    .sort((a, b) => a.tool.name.localeCompare(b.tool.name) || a.server.name.localeCompare(b.server.name));
+  el.mcpToolList.replaceChildren();
+  for (const { server, tool, key } of entries) {
+    const status = server.enabled === false ? "Server disabled" : tool.enabled === false ? "Disabled" : "Enabled";
+    el.mcpToolList.append(new Option(`${tool.name} · ${server.name} · ${status}`, key));
+  }
+  el.mcpToolCount.textContent = String(entries.length);
+  const nextKey = entries.some(entry => entry.key === state.activeMcpToolKey) ? state.activeMcpToolKey : entries[0]?.key || "";
+  el.mcpToolList.value = nextKey;
+  selectMcpTool(nextKey);
+}
+
+function renderMcpToolDetail() {
+  const entry = selectedMcpTool();
+  el.mcpToolDetail.classList.toggle("hidden", !entry);
+  el.mcpToolName.textContent = entry?.tool.name || "";
+  el.mcpToolServerName.textContent = entry?.server.name || "";
+  el.mcpToolDescription.textContent = entry?.tool.description || "";
+  el.mcpToolDescription.classList.toggle("hidden", !entry?.tool.description);
+  el.mcpToolSchema.textContent = entry ? JSON.stringify(entry.tool.inputSchema || {}, null, 2) : "";
+  el.mcpToolEnabled.checked = !!entry && entry.tool.enabled !== false;
+  updateMcpToolsState();
+}
+
+function mcpToolArgumentsValid() {
+  try {
+    const value = JSON.parse(el.mcpToolArguments.value || "{}");
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  } catch (_) { return false; }
+}
+
+function updateMcpToolsState() {
+  if (!el.mcpToolList) return;
+  const editing = !!state.mcpToolsDraft;
+  const busy = Boolean(state.integrationSaving || state.endpointDiscovering || state.endpointProbing || state.mcpToolsSaving || state.mcpToolsDiscovering);
+  const target = mcpToolsTargetServer();
+  const entry = selectedMcpTool();
+  const dirty = editing && JSON.stringify(state.mcpToolsDraft.tools) !== state.mcpToolsDraft.baseline;
+  el.mcpToolsServerFilter.disabled = editing || state.mcpToolsSaving;
+  el.mcpEditTools.disabled = editing || busy || !target;
+  el.mcpDiscoverTools.disabled = busy || !target || !!state.mcpServerDraft;
+  el.mcpCancelTools.disabled = !editing || state.mcpToolsSaving;
+  el.saveMcpTools.disabled = !dirty || busy || !target || !!state.mcpServerDraft;
+  el.mcpToolEnabled.disabled = !editing || busy || !entry || entry.server.id !== state.mcpToolsDraft.serverId;
+  const runnable = !!entry && entry.server.enabled !== false && entry.tool.enabled !== false && !editing && !state.mcpServerDraft && !busy;
+  el.mcpToolArguments.disabled = !runnable || state.mcpToolRunning;
+  el.mcpRunTool.disabled = !runnable || state.mcpToolRunning || !mcpToolArgumentsValid();
+  el.mcpToolStatus.textContent = state.mcpToolsError || (state.mcpToolsSaving ? "Saving tools…"
+    : state.mcpToolsDiscovering ? "Discovering tools…"
+    : editing && !target ? "Server unavailable"
+    : dirty ? "Unsaved changes"
+    : entry?.server.enabled === false ? "Server disabled"
+    : entry?.tool.enabled === false ? "Tool disabled"
+    : runnable && !mcpToolArgumentsValid() ? "Arguments must be a JSON object"
+    : !el.mcpToolList.children.length ? "No matching tools" : "");
+}
+
+function editMcpTools() {
+  if (state.mcpToolsDraft || state.mcpToolsSaving || state.integrationSaving || state.mcpToolsDiscovering) return;
+  const server = mcpToolsTargetServer();
+  if (!server) return;
+  invalidateMcpToolRun();
+  state.mcpToolsDraft = {
+    serverId: server.id,
+    tools: JSON.parse(JSON.stringify(server.tools || [])),
+    baseline: JSON.stringify(server.tools || []),
+    connection: JSON.stringify([server.url, server.bearer_token || ""]),
+  };
+  state.mcpToolsServerId = server.id;
+  state.mcpToolsError = "";
+  renderMcpTools();
+}
+
+function cancelMcpTools() {
+  if (state.mcpToolsSaving) return;
+  state.mcpToolsDiscoveryRevision = (state.mcpToolsDiscoveryRevision || 0) + 1;
+  state.mcpToolsDiscovering = false;
+  state.mcpToolsDraft = null;
+  state.mcpToolsError = "";
+  invalidateMcpToolRun();
   renderMcpTools();
   updateMcpEditorState();
 }
 
-function renderMcpTools() {
-  const server = selectedMcpServer();
-  el.mcpToolList.replaceChildren();
-  el.mcpToolRunnerSelect.replaceChildren();
-  const runnerPlaceholder = document.createElement("option");
-  runnerPlaceholder.value = "";
-  runnerPlaceholder.textContent = "Choose an enabled tool";
-  el.mcpToolRunnerSelect.append(runnerPlaceholder);
-  if (!server?.tools?.length) {
-    const empty = document.createElement("p");
-    empty.className = "record-empty";
-    empty.textContent = "No tools discovered for this server yet.";
-    el.mcpToolList.append(empty);
-    return;
-  }
-  for (const tool of server.tools) {
-    const row = document.createElement("div");
-    row.className = "memory-card host-behavior-card";
-    const details = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = tool.name;
-    const description = document.createElement("p");
-    description.className = "muted-copy";
-    description.textContent = tool.description || "No description provided by server.";
-    const schema = document.createElement("code");
-    schema.className = "mcp-tool-schema";
-    schema.textContent = JSON.stringify(tool.inputSchema || {}, null, 2);
-    details.append(title, description, schema);
-    const toggleLabel = document.createElement("label");
-    toggleLabel.className = "host-behavior-enabled";
-    const toggle = document.createElement("input");
-    toggle.type = "checkbox";
-    toggle.checked = tool.enabled !== false;
-    toggle.disabled = !state.mcpServerDraft || state.integrationSaving;
-    toggle.addEventListener("change", () => {
-      tool.enabled = toggle.checked;
-      renderMcpTools();
-      updateMcpEditorState();
-    });
-    toggleLabel.append(toggle, document.createTextNode(" Enabled"));
-    row.append(details, toggleLabel);
-    el.mcpToolList.append(row);
-    if (tool.enabled !== false) {
-      const option = document.createElement("option");
-      option.value = tool.name;
-      option.textContent = tool.name;
-      el.mcpToolRunnerSelect.append(option);
-    }
-  }
-}
-
 async function refreshMcpServers() {
-  if (state.mcpServerDraft) return;
+  if (state.integrationSaving || state.mcpToolsSaving) return;
+  const revision = state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
   try {
     const payload = await api("/v1/admin/mcp/servers", {}, true);
+    if (revision !== state.mcpToolsRefreshRevision) return;
+    invalidateMcpToolRun();
     state.mcpServers = payload.items || [];
-    if (!state.mcpServers.some(server => server.id === state.activeMcpServerId)) {
+    if (!state.mcpServerDraft && !state.mcpServers.some(server => server.id === state.activeMcpServerId)) {
       state.activeMcpServerId = state.mcpServers[0]?.id || null;
     }
     renderMcpServerOptions();
     loadMcpServerIntoForm();
+    renderMcpTools();
   } catch (error) {
-    toast(`Could not load MCP servers: ${error.message}`, true);
+    if (revision === state.mcpToolsRefreshRevision) toast(`Could not load MCP servers: ${error.message}`, true);
   }
 }
 
@@ -2758,112 +3064,167 @@ function addMcpServer() {
 }
 
 async function discoverMcpTools() {
-  // Discovery of an existing server enters edit mode so results can be saved.
-  if (!state.mcpServerDraft) editMcpServer();
-  const server = syncMcpServerForm();
-  if (!server) {
-    addMcpServer();
-    toast("Enter a server URL, then discover its tools", true);
-    return;
-  }
-  if (!server.name || !server.url) {
-    toast("Server name and URL are required", true);
-    return;
-  }
-  el.mcpServerStatus.textContent = "Connecting and discovering tools…";
-  el.mcpDiscoverTools.disabled = true;
+  updateMcpToolsState();
+  if (el.mcpDiscoverTools.disabled) return;
+  if (!state.mcpToolsDraft) editMcpTools();
+  const draft = state.mcpToolsDraft;
+  const server = mcpToolsTargetServer();
+  if (!draft || !server) return;
+  const revision = state.mcpToolsDiscoveryRevision = (state.mcpToolsDiscoveryRevision || 0) + 1;
+  state.mcpToolsDiscovering = true;
+  state.mcpToolsError = "";
+  updateMcpEditorState();
   try {
     const payload = await api("/v1/admin/mcp/servers/discover", {
-      method: "POST",
-      body: JSON.stringify(server),
+      method: "POST", body: JSON.stringify({ ...server, tools: draft.tools }),
     }, true);
-    server.tools = payload.items || [];
+    if (revision !== state.mcpToolsDiscoveryRevision || state.mcpToolsDraft !== draft) return;
+    if (payload.server_id !== server.id) throw new Error("Discovery returned a different server");
+    draft.tools = payload.items || [];
+    renderMcpTools();
+    toast(`Discovered ${draft.tools.length} tool(s)`);
+  } catch (error) {
+    if (revision !== state.mcpToolsDiscoveryRevision || state.mcpToolsDraft !== draft) return;
+    state.mcpToolsError = `Discovery failed: ${error.message}`;
+    toast(state.mcpToolsError, true);
+  } finally {
+    if (revision === state.mcpToolsDiscoveryRevision) {
+      state.mcpToolsDiscovering = false;
+      updateMcpEditorState();
+    }
+  }
+}
+
+async function saveMcpTools() {
+  updateMcpToolsState();
+  if (el.saveMcpTools.disabled) return;
+  const draft = state.mcpToolsDraft;
+  state.mcpToolsSaving = true;
+  state.mcpToolsError = "";
+  state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
+  updateMcpEditorState();
+  try {
+    const latest = await api("/v1/admin/mcp/servers", {}, true);
+    const servers = latest.items || [];
+    state.mcpServers = servers;
     renderMcpServerOptions();
     loadMcpServerIntoForm();
-    el.mcpServerStatus.textContent = `Connected. Discovered ${server.tools.length} tool(s). Save to persist this configuration.`;
-    toast(`Discovered ${server.tools.length} MCP tool(s)`);
+    renderMcpTools();
+    const server = servers.find(item => item.id === draft.serverId);
+    if (!server) throw new Error("Server was removed. Cancel to reload.");
+    if (JSON.stringify([server.url, server.bearer_token || ""]) !== draft.connection
+        || JSON.stringify(server.tools || []) !== draft.baseline) {
+      throw new Error("Saved server or tools changed. Cancel to reload.");
+    }
+    const payload = await api("/v1/admin/mcp/servers", {
+      method: "PUT",
+      body: JSON.stringify({ items: servers.map(item => item.id === draft.serverId ? { ...item, tools: draft.tools } : item) }),
+    }, true);
+    state.mcpServers = payload.items || [];
+    state.mcpToolsDraft = null;
+    renderMcpServerOptions();
+    loadMcpServerIntoForm();
+    renderMcpTools();
+    toast("Tools saved");
   } catch (error) {
-    el.mcpServerStatus.textContent = `Connection failed: ${error.message}`;
-    toast(error.message, true);
+    state.mcpToolsError = error.message;
+    toast(`Could not save tools: ${error.message}`, true);
+  } finally {
+    state.mcpToolsSaving = false;
+    state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
+    updateMcpEditorState();
   }
-  finally { updateMcpEditorState(); }
 }
 
 async function saveMcpServers() {
   syncMcpServerForm();
   if (el.saveMcpServers.disabled) return;
   const server = state.mcpServerDraft;
+  const wasSaved = state.mcpServers.some(item => item.id === server.id);
   state.integrationSaving = true;
+  state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
   updateMcpEditorState();
   try {
+    const latest = await api("/v1/admin/mcp/servers", {}, true);
+    const servers = latest.items || [];
+    const saved = servers.find(item => item.id === server.id);
+    if (wasSaved && !saved) throw new Error("Server was removed. Cancel to reload.");
+    const changed = { ...(saved || server), name: server.name, url: server.url,
+      bearer_token: server.bearer_token, enabled: server.enabled };
     const payload = await api("/v1/admin/mcp/servers", {
       method: "PUT",
-      body: JSON.stringify({ items: state.mcpServers.filter(item => item.id !== server.id).concat(server) }),
+      body: JSON.stringify({ items: saved ? servers.map(item => item.id === server.id ? changed : item) : servers.concat(changed) }),
     }, true);
     state.mcpServers = payload.items || [];
     state.mcpServerDraft = null;
     state.mcpEditBaseline = "";
     renderMcpServerOptions();
     loadMcpServerIntoForm();
-    toast("MCP server and tool configuration saved");
+    renderMcpTools();
+    toast("MCP server saved");
   } catch (error) {
     toast(`Could not save MCP configuration: ${error.message}`, true);
   }
   finally {
     state.integrationSaving = false;
+    state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
     updateMcpEditorState();
   }
 }
 
 async function removeMcpServer() {
-  if (!state.activeMcpServerId || state.mcpServerDraft || state.integrationSaving) return;
+  if (!state.activeMcpServerId || state.mcpServerDraft || state.integrationSaving || state.mcpToolsSaving || state.mcpToolsDiscovering) return;
+  const serverId = state.activeMcpServerId;
   state.integrationSaving = true;
+  state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
   updateMcpEditorState();
   try {
+    const latest = await api("/v1/admin/mcp/servers", {}, true);
     const payload = await api("/v1/admin/mcp/servers", {
       method: "PUT",
-      body: JSON.stringify({ items: state.mcpServers.filter(server => server.id !== state.activeMcpServerId) }),
+      body: JSON.stringify({ items: (latest.items || []).filter(server => server.id !== serverId) }),
     }, true);
     state.mcpServers = payload.items || [];
     state.activeMcpServerId = state.mcpServers[0]?.id || null;
     renderMcpServerOptions();
     loadMcpServerIntoForm();
+    invalidateMcpToolRun();
+    renderMcpTools();
     toast("Removed MCP server");
   } catch (error) { toast(error.message, true); }
   finally {
     state.integrationSaving = false;
+    state.mcpToolsRefreshRevision = (state.mcpToolsRefreshRevision || 0) + 1;
     updateMcpEditorState();
   }
 }
 
 async function runMcpTool() {
-  const server = syncMcpServerForm();
-  const toolName = el.mcpToolRunnerSelect.value;
-  if (!server || !toolName) {
-    toast("Choose a server and an enabled tool", true);
-    return;
-  }
-  let argumentsValue;
-  try {
-    argumentsValue = JSON.parse(el.mcpToolArguments.value || "{}");
-    if (!argumentsValue || Array.isArray(argumentsValue) || typeof argumentsValue !== "object") {
-      throw new Error("Arguments must be a JSON object");
-    }
-  } catch (error) {
-    toast(`Invalid tool arguments: ${error.message}`, true);
-    return;
-  }
+  updateMcpToolsState();
+  if (el.mcpRunTool.disabled) return;
+  const entry = selectedMcpTool();
+  if (!entry || entry.server.enabled === false || entry.tool.enabled === false || state.mcpToolsDraft) return;
+  const argumentsValue = JSON.parse(el.mcpToolArguments.value || "{}");
+  const key = entry.key;
+  const revision = state.mcpToolRunRevision = (state.mcpToolRunRevision || 0) + 1;
+  state.mcpToolRunning = true;
   el.mcpToolOutput.textContent = "Running tool…";
+  updateMcpToolsState();
   try {
     const result = await api("/v1/admin/mcp/tools/call", {
       method: "POST",
-      body: JSON.stringify({ server_id: server.id, tool_name: toolName, arguments: argumentsValue }),
+      body: JSON.stringify({ server_id: entry.server.id, tool_name: entry.tool.name, arguments: argumentsValue }),
     }, true);
+    if (revision !== state.mcpToolRunRevision || key !== state.activeMcpToolKey) return;
     el.mcpToolOutput.textContent = JSON.stringify(result, null, 2);
-    toast(`MCP tool ${toolName} completed`);
   } catch (error) {
+    if (revision !== state.mcpToolRunRevision || key !== state.activeMcpToolKey) return;
     el.mcpToolOutput.textContent = error.message;
-    toast(error.message, true);
+  } finally {
+    if (revision === state.mcpToolRunRevision) {
+      state.mcpToolRunning = false;
+      updateMcpToolsState();
+    }
   }
 }
 
@@ -2873,6 +3234,7 @@ async function refreshIntegrations() {
 }
 
 function showAdminSection(sectionName) {
+  if (sectionName !== "devices" && typeof discardDeviceSelectionChanges === "function") discardDeviceSelectionChanges();
   if (sectionName !== "mcp" && state.providerSetupDraft) cancelProviderConnections();
   for (const [name, id] of Object.entries(adminSectionIds)) {
     const panel = document.getElementById(id);
@@ -2888,8 +3250,13 @@ function showAdminSection(sectionName) {
   if (sectionName === "devices") refreshDeviceInventory();
   if (sectionName === "skills") refreshSkillDrafts();
   if (sectionName === "foundations") refreshFoundations();
+  if (sectionName === "breaker") refreshBreakerSettings();
   if (sectionName === "overview") refreshDiagnostics();
   if (sectionName === "mcp" && state.adminAuthorized) refreshIntegrations();
+  if (sectionName === "tools") {
+    renderMcpTools();
+    if (state.adminAuthorized) refreshMcpServers();
+  }
 }
 
 document.querySelectorAll("[data-admin-section]").forEach(button => {
@@ -2914,6 +3281,28 @@ if (el.mcpDiscoverTools) el.mcpDiscoverTools.addEventListener("click", discoverM
 if (el.mcpDeleteServer) el.mcpDeleteServer.addEventListener("click", removeMcpServer);
 if (el.saveMcpServers) el.saveMcpServers.addEventListener("click", saveMcpServers);
 if (el.mcpRunTool) el.mcpRunTool.addEventListener("click", runMcpTool);
+if (el.mcpEditTools) el.mcpEditTools.addEventListener("click", editMcpTools);
+if (el.mcpCancelTools) el.mcpCancelTools.addEventListener("click", cancelMcpTools);
+if (el.saveMcpTools) el.saveMcpTools.addEventListener("click", saveMcpTools);
+if (el.mcpToolsServerFilter) el.mcpToolsServerFilter.addEventListener("change", () => {
+  if (state.mcpToolsDraft || state.mcpToolsSaving) return;
+  state.mcpToolsServerId = el.mcpToolsServerFilter.value;
+  state.mcpToolsError = "";
+  renderMcpTools();
+});
+if (el.mcpToolsSearch) el.mcpToolsSearch.addEventListener("input", () => {
+  state.mcpToolsQuery = el.mcpToolsSearch.value;
+  renderMcpTools();
+});
+if (el.mcpToolList) el.mcpToolList.addEventListener("change", () => selectMcpTool(el.mcpToolList.value));
+if (el.mcpToolArguments) el.mcpToolArguments.addEventListener("input", updateMcpToolsState);
+if (el.mcpToolEnabled) el.mcpToolEnabled.addEventListener("change", () => {
+  const entry = selectedMcpTool();
+  if (el.mcpToolEnabled.disabled || !state.mcpToolsDraft || entry?.server.id !== state.mcpToolsDraft.serverId) return;
+  entry.tool.enabled = el.mcpToolEnabled.checked;
+  state.mcpToolsError = "";
+  renderMcpTools();
+});
 if (el.taskProfileEndpointSelect) el.taskProfileEndpointSelect.addEventListener("change", () => {
   if (state.endpointDraft) return;
   const value = el.taskProfileEndpointSelect.value;
@@ -2950,7 +3339,7 @@ el.taskProviderSelect.addEventListener("change", () => {
   assignment.provider = endpoint?.id || el.taskProviderSelect.value;
   assignment.model = endpoint?.model || (sameEndpoint ? assignment.model : "")
     || (assignment.provider === "connected-host" ? "host-selected" : "");
-  if (endpoint && !assignment.model) toast("Save a model for this endpoint in Endpoints, Servers & Tools first", true);
+  if (endpoint && !assignment.model) toast("Save a model for this endpoint in Endpoints & MCP Servers first", true);
   el.taskProviderSelect.classList.toggle("endpoint-has-key", Boolean(endpoint?.has_api_key || endpoint?.api_key));
   updateTaskSaveState();
 });
@@ -2959,14 +3348,12 @@ if (el.endpointProbeButton) el.endpointProbeButton.addEventListener("click", pro
 if (el.taskProviderRotation) el.taskProviderRotation.addEventListener("change", syncTaskProviderRotation);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
 if (el.saveTaskEndpoints) el.saveTaskEndpoints.addEventListener("click", saveTaskProfile);
-if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", () => {
-  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
-  if (!assignment) return;
-  assignment.fallbacks = assignment.fallbacks || [];
-  assignment.fallbacks.push({ provider: "", model: "" });
-  renderFallbackSelectors();
-  updateTaskSaveState();
-});
+if (el.taskProfileAddFallback) el.taskProfileAddFallback.addEventListener("click", addTaskFallback);
+if (el.taskProfileFallbackList) el.taskProfileFallbackList.addEventListener("change", selectTaskFallback);
+if (el.taskProfileFallbackEndpoint) el.taskProfileFallbackEndpoint.addEventListener("change", changeTaskFallbackEndpoint);
+if (el.taskProfileFallbackUp) el.taskProfileFallbackUp.addEventListener("click", () => moveTaskFallback(-1));
+if (el.taskProfileFallbackDown) el.taskProfileFallbackDown.addEventListener("click", () => moveTaskFallback(1));
+if (el.taskProfileFallbackRemove) el.taskProfileFallbackRemove.addEventListener("click", removeTaskFallback);
 if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click", () => {
   el.taskProfileBehaviorSelection?.querySelector("input:not(:disabled)")?.focus();
 });
@@ -2985,53 +3372,144 @@ const BODY_DEVICE_STORAGE_KEYS = {
   audioinput: "aicognitive_mind.device.audioInput",
   audiooutput: "aicognitive_mind.device.audioOutput",
 };
+let deviceSelectionDraft = null;
+let deviceSelectionBaseline = null;
+let deviceSelectionError = "";
+let deviceInventoryRequest = 0;
+
+function readDeviceSelections() {
+  return Object.fromEntries(Object.entries(BODY_DEVICE_STORAGE_KEYS)
+    .map(([kind, key]) => [kind, localStorage.getItem(key)]));
+}
+
+function ensureDeviceSelectionDraft() {
+  if (deviceSelectionDraft) return true;
+  try {
+    deviceSelectionBaseline = readDeviceSelections();
+    deviceSelectionDraft = Object.fromEntries(Object.entries(deviceSelectionBaseline)
+      .map(([kind, value]) => [kind, value || ""]));
+    deviceSelectionError = "";
+    return true;
+  } catch (error) {
+    deviceSelectionError = "Could not read device preferences in this browser: " + error.message;
+    return false;
+  }
+}
 
 function selectedDeviceId(kind) {
   try { return localStorage.getItem(BODY_DEVICE_STORAGE_KEYS[kind]) || ""; }
   catch (_) { return ""; }
 }
 
+function deviceSelectionIsDirty() {
+  return Boolean(deviceSelectionDraft) && Object.keys(BODY_DEVICE_STORAGE_KEYS)
+    .some(kind => deviceSelectionDraft[kind] !== (deviceSelectionBaseline[kind] || ""));
+}
+
+function updateDeviceSelectionState() {
+  const dirty = deviceSelectionIsDirty();
+  const valid = Boolean(deviceSelectionDraft) && Object.keys(BODY_DEVICE_STORAGE_KEYS).every(kind => {
+    const value = deviceSelectionDraft[kind];
+    return value === "" || value === (deviceSelectionBaseline[kind] || "")
+      || (state.deviceInventory || []).some(device => device.kind === kind && device.deviceId === value);
+  });
+  const save = document.getElementById("saveDeviceSelections");
+  const cancel = document.getElementById("cancelDeviceSelections");
+  const status = document.getElementById("deviceSelectionStatus");
+  if (save) save.disabled = !dirty || !valid;
+  if (cancel) cancel.disabled = !dirty && !deviceSelectionError;
+  if (status) status.textContent = deviceSelectionError || (dirty
+    ? (valid ? "Unsaved changes."
+      : "A selected device is no longer available. Choose an available device or Cancel.")
+    : "");
+}
+
 function saveSelectedDevice(kind, deviceId) {
+  if (!Object.hasOwn(BODY_DEVICE_STORAGE_KEYS, kind) || !ensureDeviceSelectionDraft()) return;
+  deviceSelectionDraft[kind] = deviceId;
+  deviceSelectionError = "";
+  updateDeviceSelectionState();
+}
+
+function saveDeviceSelections() {
+  updateDeviceSelectionState();
+  if (document.getElementById("saveDeviceSelections")?.disabled || !deviceSelectionDraft) return;
+  let before;
   try {
-    if (deviceId) localStorage.setItem(BODY_DEVICE_STORAGE_KEYS[kind], deviceId);
-    else localStorage.removeItem(BODY_DEVICE_STORAGE_KEYS[kind]);
+    before = readDeviceSelections();
+    if (Object.keys(BODY_DEVICE_STORAGE_KEYS).some(kind => before[kind] !== deviceSelectionBaseline[kind])) {
+      deviceSelectionError = "Saved device preferences changed while you were editing. Cancel to reload them before trying again.";
+      updateDeviceSelectionState();
+      return;
+    }
+    for (const [kind, key] of Object.entries(BODY_DEVICE_STORAGE_KEYS)) {
+      if (deviceSelectionDraft[kind] === (before[kind] || "")) continue;
+      if (deviceSelectionDraft[kind]) localStorage.setItem(key, deviceSelectionDraft[kind]);
+      else localStorage.removeItem(key);
+    }
+    deviceSelectionBaseline = readDeviceSelections();
+    deviceSelectionDraft = Object.fromEntries(Object.entries(deviceSelectionBaseline)
+      .map(([kind, value]) => [kind, value || ""]));
+    deviceSelectionError = "";
     renderDeviceSelectionSummary();
-    toast(deviceId ? "Body device selection saved" : "Body will use the browser default device");
+    updateDeviceSelectionState();
+    toast("Body device choices saved in this browser");
   } catch (error) {
-    toast("Could not save device selection in this browser: " + error.message, true);
+    let restored = Boolean(before);
+    if (before) {
+      for (const [kind, key] of Object.entries(BODY_DEVICE_STORAGE_KEYS)) {
+        try {
+          if (localStorage.getItem(key) === before[kind]) continue;
+          if (before[kind] === null) localStorage.removeItem(key);
+          else localStorage.setItem(key, before[kind]);
+        } catch (_) { restored = false; }
+      }
+    }
+    deviceSelectionError = "Could not save device preferences: " + error.message
+      + (restored ? ". Previous choices were restored; your draft is still available."
+        : ". Some preferences may have changed; Cancel reloads saved values. Your draft has been kept.");
+    renderDeviceSelectionSummary();
+    updateDeviceSelectionState();
+    toast(deviceSelectionError, true);
   }
+}
+
+function cancelDeviceSelectionEdit() {
+  deviceSelectionDraft = null;
+  deviceSelectionBaseline = null;
+  deviceSelectionError = "";
+  ensureDeviceSelectionDraft();
+  renderDeviceInventory();
+  renderDeviceSelectionSummary();
+  updateDeviceSelectionState();
+}
+
+function discardDeviceSelectionChanges() {
+  deviceInventoryRequest += 1;
+  deviceSelectionDraft = null;
+  deviceSelectionBaseline = null;
+  deviceSelectionError = "";
 }
 
 function renderDeviceSelectionSummary() {
   if (!el.deviceSelectionSummary) return;
+  let saved;
+  try { saved = readDeviceSelections(); }
+  catch (_) {
+    el.deviceSelectionSummary.textContent = "Saved device preferences could not be read in this browser.";
+    return;
+  }
   const labels = [];
   for (const [kind, label] of [["videoinput", "Camera"], ["audioinput", "Microphone"], ["audiooutput", "Speaker"]]) {
-    const id = selectedDeviceId(kind);
+    const id = saved[kind] || "";
     const device = (state.deviceInventory || []).find(item => item.kind === kind && item.deviceId === id);
     labels.push(label + ": " + (device?.label || (id ? "Saved device (" + id.slice(0, 8) + "…)" : "Browser default")));
   }
-  el.deviceSelectionSummary.textContent = labels.join(" · ");
+  el.deviceSelectionSummary.textContent = "Saved for this browser — " + labels.join(" · ");
 }
 
-async function refreshDeviceInventory() {
-  el.devicePermissionStatus.textContent = "Querying browser device inventory…";
+function renderDeviceInventory() {
   el.deviceInventoryList.replaceChildren();
-  if (!navigator.mediaDevices?.enumerateDevices) {
-    el.devicePermissionStatus.textContent = "Device discovery is unavailable in this browser or context. Use a secure HTTPS page and a browser that supports MediaDevices.";
-    return;
-  }
-  try {
-    const [devices, cameraPermission, microphonePermission] = await Promise.all([
-      navigator.mediaDevices.enumerateDevices(),
-      navigator.permissions?.query ? navigator.permissions.query({ name: "camera" }).catch(() => null) : Promise.resolve(null),
-      navigator.permissions?.query ? navigator.permissions.query({ name: "microphone" }).catch(() => null) : Promise.resolve(null),
-    ]);
-    state.deviceInventory = devices.filter(device => ["videoinput", "audioinput", "audiooutput"].includes(device.kind));
-    const permissions = [
-      `Camera permission: ${cameraPermission?.state || "not reported by browser"}`,
-      `Microphone permission: ${microphonePermission?.state || "not reported by browser"}`,
-    ];
-    el.devicePermissionStatus.textContent = `${state.deviceInventory.length} device(s) discovered. ${permissions.join(" · ")}. Labels may be hidden until permission is granted.`;
     for (const [kind, heading] of [["videoinput", "Body camera"], ["audioinput", "Body microphone"], ["audiooutput", "Body speaker / audio output"]]) {
       const matches = state.deviceInventory.filter(device => device.kind === kind);
       const section = document.createElement("section");
@@ -3043,7 +3521,9 @@ async function refreshDeviceInventory() {
       pickerLabel.className = "host-behavior-field";
       pickerLabel.append(document.createTextNode("Use for Body operation"));
       const picker = document.createElement("select");
+      picker.dataset.deviceKind = kind;
       picker.setAttribute("aria-label", `Select ${heading.toLowerCase()}`);
+      picker.disabled = !deviceSelectionDraft;
       const defaultOption = document.createElement("option");
       defaultOption.value = "";
       defaultOption.textContent = "Browser default";
@@ -3056,8 +3536,14 @@ async function refreshDeviceInventory() {
         option.textContent = device.label.trim() || `${singular} ${index + 1} (label hidden)`;
         picker.append(option);
       });
-      picker.value = selectedDeviceId(kind);
-      if (![...picker.options].some(option => option.value === picker.value)) picker.value = "";
+      const value = deviceSelectionDraft?.[kind] || "";
+      if (value && !matches.some(device => device.deviceId === value)) {
+        const unavailable = document.createElement("option");
+        unavailable.value = value;
+        unavailable.textContent = `${value === (deviceSelectionBaseline?.[kind] || "") ? "Saved" : "Selected"} device (${value.slice(0, 8)}…, unavailable)`;
+        picker.append(unavailable);
+      }
+      picker.value = value;
       picker.addEventListener("change", () => saveSelectedDevice(kind, picker.value));
       pickerLabel.append(picker);
       section.append(pickerLabel);
@@ -3075,12 +3561,48 @@ async function refreshDeviceInventory() {
       }
       el.deviceInventoryList.append(section);
     }
+}
+
+async function refreshDeviceInventory() {
+  const request = ++deviceInventoryRequest;
+  if (deviceSelectionDraft && !deviceSelectionError && !deviceSelectionIsDirty()) {
+    deviceSelectionDraft = null;
+    deviceSelectionBaseline = null;
+  }
+  ensureDeviceSelectionDraft();
+  renderDeviceInventory();
+  renderDeviceSelectionSummary();
+  updateDeviceSelectionState();
+  el.devicePermissionStatus.textContent = "Querying browser device inventory…";
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    el.devicePermissionStatus.textContent = "Device discovery is unavailable in this browser or context. Use a secure HTTPS page and a browser that supports MediaDevices.";
+    return;
+  }
+  try {
+    const [devices, cameraPermission, microphonePermission] = await Promise.all([
+      navigator.mediaDevices.enumerateDevices(),
+      navigator.permissions?.query ? navigator.permissions.query({ name: "camera" }).catch(() => null) : Promise.resolve(null),
+      navigator.permissions?.query ? navigator.permissions.query({ name: "microphone" }).catch(() => null) : Promise.resolve(null),
+    ]);
+    if (request !== deviceInventoryRequest) return;
+    state.deviceInventory = devices.filter(device => ["videoinput", "audioinput", "audiooutput"].includes(device.kind));
+    const permissions = [
+      `Camera permission: ${cameraPermission?.state || "not reported by browser"}`,
+      `Microphone permission: ${microphonePermission?.state || "not reported by browser"}`,
+    ];
+    el.devicePermissionStatus.textContent = `${state.deviceInventory.length} device(s) discovered. ${permissions.join(" · ")}. Labels may be hidden until permission is granted.`;
+    renderDeviceInventory();
     renderDeviceSelectionSummary();
+    updateDeviceSelectionState();
   } catch (error) {
+    if (request !== deviceInventoryRequest) return;
     el.devicePermissionStatus.textContent = `Device query failed: ${error.message}. Check browser permissions and reload the page.`;
     toast(`Could not query devices: ${error.message}`, true);
   }
 }
+
+document.getElementById("saveDeviceSelections")?.addEventListener("click", saveDeviceSelections);
+document.getElementById("cancelDeviceSelections")?.addEventListener("click", cancelDeviceSelectionEdit);
 
 if (navigator.mediaDevices?.addEventListener) {
   navigator.mediaDevices.addEventListener("devicechange", () => refreshDeviceInventory());
@@ -3091,108 +3613,48 @@ if (navigator.mediaDevices?.addEventListener) {
 renderTaskProfiles();
 refresh();
 
-function identityFormElements() {
-  return Object.fromEntries(["SelfName", "Pronouns", "Development", "Values", "Commitments", "Relationships"]
-    .map(name => [name, document.getElementById("foundation" + name)]));
+function foundationIdentityText(value) {
+  if (value === null || value === undefined || value === "") return "Unknown";
+  if (Array.isArray(value)) return value.length ? value.map(foundationIdentityText).join("\n") : "None recorded";
+  if (typeof value === "object") {
+    return Object.entries(value).map(([key, detail]) => `${displayLabel(key)}: ${foundationIdentityText(detail)}`).join("\n") || "None recorded";
+  }
+  return String(value);
 }
 
 function renderIdentityConfiguration() {
-  const form = identityFormElements();
-  const saved = state.foundationIdentity;
-  const draft = state.foundationIdentityDraft;
-  const value = draft || saved;
+  const value = state.foundationIdentity;
   const identity = value?.identity || {};
-  form.SelfName.value = identity.self_name || "";
-  form.Pronouns.value = identity.pronouns || "";
-  form.Development.value = value?.developmental_state || "";
-  form.Values.value = (identity.foundational_values || []).join("\n");
-  form.Commitments.value = (identity.commitments || []).join("\n");
-  form.Relationships.value = JSON.stringify(identity.relationships || [], null, 2);
-  updateIdentityEditorState();
-}
-
-function identityFormPayload() {
-  const form = identityFormElements();
-  const relationships = JSON.parse(form.Relationships.value || "[]");
-  if (!Array.isArray(relationships) || relationships.some(item => !item || typeof item !== "object" || Array.isArray(item))) {
-    throw new Error("Relationships must be an array of relationship records.");
-  }
-  if (!form.Pronouns.value.trim() || !form.Development.value.trim()) throw new Error("Enter pronouns and a developmental state.");
-  return {
-    identity: {
-      self_name: form.SelfName.value.trim() || null,
-      pronouns: form.Pronouns.value.trim(),
-      foundational_values: form.Values.value.split("\n").map(value => value.trim()).filter(Boolean),
-      commitments: form.Commitments.value.split("\n").map(value => value.trim()).filter(Boolean),
-      relationships,
-    },
-    developmental_state: form.Development.value.trim(),
+  const fields = {
+    SelfName: value ? identity.self_name || "Not selected" : "Unknown",
+    Pronouns: identity.pronouns,
+    Development: value?.developmental_state,
+    Values: identity.foundational_values,
+    Commitments: identity.commitments,
+    Relationships: identity.relationships,
   };
-}
-
-function updateIdentityEditorState() {
-  const editing = Boolean(state.foundationIdentityDraft);
-  const busy = state.foundationIdentitySaving === true;
-  Object.values(identityFormElements()).forEach(input => { input.readOnly = !editing || busy; });
-  let valid = false;
-  let dirty = false;
-  if (editing) {
-    try {
-      const payload = identityFormPayload();
-      valid = true;
-      dirty = JSON.stringify(payload) !== state.foundationIdentityDraft.baseline;
-    } catch (error) { document.getElementById("foundationStatus").textContent = error.message; }
+  for (const [name, detail] of Object.entries(fields)) {
+    const output = document.getElementById("foundation" + name);
+    if (output) output.textContent = foundationIdentityText(detail);
   }
-  document.getElementById("foundationEdit").disabled = !state.foundationIdentity || editing || busy;
-  document.getElementById("foundationCancel").disabled = !editing || busy;
-  document.getElementById("foundationSave").disabled = !editing || busy || !valid || !dirty;
 }
 
 async function refreshIdentityConfiguration() {
-  if (state.foundationIdentityDraft || state.foundationIdentitySaving) return;
   const revision = state.identityConfigurationLoadRevision = (state.identityConfigurationLoadRevision || 0) + 1;
+  const status = document.getElementById("foundationStatus");
+  if (status) status.textContent = "Loading identity…";
   try {
     const result = await api("/v1/admin/identity", {}, true);
-    if (revision !== state.identityConfigurationLoadRevision || state.foundationIdentityDraft || state.foundationIdentitySaving) return;
+    if (revision !== state.identityConfigurationLoadRevision) return;
     state.foundationIdentity = result;
     renderIdentityConfiguration();
-    document.getElementById("foundationStatus").textContent = "Identity loaded.";
+    if (status) status.textContent = "Identity loaded.";
   } catch (error) {
-    if (revision === state.identityConfigurationLoadRevision && !state.foundationIdentityDraft && !state.foundationIdentitySaving) document.getElementById("foundationStatus").textContent = error.message;
-  }
-}
-
-function editIdentityConfiguration() {
-  if (!state.foundationIdentity || state.foundationIdentityDraft || state.foundationIdentitySaving) return;
-  state.identityConfigurationLoadRevision = (state.identityConfigurationLoadRevision || 0) + 1;
-  state.foundationIdentityDraft = JSON.parse(JSON.stringify(state.foundationIdentity));
-  renderIdentityConfiguration();
-  state.foundationIdentityDraft.baseline = JSON.stringify(identityFormPayload());
-  document.getElementById("foundationStatus").textContent = "Editing identity.";
-  updateIdentityEditorState();
-}
-
-function cancelIdentityConfiguration() {
-  if (state.foundationIdentitySaving) return;
-  state.foundationIdentityDraft = null;
-  renderIdentityConfiguration();
-  document.getElementById("foundationStatus").textContent = "Changes cancelled.";
-}
-
-async function saveIdentityConfiguration() {
-  updateIdentityEditorState();
-  if (document.getElementById("foundationSave").disabled) return;
-  const payload = { expected_revision: state.foundationIdentityDraft.revision, ...identityFormPayload() };
-  state.foundationIdentitySaving = true;
-  updateIdentityEditorState();
-  try {
-    state.foundationIdentity = await api("/v1/admin/identity", { method: "PUT", body: JSON.stringify(payload) }, true);
-    state.foundationIdentityDraft = null;
+    if (revision !== state.identityConfigurationLoadRevision) return;
+    state.foundationIdentity = null;
     renderIdentityConfiguration();
-    document.getElementById("foundationStatus").textContent = "Identity saved for this Mind.";
-    try { await refreshStatus(); } catch (error) { toast("Identity saved; status refresh failed: " + error.message, true); }
-  } catch (error) { document.getElementById("foundationStatus").textContent = error.message; }
-  finally { state.foundationIdentitySaving = false; updateIdentityEditorState(); }
+    if (status) status.textContent = error.message;
+  }
 }
 
 function renderStartupConfiguration() {
@@ -3269,6 +3731,116 @@ async function refreshFoundations() {
   await Promise.all([refreshIdentityConfiguration(), refreshStartupConfiguration()]);
 }
 
+const breakerFieldIds = {
+  consecutive_failure_limit: "breakerConsecutiveLimit",
+  rolling_failure_limit: "breakerRollingLimit",
+  rolling_window_size: "breakerRollingWindow",
+  provider_request_timeout_seconds: "breakerProviderTimeout",
+  steward_assessment_timeout_seconds: "breakerAssessmentTimeout",
+  rate_limit_retry_wait_cap_seconds: "breakerRetryWaitCap",
+};
+
+function breakerFormPayload() {
+  return Object.fromEntries(Object.entries(breakerFieldIds).map(([key, id]) => [
+    key, Number(document.getElementById(id).value),
+  ]));
+}
+
+function breakerFormValid(payload = breakerFormPayload()) {
+  const integerFields = [
+    "consecutive_failure_limit", "rolling_failure_limit", "rolling_window_size",
+  ];
+  if (!Object.values(payload).every(Number.isFinite)) return false;
+  if (!integerFields.every(key => Number.isInteger(payload[key]))) return false;
+  if (payload.consecutive_failure_limit < 1 || payload.consecutive_failure_limit > 20) return false;
+  if (payload.rolling_window_size < 20 || payload.rolling_window_size > 500) return false;
+  if (payload.rolling_failure_limit < payload.consecutive_failure_limit || payload.rolling_failure_limit > payload.rolling_window_size) return false;
+  if (payload.provider_request_timeout_seconds < 1 || payload.provider_request_timeout_seconds > 120) return false;
+  if (payload.steward_assessment_timeout_seconds < 5 || payload.steward_assessment_timeout_seconds > 300) return false;
+  return payload.rate_limit_retry_wait_cap_seconds >= 0 && payload.rate_limit_retry_wait_cap_seconds <= 120;
+}
+
+function renderBreakerSettings() {
+  const value = state.breakerDraft || state.breakerSettings;
+  for (const [key, id] of Object.entries(breakerFieldIds)) {
+    document.getElementById(id).value = value?.[key] ?? "";
+  }
+  const health = state.breakerSettings?.health || {};
+  document.getElementById("breakerHealthStatus").textContent = displayLabel(health.status || "unavailable");
+  document.getElementById("breakerHealthConsecutive").textContent = Number.isInteger(health.consecutive_failures)
+    ? `${health.consecutive_failures} / ${state.breakerSettings?.consecutive_failure_limit ?? "—"}` : "—";
+  document.getElementById("breakerHealthRolling").textContent = Number.isInteger(health.rolling_failures)
+    ? `${health.rolling_failures} / ${state.breakerSettings?.rolling_failure_limit ?? "—"} in ${health.rolling_sample_size ?? 0} of ${state.breakerSettings?.rolling_window_size ?? "—"}` : "—";
+  document.getElementById("breakerHealthLastFailure").textContent = health.last_failure_class || "None";
+  updateBreakerEditorState();
+}
+
+function updateBreakerEditorState() {
+  const editing = Boolean(state.breakerDraft);
+  const busy = state.breakerSaving === true;
+  const payload = breakerFormPayload();
+  for (const id of Object.values(breakerFieldIds)) {
+    document.getElementById(id).readOnly = !editing || busy;
+  }
+  document.getElementById("breakerEdit").disabled = !state.breakerSettings || editing || busy;
+  document.getElementById("breakerCancel").disabled = !editing || busy;
+  document.getElementById("breakerSave").disabled = !editing || busy
+    || !breakerFormValid(payload) || JSON.stringify(payload) === state.breakerDraft?.baseline;
+}
+
+async function refreshBreakerSettings() {
+  if (state.breakerDraft || state.breakerSaving) return;
+  const revision = state.breakerLoadRevision = (state.breakerLoadRevision || 0) + 1;
+  const status = document.getElementById("breakerSettingsStatus");
+  if (status) status.textContent = "Loading The Breaker settings…";
+  try {
+    const result = await api("/v1/admin/continuity-settings", {}, true);
+    if (revision !== state.breakerLoadRevision || state.breakerDraft || state.breakerSaving) return;
+    state.breakerSettings = result;
+    renderBreakerSettings();
+    if (status) status.textContent = `Revision ${result.revision} loaded.`;
+  } catch (error) {
+    if (revision === state.breakerLoadRevision && !state.breakerDraft && !state.breakerSaving && status) status.textContent = error.message;
+  }
+}
+
+function editBreakerSettings() {
+  if (!state.breakerSettings || state.breakerDraft || state.breakerSaving) return;
+  state.breakerLoadRevision = (state.breakerLoadRevision || 0) + 1;
+  const values = Object.fromEntries(Object.keys(breakerFieldIds).map(key => [key, state.breakerSettings[key]]));
+  state.breakerDraft = { ...values, revision: state.breakerSettings.revision, baseline: JSON.stringify(values) };
+  renderBreakerSettings();
+  document.getElementById("breakerSettingsStatus").textContent = "Editing The Breaker settings.";
+}
+
+function cancelBreakerSettings() {
+  if (state.breakerSaving) return;
+  state.breakerDraft = null;
+  renderBreakerSettings();
+  document.getElementById("breakerSettingsStatus").textContent = "Changes cancelled.";
+}
+
+async function saveBreakerSettings() {
+  updateBreakerEditorState();
+  if (document.getElementById("breakerSave").disabled) return;
+  const payload = { expected_revision: state.breakerDraft.revision, ...breakerFormPayload() };
+  state.breakerSaving = true;
+  updateBreakerEditorState();
+  try {
+    state.breakerSettings = await api("/v1/admin/continuity-settings", {
+      method: "PUT", body: JSON.stringify(payload),
+    }, true);
+    state.breakerDraft = null;
+    renderBreakerSettings();
+    document.getElementById("breakerSettingsStatus").textContent = "The Breaker settings were saved for this Mind.";
+  } catch (error) {
+    document.getElementById("breakerSettingsStatus").textContent = error.message;
+  } finally {
+    state.breakerSaving = false;
+    updateBreakerEditorState();
+  }
+}
+
 function updateTaskFoundationEditor() {
   const draft = state.taskFoundationDraft;
   const editing = draft?.task === state.activeTaskProfile;
@@ -3321,14 +3893,14 @@ async function saveTaskFoundation() {
   finally { state.taskFoundationSaving = false; updateTaskFoundationEditor(); }
 }
 
-for (const input of Object.values(identityFormElements())) input?.addEventListener("input", updateIdentityEditorState);
 for (const id of ["foundationContract", "foundationStartup"]) document.getElementById(id)?.addEventListener("input", updateStartupEditorState);
-document.getElementById("foundationEdit")?.addEventListener("click", editIdentityConfiguration);
-document.getElementById("foundationCancel")?.addEventListener("click", cancelIdentityConfiguration);
-document.getElementById("foundationSave")?.addEventListener("click", saveIdentityConfiguration);
 document.getElementById("startupEdit")?.addEventListener("click", editStartupConfiguration);
 document.getElementById("startupCancel")?.addEventListener("click", cancelStartupConfiguration);
 document.getElementById("startupSave")?.addEventListener("click", saveStartupConfiguration);
+for (const id of Object.values(breakerFieldIds)) document.getElementById(id)?.addEventListener("input", updateBreakerEditorState);
+document.getElementById("breakerEdit")?.addEventListener("click", editBreakerSettings);
+document.getElementById("breakerCancel")?.addEventListener("click", cancelBreakerSettings);
+document.getElementById("breakerSave")?.addEventListener("click", saveBreakerSettings);
 el.taskFoundationEdit?.addEventListener("click", editTaskFoundation);
 el.taskFoundationCancel?.addEventListener("click", cancelTaskFoundationEdit);
 el.taskFoundationSave?.addEventListener("click", saveTaskFoundation);

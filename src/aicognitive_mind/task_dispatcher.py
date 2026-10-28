@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
+from aicognitive_mind.gemini_audio import GeminiAudioError, GeminiAudioRenderer, SynthesizedAudio, uses_gemini_speech
 
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.provider_routing import ProviderRoutingRegistry
@@ -31,6 +32,15 @@ class TaskDispatchError(RuntimeError):
     """A selected task provider could not be resolved or did not complete the request."""
 
 
+class StewardProviderPoolExhausted(TaskDispatchError):
+    """One assessment has tried every eligible saved provider/model candidate."""
+
+    def __init__(self, last_error: TaskDispatchError | None = None) -> None:
+        self.last_error = last_error
+        detail = f" Last failure: {last_error}" if last_error is not None else ""
+        super().__init__("Memory Steward exhausted its eligible provider pool." + detail)
+
+
 class TaskModelDispatcher:
     """Resolve saved task preferences and call the selected OpenAI-compatible endpoint.
 
@@ -39,10 +49,12 @@ class TaskModelDispatcher:
     """
 
     supports_steward_action_tools = True
+    supports_steward_failover = True
 
     def __init__(
         self, records: Any, *, timeout: float = 90.0, client: Any | None = None,
         clock: Callable[[], datetime] | None = None,
+        rate_limit_retry_wait_cap: float = 45.0,
     ) -> None:
         self.assignments = TaskModelAssignmentRegistry(records)
         self.endpoints = ProviderEndpointRegistry(records)
@@ -51,6 +63,11 @@ class TaskModelDispatcher:
         self.routing = ProviderRoutingRegistry(records, clock=clock)
         self.timeout = timeout
         self.client = client
+        self.rate_limit_retry_wait_cap = rate_limit_retry_wait_cap
+
+    def steward_assessment(self) -> _StewardAssessment:
+        """Create a provider cursor owned by one bounded Steward assessment."""
+        return _StewardAssessment(self)
 
     async def execute(self, context: TaskExecutionContext, payload: Any) -> Any:
         """Runtime-neutral entry point implemented by the stateless API adapter."""
@@ -230,14 +247,26 @@ class TaskModelDispatcher:
         for assignment in await self._candidate_assignments("audio_voice"):
             try:
                 assignment, endpoint = await self._resolve("audio_voice", assignment)
+                if uses_gemini_speech(
+                    base_url=endpoint.base_url,
+                    provider_name=endpoint.provider_name or endpoint.name,
+                    model=assignment.model,
+                ):
+                    renderer = GeminiAudioRenderer(
+                        api_key=endpoint.api_key, model=assignment.model,
+                        endpoint_url=endpoint.base_url, timeout=self.timeout, client=self.client,
+                    )
+                    return await renderer.synthesize(text, speed=speed, volume=volume)
                 renderer = FishAudioRenderer(
                     api_key=endpoint.api_key,
                     model=assignment.model,
                     reference_id=assignment.voice_reference_id or None,
                     endpoint_url=endpoint.base_url,
                 )
-                return await renderer.synthesize(text, speed=speed, volume=volume)
-            except (TaskDispatchError, FishAudioError) as exc:
+                return SynthesizedAudio(
+                    await renderer.synthesize(text, speed=speed, volume=volume), media_type="audio/mpeg",
+                )
+            except (TaskDispatchError, FishAudioError, GeminiAudioError) as exc:
                 last_error = exc if isinstance(exc, TaskDispatchError) else TaskDispatchError(str(exc))
                 logger.warning(
                     "task_provider_fallback task=audio_voice provider=%s model=%s error=%s",
@@ -348,7 +377,10 @@ class TaskModelDispatcher:
                 delay = float(getattr(response, "headers", {}).get("retry-after", ""))
             except (TypeError, ValueError):
                 delay = -1.0
-            if math.isfinite(delay) and 0 <= delay <= 45:
+            if (
+                math.isfinite(delay)
+                and 0 <= delay <= self.rate_limit_retry_wait_cap
+            ):
                 logger.info("task_provider_rate_limit_retry endpoint=%s wait=%.3f", endpoint.name, delay)
                 await asyncio.sleep(delay)
                 return await self._request(
@@ -668,3 +700,116 @@ class TaskModelDispatcher:
                 f"Provider endpoint '{endpoint.name}' returned no transcription text."
             )
         return text.strip()
+
+
+class _StewardAssessment:
+    """Traverse one finite provider snapshot without restarting failed candidates.
+
+    The Steward owns the shared search allowance and overall deadline. Transport
+    and rejected model responses advance this assessment-local cursor separately.
+    """
+
+    def __init__(self, dispatcher: TaskModelDispatcher) -> None:
+        self.dispatcher = dispatcher
+        self._candidates: list[TaskModelAssignment] | None = None
+        self._index = 0
+        self.last_error: TaskDispatchError | None = None
+
+    async def prepare(self) -> None:
+        if self._candidates is None:
+            try:
+                self._candidates = await self.dispatcher._candidate_assignments("memory_recall")
+            except TaskDispatchError as exc:
+                self._candidates = []
+                self.last_error = exc
+                raise StewardProviderPoolExhausted(exc) from exc
+
+    @property
+    def candidate_count(self) -> int:
+        return len(self._candidates or ())
+
+    @property
+    def remaining_candidates(self) -> int:
+        return max(0, self.candidate_count - self._index)
+
+    @property
+    def single_provider(self) -> bool:
+        return self.candidate_count == 1
+
+    def reject_response(self, error: TaskDispatchError) -> bool:
+        """Exclude a rejected decision's provider; never persist a semantic cooldown."""
+        self.last_error = error
+        if not self.remaining_candidates:
+            return False
+        assert self._candidates is not None
+        assignment = self._candidates[self._index]
+        logger.warning(
+            "task_provider_steward_rejected provider=%s model=%s error=%s",
+            assignment.provider, assignment.model, error,
+        )
+        self._index += 1
+        return bool(self.remaining_candidates)
+
+    def _messages_with_budget(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Refresh candidate counts when transport failures skip earlier models."""
+        updated = [dict(message) for message in messages]
+        if len(updated) < 2 or not isinstance(updated[1].get("content"), str):
+            return updated
+        try:
+            context = json.loads(updated[1]["content"])
+        except ValueError:
+            return updated
+        if not isinstance(context, dict) or not isinstance(context.get("assessment_budget"), dict):
+            return updated
+        budget = context["assessment_budget"]
+        budget["provider_candidates_total"] = self.candidate_count
+        budget["provider_candidates_remaining"] = self.remaining_candidates
+        remaining = budget.get("decision_attempts_remaining")
+        searches = budget.get("searches_remaining")
+        corrections = budget.get("review_corrections_remaining")
+        if all(type(value) is int for value in (remaining, searches, corrections)):
+            budget["decision_attempts_remaining"] = min(
+                remaining, searches + self.remaining_candidates + corrections,
+            )
+        updated[1]["content"] = json.dumps(context, default=str)
+        return updated
+
+    async def execute(self, context: TaskExecutionContext, payload: Any) -> str:
+        if (
+            context.task != "memory_recall" or not isinstance(payload, dict)
+            or payload.get("operation") != "chat"
+            or payload.get("steward_action_phase") not in ("recall", "review")
+            or payload.get("response_format") is not None
+            or not isinstance(payload.get("steward_finish_only", False), bool)
+        ):
+            raise TaskDispatchError("A Steward assessment requires a registered Memory Recall phase.")
+        messages = payload.get("messages")
+        if not isinstance(messages, list) or not all(isinstance(item, dict) for item in messages):
+            raise TaskDispatchError("Chat runtime payload requires a messages list.")
+        await self.prepare()
+        assert self._candidates is not None
+        while self.remaining_candidates:
+            assignment = self._candidates[self._index]
+            try:
+                assignment, endpoint = await self.dispatcher._resolve("memory_recall", assignment)
+                cooldown = await self.dispatcher.routing.cooldown(endpoint, assignment.model)
+                if cooldown:
+                    raise TaskDispatchError(
+                        f"Provider endpoint '{endpoint.name}' is cooling down; "
+                        f"retry after {cooldown['cooldown_until']}."
+                    )
+                return await self.dispatcher._complete_chat_with_assignment(
+                    "memory_recall", self._messages_with_budget(messages), assignment=assignment,
+                    temperature=payload.get("temperature"), context=context,
+                    steward_action_phase=payload["steward_action_phase"],
+                    steward_finish_only=payload.get("steward_finish_only", False),
+                    retry_steward_rate_limit=self.single_provider,
+                )
+            except TaskDispatchError as exc:
+                self.last_error = exc
+                self._index += 1
+                logger.warning(
+                    "task_provider_fallback task=memory_recall provider=%s model=%s error=%s",
+                    assignment.provider, assignment.model, exc,
+                )
+        raise StewardProviderPoolExhausted(self.last_error) from self.last_error

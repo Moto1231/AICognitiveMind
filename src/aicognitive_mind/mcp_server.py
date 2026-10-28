@@ -9,14 +9,14 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import CallToolResult, ImageContent, AudioContent, TextContent
+from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent
 
-from aicognitive_mind.config import get_settings
 from aicognitive_mind.account_mcp import request_state
+from aicognitive_mind.config import get_settings
+from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
-from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.mcp_service import (
     BeliefReframeProposal,
     BeliefTransitionProposal,
@@ -26,10 +26,10 @@ from aicognitive_mind.mcp_service import (
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.persistence import StorageRuntime, create_storage
 from aicognitive_mind.sleep import SleepConsolidator
-from aicognitive_mind.tenancy import verify_live_tenancy
 from aicognitive_mind.task_behaviors import TaskExecutionContext
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskKind
+from aicognitive_mind.tenancy import verify_live_tenancy
 from aicognitive_mind.voice_settings import VoiceSettings
 
 
@@ -128,7 +128,7 @@ async def execute_task(
     with base64-encoded audio, filename, and media_type for transcription. The provider,
     model, and behavior are resolved from Axiom's saved configuration, not supplied by
     the caller. Use operation="synthesize_voice", task="audio_voice", and text for
-    speech output. It returns base64 MP3 for playback by the current client, without
+    speech output. It returns base64 audio with its MIME type for the current client, without
     a Body session. Optional compact context references are included in the task prompt.
     """
     state = request_state(ctx)
@@ -290,7 +290,7 @@ async def execute_task(
             raise ValueError("Voice provider returned empty, invalid, or oversized audio.")
         result = {
             "audio_base64": base64.b64encode(result).decode("ascii"),
-            "media_type": "audio/mpeg",
+            "media_type": getattr(result, "media_type", "audio/mpeg"),
         }
     return {
         "status": "completed",
@@ -348,7 +348,7 @@ async def complete_interaction(
     belief_transitions: list[BeliefTransitionProposal] | None = None,
     belief_reframes: list[BeliefReframeProposal] | None = None,
 ) -> dict[str, Any]:
-    """Mandatory final step after reasoning and before presenting the final answer.
+    """Mandatory final step after reasoning; returns the frozen answer's presentation decision.
 
     Supply the updated host_working_context and the idempotency_key returned by begin_interaction.
     The host context is returned to the host for its next turn and is not made durable. The
@@ -366,6 +366,10 @@ async def complete_interaction(
     When readiness is reframe_required and the tension finding contains explicit scopes for both
     values, the host may submit that exact pair in belief_reframes. The Steward revalidates the
     finding and preserves both values as scoped beliefs rather than selecting a winner.
+    Retry an uncertain persistence failure once with the identical key and payload, then obey
+    presentation.allowed. The circuit is called The Breaker. Keep failures silent while
+    presentation.report_persistence_error is false; report them only when true or when the human
+    explicitly requests diagnostics. Never claim a failed persistence outcome was committed.
     """
     result = await ctx.request_context.lifespan_context.mind_service.complete_interaction(
         user_message=user_message,
@@ -431,7 +435,11 @@ async def renew_reasoning_host(lease_token: str, ctx: Context[AppState], detach:
 
 @mcp.tool()
 async def next_body_interaction(lease_token: str, ctx: Context[AppState]) -> dict[str, Any] | None:
-    """Claim a Body request and receive its identity/memory context; poll while attached."""
+    """Claim Body work; human inputs have Mind context, passive sensory tasks have media context.
+
+    A sensory_interpretation context is completed through complete_body_interaction without
+    starting another human conversation. Independent workers may share the owner's request queue.
+    """
     return await ctx.request_context.lifespan_context.hosts.next_request(lease_token)
 
 @mcp.tool()
@@ -439,10 +447,17 @@ async def complete_body_interaction(lease_token: str, request_id: str, response_
     ctx: Context[AppState], proposed_memories: list[MemoryProposal] | None = None) -> dict[str, Any]:
     """Commit and deliver a claimed Body response exactly once; retry with unchanged input.
 
-    Memory suggestions are optional; the Steward independently reviews the whole interaction.
+    Human memory suggestions are optional; the Steward independently reviews the interaction.
+    Passive sensory tasks store observations without starting a conversation or speech.
     """
     return await ctx.request_context.lifespan_context.hosts.complete(
         lease_token, request_id, response_text, tuple(proposed_memories or ()))
+
+@mcp.tool()
+async def fail_body_interaction(lease_token: str, request_id: str, reason: str,
+    ctx: Context[AppState]) -> dict[str, Any]:
+    """Fail a claimed passive sensory request; no interpretation or conversation is created."""
+    return await ctx.request_context.lifespan_context.hosts.fail(lease_token, request_id, reason)
 
 @mcp.tool()
 async def propose_self_name(user_message: str, candidate_name: str, rationale: str,

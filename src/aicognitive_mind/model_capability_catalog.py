@@ -1,7 +1,7 @@
 """Finite, provider-scoped documentation supplements for sparse model listings.
 
-These entries describe published features checked on 2026-10-25. They are not
-credential, quota, adapter compatibility, or live inference checks. Unknown IDs
+These entries describe published features checked on 2026-10-25 and 2026-10-26.
+They are not credential, quota, adapter compatibility, or live inference checks. Unknown IDs
 and compatible proxies must supply their own metadata rather than inherit claims
 from a similar model name. Provider-reported restrictions take precedence at the
 discovery layer.
@@ -44,6 +44,10 @@ _GEMINI_MODELS.update({
 
 _CATALOG: dict[tuple[str, str], dict[str, Documentation]] = {
     ("api.groq.com", "/openai/v1"): {
+        "qwen/qwen3.8-27b": (
+            ("Text", "Vision", "Tools"),
+            "https://console.groq.com/docs/vision",
+        ),
         "openai/gpt-oss-20b": (
             ("Text", "Tools", "Structured Outputs"),
             "https://console.groq.com/docs/model/openai/gpt-oss-20b",

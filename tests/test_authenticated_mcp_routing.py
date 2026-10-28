@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import hashlib
+import time
 from contextvars import ContextVar
 from functools import wraps
 from types import SimpleNamespace
@@ -236,6 +237,41 @@ class AuthenticatedMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
                     await self.invoke("mind_status", access=access)
         self.assertIsNone(await self.storage.mind.load())
 
+    async def test_realtime_transport_rechecks_revoked_portal_session_for_each_tool(self):
+        from aicognitive_mind.api import revoke_portal_session, store_portal_session
+
+        portal = SimpleNamespace(state=SimpleNamespace(runtime_records=self.records))
+        cookie = "synthetic-realtime-portal-cookie"
+        expiry = time.time() + 300
+        await store_portal_session(portal, cookie, self.alpha.mind_id, expiry)
+        issued = await self.provider.mint_service_access_token(
+            subject=self.alpha.mind_id, client_id="axiom-realtime",
+            portal_session_key="portal_session_" + hashlib.sha256(cookie.encode()).hexdigest(),
+            expires_at=expiry,
+        )
+        access = await self.provider.load_access_token(issued)
+        self.assertIsNotNone(access)
+        before = await self.invoke("mind_status", access=access)
+        self.assertEqual(before["active_storage"]["mind_id"], self.alpha.mind_id)
+
+        # Simulate a transport retaining its original verified AccessToken:
+        # no further OAuth load runs between logout and these actual tool calls.
+        await revoke_portal_session(portal, cookie)
+        with self.assertRaisesRegex(MCPError, "portal session has ended"):
+            await self.invoke("mind_status", access=access)
+        with self.assertRaisesRegex(MCPError, "portal session has ended"):
+            await self.invoke(
+                "complete_interaction", access=access, user_message="Synthetic stale turn",
+                response_text="This must never be committed.",
+                host_working_context=HostWorkingContext(), idempotency_key="stale-voice-turn",
+            )
+        tenant = scope_storage(self.storage, self.alpha.mind_id)
+        self.assertEqual(await tenant.journal.read(), [])
+        self.assertEqual(await tenant.memory.read(), [])
+        # Unrelated account OAuth sessions remain usable after this logout.
+        normal = await self.invoke("mind_status", self.beta)
+        self.assertEqual(normal["active_storage"]["mind_id"], self.beta.mind_id)
+
     async def test_inactive_and_ambiguous_account_subjects_are_rejected(self):
         key = account_key(self.alpha.username)
         before = await self.records.get(key)
@@ -327,7 +363,6 @@ class AuthenticatedMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.storage.mind.load())
 
     async def denied_event_principals(self):
-        yield "modern_account", self.tokens[self.alpha.mind_id]
         legacy = self.tokens[self.alpha.mind_id].model_copy(update={"subject": "__legacy__"})
         yield "missing_legacy", legacy
         key = account_key("inactive-event-account")
@@ -356,6 +391,62 @@ class AuthenticatedMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
             return await entry.handler(ctx, params)
         finally:
             self.current_access.reset(handle)
+
+    async def test_raw_events_use_each_accounts_registry_and_never_the_root_registry(self):
+        import json
+
+        arguments = {
+            "name": "sensory.ready", "arguments": {"session_id": "same-body-session"},
+            "delivery": {
+                "mode": "webhook", "url": "https://callback.example/events",
+                "secret": "whsec_" + base64.b64encode(bytes(range(32))).decode(),
+            },
+        }
+
+        async def verify(_url, _secret, _event_id, payload, _subscription_id, previous_secret=None):
+            return 200, json.dumps({"challenge": payload["challenge"]}).encode()
+
+        with patch.object(mcp_events, "post_webhook", AsyncMock(side_effect=verify)) as post:
+            subscriptions = []
+            for account in (self.alpha, self.beta):
+                access = self.tokens[account.mind_id]
+                catalog = await self.invoke_event("events/list", access)
+                self.assertEqual({item["name"] for item in catalog["events"]},
+                                 {"message.created", "sensory.ready"})
+                subscriptions.append(await self.invoke_event("events/subscribe", access, arguments))
+                state = await RuntimeRecords(scope_storage(
+                    self.storage, account.mind_id,
+                ).mind).get(mcp_events.STATE_KEY)
+                self.assertEqual(len(state["subscriptions"]), 1)
+                saved = next(iter(state["subscriptions"].values()))
+                self.assertEqual(saved["owner"]["subject"], account.mind_id)
+                self.assertEqual(saved["name"], "sensory.ready")
+                self.assertEqual((await self.invoke("mind_status", account))[
+                    "message_events"
+                ]["active_subscriptions"], 1)
+                self.assertIsNone(await self.records.get(mcp_events.STATE_KEY))
+            self.assertNotEqual(subscriptions[0]["id"], subscriptions[1]["id"])
+            self.assertEqual(post.await_count, 2)
+
+            key = account_key(self.alpha.username)
+            saved_account = await self.records.get(key)
+            self.assertTrue(await self.records.replace(key, saved_account, {**saved_account, "active": False}))
+            self.assertEqual(await self.invoke_event(
+                "events/list", self.tokens[self.alpha.mind_id],
+            ), {"events": []})
+            with self.assertRaises(MCPError):
+                await self.invoke_event("events/subscribe", self.tokens[self.alpha.mind_id], arguments)
+            self.assertEqual(post.await_count, 2, "Revocation must be checked before callback access.")
+
+            cancel = {**arguments, "delivery": {
+                key: value for key, value in arguments["delivery"].items() if key != "secret"
+            }}
+            await self.invoke_event("events/unsubscribe", self.tokens[self.beta.mind_id], cancel)
+            beta = await RuntimeRecords(scope_storage(self.storage, self.beta.mind_id).mind).get(mcp_events.STATE_KEY)
+            alpha = await RuntimeRecords(scope_storage(self.storage, self.alpha.mind_id).mind).get(mcp_events.STATE_KEY)
+            self.assertEqual(beta["subscriptions"], {})
+            self.assertEqual(len(alpha["subscriptions"]), 1)
+            self.assertIsNone(await self.records.get(mcp_events.STATE_KEY))
 
     async def test_raw_events_list_does_not_advertise_root_registry_to_invalid_principals(self):
         async for label, access in self.denied_event_principals():

@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from aicognitive_mind.task_model_assignments import (
@@ -101,6 +102,36 @@ class TaskModelAssignmentRegistryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(loaded[task].provider, "")
             self.assertEqual(loaded[task].model, "")
             self.assertEqual(loaded[task].fallbacks, [])
+        self.assertEqual(loaded["audio_voice"].model_dump(), voice_before)
+
+    async def test_vision_and_audio_preserve_ten_ordered_fallbacks_after_reload(self):
+        records = FakeRecords()
+        registry = TaskModelAssignmentRegistry(records)
+        assignments = await registry.list()
+        voice_before = next(item for item in assignments if item.task == "audio_voice").model_dump()
+        for task in ("vision", "audio"):
+            assignments = [TaskModelAssignment(
+                task=task, provider=f"{task}-primary", model=f"{task}-primary-model",
+                provider_rotation="ordered",
+                fallbacks=[{
+                    "provider": f"{task}-backup-{index}",
+                    "model": f"{task}-backup-model-{index}",
+                } for index in range(1, 11)],
+            ) if item.task == task else item for item in assignments]
+        await registry.replace(assignments)
+
+        restarted_records = FakeRecords()
+        restarted_records.values = json.loads(json.dumps(records.values))
+        loaded = {item.task: item for item in await TaskModelAssignmentRegistry(restarted_records).list()}
+        for task in ("vision", "audio"):
+            with self.subTest(task=task):
+                self.assertEqual((loaded[task].provider, loaded[task].model),
+                                 (f"{task}-primary", f"{task}-primary-model"))
+                self.assertEqual(loaded[task].provider_rotation, "ordered")
+                self.assertEqual([item.model_dump() for item in loaded[task].fallbacks], [{
+                    "provider": f"{task}-backup-{index}",
+                    "model": f"{task}-backup-model-{index}",
+                } for index in range(1, 11)])
         self.assertEqual(loaded["audio_voice"].model_dump(), voice_before)
 
     async def test_migrates_legacy_single_fallback_into_chain(self):

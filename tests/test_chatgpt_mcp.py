@@ -1,4 +1,5 @@
 import unittest
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
@@ -15,6 +16,7 @@ from aicognitive_mind.chatgpt_mcp import (
 )
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.host_context import HostWorkingContext
+from aicognitive_mind.host_runtime import RuntimeRecords
 
 
 class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
@@ -82,9 +84,14 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_trusted_realtime_token_is_scoped_to_mind(self):
+        self.provider._records = RuntimeRecords(SimpleNamespace(mind_id="synthetic-root"))
+        session_key = "portal_session_synthetic"
+        session = {"account_mind_id": "mind-realtime-test", "expires_at": time.time() + 120}
+        await self.provider._records.create(session_key, session)
         token = await self.provider.mint_service_access_token(
             subject="mind-realtime-test",
             client_id="axiom-realtime",
+            portal_session_key=session_key, expires_at=session["expires_at"],
         )
         access = await self.provider.load_access_token(token)
 
@@ -92,6 +99,33 @@ class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(access.subject, "mind-realtime-test")
         self.assertEqual(access.resource, self.provider.resource_url)
         self.assertIn(self.provider.required_scope, access.scopes)
+        self.assertLessEqual(access.expires_at, session["expires_at"])
+        # A transport may retain an AccessToken object after HTTP authentication;
+        # the per-tool guard must also see a revoked portal session immediately.
+        self.assertTrue(await self.provider.access_token_session_active(access))
+        self.assertFalse(await self.provider.access_token_session_active(
+            access.model_copy(update={"expires_at": int(time.time()) - 1}),
+        ))
+        await self.provider._records.replace(session_key, session, {**session, "expires_at": 0})
+        self.assertFalse(await self.provider.access_token_session_active(access))
+        self.assertIsNone(await self.provider.load_access_token(token))
+        self.provider.access_tokens.clear()
+        self.assertIsNone(await self.provider.load_access_token(token))
+
+    async def test_realtime_token_requires_matching_unexpired_portal_session(self):
+        self.provider._records = RuntimeRecords(SimpleNamespace(mind_id="synthetic-root"))
+        token = await self.provider.mint_service_access_token(subject="mind-realtime-test", client_id="axiom-realtime")
+        self.assertIsNone(await self.provider.load_access_token(token))
+        for index, (expiry, subject) in enumerate((
+            (time.time() + 60, "other-mind"), (float("nan"), "mind-realtime-test"),
+            (time.time() - 1, "mind-realtime-test"),
+        )):
+            session_key = "portal_session_synthetic_" + str(index)
+            await self.provider._records.create(session_key, {"account_mind_id": subject, "expires_at": expiry})
+            token = await self.provider.mint_service_access_token(
+                subject="mind-realtime-test", client_id="axiom-realtime", portal_session_key=session_key,
+            )
+            self.assertIsNone(await self.provider.load_access_token(token))
 
     async def test_denial_returns_to_registered_callback(self):
         params = AuthorizationParams(
@@ -143,9 +177,13 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["pending_sensory_interpretations"], 2)
         self.assertEqual(summary["pending_other_requests"], 0)
         self.assertIn("body_work snapshot", HOST_INSTRUCTIONS)
-        self.assertIn("commit the current direct", HOST_INSTRUCTIONS)
-        self.assertIn("human response with complete_interaction", HOST_INSTRUCTIONS)
-        self.assertIn("A later begin_interaction will service more queued", HOST_INSTRUCTIONS)
+        self.assertIn("Prioritize the current direct human input", HOST_INSTRUCTIONS)
+        self.assertIn("preserve its begin/complete lifecycle", HOST_INSTRUCTIONS)
+        self.assertIn("parallel perception worker under the existing private lease", HOST_INSTRUCTIONS)
+        self.assertIn("passive work need not wait for an unrelated task or journal commit", HOST_INSTRUCTIONS)
+        self.assertIn("bounded batch of at most four", HOST_INSTRUCTIONS)
+        self.assertIn("registered receiver signals remaining/new work", HOST_INSTRUCTIONS)
+        self.assertNotIn("A later begin_interaction will service more queued", HOST_INSTRUCTIONS)
         self.assertIn("Do not mark work complete", HOST_INSTRUCTIONS)
         self.assertIn("Never self-dispatch a sensory prompt", HOST_INSTRUCTIONS)
 
@@ -160,6 +198,8 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("current reasoning faculty", HOST_INSTRUCTIONS)
         self.assertIn("begin_interaction", HOST_INSTRUCTIONS)
         self.assertIn("complete_interaction", HOST_INSTRUCTIONS)
+        self.assertIn("The Breaker", HOST_INSTRUCTIONS)
+        self.assertIn("presentation.report_persistence_error", HOST_INSTRUCTIONS)
         self.assertIn("open_live_body", HOST_INSTRUCTIONS)
         self.assertIn("Every begin_interaction result includes a body_work snapshot", HOST_INSTRUCTIONS)
         self.assertIn("queue server selects human text requests ahead", HOST_INSTRUCTIONS)
@@ -239,6 +279,73 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         server = build_chatgpt_mcp("https://axiom.example", provider)
         names = {tool.name for tool in await server.list_tools()}
         self.assertIn("request_camera_observation", names)
+
+    async def test_realtime_status_reports_server_configuration_without_credentials(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        status = server._tool_manager.get_tool("get_body_reasoning_status").fn
+        ctx = SimpleNamespace(request_context=SimpleNamespace(lifespan_context=SimpleNamespace(
+            storage=SimpleNamespace(mind=object()), mind_service=object(),
+        )))
+        for key in ("", "synthetic-private-server-key"):
+            configured = SimpleNamespace(
+                effective_standalone_reasoning_provider="none", openai_api_key=key,
+                openai_realtime_model="configured-realtime-model",
+            )
+            with patch("aicognitive_mind.chatgpt_mcp.get_settings", return_value=configured), patch(
+                "aicognitive_mind.chatgpt_mcp.HostRuntime",
+            ) as hosts:
+                hosts.return_value.active = AsyncMock(return_value=None)
+                hosts.return_value.records.mind_id = "synthetic-account-mind"
+                hosts.return_value.records.get = AsyncMock(return_value=None)
+                result = await status(ctx=ctx)
+            self.assertEqual(result["realtime"], {
+                "configured": bool(key), "model": "configured-realtime-model",
+            })
+            self.assertNotIn("synthetic-private-server-key", str(result))
+            self.assertEqual(result["wakeup"], {
+                "mind_id": "synthetic-account-mind",
+                "ready_url": self.base + "/v1/host-events/ready",
+                "authentication": "existing-private-host-lease",
+            })
+            self.assertNotIn("lease_token", str(result))
+            self.assertIsNone(result["active_body"])
+
+    async def test_reasoning_status_exposes_only_fresh_client_reported_body_state(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        status = server._tool_manager.get_tool("get_body_reasoning_status").fn
+        mind = object()
+        ctx = SimpleNamespace(request_context=SimpleNamespace(lifespan_context=SimpleNamespace(
+            storage=SimpleNamespace(mind=mind), mind_service=object(),
+        )))
+        configured = SimpleNamespace(
+            effective_standalone_reasoning_provider="none", openai_api_key="private-server-key",
+            openai_realtime_model="configured-realtime-model",
+        )
+        client_state = {
+            "client_revision": "synthetic-client", "hearing": True, "voice": False,
+            "microphone_live": True, "voice_mode": "connected_host", "last_playback": "failed",
+        }
+        with patch("aicognitive_mind.chatgpt_mcp.get_settings", return_value=configured), patch(
+            "aicognitive_mind.chatgpt_mcp.HostRuntime",
+        ) as hosts:
+            hosts.return_value.active = AsyncMock(return_value=None)
+            hosts.return_value.records.mind_id = "synthetic-current-mind"
+            hosts.return_value.records.get = AsyncMock(return_value={
+                "session_id": "private-session-identifier", "updated_at": time.time(),
+                "client_state": client_state,
+            })
+            result = await status(ctx=ctx)
+            self.assertEqual(result["active_body"]["client_state"], client_state)
+            self.assertTrue(result["active_body"]["fresh"])
+            self.assertEqual(result["active_body"]["client_state_source"], "client_reported")
+            self.assertNotIn("private-session-identifier", str(result))
+            self.assertNotIn("private-server-key", str(result))
+            self.assertIs(hosts.call_args.args[0], mind)
+            hosts.return_value.records.get.return_value["updated_at"] = time.time() - 121
+            stale = await status(ctx=ctx)
+            self.assertFalse(stale["active_body"]["fresh"])
+            self.assertIsNone(stale["active_body"]["client_state"])
+            self.assertNotIn("token_hash", str(result))
 
     async def test_turn_tools_require_structured_host_working_context(self):
         provider = AxiomAuthorizationServerProvider(
@@ -390,6 +497,8 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "renew_reasoning_host",
                 "next_body_interaction",
                 "complete_body_interaction",
+                "fail_body_interaction",
+                "fail_incoming_sensory",
             }.issubset(names)
         )
         self.assertIn("speak_body_text", names)

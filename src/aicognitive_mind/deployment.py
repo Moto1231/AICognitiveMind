@@ -1,27 +1,29 @@
 from __future__ import annotations
 
-import os
-import logging
 import hashlib
 import json
-
-import httpx
+import logging
+import os
 import secrets
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from urllib.parse import urlparse
 
+import httpx
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 
-from mcp.server.transport_security import TransportSecuritySettings
-
 from aicognitive_mind.api import (
-    app as portal_app,
+    _portal_session_record_key,
     read_portal_session,
+    realtime_session_scope,
     revoke_portal_session,
     store_portal_session,
+)
+from aicognitive_mind.api import (
+    app as portal_app,
 )
 from aicognitive_mind.chatgpt_mcp import build_chatgpt_mcp
 from aicognitive_mind.chatgpt_oauth import (
@@ -34,9 +36,9 @@ from aicognitive_mind.chatgpt_oauth import (
     oauth_signup_get,
     oauth_signup_post,
 )
-from aicognitive_mind.config import get_settings
 from aicognitive_mind.commit import CommitConflict
-from aicognitive_mind.mcp_events import MessageEvents
+from aicognitive_mind.config import get_settings
+from aicognitive_mind.mcp_events import EventDeliveryWorker
 
 
 def public_base_url() -> str:
@@ -313,11 +315,14 @@ async def _realtime_body_session(request: Request) -> Response:
         account = None
     if account is None:
         return JSONResponse({"detail": "Sign in to Axiom before starting voice."}, status_code=401)
-    if account.mind_id != "__legacy__":
-        return JSONResponse(
-            {"detail": "This endpoint is not available for account-scoped sessions."}, status_code=403,
-        )
-
+    origin = request.headers.get("origin")
+    public_url = urlparse(BASE_URL)
+    allowed_origins = {
+        f"{request.url.scheme}://{request.url.netloc}",
+        f"{public_url.scheme}://{public_url.netloc}",
+    }
+    if origin is not None and origin not in allowed_origins:
+        return JSONResponse({"detail": "Voice must be started from this Axiom site."}, status_code=403)
     if not settings.openai_api_key:
         return JSONResponse({"detail": "OPENAI_API_KEY is not configured."}, status_code=503)
 
@@ -325,10 +330,14 @@ async def _realtime_body_session(request: Request) -> Response:
     if not sdp or len(sdp) > 100_000:
         return JSONResponse({"detail": "A valid SDP offer is required."}, status_code=400)
 
-    mind_id = str(session["mind_id"])
+    # Realtime is a server-managed connection, not an account provider fallback.
+    # Its MCP credential must still belong solely to the authenticated account.
+    mind_id = account.mind_id
     mcp_token = await oauth_provider.mint_service_access_token(
         subject=mind_id,
         client_id="axiom-realtime",
+        portal_session_key=_portal_session_record_key(session_token),
+        expires_at=float(session["expires_at"]),
     )
     realtime_session = {
         "type": "realtime",
@@ -348,19 +357,39 @@ async def _realtime_body_session(request: Request) -> Response:
                 "a name, or visual resemblance alone does not establish current presence or identity. "
                 "Preserve unknown and candidate identities when evidence is insufficient. You remain "
                 "Axiom as one integrated identity, not a separate model. "
-                "Before speaking the final answer, call "
-                "complete_interaction with the same user message, the exact answer you intend to "
-                "speak, the updated host_working_context, and idempotency_key from "
-                "begin_interaction. Use the committed tool result's context on the next turn. "
+                "Freeze the exact final answer and call complete_interaction with the same user "
+                "message, that frozen answer, the updated host_working_context, and idempotency_key "
+                "from begin_interaction. When the persistence circuit was closed at begin, voice "
+                "playback may overlap this same synchronous completion call; never replay speech, "
+                "mutate the frozen answer, or accept the next turn before completion settles. Retry "
+                "an uncertain failure once with the identical payload. Then obey the returned "
+                "presentation.allowed value. If it is false, do not speak the held answer. A "
+                "persistence failure may permit presentation, but never describe it as committed. "
+                "This circuit is called The Breaker. Suppress all spoken persistence-error details "
+                "while presentation.report_persistence_error is false, including retries, counts, "
+                "error classes, degraded review, and the threshold-reaching failure. Report the "
+                "continuity problem only when that field is true or the human explicitly requests "
+                "diagnostics. "
+                "Use the committed tool result's context on the next turn. "
                 "Include material current_evidence. Memory suggestions in proposed_memories are "
                 "optional; the Steward independently selects and classifies what to retain. "
                 "Never bypass the independent "
             "Memory Steward. Keep spoken responses concise unless the user asks for detail."
         ),
         "audio": {
-            "input": {"transcription": {"model": "gpt-4o-mini-transcribe"}},
+            "input": {
+                "transcription": {"model": "gpt-4o-mini-transcribe"},
+                # The browser starts a response after the transcript is final
+                # and the MCP tool import has completed.
+                "turn_detection": {
+                    "type": "server_vad",
+                    "create_response": False,
+                    "interrupt_response": False,
+                },
+            },
         },
         "output_modalities": ["text"],
+        "parallel_tool_calls": False,
         "tools": [
             {
                 "type": "mcp",
@@ -412,6 +441,7 @@ async def _realtime_body_session(request: Request) -> Response:
         content=upstream.content,
         status_code=upstream.status_code,
         media_type=upstream.headers.get("content-type", "application/sdp"),
+        headers={"X-Axiom-Realtime-Scope": realtime_session_scope(session_token)},
     )
 
 
@@ -485,21 +515,9 @@ async def _combined_lifespan(host_app):
         stack.push_async_callback(oauth_provider.close)
         await stack.enter_async_context(_mcp_lifespan(host_app))
         await stack.enter_async_context(portal_app.router.lifespan_context(portal_app))
-        records = getattr(portal_app.state, "runtime_records", None)
-        if records is not None:
-            async def subscription_authorized(sub):
-                client = await oauth_provider.get_client(sub["owner"]["client_id"])
-                return bool(
-                    client and sub["owner"]["subject"] in {
-                        oauth_provider.username, records.mind_id, "__legacy__",
-                    } and (
-                        not client.scope or oauth_provider.required_scope in client.scope.split()
-                    )
-                )
-
-            await stack.enter_async_context(MessageEvents(
-                records, authorized=subscription_authorized,
-            ).running())
+        storage = getattr(portal_app.state, "storage", None)
+        if storage is not None:
+            await stack.enter_async_context(EventDeliveryWorker(storage, oauth_provider).running())
         yield
 
 

@@ -1,5 +1,8 @@
 import json
+import base64
+import io
 import unittest
+import wave
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -109,6 +112,92 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
                 [item.provider for item in await dispatcher._candidate_assignments("vision")],
                 [f"provider-{index}" for index in range(6)],
             )
+
+    async def test_vision_reaches_tenth_fallback_in_order_and_stops_on_first_success(self):
+        for success_index in (0, 4, 10):
+            with self.subTest(success_index=success_index):
+                records = await self.configured_pool(task="vision", count=11)
+                client = SequencedFakeClient([
+                    *[FakeResponse({}, 503, "Temporarily unavailable") for _ in range(success_index)],
+                    FakeResponse({"choices": [{"message": {"content": "A red square"}}]}),
+                ])
+                dispatcher = TaskModelDispatcher(records, client=client)
+                percept = SimpleNamespace(
+                    modality=SimpleNamespace(value="vision"),
+                    content_ref="data:image/png;base64,cHJlc2VydmVkLWltYWdl",
+                )
+
+                result = await dispatcher.interpret_percept(percept)
+
+                self.assertEqual(result, "Visual perception: A red square")
+                self.assertEqual([call[1] for call in client.calls], [
+                    f"https://provider-{index}.example/v1/chat/completions"
+                    for index in range(success_index + 1)
+                ])
+                self.assertEqual([call[2]["json"]["model"] for call in client.calls], [
+                    f"model-{index}" for index in range(success_index + 1)
+                ])
+                self.assertTrue(all(
+                    call[2]["json"]["messages"][-1]["content"][1]["image_url"]["url"] == percept.content_ref
+                    for call in client.calls
+                ))
+                self.assertEqual(client.responses, [])
+
+    async def test_audio_reaches_tenth_fallback_in_order_and_stops_on_first_success(self):
+        for success_index in (0, 4, 10):
+            with self.subTest(success_index=success_index):
+                records = await self.configured_pool(task="audio", count=11)
+                client = SequencedFakeClient([
+                    *[FakeResponse({}, 503, "Temporarily unavailable") for _ in range(success_index)],
+                    FakeResponse({"text": "Can you hear me?"}),
+                ])
+                dispatcher = TaskModelDispatcher(records, client=client)
+                percept = SimpleNamespace(
+                    modality=SimpleNamespace(value="audio"),
+                    content_ref="data:audio/webm;base64,YXVkaW8=",
+                )
+
+                result = await dispatcher.interpret_percept(percept)
+
+                self.assertEqual(result, "Auditory perception: Can you hear me?")
+                self.assertEqual([call[1] for call in client.calls], [
+                    f"https://provider-{index}.example/v1/audio/transcriptions"
+                    for index in range(success_index + 1)
+                ])
+                self.assertEqual([call[2]["data"]["model"] for call in client.calls], [
+                    f"model-{index}" for index in range(success_index + 1)
+                ])
+                self.assertTrue(all(
+                    call[2]["files"]["file"] == ("percept.webm", b"audio", "audio/webm")
+                    for call in client.calls
+                ))
+                self.assertEqual(client.responses, [])
+
+    async def test_large_fallback_pool_deduplicates_aliases_and_skips_cooling_model(self):
+        records = await self.configured_pool(task="vision", count=11)
+        registry = TaskModelAssignmentRegistry(records)
+        assignments = await registry.list()
+        vision = next(item for item in assignments if item.task == "vision")
+        vision.fallbacks[1:1] = [
+            TaskFallbackAssignment(provider="Provider 1", model="model-1"),
+            TaskFallbackAssignment(provider="https://provider-1.example/v1", model="model-1"),
+        ]
+        await registry.replace(assignments)
+        expected_indices = [0, 1, *range(3, 11)]
+        client = SequencedFakeClient([
+            *[FakeResponse({}, 503, "Temporarily unavailable") for _ in expected_indices[:-1]],
+            FakeResponse({"choices": [{"message": {"content": "Last eligible result"}}]}),
+        ])
+        dispatcher = TaskModelDispatcher(records, client=client)
+        cooling_endpoint = next(item for item in await dispatcher.endpoints.list() if item.id == "provider-2")
+        await dispatcher.routing.record_http_failure(cooling_endpoint, "model-2", 429, {"retry-after": "3600"})
+
+        self.assertEqual(await dispatcher.complete_chat("vision", []), "Last eligible result")
+
+        self.assertEqual([call[1] for call in client.calls], [
+            f"https://provider-{index}.example/v1/chat/completions" for index in expected_indices
+        ])
+        self.assertEqual(client.responses, [])
 
     async def test_rate_limit_falls_back_and_survives_new_dispatcher_until_expiry(self):
         records = await self.configured_pool(count=2)
@@ -301,6 +390,41 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
                     await dispatcher.complete_chat("vision", [{"role": "user", "content": "Describe."}])
         self.assertEqual(len(calls), 1)
         sleep.assert_not_awaited()
+
+    async def test_steward_rate_limit_retry_wait_respects_configured_cap(self):
+        endpoint = ProviderEndpoint(
+            id="memory", name="Memory", base_url="https://memory.example/v1",
+            api_key="test-key", model="memory-model",
+        )
+        blocked_client = FakeClient(FakeResponse(
+            {}, status_code=429, text="wait", headers={"retry-after": "3"},
+        ))
+        blocked = TaskModelDispatcher(
+            FakeRecords(), client=blocked_client, rate_limit_retry_wait_cap=2,
+        )
+        with patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            with self.assertRaisesRegex(TaskDispatchError, "HTTP 429"):
+                await blocked._request(
+                    endpoint, "/chat/completions", json_body={"model": "memory-model"},
+                    retry_steward_rate_limit=True,
+                )
+        self.assertEqual(len(blocked_client.calls), 1)
+        sleep.assert_not_awaited()
+
+        retrying_client = SequencedFakeClient([
+            FakeResponse({}, status_code=429, headers={"retry-after": "2"}),
+            FakeResponse({"ok": True}),
+        ])
+        retrying = TaskModelDispatcher(
+            FakeRecords(), client=retrying_client, rate_limit_retry_wait_cap=2,
+        )
+        with patch("aicognitive_mind.task_dispatcher.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            result = await retrying._request(
+                endpoint, "/chat/completions", json_body={"model": "memory-model"},
+                retry_steward_rate_limit=True,
+            )
+        self.assertEqual(result, {"ok": True})
+        sleep.assert_awaited_once_with(2.0)
 
     async def test_json_response_option_rejects_other_tasks_and_unsupported_formats(self):
         client = FakeClient(FakeResponse({}))
@@ -727,6 +851,72 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
                 TaskExecutionContext(task="audio"),
                 {"operation": "synthesize_voice", "text": "Hello there"},
             )
+
+    async def voice_pool(self, *, gemini_first=True):
+        records = FakeRecords()
+        await ProviderEndpointRegistry(records).replace([
+            ProviderEndpoint(id="gemini-voice", name="Saved Gemini voice", provider_name="Google Gemini",
+                             base_url="https://proxy.example/google/v1beta/openai",
+                             api_key="synthetic-google-key", model="models/gemini-3.8-flash-tts"),
+            ProviderEndpoint(id="fish-voice", name="Saved Fish voice", provider_name="Fish Audio",
+                             base_url="https://fish-proxy.example/v1", api_key="synthetic-fish-key",
+                             model="s2.1-pro-free"),
+        ])
+        registry = TaskModelAssignmentRegistry(records)
+        primary, fallback = (("gemini-voice", "fish-voice") if gemini_first else ("fish-voice", "gemini-voice"))
+        await registry.replace([
+            item.model_copy(update={"provider": primary, "fallbacks": [TaskFallbackAssignment(provider=fallback)]})
+            if item.task == "audio_voice" else item for item in await registry.list()
+        ])
+        return records
+
+    async def test_voice_dispatch_uses_native_gemini_protocol_and_real_wav_type(self):
+        output = io.BytesIO()
+        with wave.open(output, "wb") as stream:
+            stream.setnchannels(1)
+            stream.setsampwidth(2)
+            stream.setframerate(24_000)
+            stream.writeframes(b"\x00\x01" * 10)
+        audio = output.getvalue()
+        client = FakeClient(FakeResponse({"steps": [{"type": "model_output", "content": [{
+            "type": "audio", "mime_type": "audio/wav", "data": base64.b64encode(audio).decode(),
+        }]}]}))
+        records = await self.voice_pool()
+        before = dict(records.values)
+        dispatcher = TaskModelDispatcher(records, client=client)
+        with patch("aicognitive_mind.task_dispatcher.FishAudioRenderer") as fish:
+            result = await dispatcher.synthesize_voice("A configured spoken reply.")
+        fish.assert_not_called()
+        self.assertEqual(result, audio)
+        self.assertEqual(result.media_type, "audio/wav")
+        self.assertEqual(client.calls[0][1], "https://proxy.example/google/v1beta/interactions")
+        self.assertEqual(client.calls[0][2]["json"]["model"], "gemini-3.8-flash-tts")
+        self.assertEqual(client.calls[0][2]["headers"]["x-goog-api-key"], "synthetic-google-key")
+        self.assertEqual(records.values, before)
+
+    async def test_gemini_voice_failure_uses_saved_fish_fallback_with_mp3_type(self):
+        records = await self.voice_pool()
+        client = FakeClient(FakeResponse({}, status_code=429))
+        dispatcher = TaskModelDispatcher(records, client=client)
+        with patch("aicognitive_mind.task_dispatcher.FishAudioRenderer") as fish:
+            fish.return_value.synthesize = AsyncMock(return_value=b"synthetic-mp3")
+            with self.assertLogs("aicognitive_mind.task_dispatcher", level="WARNING"):
+                result = await dispatcher.synthesize_voice("Fallback speech", speed=1.2, volume=-3)
+        self.assertEqual(result, b"synthetic-mp3")
+        self.assertEqual(result.media_type, "audio/mpeg")
+        fish.assert_called_once_with(api_key="synthetic-fish-key", model="s2.1-pro-free",
+                                     reference_id=None, endpoint_url="https://fish-proxy.example/v1")
+        fish.return_value.synthesize.assert_awaited_once_with("Fallback speech", speed=1.2, volume=-3)
+
+    async def test_fish_primary_remains_fish_and_stops_after_success(self):
+        records = await self.voice_pool(gemini_first=False)
+        client = FakeClient(FakeResponse({}))
+        dispatcher = TaskModelDispatcher(records, client=client)
+        with patch("aicognitive_mind.task_dispatcher.FishAudioRenderer") as fish:
+            fish.return_value.synthesize = AsyncMock(return_value=b"synthetic-mp3")
+            result = await dispatcher.synthesize_voice("Fish remains selected")
+        self.assertEqual(result.media_type, "audio/mpeg")
+        self.assertEqual(client.calls, [])
 
 if __name__ == "__main__":
     unittest.main()

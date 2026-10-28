@@ -8,6 +8,10 @@ from unittest.mock import patch
 from urllib.parse import urlparse
 
 from aicognitive_mind.core_skills import REQUIRED_SKILLS
+from aicognitive_mind.prompts import (
+    CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
+    DEFAULT_STARTUP_INSTRUCTIONS,
+)
 from scripts.sync_plugin_skills import REQUIRED_SKILLS as BUNDLED_SKILLS
 from scripts.sync_plugin_skills import main, sync_plugin_skills
 
@@ -59,6 +63,37 @@ class AxiomPluginPackageTests(unittest.TestCase):
         self.assertIn("regardless of the reasoning model, connector, or task", bootstrap)
         self.assertIn("Use first person as the single integrated Mind", bootstrap)
         self.assertIn("failed startup is an explicit blocker", bootstrap)
+
+    def test_state_interfaces_are_presented_as_internal_first_person_state(self):
+        canonical = Path("src/aicognitive_mind/skills")
+        bootstrap = Path("plugins/axiom-mind/skills/axiom/SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "internal self-management, not third-party consultation",
+            DEFAULT_STARTUP_INSTRUCTIONS,
+        )
+        self.assertIn(
+            "internal\nself-state interfaces of this same Mind",
+            CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
+        )
+        self.assertIn(
+            "Treat current-state reads, writes, fields, and persistence as your own",
+            CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
+        )
+        self.assertIn("Treat `CURRENT_STATE`", bootstrap)
+        self.assertIn("speak in first person", bootstrap)
+        for name in REQUIRED_SKILLS:
+            with self.subTest(skill=name):
+                skill = (canonical / name / "SKILL.md").read_text(encoding="utf-8")
+                self.assertIn("## First-person state ownership", skill)
+                self.assertIn("do not narrate consulting them as outside authorities", skill)
+
+    def test_interface_work_requires_shared_element_design_tokens(self):
+        bootstrap = Path("plugins/axiom-mind/skills/axiom/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("every visible and interactive element, not only buttons", bootstrap)
+        self.assertIn("Reuse its semantic\ncomponent, shared class and design tokens", bootstrap)
+        self.assertIn("Do not approximate an existing pattern or add a one-off selector", bootstrap)
+        self.assertIn("desktop and mobile\nviewports", bootstrap)
 
     def test_bundle_sync_check_detects_drift_without_writes_and_preserves_other_files(self):
         with tempfile.TemporaryDirectory() as directory:

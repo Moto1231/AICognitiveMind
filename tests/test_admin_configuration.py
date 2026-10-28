@@ -16,6 +16,7 @@ from aicognitive_mind.cognitive_configuration import (
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.domain import CognitiveActor, CognitiveMind, JournalKind, MindIdentity
 from aicognitive_mind.permissions import CognitiveOperation, CognitivePermissionError, PermissionPolicy
+from aicognitive_mind.prompts import DEFAULT_STARTUP_INSTRUCTIONS
 from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMindStore
 from aicognitive_mind.task_behaviors import TaskBehaviorRegistry, TaskExecutionContext, TaskPromptAssembler
 
@@ -41,6 +42,12 @@ class Records:
 
 
 class CognitiveConfigurationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_default_startup_requires_element_wide_visual_consistency(self):
+        self.assertIn("every visible\nand interactive element, not only buttons", DEFAULT_STARTUP_INSTRUCTIONS)
+        self.assertIn("reuse its semantic component, shared\nclass and design tokens", DEFAULT_STARTUP_INSTRUCTIONS)
+        self.assertIn("Do not\napproximate an existing pattern or add a one-off selector", DEFAULT_STARTUP_INSTRUCTIONS)
+        self.assertIn("desktop and mobile viewports", DEFAULT_STARTUP_INSTRUCTIONS)
+
     async def test_overrides_reload_preserve_blanks_and_unedited_task_foundations(self):
         records = Records()
         registry = CognitiveConfigurationRegistry(records)
@@ -245,6 +252,41 @@ class AdministratorRouterTests(unittest.IsolatedAsyncioTestCase):
             "expected_revision": 1, "base_contract": "Denied contract",
         }, headers={"X-Admin-Pin": ""})
         self.assertEqual(denied_save.status_code, 401)
+
+    async def test_breaker_settings_are_revisioned_validated_and_tenant_scoped(self):
+        snapshot = (await self.client.get("/v1/admin/continuity-settings")).json()
+        self.assertEqual(snapshot["revision"], 0)
+        self.assertEqual(snapshot["consecutive_failure_limit"], 5)
+        self.assertEqual(snapshot["health"]["name"], "The Breaker")
+        saved = await self.client.put("/v1/admin/continuity-settings", json={
+            "expected_revision": 0,
+            "consecutive_failure_limit": 4,
+            "rolling_failure_limit": 20,
+            "rolling_window_size": 80,
+            "provider_request_timeout_seconds": 20,
+            "steward_assessment_timeout_seconds": 75,
+            "rate_limit_retry_wait_cap_seconds": 10,
+        })
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["revision"], 1)
+        self.assertEqual(saved.json()["provider_request_timeout_seconds"], 20)
+        beta = await self.client.get(
+            "/v1/admin/continuity-settings", headers={"X-Test-Tenant": "beta"},
+        )
+        self.assertEqual(beta.json()["revision"], 0)
+        self.assertEqual(beta.json()["consecutive_failure_limit"], 5)
+        stale = await self.client.put("/v1/admin/continuity-settings", json={
+            "expected_revision": 0, "consecutive_failure_limit": 3,
+        })
+        self.assertEqual(stale.status_code, 409)
+        invalid = await self.client.put("/v1/admin/continuity-settings", json={
+            "expected_revision": 1, "rolling_failure_limit": 2,
+        })
+        self.assertEqual(invalid.status_code, 422)
+        denied = await self.client.get(
+            "/v1/admin/continuity-settings", headers={"X-Admin-Pin": ""},
+        )
+        self.assertEqual(denied.status_code, 401)
 
 
 if __name__ == "__main__":

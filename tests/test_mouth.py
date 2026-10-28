@@ -1,10 +1,14 @@
 import asyncio
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from aicognitive_mind.api import app
 from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body_sessions import (
+    BodyQueue,
+    body_session,
     notify_body_output,
     subscribe_body_output,
     unsubscribe_body_output,
@@ -165,6 +169,45 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(subscriber.empty())
         finally:
             unsubscribe_body_output("live-session", "mouth", subscriber)
+
+    async def test_voice_output_push_keeps_equal_session_ids_in_different_minds_isolated(self) -> None:
+        alpha = subscribe_body_output("same-session", "mouth", mind_scope="alpha")
+        beta = subscribe_body_output("same-session", "mouth", mind_scope="beta")
+        legacy = subscribe_body_output("same-session", "mouth")
+        try:
+            notify_body_output("same-session", "mouth", mind_scope="alpha")
+            await asyncio.wait_for(alpha.get(), timeout=0.1)
+            self.assertTrue(beta.empty())
+            self.assertTrue(legacy.empty())
+            unsubscribe_body_output("same-session", "mouth", alpha, mind_scope="alpha")
+            notify_body_output("same-session", "mouth", mind_scope="alpha")
+            self.assertTrue(alpha.empty())
+            notify_body_output("same-session", "mouth", mind_scope="beta")
+            await asyncio.wait_for(beta.get(), timeout=0.1)
+            notify_body_output("same-session", "mouth")
+            await asyncio.wait_for(legacy.get(), timeout=0.1)
+        finally:
+            unsubscribe_body_output("same-session", "mouth", alpha, mind_scope="alpha")
+            unsubscribe_body_output("same-session", "mouth", beta, mind_scope="beta")
+            unsubscribe_body_output("same-session", "mouth", legacy)
+
+    async def test_durable_voice_queue_notifies_its_own_records_scope(self) -> None:
+        queue = BodyQueue(SimpleNamespace(mind_id="alpha"), "mouth", BrowserVoiceOutput())
+        queue.change = AsyncMock()
+        alpha = subscribe_body_output("same-session", "mouth", mind_scope="alpha")
+        beta = subscribe_body_output("same-session", "mouth", mind_scope="beta")
+        token = body_session.set("same-session")
+        try:
+            await queue.speak(ExpressionIntent(modality=ExpressionModality.VOICE, text="Scoped voice"))
+            await asyncio.wait_for(alpha.get(), timeout=0.1)
+            self.assertTrue(beta.empty())
+            self.assertEqual(queue.output_scope, "alpha")
+            queue.change.assert_awaited_once()
+            self.assertEqual(queue.change.await_args.args[0]["text"], "Scoped voice")
+        finally:
+            body_session.reset(token)
+            unsubscribe_body_output("same-session", "mouth", alpha, mind_scope="alpha")
+            unsubscribe_body_output("same-session", "mouth", beta, mind_scope="beta")
 
     def test_live_body_uses_event_driven_voice_delivery_without_polling(self) -> None:
         live_markup = Path("src/aicognitive_mind/static/live_body.html").read_text(
