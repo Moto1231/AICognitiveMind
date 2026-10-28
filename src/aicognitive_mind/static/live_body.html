@@ -953,6 +953,25 @@
       }
     }
 
+    let bodyReconnectBusy = false;
+    async function resumeBodyConnection() {
+      if (document.hidden || bodyReconnectBusy) return;
+      bodyReconnectBusy = true;
+      try {
+        await registerActiveBodySession();
+        // A restored mobile page can retain an EventSource whose connection died
+        // while suspended. Reopen it and drain any already queued expression.
+        mouthEvents?.close();
+        mouthEvents = null;
+        connectMouthEvents();
+        await consumeExpressionOutputs();
+      } catch (_) {
+        // Queued expression remains available for the next wake-up attempt.
+      } finally {
+        bodyReconnectBusy = false;
+      }
+    }
+
     async function showMindResult(result, { modality, consumeOutputs = true } = {}) {
       const responseLabel = "\n\nMessage:\n" +
         (result.response_text || "No conversational response requested for this sensory sample.");
@@ -1558,7 +1577,7 @@
         cancelBodySpeech();
         setStatus("VOICE OFF\nSpoken output is disabled; vision and hearing are unchanged.");
       } else {
-        connectMouthEvents();
+        resumeBodyConnection();
         refreshSharedVoiceSettings();
         setStatus("VOICE ON\nSpoken output is enabled.");
         startTalking();
@@ -1591,11 +1610,13 @@
 
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
+        resumeBodyConnection();
         checkForBodyPageUpdate();
         refreshSharedVoiceSettings();
         refreshConnectedHostStatus();
       }
     });
+    window.addEventListener("pageshow", resumeBodyConnection);
     window.addEventListener("beforeunload", () => {
       stopTalking();
       disableVision({ persist: false });
