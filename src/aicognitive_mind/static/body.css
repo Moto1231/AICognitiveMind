@@ -33,6 +33,39 @@ body.body-live .page-bar {
 
 body.body-live .page-links { display: flex; gap: .6rem; flex-wrap: wrap; }
 
+body.body-live .live-page-status {
+      max-width: min(74vw, 620px);
+      margin-left: auto;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: .2rem;
+    }
+
+body.body-live .local-clock {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: .1rem;
+      color: #f2f2f2;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.15;
+      white-space: nowrap;
+    }
+
+body.body-live .local-clock-date {
+      color: #aeb5c2;
+      font-size: .72rem;
+      font-weight: 650;
+      letter-spacing: .02em;
+    }
+
+body.body-live .local-clock-time {
+      color: #83dffe;
+      font-size: .92rem;
+      font-weight: 750;
+      letter-spacing: .03em;
+    }
+
 /* Explicit rows keep the conversation filling the page when the audio meter is hidden. */
 body.body-live .page-bar { grid-row: 1; }
 body.body-live .sense-panel { grid-row: 2; }
@@ -131,6 +164,12 @@ body.body-live .host-status[data-state="unavailable"] { color: #e7a0a8; }
 
 @media (max-width: 600px) {
 body.body-live .host-status { max-width: 64vw; }
+
+body.body-live .live-page-status { max-width: 78vw; }
+
+body.body-live .local-clock-date { font-size: .66rem; }
+
+body.body-live .local-clock-time { font-size: .84rem; }
 
 body.body-live main { padding: .65rem; gap: .5rem; grid-template-rows: auto auto minmax(120px, 27vh) auto minmax(0, auto) minmax(100px, 1fr); }
 

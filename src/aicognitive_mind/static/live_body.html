@@ -4,9 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom — Live Body</title>
-  <link rel="stylesheet" href="/static/body.css?v=20261016-return-control">
+  <link rel="stylesheet" href="/static/body.css?v=20261028-local-clock">
 
   <script src="/static/button_icons.js?v=20261016-icon-tooltips" defer></script>
+  <script src="/static/local_clock.js?v=20261028-local-clock" defer></script>
 </head>
 <body class="body-live">
   <script>
@@ -32,7 +33,11 @@
       <div class="page-links">
         
       </div>
-      <div class="page-links">
+      <div class="page-links live-page-status">
+        <time id="liveLocalClock" class="local-clock" data-local-clock aria-label="Current local date and time">
+          <span class="local-clock-date" data-local-clock-date>Current date</span>
+          <span class="local-clock-time" data-local-clock-time>Current time</span>
+        </time>
         <div id="bodyOwnershipStatus" class="host-status" data-state="loading" aria-live="polite">Body ownership pending</div>
         <div id="connectedHostStatus" class="host-status" data-state="loading" aria-live="polite">Checking connected hosts…</div>
       </div>

@@ -2104,7 +2104,7 @@ test('an older startup success or failure cannot replace the latest loaded confi
     await older;
     assert.equal(ui.state.cognitiveConfiguration.revision, 8);
     assert.equal(ui.elements.foundationStartup.value, 'Current startup');
-    assert.equal(ui.elements.startupStatus.textContent, 'Startup configuration loaded.');
+    assert.equal(ui.elements.startupStatus.textContent, '');
   }
 });
 
@@ -2146,6 +2146,16 @@ function currentStatePortal({ diagnosticsHandler, bodySettings = true, fallbackS
       requests.push({ url, method: options.method || 'GET', body: options.body && JSON.parse(options.body) });
       if (url === '/v1/admin/body/voice/settings') {
         if (voiceHandler) return voiceHandler(options);
+        if (options.method === 'POST') {
+          const body = JSON.parse(options.body);
+          return {
+            revision: 4,
+            rate: body.rate,
+            pitch: body.pitch,
+            volume: body.volume,
+            voiceName: body.voice_name,
+          };
+        }
         return { revision: 3, rate: 1.2, pitch: 0.9, volume: 0.8, voiceName: 'Saved voice' };
       }
       if (url === '/v1/admin/body/fallback') return { enabled: true, runtime_override: null, deployment_default: true };
@@ -2162,7 +2172,8 @@ function currentStatePortal({ diagnosticsHandler, bodySettings = true, fallbackS
   });
   vm.runInContext(source.match(/^let diagnosticsRevision = .*;$/m)[0], context);
   for (const name of ['setMode', 'bodySettingsAvailable', 'bodyFallbackSettingsAvailable', 'renderBodySettingsAvailability', 'updateVoiceSliderReadouts',
-    'loadVoiceSettings', 'saveVoiceSettings', 'refreshBodyFallbackSettings', 'saveBodyFallbackSettings',
+    'normalizeVoiceSettings', 'readVoiceSettingsForm', 'applyVoiceSettingsForm', 'voiceSettingsDirty',
+    'loadVoiceSettings', 'saveVoiceSettings', 'cancelVoiceSettings', 'refreshBodyFallbackSettings', 'saveBodyFallbackSettings',
     'enterAdminMode', 'renderStatus', 'refreshStatus', 'refresh',
     'formatCurrentIdentity', 'refreshDiagnostics', 'refreshAdmin']) {
     const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
@@ -2276,7 +2287,7 @@ test('account-scoped Admin refresh skips global Body settings while other availa
   assert.equal(ui.calls.some(url => url.startsWith('/v1/admin/body/')), false);
   assert.equal(ui.calls.includes('/v1/admin/diagnostics'), true);
   for (const update of ['memory', 'journal', 'behaviors', 'tasks', 'endpoints']) assert.ok(ui.updates.includes(update));
-  for (const name of ['voiceRate', 'voicePitch', 'voiceVolume', 'voiceName', 'saveVoiceSettings']) {
+  for (const name of ['voiceRate', 'voicePitch', 'voiceVolume', 'voiceName', 'saveVoiceSettings', 'cancelVoiceSettings']) {
     assert.equal(ui.elements[name].disabled, true);
   }
   assert.equal(ui.elements.voiceSettingsStatus.textContent, 'Unavailable for this account.');
@@ -2294,13 +2305,49 @@ test('authorized root Admin loads and saves voice settings after current capabil
   assert.equal(ui.calls.filter(url => url === '/v1/admin/body/fallback').length, 1);
   assert.equal(ui.elements.voiceRate.value, '1.2');
   assert.equal(ui.elements.voiceName.value, 'Saved voice');
-  assert.equal(ui.elements.saveVoiceSettings.disabled, false);
+  assert.equal(ui.elements.saveVoiceSettings.disabled, true);
+  assert.equal(ui.elements.cancelVoiceSettings.disabled, true);
   assert.equal(ui.elements.voiceSettingsStatus.textContent, '');
   ui.elements.voiceName.value = 'Changed voice';
+  ui.renderBodySettingsAvailability();
+  assert.equal(ui.elements.saveVoiceSettings.disabled, false);
+  assert.equal(ui.elements.cancelVoiceSettings.disabled, false);
   await ui.saveVoiceSettings();
   assert.deepEqual(ui.requests.find(request => request.method === 'POST').body, {
     expected_revision: 3, rate: 1.2, pitch: 0.9, volume: 0.8, voice_name: 'Changed voice',
   });
+  assert.equal(ui.state.voiceSettingsRevision, 4);
+  assert.equal(ui.state.voiceSettingsBaseline.voiceName, 'Changed voice');
+  assert.equal(ui.elements.saveVoiceSettings.disabled, true);
+  assert.equal(ui.elements.cancelVoiceSettings.disabled, true);
+});
+
+test('Cancel restores the last loaded voice settings without sending a request', async () => {
+  const ui = currentStatePortal();
+  await ui.enterAdminMode();
+  const requestCount = ui.requests.length;
+  ui.elements.voiceRate.value = '1.55';
+  ui.elements.voicePitch.value = '1.25';
+  ui.elements.voiceVolume.value = '0.45';
+  ui.elements.voiceName.value = 'Unsaved voice';
+  ui.updateVoiceSliderReadouts();
+  ui.renderBodySettingsAvailability();
+  assert.equal(ui.elements.saveVoiceSettings.disabled, false);
+  assert.equal(ui.elements.cancelVoiceSettings.disabled, false);
+
+  ui.cancelVoiceSettings();
+
+  assert.equal(ui.elements.voiceRate.value, '1.2');
+  assert.equal(ui.elements.voicePitch.value, '0.9');
+  assert.equal(ui.elements.voiceVolume.value, '0.8');
+  assert.equal(ui.elements.voiceName.value, 'Saved voice');
+  assert.equal(ui.elements.voiceRateValue.value, '1.20');
+  assert.equal(ui.elements.voicePitchValue.value, '0.90');
+  assert.equal(ui.elements.voiceVolumeValue.value, '0.80');
+  assert.equal(ui.elements.voiceSettingsStatus.textContent, 'Changes cancelled.');
+  assert.equal(ui.elements.saveVoiceSettings.disabled, true);
+  assert.equal(ui.elements.cancelVoiceSettings.disabled, true);
+  assert.equal(ui.requests.length, requestCount);
 });
 
 test('anonymous or unknown-scope refresh cannot request or save deployment Body settings', async () => {
@@ -2312,6 +2359,7 @@ test('anonymous or unknown-scope refresh cannot request or save deployment Body 
   await ui.saveBodyFallbackSettings();
   assert.deepEqual(ui.calls, ['/v1/portal/status']);
   assert.equal(ui.elements.saveVoiceSettings.disabled, true);
+  assert.equal(ui.elements.cancelVoiceSettings.disabled, true);
   ui.state.adminAuthorized = true;
   delete ui.status.administration.body_settings_available;
   await ui.refresh();
@@ -2324,6 +2372,7 @@ test('a failed permitted voice read disables Save and does not stop other Admin 
   const ui = currentStatePortal({ voiceHandler: () => { throw new Error('Voice store unavailable'); } });
   await ui.enterAdminMode();
   assert.equal(ui.elements.saveVoiceSettings.disabled, true);
+  assert.equal(ui.elements.cancelVoiceSettings.disabled, true);
   assert.equal(ui.elements.voiceRate.disabled, true);
   assert.equal(ui.elements.voiceSettingsStatus.textContent, 'Voice store unavailable');
   for (const update of ['memory', 'journal', 'behaviors', 'tasks', 'endpoints']) assert.ok(ui.updates.includes(update));
@@ -2356,11 +2405,15 @@ test('scoped voice settings can refresh and save while the deployment fallback s
   await ui.enterAdminMode();
   assert.equal(ui.calls.includes('/v1/admin/body/voice/settings'), true);
   assert.equal(ui.calls.includes('/v1/admin/body/fallback'), false);
-  assert.equal(ui.elements.saveVoiceSettings.disabled, false);
+  assert.equal(ui.elements.saveVoiceSettings.disabled, true);
+  assert.equal(ui.elements.cancelVoiceSettings.disabled, true);
   assert.equal(ui.elements.saveBodyFallbackSetting.disabled, true);
   await ui.saveBodyFallbackSettings();
   assert.equal(ui.calls.includes('/v1/admin/body/fallback'), false);
   ui.elements.voiceName.value = 'Account voice';
+  ui.renderBodySettingsAvailability();
+  assert.equal(ui.elements.saveVoiceSettings.disabled, false);
+  assert.equal(ui.elements.cancelVoiceSettings.disabled, false);
   await ui.saveVoiceSettings();
   assert.equal(ui.requests.find(request => request.method === 'POST').body.voice_name, 'Account voice');
 });
