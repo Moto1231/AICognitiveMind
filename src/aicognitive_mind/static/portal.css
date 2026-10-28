@@ -123,7 +123,14 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
 .admin-task-model-panel { grid-column: 1 / -1; min-width: 0; }
 /* Device and speech preferences are full-width admin sections, like task profiles. */
 .admin-grid > #devicesSection,
-.admin-grid > #voiceSection { grid-column: 1 / -1; min-width: 0; }
+.admin-grid > #voiceSection,
+.admin-grid > #breakerSection { grid-column: 1 / -1; min-width: 0; }
+.host-behavior-fields.breaker-settings-grid {
+  grid-template-columns: repeat(3, minmax(160px, 220px));
+  justify-content: start;
+}
+.breaker-health-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.breaker-health-details div { align-items: center; }
 .task-model-assignment-card { display: grid; gap: 12px; }
 .task-model-assignment-card h4 { margin: 0; font-size: 13px; font-weight: 750; }
 .task-model-fields {
@@ -263,7 +270,8 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   .identity-panel, .memory-panel, .admin-summary { grid-column: auto; grid-row: auto; }
 }
 @media (max-width: 560px) {
-  .host-behavior-fields, .task-model-fields { grid-template-columns: minmax(0, 1fr); }
+  .host-behavior-fields, .task-model-fields, .host-behavior-fields.breaker-settings-grid,
+  .breaker-health-details { grid-template-columns: minmax(0, 1fr); }
   .task-model-notes { grid-column: auto; }
   .host-behavior-instruction { grid-column: auto; }
   .host-behavior-card { padding: 13px; }
@@ -1131,10 +1139,12 @@ body {
 #skillsSection .panel-heading .eyebrow,#mcpSection .panel-heading .eyebrow,#memoriesSection .panel-heading .eyebrow,#journalsSection .panel-heading .eyebrow {color:var(--accent);}
 /* Administration editors share compact, wrapping action controls. */
 #skillsSection .edit-actions,
+#breakerSection .edit-actions,
 #taskProfileEditor .task-profile-foundation-section > .edit-actions,
 #behaviorsSection .behavior-library-actions,
 #devicesSection .device-selection-actions { display: flex; flex-wrap: wrap; align-items: center; }
 #skillsSection button.axiom-icon-button,
+#breakerSection .edit-actions button.axiom-icon-button,
 #taskProfileEditor .task-profile-foundation-section > .edit-actions button.axiom-icon-button,
 #behaviorsSection .behavior-library-actions button.axiom-icon-button,
 #devicesSection .device-selection-actions button.axiom-icon-button {

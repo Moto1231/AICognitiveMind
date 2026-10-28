@@ -11,6 +11,7 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import AnyHttpUrl
 
+from aicognitive_mind.account_mcp import account_tools, request_state
 from aicognitive_mind.body import (
     BodyRuntime,
     BrowserVoiceOutput,
@@ -19,21 +20,22 @@ from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body_sessions import BodyQueue, active_body_status, body_session
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
-from aicognitive_mind.account_mcp import account_tools, request_state
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.domain import DiagnosticObservation
 from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
-from aicognitive_mind.mcp_registry import MCPServerRegistry
-from aicognitive_mind.mcp_server import AppState, lifespan, execute_task as execute_configured_task
 from aicognitive_mind.mcp_events import STATE_KEY, event_owner, register_message_events
+from aicognitive_mind.mcp_registry import MCPServerRegistry
+from aicognitive_mind.mcp_server import AppState, lifespan
+from aicognitive_mind.mcp_server import execute_task as execute_configured_task
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.task_model_assignments import TaskKind
 from aicognitive_mind.timing import StageTimer, emit
 from aicognitive_mind.voice_settings import VoiceSettings
+
 
 async def _trace_event(storage: Any, interaction_id: str, phase: str, payload: dict[str, Any]) -> None:
     """Persist an exact MCP transport event for one Axiom interaction."""
@@ -114,8 +116,14 @@ first turn. Keep conversation context and supported evidence within the current 
 Before presenting the direct response, call complete_interaction with the actual user message,
 intended answer, unchanged idempotency_key, updated host_working_context and material current_evidence.
 Memory suggestions are optional; completion reviews the interaction even when they are absent.
-Confirm interaction_committed before reporting a successful commit. Retry an uncertain completion
-once with the identical payload and key. Do not invent a key or claim that failed persistence worked.
+Confirm interaction_committed before reporting a successful commit. If persistence is unconfirmed,
+retry once with the identical payload and key, then obey presentation.allowed. A failed persistence
+outcome may still permit the frozen response while the circuit is below threshold; never claim that
+failed persistence worked. The circuit is called The Breaker. Do not mention persistence failures,
+retries, counts, error classes, degraded review, or the threshold-reaching failure while
+presentation.report_persistence_error=false. Report the continuity problem only when that field is
+true, unless the human explicitly requests diagnostics. Do not invent a key, mutate the answer, or
+repeat an external action.
 These API lifecycle, schema, authentication and request-delivery requirements are software protocol;
 application cognitive content is the effective Administrator-owned contract returned by begin.
 
@@ -888,13 +896,16 @@ def build_chatgpt_mcp(
         proposed_memories: list[MemoryProposal] | None = None,
         current_evidence: list[ResearchObservation] | None = None,
     ) -> dict[str, Any]:
-        """MANDATORY after reasoning and before presenting Axiom's answer.
+        """MANDATORY after reasoning; returns the presentation decision for the frozen answer.
 
         response_text must be the human-facing answer you intend to present. Supply updated
         volatile host_working_context and material current_evidence. Memory suggestions are
         optional; the independent Memory Steward reviews every completed interaction and
         decides what to retain and how to classify it. Reuse the same completion payload and
-        idempotency key on retries.
+        idempotency key on retries. When persistence remains unavailable after one identical retry,
+        present only when presentation.allowed is true. Keep the failure silent when
+        presentation.report_persistence_error is false; report it only when true or when the human
+        explicitly requests diagnostics. Do not describe failed persistence as committed.
         """
         timer = StageTimer("mcp.complete_interaction")
         try:

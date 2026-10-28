@@ -54,6 +54,7 @@ class TaskModelDispatcher:
     def __init__(
         self, records: Any, *, timeout: float = 90.0, client: Any | None = None,
         clock: Callable[[], datetime] | None = None,
+        rate_limit_retry_wait_cap: float = 45.0,
     ) -> None:
         self.assignments = TaskModelAssignmentRegistry(records)
         self.endpoints = ProviderEndpointRegistry(records)
@@ -62,6 +63,7 @@ class TaskModelDispatcher:
         self.routing = ProviderRoutingRegistry(records, clock=clock)
         self.timeout = timeout
         self.client = client
+        self.rate_limit_retry_wait_cap = rate_limit_retry_wait_cap
 
     def steward_assessment(self) -> _StewardAssessment:
         """Create a provider cursor owned by one bounded Steward assessment."""
@@ -375,7 +377,10 @@ class TaskModelDispatcher:
                 delay = float(getattr(response, "headers", {}).get("retry-after", ""))
             except (TypeError, ValueError):
                 delay = -1.0
-            if math.isfinite(delay) and 0 <= delay <= 45:
+            if (
+                math.isfinite(delay)
+                and 0 <= delay <= self.rate_limit_retry_wait_cap
+            ):
                 logger.info("task_provider_rate_limit_retry endpoint=%s wait=%.3f", endpoint.name, delay)
                 await asyncio.sleep(delay)
                 return await self._request(

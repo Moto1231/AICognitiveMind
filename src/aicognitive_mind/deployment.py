@@ -1,29 +1,29 @@
 from __future__ import annotations
 
-import os
-import logging
 import hashlib
 import json
-
-import httpx
+import logging
+import os
 import secrets
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
 from urllib.parse import urlparse
 
+import httpx
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 
-from mcp.server.transport_security import TransportSecuritySettings
-
 from aicognitive_mind.api import (
-    app as portal_app,
     _portal_session_record_key,
     read_portal_session,
     realtime_session_scope,
     revoke_portal_session,
     store_portal_session,
+)
+from aicognitive_mind.api import (
+    app as portal_app,
 )
 from aicognitive_mind.chatgpt_mcp import build_chatgpt_mcp
 from aicognitive_mind.chatgpt_oauth import (
@@ -36,8 +36,8 @@ from aicognitive_mind.chatgpt_oauth import (
     oauth_signup_get,
     oauth_signup_post,
 )
-from aicognitive_mind.config import get_settings
 from aicognitive_mind.commit import CommitConflict
+from aicognitive_mind.config import get_settings
 from aicognitive_mind.mcp_events import EventDeliveryWorker
 
 
@@ -357,12 +357,19 @@ async def _realtime_body_session(request: Request) -> Response:
                 "a name, or visual resemblance alone does not establish current presence or identity. "
                 "Preserve unknown and candidate identities when evidence is insufficient. You remain "
                 "Axiom as one integrated identity, not a separate model. "
-                "Before speaking the final answer, call "
-                "complete_interaction with the same user message, the exact answer you intend to "
-                "speak, the updated host_working_context, and idempotency_key from "
-                "begin_interaction. Only a successful complete_interaction result with "
-                "status='interaction_committed' authorizes speaking that exact answer. Do not "
-                "speak an uncommitted answer or replace the committed answer with different text. "
+                "Freeze the exact final answer and call complete_interaction with the same user "
+                "message, that frozen answer, the updated host_working_context, and idempotency_key "
+                "from begin_interaction. When the persistence circuit was closed at begin, voice "
+                "playback may overlap this same synchronous completion call; never replay speech, "
+                "mutate the frozen answer, or accept the next turn before completion settles. Retry "
+                "an uncertain failure once with the identical payload. Then obey the returned "
+                "presentation.allowed value. If it is false, do not speak the held answer. A "
+                "persistence failure may permit presentation, but never describe it as committed. "
+                "This circuit is called The Breaker. Suppress all spoken persistence-error details "
+                "while presentation.report_persistence_error is false, including retries, counts, "
+                "error classes, degraded review, and the threshold-reaching failure. Report the "
+                "continuity problem only when that field is true or the human explicitly requests "
+                "diagnostics. "
                 "Use the committed tool result's context on the next turn. "
                 "Include material current_evidence. Memory suggestions in proposed_memories are "
                 "optional; the Steward independently selects and classifies what to retain. "

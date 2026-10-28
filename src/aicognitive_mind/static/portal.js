@@ -27,6 +27,10 @@ const state = {
   cognitiveConfiguration: null,
   cognitiveDraft: null,
   cognitiveSaving: false,
+  breakerSettings: null,
+  breakerDraft: null,
+  breakerSaving: false,
+  breakerLoadRevision: 0,
   foundationIdentity: null,
   taskFoundationDraft: null,
   taskFoundationSaving: false,
@@ -2692,6 +2696,7 @@ const adminSectionIds = {
   journals: "journalsSection",
   overview: "overviewSection",
   foundations: "foundationsSection",
+  breaker: "breakerSection",
   devices: "devicesSection",
   voice: "voiceSection",
 };
@@ -2721,6 +2726,7 @@ document.getElementById("continuityRefreshButton")?.addEventListener("click", re
 async function refreshAdmin() {
   const updates = [refresh()];
   if (document.getElementById("foundationsSection")?.classList.contains("hidden") === false) updates.push(refreshFoundations());
+  if (typeof refreshBreakerSettings === "function" && document.getElementById("breakerSection")?.classList.contains("hidden") === false) updates.push(refreshBreakerSettings());
   if (document.getElementById("skillsSection")?.classList.contains("hidden") === false) {
     updates.push(refreshSkillDrafts());
   }
@@ -3244,6 +3250,7 @@ function showAdminSection(sectionName) {
   if (sectionName === "devices") refreshDeviceInventory();
   if (sectionName === "skills") refreshSkillDrafts();
   if (sectionName === "foundations") refreshFoundations();
+  if (sectionName === "breaker") refreshBreakerSettings();
   if (sectionName === "overview") refreshDiagnostics();
   if (sectionName === "mcp" && state.adminAuthorized) refreshIntegrations();
   if (sectionName === "tools") {
@@ -3724,6 +3731,116 @@ async function refreshFoundations() {
   await Promise.all([refreshIdentityConfiguration(), refreshStartupConfiguration()]);
 }
 
+const breakerFieldIds = {
+  consecutive_failure_limit: "breakerConsecutiveLimit",
+  rolling_failure_limit: "breakerRollingLimit",
+  rolling_window_size: "breakerRollingWindow",
+  provider_request_timeout_seconds: "breakerProviderTimeout",
+  steward_assessment_timeout_seconds: "breakerAssessmentTimeout",
+  rate_limit_retry_wait_cap_seconds: "breakerRetryWaitCap",
+};
+
+function breakerFormPayload() {
+  return Object.fromEntries(Object.entries(breakerFieldIds).map(([key, id]) => [
+    key, Number(document.getElementById(id).value),
+  ]));
+}
+
+function breakerFormValid(payload = breakerFormPayload()) {
+  const integerFields = [
+    "consecutive_failure_limit", "rolling_failure_limit", "rolling_window_size",
+  ];
+  if (!Object.values(payload).every(Number.isFinite)) return false;
+  if (!integerFields.every(key => Number.isInteger(payload[key]))) return false;
+  if (payload.consecutive_failure_limit < 1 || payload.consecutive_failure_limit > 20) return false;
+  if (payload.rolling_window_size < 20 || payload.rolling_window_size > 500) return false;
+  if (payload.rolling_failure_limit < payload.consecutive_failure_limit || payload.rolling_failure_limit > payload.rolling_window_size) return false;
+  if (payload.provider_request_timeout_seconds < 1 || payload.provider_request_timeout_seconds > 120) return false;
+  if (payload.steward_assessment_timeout_seconds < 5 || payload.steward_assessment_timeout_seconds > 300) return false;
+  return payload.rate_limit_retry_wait_cap_seconds >= 0 && payload.rate_limit_retry_wait_cap_seconds <= 120;
+}
+
+function renderBreakerSettings() {
+  const value = state.breakerDraft || state.breakerSettings;
+  for (const [key, id] of Object.entries(breakerFieldIds)) {
+    document.getElementById(id).value = value?.[key] ?? "";
+  }
+  const health = state.breakerSettings?.health || {};
+  document.getElementById("breakerHealthStatus").textContent = displayLabel(health.status || "unavailable");
+  document.getElementById("breakerHealthConsecutive").textContent = Number.isInteger(health.consecutive_failures)
+    ? `${health.consecutive_failures} / ${state.breakerSettings?.consecutive_failure_limit ?? "—"}` : "—";
+  document.getElementById("breakerHealthRolling").textContent = Number.isInteger(health.rolling_failures)
+    ? `${health.rolling_failures} / ${state.breakerSettings?.rolling_failure_limit ?? "—"} in ${health.rolling_sample_size ?? 0} of ${state.breakerSettings?.rolling_window_size ?? "—"}` : "—";
+  document.getElementById("breakerHealthLastFailure").textContent = health.last_failure_class || "None";
+  updateBreakerEditorState();
+}
+
+function updateBreakerEditorState() {
+  const editing = Boolean(state.breakerDraft);
+  const busy = state.breakerSaving === true;
+  const payload = breakerFormPayload();
+  for (const id of Object.values(breakerFieldIds)) {
+    document.getElementById(id).readOnly = !editing || busy;
+  }
+  document.getElementById("breakerEdit").disabled = !state.breakerSettings || editing || busy;
+  document.getElementById("breakerCancel").disabled = !editing || busy;
+  document.getElementById("breakerSave").disabled = !editing || busy
+    || !breakerFormValid(payload) || JSON.stringify(payload) === state.breakerDraft?.baseline;
+}
+
+async function refreshBreakerSettings() {
+  if (state.breakerDraft || state.breakerSaving) return;
+  const revision = state.breakerLoadRevision = (state.breakerLoadRevision || 0) + 1;
+  const status = document.getElementById("breakerSettingsStatus");
+  if (status) status.textContent = "Loading The Breaker settings…";
+  try {
+    const result = await api("/v1/admin/continuity-settings", {}, true);
+    if (revision !== state.breakerLoadRevision || state.breakerDraft || state.breakerSaving) return;
+    state.breakerSettings = result;
+    renderBreakerSettings();
+    if (status) status.textContent = `Revision ${result.revision} loaded.`;
+  } catch (error) {
+    if (revision === state.breakerLoadRevision && !state.breakerDraft && !state.breakerSaving && status) status.textContent = error.message;
+  }
+}
+
+function editBreakerSettings() {
+  if (!state.breakerSettings || state.breakerDraft || state.breakerSaving) return;
+  state.breakerLoadRevision = (state.breakerLoadRevision || 0) + 1;
+  const values = Object.fromEntries(Object.keys(breakerFieldIds).map(key => [key, state.breakerSettings[key]]));
+  state.breakerDraft = { ...values, revision: state.breakerSettings.revision, baseline: JSON.stringify(values) };
+  renderBreakerSettings();
+  document.getElementById("breakerSettingsStatus").textContent = "Editing The Breaker settings.";
+}
+
+function cancelBreakerSettings() {
+  if (state.breakerSaving) return;
+  state.breakerDraft = null;
+  renderBreakerSettings();
+  document.getElementById("breakerSettingsStatus").textContent = "Changes cancelled.";
+}
+
+async function saveBreakerSettings() {
+  updateBreakerEditorState();
+  if (document.getElementById("breakerSave").disabled) return;
+  const payload = { expected_revision: state.breakerDraft.revision, ...breakerFormPayload() };
+  state.breakerSaving = true;
+  updateBreakerEditorState();
+  try {
+    state.breakerSettings = await api("/v1/admin/continuity-settings", {
+      method: "PUT", body: JSON.stringify(payload),
+    }, true);
+    state.breakerDraft = null;
+    renderBreakerSettings();
+    document.getElementById("breakerSettingsStatus").textContent = "The Breaker settings were saved for this Mind.";
+  } catch (error) {
+    document.getElementById("breakerSettingsStatus").textContent = error.message;
+  } finally {
+    state.breakerSaving = false;
+    updateBreakerEditorState();
+  }
+}
+
 function updateTaskFoundationEditor() {
   const draft = state.taskFoundationDraft;
   const editing = draft?.task === state.activeTaskProfile;
@@ -3780,6 +3897,10 @@ for (const id of ["foundationContract", "foundationStartup"]) document.getElemen
 document.getElementById("startupEdit")?.addEventListener("click", editStartupConfiguration);
 document.getElementById("startupCancel")?.addEventListener("click", cancelStartupConfiguration);
 document.getElementById("startupSave")?.addEventListener("click", saveStartupConfiguration);
+for (const id of Object.values(breakerFieldIds)) document.getElementById(id)?.addEventListener("input", updateBreakerEditorState);
+document.getElementById("breakerEdit")?.addEventListener("click", editBreakerSettings);
+document.getElementById("breakerCancel")?.addEventListener("click", cancelBreakerSettings);
+document.getElementById("breakerSave")?.addEventListener("click", saveBreakerSettings);
 el.taskFoundationEdit?.addEventListener("click", editTaskFoundation);
 el.taskFoundationCancel?.addEventListener("click", cancelTaskFoundationEdit);
 el.taskFoundationSave?.addEventListener("click", saveTaskFoundation);

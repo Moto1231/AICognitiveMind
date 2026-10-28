@@ -29,8 +29,12 @@ enforced in code. The whole interaction is journaled even when no learning is sa
 The host waits for begin before dependent research, task tools or final reasoning.
 Independent preparation may overlap only when the host supports it and it cannot
 depend on missing context. Task-specific skills are loaded when their task applies.
-The exact intended response is committed by complete before it is presented to the
-human. Retrying complete with the same key and unchanged input reuses its receipt.
+The host freezes the exact intended response before complete. Presentation is
+first-priority: text does not wait for memory persistence, and a voice turn may overlap
+its single synchronous completion call with playback while keeping the microphone
+closed. An identical uncertain retry reuses the same key, answer and receipt; it never
+replays speech or external actions. The completion result's `presentation.allowed`
+field is authoritative when the persistence circuit requires recovery.
 
 Both recall and completion review use the saved Memory Recall provider pool.
 Within an assessment, a successful provider continues handling its search and
@@ -53,8 +57,30 @@ finite eligible pool within the shared deadline. The normal skip path uses one
 model decision and no search. Exhausting the eligible provider pool is distinct
 from reaching the overall deadline before the chain completes. Both are explicit
 errors; neither is reported as an intelligent no-recall or no-learning decision.
-An exhausted or timed-out review does not commit memories or the interaction
-journal. Successful idempotency receipts continue to prevent duplicate commits.
+An exhausted or timed-out completion review atomically commits the interaction journal
+and receipt with `memory_review.outcome=unavailable` and zero memory, evidence, belief,
+or reframe writes. Retrying that committed degraded outcome reuses its receipt without
+replaying providers. A pre-review transport/storage failure remains eligible for one
+identical retry. Successful idempotency receipts continue to prevent duplicate commits.
+
+The final persistence outcome is recorded separately in a content-free, Mind-scoped
+runtime record. One interaction key contributes at most one outcome: a failed attempt
+followed by a successful identical retry becomes success. The presentation circuit opens
+at the revisioned, Mind-scoped thresholds managed on The Breaker's Administration form.
+The packaged defaults are five consecutive failures or 35 failures in the rolling last
+100 outcomes. The same form owns the provider-request timeout, total Steward-assessment
+deadline and bounded rate-limit retry wait. An interaction uses the settings revision
+captured when it began. The failure
+that reaches a threshold remains presentable; a later failed recovery is withheld. A
+success resets the consecutive streak but does not erase rolling history.
+
+The presentation circuit is named **The Breaker**. It is also the user-facing persistence
+error boundary. Below it, and on the threshold-reaching failure, normal responses remain
+silent about persistence errors; typed details remain operational diagnostics. Completion
+sets `presentation.report_persistence_error=true` only when a later recovery fails while
+The Breaker was already open. Explicit diagnostic requests can still inspect the suppressed
+details, and non-persistence safety, authorization, delivery and connection errors are never
+hidden by this policy.
 
 Configure a working Memory Recall endpoint in Task Profiles before use. Model tests
 use scripted responses; the explicitly named `mcp_test_server.py` harness tests

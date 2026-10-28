@@ -195,6 +195,7 @@ class ModelMemorySteward(MemoryStewardTool):
         self.assessment: dict[str, Any] = {}
         self._public_context: dict[str, Any] = {}
         self._validation_corrections = 0
+        self.assessment_timeout_seconds = 60.0
 
     async def _run(
         self, phase: Literal["recall", "review"], result: dict[str, Any],
@@ -202,7 +203,7 @@ class ModelMemorySteward(MemoryStewardTool):
     ) -> Any:
         provider_session: Any = None
         last_rejection: StewardProtocolError | None = None
-        deadline = asyncio.timeout(60)
+        deadline = asyncio.timeout(self.assessment_timeout_seconds)
         try:
             async with deadline:
                 adapter = RECALL_STEPS if phase == "recall" else REVIEW_STEPS

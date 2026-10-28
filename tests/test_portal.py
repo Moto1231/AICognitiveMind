@@ -69,7 +69,8 @@ class PortalTests(unittest.TestCase):
         button_icons = (STATIC_DIR / "button_icons.js").read_text(encoding="utf-8")
 
         sections = {
-            "overview": "overview", "foundations": "foundations", "behaviors": "behaviors",
+            "overview": "overview", "foundations": "foundations", "breaker": "breaker",
+            "behaviors": "behaviors",
             "devices": "devices", "voice": "voice", "tasks": "tasks", "mcp": "mcp",
             "tools": "tools", "skills": "skills", "memories": "memories", "journals": "journals",
         }
@@ -222,6 +223,39 @@ class PortalTests(unittest.TestCase):
         for name in ("foundationEdit", "foundationSave", "foundationCancel"):
             self.assertNotIn(name, foundations.fields)
         self.assertEqual(foundations.fields["startupStatus"][1]["role"], "status")
+
+    def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        pages = PortalPageMap(markup)
+        stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
+        script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
+
+        self.assertEqual(pages.navigation["breaker"]["text"].strip(), "The Breaker")
+        self.assertRegex(script, r'\bbreaker:\s*"breakerSection"')
+        field_ids = (
+            "breakerConsecutiveLimit", "breakerRollingLimit", "breakerRollingWindow",
+            "breakerProviderTimeout", "breakerAssessmentTimeout", "breakerRetryWaitCap",
+        )
+        for field_id in field_ids:
+            with self.subTest(field_id=field_id):
+                tag, attributes, page = pages.elements[field_id]
+                self.assertEqual((tag, page), ("input", "breakerSection"))
+                self.assertEqual(attributes["type"], "number")
+                self.assertIn("readonly", attributes)
+        for control_id in ("breakerEdit", "breakerSave", "breakerCancel"):
+            self.assertIn("disabled", pages.elements[control_id][1])
+        back_controls = [
+            attrs for tag, attrs in pages.page_controls["breakerSection"]
+            if tag == "button" and "data-admin-back" in attrs
+        ]
+        self.assertEqual(len(back_controls), 1)
+        self.assertEqual(back_controls[0]["aria-label"], "Back to System Overview")
+        self.assertEqual(pages.elements["breakerSettingsStatus"][1]["role"], "status")
+        breaker_markup = markup.split('id="breakerSection"', 1)[1].split('id="skillsSection"', 1)[0]
+        self.assertNotIn("<small>", breaker_markup)
+        self.assertNotIn("Changes apply to new interactions only", breaker_markup)
+        self.assertIn("grid-template-columns: repeat(3, minmax(160px, 220px));", stylesheet)
+        self.assertIn("#breakerSection .edit-actions button.axiom-icon-button", stylesheet)
 
     def test_endpoint_api_key_is_an_accessible_masked_text_input(self) -> None:
         class Controls(HTMLParser):
