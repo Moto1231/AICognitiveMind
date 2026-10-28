@@ -8,8 +8,13 @@ from aicognitive_mind.body_sessions import BodySessionHeartbeat, active_body_sta
 
 
 CLIENT_STATE = {
-    "client_revision": "20261027-host-recovery", "hearing": True, "voice": True,
-    "page_visible": True, "microphone_live": True, "microphone_enabled": False,
+    "client_revision": "20261027-single-body-owner",
+    "hearing": True,
+    "voice": True,
+    "page_visible": True,
+    "page_focused": True,
+    "microphone_live": True,
+    "microphone_enabled": False,
     "voice_mode": "connected_host", "last_playback": "started",
 }
 
@@ -22,14 +27,20 @@ class BodyClientStateTests(unittest.IsolatedAsyncioTestCase):
         report = BodySessionHeartbeat.model_validate({"client_state": CLIENT_STATE})
         self.assertEqual(report.client_state.model_dump(exclude_none=True), CLIENT_STATE)
         self.assertIsNone(BodySessionHeartbeat.model_validate({}).client_state)
+        self.assertTrue(BodySessionHeartbeat.model_validate({"takeover": True}).takeover)
+        self.assertTrue(BodySessionHeartbeat.model_validate({"release": True}).release)
         for invalid in (
-            {"extra": "not allowed"}, {"client_state": {"error": "private content"}},
+            {"extra": "not allowed"},
+            {"client_state": {"error": "private content"}},
             {"client_state": {"audio_data_url": "data:audio/webm;base64,AAAA"}},
             {"client_state": {"hearing": "true"}}, {"client_state": {"voice": 1}},
             {"client_state": {"client_revision": "a" * 65}},
             {"client_state": {"client_revision": "not\na revision"}},
             {"client_state": {"voice_mode": "other"}},
             {"client_state": {"last_playback": "raw error text"}},
+            {"takeover": "true"},
+            {"release": 1},
+            {"takeover": True, "release": True},
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValidationError):
                 BodySessionHeartbeat.model_validate(invalid)

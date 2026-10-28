@@ -33,6 +33,7 @@
         
       </div>
       <div class="page-links">
+        <div id="bodyOwnershipStatus" class="host-status" data-state="loading" aria-live="polite">Body ownership pending</div>
         <div id="connectedHostStatus" class="host-status" data-state="loading" aria-live="polite">Checking connected hosts…</div>
       </div>
     </nav>
@@ -110,6 +111,7 @@
     const interactionHistory = document.getElementById("interactionHistory");
     const chatEmpty = document.getElementById("chatEmpty");
     const backToPortal = document.getElementById("backToPortal");
+    const bodyOwnershipStatus = document.getElementById("bodyOwnershipStatus");
     const connectedHostStatus = document.getElementById("connectedHostStatus");
 
     let cameraStream = null;
@@ -369,6 +371,8 @@
     const playedMouthDeliveries = new Set();
     let mouthEvents = null;
     let pageRefreshProbeBusy = false;
+    let bodyOwnershipActive = false;
+    let bodyOwnershipReleasePending = false;
 
     function setStatus(message) {
       statusBox.textContent = message;
@@ -377,7 +381,7 @@
     async function refreshConnectedHostStatus() {
       // This status endpoint must not overlap itself when a response is slower
       // than the five-second refresh interval or the server starts rate limiting.
-      if (!connectedHostStatus || document.hidden || refreshConnectedHostStatus.inFlight ||
+      if (!bodyOwnershipActive || !connectedHostStatus || document.hidden || refreshConnectedHostStatus.inFlight ||
           Date.now() < (refreshConnectedHostStatus.nextPollAt || 0)) return;
       refreshConnectedHostStatus.inFlight = true;
       try {
@@ -452,6 +456,7 @@
     }
 
     async function requestSensoryObservation(modality, payload) {
+      if (!bodyOwnershipActive) throw new Error("This Body window is not active.");
       const controller = new AbortController();
       sensoryRequests.set(modality, controller);
       sensoryRequestInFlight = true;
@@ -520,7 +525,7 @@
     }
 
     async function checkForBodyPageUpdate() {
-      if (document.hidden || pageRefreshProbeBusy) return;
+      if (!bodyOwnershipActive || document.hidden || pageRefreshProbeBusy) return;
       pageRefreshProbeBusy = true;
       try {
         const response = await bodyFetch(
@@ -573,12 +578,12 @@
     }
 
     async function speakIntent(intent, isCurrent = () => true, validateScope = async () => true, owner = "mouth") {
-      if (!voiceEnabled || !intent?.text) return false;
+      if (!bodyOwnershipActive || !voiceEnabled || !intent?.text) return false;
       cancelBodySpeech();
       const generation = speechGeneration;
       activeSpeechOwner = owner;
       lastPlaybackState = "idle";
-      const current = () => voiceEnabled && generation === speechGeneration && isCurrent();
+      const current = () => bodyOwnershipActive && voiceEnabled && generation === speechGeneration && isCurrent();
       const stream = microphoneStream;
       const tracks = stream?.getAudioTracks() || [];
       // Prevent the browser/Fish voice from becoming the next microphone turn.
@@ -705,7 +710,7 @@
     }
 
     async function refreshSharedVoiceSettings() {
-      if (!voiceEnabled || document.hidden) return;
+      if (!bodyOwnershipActive || !voiceEnabled || document.hidden) return;
       try {
         const response = await bodyFetch("/v1/body/voice/settings", { cache: "no-store" });
         if (!response.ok) return;
@@ -753,7 +758,7 @@
     async function startTalking({ realtime = false } = {}) {
       // Hearing and Voice normally use the attached host's existing audio path.
       // Realtime remains available to a caller that explicitly selects it.
-      if (!realtime) return;
+      if (!bodyOwnershipActive || !realtime) return;
       if (!hearingEnabled || !voiceEnabled || talkEnabled || talkBusy) return;
       if (!window.RTCPeerConnection || !navigator.mediaDevices?.getUserMedia) {
         setStatus("Realtime voice is unavailable in this browser.");
@@ -866,7 +871,7 @@
     }
 
     async function consumeExpressionOutputs() {
-      if (!voiceEnabled) return false;
+      if (!bodyOwnershipActive || !voiceEnabled) return false;
       mouthDrainRequested = true;
       if (mouthPollBusy) return false;
       mouthPollBusy = true;
@@ -876,7 +881,7 @@
         // intents remain; there is no timer or repeated empty-queue request.
         do {
           mouthDrainRequested = false;
-          while (voiceEnabled) {
+          while (bodyOwnershipActive && voiceEnabled) {
             const mouthResponse = await bodyFetch("/v1/body/mouth/next", {
               cache: "no-store", acknowledgeDelivery: false, signal: AbortSignal.timeout(15_000)
             });
@@ -899,7 +904,7 @@
             if (!acknowledged.ok) throw new Error("Voice delivery acknowledgment failed");
             consumed = true;
           }
-        } while (voiceEnabled && mouthDrainRequested);
+        } while (bodyOwnershipActive && voiceEnabled && mouthDrainRequested);
         return consumed;
       } finally {
         mouthPollBusy = false;
@@ -911,7 +916,7 @@
     }
 
     function connectMouthEvents() {
-      if (!voiceEnabled) {
+      if (!bodyOwnershipActive || !voiceEnabled) {
         mouthEvents?.close();
         mouthEvents = null;
         return;
@@ -921,50 +926,144 @@
         "/v1/body/mouth/events?session_id=" + encodeURIComponent(bodySessionId)
       );
       mouthEvents.addEventListener("voice-ready", () => {
-        if (!voiceEnabled) return;
+        if (!bodyOwnershipActive || !voiceEnabled) return;
         consumeExpressionOutputs().catch(reportVoiceFailure);
       });
     }
 
-    async function registerActiveBodySession() {
+    function bodyWindowCanOwn() {
+      return !document.hidden &&
+        (typeof document.hasFocus !== "function" || document.hasFocus());
+    }
+
+    function setBodyControlsEnabled(enabled) {
+      for (const control of [visionToggle, hearingToggle, voiceToggle, interactionMessage,
+        sendInteractionButton, clearInteractionButton]) {
+        if (control) control.disabled = !enabled;
+      }
+    }
+
+    function pauseBodyOwnership(message = "Body paused — another window may be active.") {
+      bodyOwnershipActive = false;
+      mouthEvents?.close();
+      mouthEvents = null;
+      stopTalking("Body ownership paused.");
+      cancelBodySpeech();
+      if (visionEnabled) disableVision({ persist: false });
+      if (hearingEnabled) disableHearing({ persist: false });
+      setBodyControlsEnabled(false);
+      bodyOwnershipStatus.dataset.state = "disconnected";
+      bodyOwnershipStatus.textContent = "Body paused";
+      setStatus(message);
+    }
+
+    function savedSenseEnabled(key) {
+      const value = localStorage.getItem("aicognitive_mind." + key);
+      return value === "on" || (value === null && localStorage.getItem("aicognitive_mind.senses") === "on");
+    }
+
+    async function activateBodyOwnership(replaced = false) {
+      const newlyActive = !bodyOwnershipActive;
+      bodyOwnershipActive = true;
+      setBodyControlsEnabled(true);
+      bodyOwnershipStatus.dataset.state = "connected";
+      bodyOwnershipStatus.textContent = replaced ? "Active Body · previous window paused" : "Active Body";
+      if (newlyActive) {
+        if (savedSenseEnabled("vision")) await enableVision();
+        if (savedSenseEnabled("hearing")) await enableHearing();
+      }
+      connectMouthEvents();
+      await consumeExpressionOutputs().catch(reportVoiceFailure);
+      refreshSharedVoiceSettings();
+      refreshConnectedHostStatus();
+    }
+
+    async function registerActiveBodySession({ takeover = false } = {}) {
       if (registerActiveBodySession.inFlight) return;
+      if (!bodyWindowCanOwn() || bodyOwnershipReleasePending) return false;
       registerActiveBodySession.inFlight = true;
       try {
         const tracks = microphoneStream?.getAudioTracks() || [];
-        await bodyFetch("/v1/body/session/active", {
+        const response = await bodyFetch("/v1/body/session/active", {
           method: "POST",
           signal: AbortSignal.timeout(10_000),
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ client_state: {
-            client_revision: "20261027-host-recovery",
+          body: JSON.stringify({ takeover, client_state: {
+            client_revision: "20261027-single-body-owner",
             hearing: hearingEnabled,
             voice: voiceEnabled,
             page_visible: !document.hidden,
+            page_focused: bodyWindowCanOwn(),
             microphone_live: tracks.some(track => track.readyState === "live"),
             microphone_enabled: tracks.some(track => track.readyState === "live" && track.enabled !== false),
             voice_mode: !voiceEnabled ? "off" : realtimeRequested && (talkEnabled || talkBusy) ? "realtime" : "connected_host",
             last_playback: lastPlaybackState
           } })
         });
+        if (response.status === 409) {
+          pauseBodyOwnership("Body paused because another window is active.");
+          return false;
+        }
+        if (!response.ok) throw new Error(await responseErrorMessage(response));
+        const ownership = await response.json();
+        if (ownership.active !== true) {
+          pauseBodyOwnership("Body ownership is unavailable.");
+          return false;
+        }
+        if (!bodyWindowCanOwn()) {
+          pauseBodyOwnership("Body paused while this window is not focused.");
+          bodyFetch("/v1/body/session/active", {
+            method: "POST",
+            keepalive: true,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ release: true })
+          }).catch(() => {});
+          return false;
+        }
+        await activateBodyOwnership(ownership.replaced === true);
+        return true;
       } catch (_) {
-        // Keep the Body usable when session registration is temporarily unavailable.
+        if (!bodyOwnershipActive) {
+          bodyOwnershipStatus.dataset.state = "unavailable";
+          bodyOwnershipStatus.textContent = "Body ownership unavailable";
+          setBodyControlsEnabled(false);
+        }
+        return false;
       } finally {
         registerActiveBodySession.inFlight = false;
       }
     }
 
+    function releaseBodyOwnership(message = "Body paused while this window is not focused.") {
+      const owned = bodyOwnershipActive;
+      pauseBodyOwnership(message);
+      if (!owned || bodyOwnershipReleasePending) return;
+      bodyOwnershipReleasePending = true;
+      bodyFetch("/v1/body/session/active", {
+        method: "POST",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ release: true })
+      }).catch(() => {}).finally(() => {
+        bodyOwnershipReleasePending = false;
+        if (bodyWindowCanOwn()) resumeBodyConnection();
+      });
+    }
+
     let bodyReconnectBusy = false;
     async function resumeBodyConnection() {
-      if (document.hidden || bodyReconnectBusy) return;
+      if (!bodyWindowCanOwn() || bodyOwnershipReleasePending || bodyReconnectBusy) return;
       bodyReconnectBusy = true;
       try {
-        await registerActiveBodySession();
-        // A restored mobile page can retain an EventSource whose connection died
-        // while suspended. Reopen it and drain any already queued expression.
-        mouthEvents?.close();
-        mouthEvents = null;
-        connectMouthEvents();
-        await consumeExpressionOutputs();
+        const wasActive = bodyOwnershipActive;
+        if (await registerActiveBodySession({ takeover: !wasActive }) && wasActive) {
+          // A restored page can retain an EventSource whose connection died
+          // while suspended even though the browser did not deliver a blur.
+          mouthEvents?.close();
+          mouthEvents = null;
+          connectMouthEvents();
+          await consumeExpressionOutputs().catch(reportVoiceFailure);
+        }
       } catch (_) {
         // Queued expression remains available for the next wake-up attempt.
       } finally {
@@ -1029,6 +1128,10 @@
 
     async function submitTextInteraction(event) {
       event.preventDefault();
+      if (!bodyOwnershipActive) {
+        setStatus("This Body window is paused. Focus it to make it active.");
+        return;
+      }
       const message = interactionMessage.value.trim();
       if (!message) return;
 
@@ -1351,6 +1454,7 @@
     }
 
     async function perceiveAudio(generation) {
+      if (!bodyOwnershipActive) return;
       if (sensoryRequests.has("audio")) { await delay(250); return; }
       if (talkEnabled || talkBusy) { await delay(250); return; }
       if (talkSpeaking || window.speechSynthesis?.speaking) {
@@ -1390,7 +1494,7 @@
     }
 
     async function runVisionLoop(generation) {
-      while (visionEnabled && generation === sensoryLoopGeneration) {
+      while (bodyOwnershipActive && visionEnabled && generation === sensoryLoopGeneration) {
         if (!document.hidden && !sendInteractionButton.disabled) {
           try {
             await perceiveVision(generation);
@@ -1405,7 +1509,7 @@
     }
 
     async function runHearingLoop(generation) {
-      while (hearingEnabled && generation === sensoryLoopGeneration) {
+      while (bodyOwnershipActive && hearingEnabled && generation === sensoryLoopGeneration) {
         if (!sendInteractionButton.disabled) {
           try {
             await perceiveAudio(generation);
@@ -1439,6 +1543,7 @@
     }
 
     async function enableVision() {
+      if (!bodyOwnershipActive) return;
       if (visionEnabled) return;
       if (!navigator.mediaDevices?.getUserMedia) {
         setStatus("This browser does not expose camera access.");
@@ -1492,6 +1597,7 @@
     }
 
     async function enableHearing() {
+      if (!bodyOwnershipActive) return;
       if (hearingEnabled) return;
       if (!navigator.mediaDevices?.getUserMedia) {
         setStatus("This browser does not expose microphone access.");
@@ -1609,26 +1715,33 @@
     }
 
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) {
+      if (document.hidden) {
+        releaseBodyOwnership();
+      } else if (bodyWindowCanOwn()) {
         resumeBodyConnection();
         checkForBodyPageUpdate();
-        refreshSharedVoiceSettings();
-        refreshConnectedHostStatus();
       }
     });
+    window.addEventListener("focus", resumeBodyConnection);
+    window.addEventListener("blur", () => releaseBodyOwnership());
     window.addEventListener("pageshow", resumeBodyConnection);
+    window.addEventListener("pagehide", () => releaseBodyOwnership());
     window.addEventListener("beforeunload", () => {
+      releaseBodyOwnership("Body closed.");
       stopTalking();
       disableVision({ persist: false });
       disableHearing({ persist: false });
       window.speechSynthesis?.cancel();
     });
 
-    registerActiveBodySession();
-    refreshSharedVoiceSettings();
-    refreshConnectedHostStatus();
-    window.setInterval(registerActiveBodySession, 5_000);
-    connectMouthEvents();
+    setBodyControlsEnabled(false);
+    resumeBodyConnection();
+    window.setInterval(() => {
+      // Background recovery may acquire an expired lease, but it must never
+      // steal a fresh owner. Only an actual focus/pageshow transition takes over.
+      if (bodyWindowCanOwn()) registerActiveBodySession();
+      else if (bodyOwnershipActive) releaseBodyOwnership();
+    }, 5_000);
     window.setInterval(refreshSharedVoiceSettings, 10_000);
     window.setInterval(refreshConnectedHostStatus, 5_000);
     checkForHostCameraRequest();
@@ -1638,16 +1751,10 @@
     checkForBodyPageUpdate();
     window.setInterval(checkForBodyPageUpdate, 12_000);
     refreshToggleUi();
-    if (localStorage.getItem("aicognitive_mind.vision") === "on" ||
-        (localStorage.getItem("aicognitive_mind.vision") === null && localStorage.getItem("aicognitive_mind.senses") === "on")) {
-      enableVision();
-    } else {
+    if (!savedSenseEnabled("vision")) {
       setSenseStatus("vision", "Vision is off.", "idle");
     }
-    if (localStorage.getItem("aicognitive_mind.hearing") === "on" ||
-        (localStorage.getItem("aicognitive_mind.hearing") === null && localStorage.getItem("aicognitive_mind.senses") === "on")) {
-      enableHearing();
-    } else {
+    if (!savedSenseEnabled("hearing")) {
       setSenseStatus("audio", "Hearing is off.", "idle");
     }
     if (realtimeAudio) realtimeAudio.muted = !voiceEnabled;

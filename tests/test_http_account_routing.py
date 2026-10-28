@@ -116,6 +116,14 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
+    async def activate_body(self, client, session):
+        response = await client.post(
+            "/v1/body/session/active",
+            headers={"X-Body-Session": session},
+            json={"client_state": {"page_visible": True, "page_focused": True}},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
     async def test_account_mind_matches_portal_while_root_stays_uninitialized(self):
         observed = []
         for client in (self.alpha_client, self.beta_client):
@@ -405,6 +413,13 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
             )
 
         headers = {"X-Body-Session": "same-session"}
+        for client in (self.alpha_client, self.beta_client, self.admin_client):
+            registration = await client.post(
+                "/v1/body/session/active",
+                headers=headers,
+                json={"client_state": {"page_visible": True, "page_focused": True}},
+            )
+            self.assertEqual(registration.status_code, 200, registration.text)
         spoken = await self.alpha_client.post("/v1/body/mouth/speak", headers=headers, json={"text": "Alpha output"})
         self.assertEqual(spoken.status_code, 200, spoken.text)
         expression = await self.alpha_client.post("/v1/body/face/expression", headers=headers, json={
@@ -431,6 +446,12 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         headers = {"X-Body-Session": "same-session"}
         with patch.object(api.app.state.mind_body, "interact", new_callable=AsyncMock) as root_interact:
             for client, word in ((self.alpha_client, "alpha"), (self.beta_client, "beta")):
+                registration = await client.post(
+                    "/v1/body/session/active",
+                    headers=headers,
+                    json={"client_state": {"page_visible": True, "page_focused": True}},
+                )
+                self.assertEqual(registration.status_code, 200, registration.text)
                 response = await client.post("/v1/mind/body/interact", headers=headers, json={
                     "message": "Synthetic " + word + " Body note",
                 })
@@ -548,6 +569,7 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("data:image", str(journal))
         self.assertEqual((await self.get_json(self.alpha_client, "/v1/portal/evidence"))["total"], 2)
         self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 0)
+        await self.activate_body(self.alpha_client, "parallel-senses")
         for modality in ("mouth", "face"):
             self.assertIsNone(await self.get_json(self.alpha_client, f"/v1/body/{modality}/next", headers=headers))
         self.assertEqual(await api.app.state.journal_store.read(), [])
@@ -608,6 +630,7 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await host.records.pending(), [])
         service.begin_interaction.assert_not_awaited()
         service.complete_interaction.assert_not_awaited()
+        await self.activate_body(self.alpha_client, "explicit-sensory-failure")
         for modality in ("mouth", "face"):
             self.assertIsNone(await self.get_json(self.alpha_client, f"/v1/body/{modality}/next", headers=headers))
         self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 0)
@@ -619,6 +642,7 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         host = HostRuntime(storage.mind, SimpleNamespace())
         lease = (await host.attach("Synthetic private ASR receiver", "synthetic-asr-model"))["lease_token"]
         media = b"synthetic preserved audio for private preprocessing"
+        await self.activate_body(self.alpha_client, session)
         task = asyncio.create_task(self.alpha_client.post(
             "/v1/body/ears/observe", headers={"X-Body-Session": session}, json={
                 "audio_data_url": "data:audio/webm;base64," + base64.b64encode(media).decode(),
@@ -686,6 +710,8 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["response_text"], "Yes, your recording reached me.")
         host.service.complete_interaction.assert_awaited_once()
         self.assertEqual(host.service.complete_interaction.await_args.kwargs["source"], "body:audio")
+        await self.activate_body(self.alpha_client, session)
+        await self.activate_body(self.beta_client, session)
         for modality in ("mouth", "face"):
             intent = await self.get_json(self.alpha_client, f"/v1/body/{modality}/next", headers={"X-Body-Session": session})
             self.assertEqual(intent["text"], "Yes, your recording reached me.")
@@ -760,6 +786,7 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(preserved.content, media)
         journal = await self.get_json(self.alpha_client, "/v1/mind/journal")
         self.assertEqual([item["experience"]["status"] for item in journal], ["admitted"])
+        await self.activate_body(self.alpha_client, "private-asr-boundary")
         for modality in ("mouth", "face"):
             self.assertIsNone(await self.get_json(
                 self.alpha_client, f"/v1/body/{modality}/next", headers={"X-Body-Session": "private-asr-boundary"},
@@ -920,6 +947,7 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await host.status())["requests"]["in_progress"], 0)
         self.assertEqual(await beta_records.get(beta_request["request_id"]), beta_before)
         self.assertEqual((await self.get_json(self.beta_client, "/v1/portal/evidence"))["total"], 0)
+        await self.activate_body(self.alpha_client, "sensory-timeout")
         for modality in ("mouth", "face"):
             self.assertIsNone(await self.get_json(self.alpha_client, f"/v1/body/{modality}/next", headers=headers))
         self.assertEqual(await api.app.state.journal_store.read(), [])
@@ -1153,6 +1181,7 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["kind"] for item in journal], ["sensory_evidence"] * 4)
         self.assertEqual(sorted(item["experience"]["status"] for item in journal),
                          ["admitted", "admitted", "interpreted", "interpreted"])
+        await self.activate_body(self.alpha_client, "callback-senses")
         for modality in ("mouth", "face"):
             self.assertIsNone(await self.get_json(
                 self.alpha_client, f"/v1/body/{modality}/next", headers={"X-Body-Session": "callback-senses"},
@@ -1328,7 +1357,11 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
                 "kind": "camera_request", "request_id": label + "-camera", "state": "pending",
                 "seconds": 3, "deadline": time.time() + 60, "created": time.time(), "result": {},
             })
-            registration = await client.post("/v1/body/session/active", headers=headers)
+            registration = await client.post(
+                "/v1/body/session/active",
+                headers=headers,
+                json={"client_state": {"page_visible": True, "page_focused": True}},
+            )
             self.assertEqual(registration.status_code, 200, registration.text)
             self.assertEqual((await records[label].get("active_body_session"))["session_id"], "same-session")
             camera = await self.get_json(client, "/v1/body/camera/request", headers=headers)
@@ -1355,8 +1388,13 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         headers = {"X-Body-Session": "same-client-state-session"}
         state = {
-            "client_revision": "20261027-host-recovery", "hearing": True, "voice": True,
-            "page_visible": True, "microphone_live": True, "microphone_enabled": False,
+            "client_revision": "20261027-single-body-owner",
+            "hearing": True,
+            "voice": True,
+            "page_visible": True,
+            "page_focused": True,
+            "microphone_live": True,
+            "microphone_enabled": False,
             "voice_mode": "connected_host", "last_playback": "started",
         }
         alpha_records = RuntimeRecords(scope_storage(api.app.state.storage, self.alpha.mind_id).mind)
@@ -1385,7 +1423,10 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rejected.status_code, 400, rejected.text)
 
         other = await self.beta_client.post("/v1/body/session/active", headers=headers, json={
-            "client_state": {"client_revision": "other-client", "hearing": False},
+            "client_state": {
+                "client_revision": "other-client", "hearing": False,
+                "page_visible": True, "page_focused": True,
+            },
         })
         self.assertEqual(other.status_code, 200, other.text)
         self.assertEqual((await active_body_status(alpha_records))["client_state"], state)
@@ -1399,6 +1440,85 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.alpha_client.post(
             "/v1/body/session/active", headers=headers, json={},
         )).status_code, 200)
+
+    async def test_active_body_session_requires_explicit_takeover_and_owner_release(self):
+        records = RuntimeRecords(scope_storage(api.app.state.storage, self.alpha.mind_id).mind)
+        first_headers = {"X-Body-Session": "first-live-window"}
+        second_headers = {"X-Body-Session": "second-live-window"}
+
+        first = await self.alpha_client.post(
+            "/v1/body/session/active", headers=first_headers, json={"client_state": {
+                "client_revision": "single-owner-test",
+                "page_visible": True,
+                "page_focused": True,
+                "voice": True,
+            }},
+        )
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(first.json(), {"registered": True, "active": True, "replaced": False})
+
+        competing = await self.alpha_client.post(
+            "/v1/body/session/active", headers=second_headers, json={},
+        )
+        self.assertEqual(competing.status_code, 409, competing.text)
+        self.assertEqual((await records.get("active_body_session"))["session_id"], "first-live-window")
+
+        takeover = await self.alpha_client.post(
+            "/v1/body/session/active", headers=second_headers, json={
+                "takeover": True,
+                "client_state": {"page_visible": True, "page_focused": True},
+            },
+        )
+        self.assertEqual(takeover.status_code, 200, takeover.text)
+        self.assertEqual(takeover.json(), {"registered": True, "active": True, "replaced": True})
+        self.assertEqual((await records.get("active_body_session"))["session_id"], "second-live-window")
+
+        stale_release = await self.alpha_client.post(
+            "/v1/body/session/active", headers=first_headers, json={"release": True},
+        )
+        self.assertEqual(stale_release.status_code, 200, stale_release.text)
+        self.assertFalse(stale_release.json()["active"])
+        self.assertEqual((await records.get("active_body_session"))["session_id"], "second-live-window")
+
+        release = await self.alpha_client.post(
+            "/v1/body/session/active", headers=second_headers, json={"release": True},
+        )
+        self.assertEqual(release.status_code, 200, release.text)
+        self.assertEqual((await records.get("active_body_session"))["session_id"], "legacy")
+
+    async def test_superseded_body_cannot_consume_or_create_spoken_output(self):
+        first_headers = {"X-Body-Session": "superseded-live-window"}
+        second_headers = {"X-Body-Session": "current-live-window"}
+        focused = {"client_state": {"page_visible": True, "page_focused": True}}
+        self.assertEqual((await self.alpha_client.post(
+            "/v1/body/session/active", headers=first_headers, json=focused,
+        )).status_code, 200)
+        self.assertEqual((await self.alpha_client.post(
+            "/v1/body/session/active", headers=second_headers,
+            json={"takeover": True, **focused},
+        )).status_code, 200)
+
+        old_mouth = await self.alpha_client.get("/v1/body/mouth/next", headers=first_headers)
+        self.assertEqual(old_mouth.status_code, 409, old_mouth.text)
+        old_hearing = await self.alpha_client.post(
+            "/v1/body/ears/observe", headers=first_headers, json={
+                "audio_data_url": "data:audio/webm;base64,c3VwZXJzZWRlZA==",
+                "duration_ms": 1000,
+                "source": "browser-microphone",
+                "conversation": True,
+            },
+        )
+        self.assertEqual(old_hearing.status_code, 409, old_hearing.text)
+        old_spoken_interaction = await self.alpha_client.post(
+            "/v1/mind/body/interact",
+            headers=first_headers,
+            json={"message": "Do not speak from the superseded window"},
+        )
+        self.assertEqual(
+            old_spoken_interaction.status_code,
+            409,
+            old_spoken_interaction.text,
+        )
 
     async def test_realtime_capability_uses_server_broker_without_exposing_its_key(self):
         for key in (None, "synthetic-server-realtime-key"):
@@ -1433,7 +1553,10 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         ) as openai, patch("aicognitive_mind.engines.GeminiReasoningEngine") as gemini, patch(
             "aicognitive_mind.api.FishAudioRenderer",
         ) as fish:
-            response = await self.alpha_client.post("/v1/mind/body/interact", json={"message": "No shared providers"})
+            response = await self.alpha_client.post(
+                "/v1/mind/body/interact?express=false",
+                json={"message": "No shared providers"},
+            )
             self.assertEqual(response.status_code, 502, response.text)
             voice = await self.get_json(self.alpha_client, "/v1/admin/body/voice/settings")
             self.assertEqual(voice["fishAudioApiKey"], "")
@@ -1476,7 +1599,10 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         with patch("aicognitive_mind.api.get_settings", return_value=local), patch(
             "aicognitive_mind.config.get_settings", return_value=local,
         ), patch("aicognitive_mind.task_dispatcher.TaskModelDispatcher._complete_chat_with_assignment", new=complete):
-            response = await self.alpha_client.post("/v1/mind/body/interact", json={"message": "Use my configured task"})
+            response = await self.alpha_client.post(
+                "/v1/mind/body/interact?express=false",
+                json={"message": "Use my configured task"},
+            )
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["response_text"], "Synthetic account reasoning result")
         self.assertTrue(scopes)

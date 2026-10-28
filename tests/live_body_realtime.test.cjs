@@ -34,6 +34,7 @@ function realtimeStartup({ status = { realtime: { available: true, scope: 'sessi
     AbortSignal: { timeout: milliseconds => ({ aborted: abortImmediately, milliseconds }) },
     navigator: { mediaDevices: { getUserMedia: async () => { microphoneRequests++; return stream; } } },
     RealtimeTurns: class { constructor(options) { Object.assign(this, options); controllers.push(this); } handle() { this.handled = true; } close() { this.closed = true; } },
+    bodyOwnershipActive: true,
     talkEnabled: false, talkBusy: false, talkListening: false, talkSpeaking: false, talkRestartTimer: null,
     realtimeRequested: false, realtimeGeneration: 0, realtimeScope: null, realtimeTurns: null, realtimePeer: null, realtimeMicrophone: null, realtimeEvents: null, realtimeAudio: null,
     microphoneStream: stream, hearingEnabled: true, voiceEnabled: true, hearingGeneration: 0,
@@ -139,6 +140,7 @@ function speechFixture({ pendingFetch = null } = {}) {
   }
   const context = vm.createContext({
     Audio, AbortSignal, URL: { createObjectURL: () => 'blob:voice', revokeObjectURL() {} }, window: { speechSynthesis: { cancel() {} } },
+    bodyOwnershipActive: true,
     voiceEnabled: true, hearingEnabled: true, speechGeneration: 0, activeSpeechOwner: null, lastPlaybackState: "idle", activeSpeechDone: null, activeSpeechAudio: null, talkSpeaking: false,
     microphoneStream: { getAudioTracks: () => [track] }, sharedVoicePack: {}, setStatus() {}, applyBodyAudioOutput: async () => {},
     bodyFetch: async () => { if (pendingFetch) await pendingFetch.promise; return { ok: true, blob: async () => ({}) }; },

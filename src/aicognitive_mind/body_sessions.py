@@ -8,7 +8,7 @@ from contextvars import ContextVar
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from aicognitive_mind.body import DeviceStatus, ExpressionIntent, Percept
 from aicognitive_mind.host_runtime import RuntimeRecords
@@ -27,6 +27,7 @@ class BodyClientState(BaseModel):
     hearing: bool | None = None
     voice: bool | None = None
     page_visible: bool | None = None
+    page_focused: bool | None = None
     microphone_live: bool | None = None
     microphone_enabled: bool | None = None
     voice_mode: Literal["off", "connected_host", "realtime"] | None = None
@@ -36,6 +37,14 @@ class BodyClientState(BaseModel):
 class BodySessionHeartbeat(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     client_state: BodyClientState | None = None
+    takeover: bool = False
+    release: bool = False
+
+    @model_validator(mode="after")
+    def validate_ownership_action(self) -> "BodySessionHeartbeat":
+        if self.takeover and self.release:
+            raise ValueError("A Body session cannot take over and release ownership together")
+        return self
 
 
 async def active_body_status(records: RuntimeRecords, *, now: float | None = None) -> dict[str, Any] | None:

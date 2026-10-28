@@ -27,6 +27,7 @@ function fixture() {
     sensoryRequests: new Map(), sensoryRequestInFlight: false, SENSORY_REQUEST_TIMEOUT_MS: 150_000,
     window: { setTimeout(callback, ms) { const id = ++nextTimer; timers.set(id, { callback, ms }); return id; },
       clearTimeout(id) { timers.delete(id); }, speechSynthesis: { speaking: false } },
+    bodyOwnershipActive: true,
     visionEnabled: true, hearingEnabled: true, sensoryLoopGeneration: 1, hearingGeneration: 1,
     cameraStream: stream, microphoneStream: stream, recorder: null,
     liveScene: { readyState: 2, videoWidth: 960, videoHeight: 540, style: {} }, video: {}, audioMeter: { style: {} },
@@ -107,23 +108,21 @@ test('an intentional audio conversation has its own bounded deadline and still r
   assert.equal(ui.timers.size, 0);
 });
 
-test('explicitly enabled Hearing still uploads audio while the Body tab is hidden', async () => {
+test('a background Body cannot upload Hearing or Vision observations', async () => {
   const ui = fixture();
   ui.context.document.hidden = true;
+  ui.context.bodyOwnershipActive = false;
   const hearing = ui.context.runHearingLoop(1);
   await settle();
-  assert.equal(ui.requests.length, 1);
-  assert.equal(ui.requests[0].url, '/v1/body/ears/observe');
-  ui.context.hearingEnabled = false;
-  ui.requests[0].response.resolve({ ok: true, json: async () => ({ interpretation: 'Saved audio.' }) });
   await hearing;
+  assert.equal(ui.requests.length, 0);
   assert.equal(ui.context.sensoryRequestInFlight, false);
 
   const vision = fixture();
   vision.context.document.hidden = true;
-  vision.context.delay = async () => { vision.context.visionEnabled = false; };
+  vision.context.bodyOwnershipActive = false;
   await vision.context.runVisionLoop(1);
-  assert.equal(vision.requests.length, 0, 'Vision retains its separate background capture policy.');
+  assert.equal(vision.requests.length, 0);
 });
 
 test('a successful header does not show interpreted success before the JSON body finishes', async () => {

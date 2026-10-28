@@ -216,7 +216,7 @@ class MouthV01Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('new EventSource(', live_markup)
         self.assertIn('/v1/body/mouth/events?session_id=', live_markup)
         self.assertIn('addEventListener("voice-ready"', live_markup)
-        self.assertIn("while (voiceEnabled)", live_markup)
+        self.assertIn("while (bodyOwnershipActive && voiceEnabled)", live_markup)
         self.assertNotIn("pollBodyMouth", live_markup)
         self.assertNotIn("window.setInterval(pollBodyMouth", live_markup)
 
