@@ -48,7 +48,7 @@ function breakerEditor(apiHandler) {
   });
   for (let index = 0; index < names.length; index += 1) {
     const end = starts[index + 1]
-      ?? source.indexOf('\nfunction updateTaskFoundationEditor', starts[index]);
+      ?? source.indexOf('\nfor (const id of ["foundationContract", "foundationStartup"]', starts[index]);
     vm.runInContext(source.slice(starts[index], end), context);
   }
   return { ...context, elements, calls };
