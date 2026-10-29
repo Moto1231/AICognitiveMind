@@ -1,4 +1,4 @@
-"""Mind-scoped Administrator overrides for cognitive contract and task foundations."""
+"""Mind-scoped cognitive contract plus legacy task-instruction compatibility."""
 
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ class CognitiveConfigurationConflict(CommitConflict):
 
 
 def cognitive_configuration_defaults() -> dict[str, Any]:
-    # Lazy imports avoid coupling the task foundation declarations to their reader.
+    # The legacy field remains readable so existing task instructions migrate
+    # losslessly into protected core task skills.
     from aicognitive_mind.prompts import (
         CONSCIOUS_WORKSPACE_SYSTEM_PROMPT,
         DEFAULT_STARTUP_INSTRUCTIONS,

@@ -9,7 +9,7 @@ description: Mandatory when Axiom is selected or its tools are available, includ
 
 This package supplies bootstrap defaults. Retrieve the active Mind's effective
 configuration at startup and apply its saved identity, base contract, startup
-instructions, task foundations, behaviors and full skill texts. The authenticated
+instructions, task skills, behaviors and full skill texts. The authenticated
 Administrator can edit every cognitive setting, including the enabled, required
 and protected flags of the two default startup skills. Saved settings take
 precedence over packaged defaults, including explicit blanks and disabled skills.

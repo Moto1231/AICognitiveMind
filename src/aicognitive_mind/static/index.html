@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261028-device-inner-panel">
+  <link rel="stylesheet" href="/static/portal.css?v=20261028-task-skills">
   <script src="/static/button_icons.js?v=20261027-all-icon-palette" defer></script>
   <script src="/static/local_clock.js?v=20261028-local-clock" defer></script>
 </head>
@@ -370,11 +370,13 @@
                 </div>
                 <div class="edit-actions"><button id="saveTaskEndpoints" class="primary-button" type="button" disabled>Save</button></div>
               </section>
-              <section class="task-profile-section task-profile-foundation-section">
-                <h4>Task Foundation</h4>
-                <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Task foundation"></textarea>
-                <div class="edit-actions"><button id="taskFoundationEdit" class="secondary-button" type="button" aria-label="Edit task foundation" title="Edit task foundation">Edit</button><button id="taskFoundationSave" class="primary-button" type="button" aria-label="Save task foundation" title="Save task foundation" disabled>Save</button><button id="taskFoundationCancel" class="secondary-button" type="button" aria-label="Cancel task foundation changes" title="Cancel task foundation changes" disabled>Cancel</button></div>
-                <p id="taskFoundationStatus" role="status" aria-live="polite"></p>
+              <section class="task-profile-section task-profile-skills-section">
+                <div class="panel-heading task-profile-skill-heading"><div><h4>Skills</h4><small>Required skills stay attached. Additional skills run in the order shown.</small></div></div>
+                <div id="taskProfileSkillSelection" class="task-skill-selection" aria-live="polite"></div>
+                <div class="task-skill-add-row">
+                  <label class="host-behavior-field">Available skill<select id="taskProfileSkillSelect" aria-label="Available task skill"></select></label>
+                  <button id="taskProfileAddSkill" class="secondary-button" type="button">Select skill</button>
+                </div>
               </section>
               <section class="task-profile-section task-profile-behaviors-section">
                  <div class="panel-heading task-profile-behavior-heading"><h4>Behaviors</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
@@ -865,6 +867,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261028-speech-cancel"></script>
+  <script src="/static/portal.js?v=20261028-task-skills"></script>
 </body>
 </html>

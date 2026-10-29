@@ -53,13 +53,16 @@ class TaskModelAssignment(BaseModel):
     # None preserves membership from configurations predating the shared catalog.
     # An explicit empty list means no optional catalog behaviors are selected.
     behavior_ids: list[str] | None = Field(default=None, max_length=500)
+    # Required task skills come from the Skills catalog. This list contains
+    # only optional skills, in Administrator-selected execution order.
+    skill_ids: list[str] | None = Field(default=None, max_length=500)
 
     @field_validator("provider", "model", "voice_reference_id", "notes")
     @classmethod
     def strip_values(cls, value: str) -> str:
         return value.strip()
 
-    @field_validator("behavior_ids")
+    @field_validator("behavior_ids", "skill_ids")
     @classmethod
     def clean_behavior_ids(cls, values: list[str] | None) -> list[str] | None:
         return None if values is None else list(dict.fromkeys(value.strip() for value in values if value.strip()))
@@ -116,6 +119,17 @@ class TaskModelAssignmentRegistry:
                 )]
             else:
                 item.behavior_ids = [value for value in item.behavior_ids if value in catalog_ids]
+        from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+
+        assignable_skill_ids = {
+            skill["slug"] for skill in await EffectiveSkillRegistry(self.records).list()
+            if not skill["required"] and not skill["required_tasks"]
+        }
+        for item in ordered:
+            if item.skill_ids is None:
+                item.skill_ids = []
+            else:
+                item.skill_ids = [value for value in item.skill_ids if value in assignable_skill_ids]
         return ordered
 
     async def replace(
@@ -138,10 +152,18 @@ class TaskModelAssignmentRegistry:
         from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 
         catalog = {item.id: item for item in await HostBehaviorRegistry(self.records).list()}
+        from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+
+        assignable_skill_ids = {
+            skill["slug"] for skill in await EffectiveSkillRegistry(self.records).list()
+            if not skill["required"] and not skill["required_tasks"]
+        }
         current = {item.task: item for item in await self.list()}
         for item in ordered:
             if item.behavior_ids is None:
                 item.behavior_ids = current[item.task].behavior_ids
+            if item.skill_ids is None:
+                item.skill_ids = current[item.task].skill_ids
             previous = current[item.task]
             # The endpoint-only editor must not erase a working legacy model
             # while its existing endpoint has not yet selected a bound model.
@@ -157,6 +179,11 @@ class TaskModelAssignmentRegistry:
             unknown = set(item.behavior_ids or []) - set(catalog)
             if unknown:
                 raise ValueError("Unknown behavior IDs: " + ", ".join(sorted(unknown)))
+            unknown_skills = set(item.skill_ids or []) - assignable_skill_ids
+            if unknown_skills:
+                raise ValueError(
+                    "Unknown or non-assignable skill IDs: " + ", ".join(sorted(unknown_skills))
+                )
         # Materialize promoted inline instructions before explicit memberships
         # replace their old implicit selection. No task loses its existing text.
         catalog_before = await self.records.get("host_behaviors")

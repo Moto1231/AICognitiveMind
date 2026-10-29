@@ -6,6 +6,7 @@ from aicognitive_mind.task_model_assignments import (
     TaskModelAssignment,
     TaskModelAssignmentRegistry,
 )
+from aicognitive_mind.effective_skills import EffectiveSkillRegistry
 
 
 class FakeRecords:
@@ -169,6 +170,27 @@ class TaskModelAssignmentRegistryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(assignment.provider, "Example Provider")
         self.assertEqual(assignment.model, "example-model")
+
+    async def test_optional_skill_order_round_trips_without_storing_required_core(self):
+        records = FakeRecords()
+        skills = EffectiveSkillRegistry(records)
+        await skills.save("verify", {"name": "Verify", "content": "Verify."}, expected_revision=0)
+        await skills.save("explain", {"name": "Explain", "content": "Explain."}, expected_revision=0)
+        registry = TaskModelAssignmentRegistry(records)
+        assignments = await registry.list()
+        vision = next(item for item in assignments if item.task == "vision")
+        vision.skill_ids = ["explain", "verify"]
+        await registry.replace(assignments)
+        loaded = next(item for item in await registry.list() if item.task == "vision")
+        self.assertEqual(loaded.skill_ids, ["explain", "verify"])
+
+    async def test_required_or_unknown_skills_cannot_be_saved_as_optional_memberships(self):
+        registry = TaskModelAssignmentRegistry(FakeRecords())
+        for slug in ("task-vision-core", "missing"):
+            assignments = await registry.list()
+            next(item for item in assignments if item.task == "vision").skill_ids = [slug]
+            with self.subTest(slug=slug), self.assertRaisesRegex(ValueError, "non-assignable"):
+                await registry.replace(assignments)
 
 
 if __name__ == "__main__":
