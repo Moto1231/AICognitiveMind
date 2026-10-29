@@ -733,7 +733,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(await memory.read()), 1)
         self.assertEqual(len([entry for entry in await journal.read() if entry.kind == "interaction"]), 1)
 
-    async def test_mixed_transport_and_protocol_failures_exhaust_ordered_pool_without_partial_writes(self):
+    async def test_exhausted_review_is_warning_only_with_open_breaker_and_no_partial_writes(self):
         service, journal, memory = await self.service(None)
         records = await self.configured_steward_pool(service, count=6)
         before, original = await journal.read(), await service._mind.load()
@@ -742,6 +742,16 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         invalid["memories"].append(self.learning(support=[
             {"source": "user_message", "quote": "Never supplied"},
         ])["memories"][0])
+
+        for index in range(65):
+            await service._continuity_health.record(f"prior-success-{index}", succeeded=True)
+        for index in range(35):
+            prior_health = await service._continuity_health.record(
+                f"prior-failure-{index}",
+                succeeded=False,
+                failure_class="StorageTimeout",
+            )
+        self.assertTrue(prior_health["circuit_open"])
 
         def handle(request):
             calls.append(request.url.host)
@@ -776,7 +786,18 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(completed["presentation"]["allowed"])
         self.assertEqual(completed, retried)
-        self.assertEqual(completed["continuity_health"]["rolling_failures"], 1)
+        self.assertTrue(completed["continuity_health"]["circuit_open"])
+        self.assertEqual(completed["continuity_health"]["rolling_failures"], 35)
+        self.assertEqual(completed["continuity_health"]["consecutive_failures"], 0)
+        self.assertEqual(completed["continuity_health"]["degraded_reviews"], 1)
+        self.assertEqual(
+            completed["continuity_health"]["last_degradation_class"],
+            "StewardAssessmentExhausted",
+        )
+        self.assertEqual(
+            completed["presentation"]["reason"],
+            "journal_committed_memory_review_degraded",
+        )
         self.assertEqual(await memory.read(), [])
         self.assertEqual(len(await journal.read()), len(before) + 1)
         self.assertEqual(await service._mind.load(), original)

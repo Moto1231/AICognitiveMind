@@ -179,4 +179,18 @@ def create_admin_configuration_router(
         except (CommitConflict, ValueError, ValidationError) as exc:
             raise handle_error(exc) from exc
 
+    @router.post("/v1/admin/continuity-health/reset")
+    async def reset_continuity_health(request: Request) -> dict[str, Any]:
+        require_admin(request)
+        try:
+            settings = await ContinuitySettingsRegistry(
+                request_runtime(request).runtime_records
+            ).effective()
+            health = await InteractionContinuityHealth(
+                request_runtime(request).runtime_records
+            ).reset(settings=settings)
+            return {**settings, "health": health}
+        except (CommitConflict, ValueError, ValidationError) as exc:
+            raise handle_error(exc) from exc
+
     return router

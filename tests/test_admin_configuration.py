@@ -14,6 +14,7 @@ from aicognitive_mind.cognitive_configuration import (
     CognitiveConfigurationConflict, CognitiveConfigurationRegistry,
 )
 from aicognitive_mind.commit import CommitConflict
+from aicognitive_mind.continuity_health import InteractionContinuityHealth
 from aicognitive_mind.domain import CognitiveActor, CognitiveMind, JournalKind, MindIdentity
 from aicognitive_mind.permissions import CognitiveOperation, CognitivePermissionError, PermissionPolicy
 from aicognitive_mind.prompts import DEFAULT_STARTUP_INSTRUCTIONS
@@ -285,6 +286,27 @@ class AdministratorRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid.status_code, 422)
         denied = await self.client.get(
             "/v1/admin/continuity-settings", headers={"X-Admin-Pin": ""},
+        )
+        self.assertEqual(denied.status_code, 401)
+
+    async def test_breaker_reset_is_authorized_and_tenant_scoped(self):
+        for tenant in ("alpha", "beta"):
+            await InteractionContinuityHealth(
+                self.runtimes[tenant].runtime_records
+            ).record(
+                f"{tenant}-failure", succeeded=False, failure_class="StorageTimeout",
+            )
+
+        reset = await self.client.post("/v1/admin/continuity-health/reset")
+        self.assertEqual(reset.status_code, 200, reset.text)
+        self.assertEqual(reset.json()["health"]["rolling_sample_size"], 0)
+        self.assertEqual(reset.json()["health"]["reset_count"], 1)
+        beta = await self.client.get(
+            "/v1/admin/continuity-settings", headers={"X-Test-Tenant": "beta"},
+        )
+        self.assertEqual(beta.json()["health"]["rolling_sample_size"], 1)
+        denied = await self.client.post(
+            "/v1/admin/continuity-health/reset", headers={"X-Admin-Pin": ""},
         )
         self.assertEqual(denied.status_code, 401)
 

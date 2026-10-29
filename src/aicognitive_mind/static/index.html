@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
   <link rel="stylesheet" href="/static/portal.css?v=20261028-device-inner-panel">
-  <script src="/static/button_icons.js?v=20261027-all-icon-palette" defer></script>
+  <script src="/static/button_icons.js?v=20261029-breaker-reset" defer></script>
   <script src="/static/local_clock.js?v=20261028-local-clock" defer></script>
 </head>
 <body>
@@ -263,9 +263,11 @@
               <h4>Current State</h4>
               <dl class="details breaker-health-details">
                 <div><dt>Status</dt><dd id="breakerHealthStatus">Loading…</dd></div>
-                <div><dt>Consecutive failures</dt><dd id="breakerHealthConsecutive">—</dd></div>
-                <div><dt>Rolling failures</dt><dd id="breakerHealthRolling">—</dd></div>
-                <div><dt>Last failure class</dt><dd id="breakerHealthLastFailure">—</dd></div>
+                <div><dt>Consecutive critical failures</dt><dd id="breakerHealthConsecutive">—</dd></div>
+                <div><dt>Rolling critical failures</dt><dd id="breakerHealthRolling">—</dd></div>
+                <div><dt>Degraded Steward reviews</dt><dd id="breakerHealthDegraded">—</dd></div>
+                <div><dt>Last critical failure</dt><dd id="breakerHealthLastFailure">—</dd></div>
+                <div><dt>Last degraded review</dt><dd id="breakerHealthLastDegradation">—</dd></div>
               </dl>
             </section>
             <section class="overview-group">
@@ -278,7 +280,7 @@
                 <label class="host-behavior-field">Steward assessment deadline (seconds)<input id="breakerAssessmentTimeout" type="number" min="5" max="300" step="0.1" readonly></label>
                 <label class="host-behavior-field">Rate-limit retry wait cap (seconds)<input id="breakerRetryWaitCap" type="number" min="0" max="120" step="0.1" readonly></label>
               </div>
-              <div class="edit-actions"><button id="breakerEdit" class="secondary-button" type="button" aria-label="Edit The Breaker settings" title="Edit The Breaker settings" disabled>Edit</button><button id="breakerSave" class="primary-button" type="button" aria-label="Save The Breaker settings" title="Save The Breaker settings" disabled>Save</button><button id="breakerCancel" class="secondary-button" type="button" aria-label="Cancel The Breaker changes" title="Cancel The Breaker changes" disabled>Cancel</button></div>
+              <div class="edit-actions"><button id="breakerEdit" class="secondary-button" type="button" aria-label="Edit The Breaker settings" title="Edit The Breaker settings" disabled>Edit</button><button id="breakerSave" class="primary-button" type="button" aria-label="Save The Breaker settings" title="Save The Breaker settings" disabled>Save</button><button id="breakerCancel" class="secondary-button" type="button" aria-label="Cancel The Breaker changes" title="Cancel The Breaker changes" disabled>Cancel</button><button id="breakerReset" class="secondary-button" type="button" aria-label="Reset The Breaker" title="Reset The Breaker" disabled>Reset</button></div>
               <p id="breakerSettingsStatus" role="status" aria-live="polite"></p>
             </section>
           </article>
@@ -865,6 +867,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261028-speech-cancel"></script>
+  <script src="/static/portal.js?v=20261029-breaker-reset"></script>
 </body>
 </html>

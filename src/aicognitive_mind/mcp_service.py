@@ -331,11 +331,16 @@ class CognitiveMcpService:
             }
 
         persistence = result.get("persistence_outcome", {"status": "succeeded"})
-        succeeded = persistence.get("status") == "succeeded"
+        persistence_succeeded = persistence.get("status") == "succeeded"
+        journal_committed = persistence.get("interaction_journal_committed") is True
+        critical_succeeded = persistence_succeeded or journal_committed
+        degraded = not persistence_succeeded and journal_committed
         health = await self._record_continuity_outcome(
             interaction_id,
-            succeeded=succeeded,
-            failure_class=persistence.get("failure_class"),
+            succeeded=critical_succeeded,
+            failure_class=(None if critical_succeeded else persistence.get("failure_class")),
+            degraded=degraded,
+            degradation_class=(persistence.get("failure_class") if degraded else None),
             settings=continuity_settings,
         )
         presentation_allowed = health.get("interaction_outcome", {}).get(
@@ -347,13 +352,15 @@ class CognitiveMcpService:
             "presentation": {
                 "policy_name": "The Breaker",
                 "allowed": presentation_allowed,
-                "report_persistence_error": not succeeded and not presentation_allowed,
+                "report_persistence_error": not critical_succeeded and not presentation_allowed,
                 "answer_frozen": True,
                 "reason": (
                     "persistence_succeeded"
-                    if succeeded
+                    if persistence_succeeded
+                    else "journal_committed_memory_review_degraded"
+                    if degraded
                     else (
-                        "memory_review_failed_below_threshold"
+                        "persistence_failed_below_threshold"
                         if presentation_allowed
                         else "persistence_circuit_remains_open"
                     )
@@ -570,6 +577,7 @@ class CognitiveMcpService:
 
     async def _record_continuity_outcome(
         self, interaction_id: str, *, succeeded: bool, failure_class: str | None,
+        degraded: bool = False, degradation_class: str | None = None,
         settings: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         try:
@@ -577,6 +585,8 @@ class CognitiveMcpService:
                 interaction_id,
                 succeeded=succeeded,
                 failure_class=failure_class,
+                degraded=degraded,
+                degradation_class=degradation_class,
                 settings=settings,
             )
         except Exception as exc:

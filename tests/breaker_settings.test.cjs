@@ -20,12 +20,14 @@ class Element {
 function breakerEditor(apiHandler) {
   const elements = new Proxy({}, { get: (target, id) => target[id] ||= new Element() });
   const state = {
-    breakerSettings: null, breakerDraft: null, breakerSaving: false, breakerLoadRevision: 0,
+    breakerSettings: null, breakerDraft: null, breakerSaving: false,
+    breakerResetting: false, breakerLoadRevision: 0,
   };
   const calls = [];
   const context = vm.createContext({
     state,
     document: { getElementById: id => elements[id] },
+    window: { confirm: () => true },
     displayLabel: value => String(value).replaceAll('_', ' ').replace(/\b\w/g, c => c.toUpperCase()),
     api: async (url, options = {}) => {
       const body = options.body ? JSON.parse(options.body) : undefined;
@@ -39,7 +41,7 @@ function breakerEditor(apiHandler) {
   const names = [
     'breakerFormPayload', 'breakerFormValid', 'renderBreakerSettings',
     'updateBreakerEditorState', 'refreshBreakerSettings', 'editBreakerSettings',
-    'cancelBreakerSettings', 'saveBreakerSettings',
+    'cancelBreakerSettings', 'saveBreakerSettings', 'resetBreakerHealth',
   ];
   const starts = names.map(name => {
     const start = source.search(new RegExp(`^(?:async )?function ${name}\\(`, 'm'));
@@ -64,7 +66,9 @@ const snapshot = {
   rate_limit_retry_wait_cap_seconds: 45,
   health: {
     status: 'closed', consecutive_failures: 1, rolling_failures: 7,
-    rolling_sample_size: 52, last_failure_class: 'StewardAssessmentTimeout',
+    rolling_sample_size: 52, rolling_window_ready: false, degraded_reviews: 3,
+    last_failure_class: 'StorageTimeout',
+    last_degradation_class: 'StewardAssessmentTimeout',
   },
 };
 
@@ -77,8 +81,10 @@ test('The Breaker form loads locked and shows current operational counts', async
   assert.equal(ui.elements.breakerSave.disabled, true);
   assert.equal(ui.elements.breakerHealthStatus.textContent, 'Closed');
   assert.equal(ui.elements.breakerHealthConsecutive.textContent, '1 / 5');
-  assert.equal(ui.elements.breakerHealthRolling.textContent, '7 / 35 in 52 of 100');
-  assert.equal(ui.elements.breakerHealthLastFailure.textContent, 'StewardAssessmentTimeout');
+  assert.equal(ui.elements.breakerHealthRolling.textContent, '7 / 35 in 52 of 100 (warming up)');
+  assert.equal(ui.elements.breakerHealthDegraded.textContent, '3 in the rolling window (warning only)');
+  assert.equal(ui.elements.breakerHealthLastFailure.textContent, 'StorageTimeout');
+  assert.equal(ui.elements.breakerHealthLastDegradation.textContent, 'StewardAssessmentTimeout');
   assert.equal(ui.elements.breakerSettingsStatus.textContent, '');
 });
 
@@ -131,4 +137,25 @@ test('a failed Breaker save preserves the draft and loaded revision', async () =
   assert.equal(ui.elements.breakerRollingLimit.value, '34');
   assert.equal(ui.elements.breakerSettingsStatus.textContent, 'The Breaker settings changed; refresh before saving');
   assert.equal(ui.elements.breakerSave.disabled, false);
+});
+
+test('The Breaker reset is confirmed, scoped, and refreshes operational counts', async () => {
+  const resetSnapshot = structuredClone(snapshot);
+  resetSnapshot.health = {
+    status: 'closed', consecutive_failures: 0, rolling_failures: 0,
+    rolling_sample_size: 0, rolling_window_ready: false, degraded_reviews: 0,
+    last_failure_class: null, last_degradation_class: null, reset_count: 1,
+  };
+  const ui = breakerEditor(async (url) => url.endsWith('/reset')
+    ? structuredClone(resetSnapshot)
+    : structuredClone(snapshot));
+  await ui.refreshBreakerSettings();
+  assert.equal(ui.elements.breakerReset.disabled, false);
+  await ui.resetBreakerHealth();
+  const reset = ui.calls.find(call => call.url.endsWith('/reset'));
+  assert.equal(reset.method, 'POST');
+  assert.equal(ui.elements.breakerHealthRolling.textContent, '0 / 35 in 0 of 100 (warming up)');
+  assert.equal(ui.elements.breakerHealthDegraded.textContent, '0 in the rolling window (warning only)');
+  assert.equal(ui.elements.breakerReset.disabled, true);
+  assert.equal(ui.elements.breakerSettingsStatus.textContent, 'The Breaker was reset for this Mind.');
 });
