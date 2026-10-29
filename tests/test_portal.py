@@ -230,8 +230,8 @@ class PortalTests(unittest.TestCase):
             "#foundationsSection .edit-actions button.axiom-icon-button,", stylesheet
         )
         self.assertIn("#startupStatus:empty { display: none; }", stylesheet)
-        self.assertIn("/static/portal.css?v=20261028-device-inner-panel", markup)
-        self.assertIn("/static/portal.js?v=20261028-speech-cancel", markup)
+        self.assertIn("/static/portal.css?v=20261028-task-skills", markup)
+        self.assertIn("/static/portal.js?v=20261028-task-skills", markup)
 
     def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -364,10 +364,9 @@ class PortalTests(unittest.TestCase):
             "taskProfileVoiceReferenceId",
             "taskProfileFallbackList",
             "taskProfileAddFallback",
-            "taskProfileFoundation",
-            "taskFoundationEdit",
-            "taskFoundationSave",
-            "taskFoundationCancel",
+            "taskProfileSkillSelection",
+            "taskProfileSkillSelect",
+            "taskProfileAddSkill",
             "taskProfileBehaviorName",
             "taskProfileInstructions",
             "taskProfileEnabled",
@@ -387,7 +386,8 @@ class PortalTests(unittest.TestCase):
                 )
         self.assertIn("function renderTaskProfiles()", script)
         self.assertIn("renderTaskProfiles();", script)
-        self.assertRegex(markup, r'<textarea id="taskProfileFoundation"[^>]*readonly')
+        self.assertIn("function renderTaskSkillSelection()", script)
+        self.assertIn("function moveTaskSkill(index, direction)", script)
         self.assertIn("el.taskProfileInstructions.value = behavior.instructions || \"\";", script)
         self.assertIn("el.taskProfileEnabled.checked = behavior.enabled !== false;", script)
         self.assertIn('audio_voice: "Audio/Voice"', script)

@@ -1,9 +1,8 @@
 """Per-task behavior profiles and runtime-neutral prompt assembly.
 
-The factory foundations live in this module. Administrator overrides can replace
-them independently of optional task behavior profiles. Runtime context is
-explicit and deliberately contains references/current state, not an entire host
-conversation history.
+Required task skills and optional shared skills are composed ahead of the
+separate behavior layer. Runtime context is explicit and deliberately contains
+references/current state, not an entire host conversation history.
 """
 from __future__ import annotations
 
@@ -12,9 +11,10 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
-from aicognitive_mind.task_model_assignments import TASK_LABELS
+from aicognitive_mind.task_model_assignments import TASK_LABELS, TaskModelAssignmentRegistry
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+from aicognitive_mind.task_skill_defaults import TASK_CORE_SKILL_CONTENT
 
 TaskBehaviorKind = Literal[
     "vision", "audio", "audio_voice", "coding", "image_generation", "summarization",
@@ -22,58 +22,14 @@ TaskBehaviorKind = Literal[
 ]
 
 
-# Factory defaults remain available when no Administrator override is saved.
-TASK_FOUNDATIONS: dict[TaskBehaviorKind, str] = {
-    "reasoning": (
-        "You are Axiom's reasoning task. "
-        "Use the supplied Mind identity, recalled context, evidence, and interaction contract. "
-        "Keep identity and durable-memory ownership with Axiom; distinguish established context "
-        "from inference and follow the host's tool and completion protocol."
-    ),
-    "vision": (
-        "You are Axiom's visual perception task. Ground every claim in the supplied image "
-        "evidence. Separate direct observations from uncertainty and inference. Do not invent "
-        "identities, intentions, events, or details outside the evidence."
-    ),
-    "audio": (
-        "You are Axiom's auditory perception task. Preserve what the audio supports, distinguish "
-        "transcription from interpretation, and mark uncertainty. Do not invent unheard words, "
-        "speakers, causes, or background events."
-    ),
-    "audio_voice": (
-        "You are Axiom's audio/voice output task. Synthesize only the supplied text using the "
-        "configured speech endpoint and selected voice reference. Preserve the exact text and "
-        "requested speech settings; do not add or rewrite spoken content."
-    ),
-    "coding": (
-        "You are Axiom's coding task. Prefer correct, maintainable, testable changes. Inspect the "
-        "actual interfaces and preserve existing behavior unless the task calls for changing it."
-    ),
-    "image_generation": (
-        "You are Axiom's image-generation task. Follow the requested visual intent and constraints; "
-        "do not silently substitute a different deliverable."
-    ),
-    "summarization": (
-        "You are Axiom's summarization task. Preserve the source's important claims, uncertainty, "
-        "and distinctions. Do not add facts absent from the source."
-    ),
-    "memory_recall": (
-        "You are Axiom's memory-recall task. Distinguish retrieved records from inference, honor "
-        "timestamps and provenance, and say when the available records do not establish an answer."
-    ),
-    "web_research": (
-        "You are Axiom's research task. Prefer relevant, reliable evidence, check freshness when "
-        "it matters, and distinguish sourced facts from analysis."
-    ),
-    "structured_extraction": (
-        "You are Axiom's structured-extraction task. Return the requested schema faithfully, "
-        "preserve source meaning, and do not fabricate missing fields."
-    ),
-}
+# Compatibility alias for saved records and external callers. These values now
+# surface as protected, required task skills rather than a separate user-facing
+# Foundation concept.
+TASK_FOUNDATIONS: dict[TaskBehaviorKind, str] = dict(TASK_CORE_SKILL_CONTENT)
 
 
 class TaskBehavior(BaseModel):
-    """Optional behavior profile; foundation overrides have a separate revisioned editor."""
+    """Legacy inline behavior profile promoted into the shared behavior catalog."""
 
     task: TaskBehaviorKind
     name: str = Field(min_length=1, max_length=120)
@@ -163,24 +119,26 @@ class TaskRuntime(Protocol):
 
 
 class TaskPromptAssembler:
-    """Compose layers in fixed precedence order without folding history into the foundation."""
+    """Compose Mind skills, task skills, behaviors, assignment, and context."""
 
     def __init__(self, registry: TaskBehaviorRegistry) -> None:
         self.registry = registry
 
     async def system_prompt(self, context: TaskExecutionContext) -> str:
-        from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
-
         profile = next(
             item for item in await self.registry.list() if item.task == context.task
         )
-        configuration = await CognitiveConfigurationRegistry(self.registry.records).effective()
-        layers = [
-            "AXIOM TASK FOUNDATION (Administrator configurable):",
-            configuration["task_foundations"][context.task],
-        ]
+        skills = EffectiveSkillRegistry(self.registry.records)
+        assignments = await TaskModelAssignmentRegistry(self.registry.records).list()
+        assignment = next(item for item in assignments if item.task == context.task)
+        layers = []
         if context.task == "reasoning":
-            layers.extend(["", await EffectiveSkillRegistry(self.registry.records).startup_contract()])
+            startup = await skills.startup_contract()
+            if startup:
+                layers.append(startup)
+        task_contract = await skills.task_contract(context.task, assignment.skill_ids)
+        if task_contract:
+            layers.extend(([""] if layers else []) + [task_contract])
         selected = await HostBehaviorRegistry(self.registry.records).selected(context.task)
         if selected:
             layers.extend([

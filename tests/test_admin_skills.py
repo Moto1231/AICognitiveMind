@@ -10,11 +10,12 @@ from starlette.requests import Request
 
 from aicognitive_mind import api
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
-from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+from aicognitive_mind.effective_skills import EffectiveSkillRegistry, packaged_skill_defaults
 from aicognitive_mind.host_runtime import RuntimeRecords
 
 
 DRAFT = "---\nname: custom\ndescription: A custom draft.\n---\n\nKeep the custom workflow.\n"
+PACKAGED_SKILL_SLUGS = [item["slug"] for item in packaged_skill_defaults()]
 
 
 class AdminSkillTests(unittest.IsolatedAsyncioTestCase):
@@ -39,7 +40,7 @@ class AdminSkillTests(unittest.IsolatedAsyncioTestCase):
                 status_code=code, detail="Synthetic GitHub unavailable",
             )):
                 result = await api.list_admin_skills(self.request())
-            self.assertEqual({item["slug"] for item in result["items"]}, {*REQUIRED_SKILLS, "memory-steward"})
+            self.assertEqual({item["slug"] for item in result["items"]}, set(PACKAGED_SKILL_SLUGS))
             self.assertTrue(all(not item["read_only"] for item in result["items"]))
             self.assertTrue(all("content" not in item for item in result["items"]))
             self.assertEqual(result["drafts_available"], code == 404)
@@ -52,7 +53,7 @@ class AdminSkillTests(unittest.IsolatedAsyncioTestCase):
             {"type": "file", "name": "README.md", "path": "skills/drafts/README.md"},
         ]):
             result = await api.list_admin_skills(self.request())
-        self.assertEqual([item["slug"] for item in result["items"]], [*REQUIRED_SKILLS, "memory-steward", "custom", REQUIRED_SKILLS[0]])
+        self.assertEqual([item["slug"] for item in result["items"]], [*PACKAGED_SKILL_SLUGS, "custom", REQUIRED_SKILLS[0]])
         self.assertEqual(result["items"][-2], {
             "slug": "custom", "path": "skills/drafts/custom", "required": False, "read_only": False, "source": "github_draft",
         })
@@ -62,7 +63,7 @@ class AdminSkillTests(unittest.IsolatedAsyncioTestCase):
         with patch("aicognitive_mind.api._skill_github_call", side_effect=AssertionError("No shared GitHub access")) as github:
             result = await api.list_admin_skills(self.request(tenant=True))
             self.assertFalse(result["drafts_available"])
-            self.assertEqual({item["slug"] for item in result["items"]}, {*REQUIRED_SKILLS, "memory-steward"})
+            self.assertEqual({item["slug"] for item in result["items"]}, set(PACKAGED_SKILL_SLUGS))
             for slug in REQUIRED_SKILLS:
                 item = await api.get_admin_skill(slug, self.request(tenant=True))
                 self.assertEqual(item["content"], load_required_skill(slug))

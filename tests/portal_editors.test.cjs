@@ -20,13 +20,13 @@ const editorFunctions = [
   'updateMcpToolsState', 'editMcpTools', 'cancelMcpTools', 'saveMcpTools', 'runMcpTool',
   'refreshMcpServers', 'showAdminSection',
   'allTaskNames', 'renderTaskProfiles', 'taskProviderEndpoint', 'taskEndpointOptions', 'selectedTaskBehaviorIds',
-  'taskBehaviorCatalog',
-  'taskProfileConfiguration', 'updateTaskSaveState', 'renderTaskBehaviorSelection',
+  'taskBehaviorCatalog', 'selectedTaskSkillIds', 'requiredTaskSkills', 'optionalTaskSkills',
+  'taskProfileConfiguration', 'updateTaskSaveState', 'renderTaskBehaviorSelection', 'renderTaskSkillSelection',
+  'addTaskSkill', 'moveTaskSkill', 'removeTaskSkill',
   'syncTaskProviderRotation',
   'renderFallbackSelectors', 'selectTaskFallback', 'addTaskFallback', 'removeTaskFallback',
   'moveTaskFallback', 'changeTaskFallbackEndpoint', 'openTaskProfile', 'closeTaskProfile', 'discardTaskProfileChanges',
   'saveTaskProfile',
-  'updateTaskFoundationEditor', 'cancelTaskFoundationEdit', 'editTaskFoundation', 'saveTaskFoundation',
   'renderHostBehaviors', 'updateBehaviorSaveState', 'refreshHostBehaviors', 'editHostBehaviors',
   'cancelHostBehaviorEdit', 'addHostBehavior', 'saveHostBehaviors',
 ];
@@ -74,8 +74,7 @@ function editor({ apiHandler } = {}) {
     mcpToolsRefreshRevision: 0, mcpToolRunRevision: 0, mcpToolRunning: false,
     taskModelAssignments: [{ task: 'vision', provider: 'openai', model: 'gpt-test',
       fallbacks: [{ provider: 'OpenAI - GPT', model: 'gpt-test' }] }],
-    taskBehaviors: [], taskFoundations: {}, hostBehaviors: [], activeTaskProfile: null,
-    taskFoundationDraft: null, taskFoundationSaving: false,
+    taskBehaviors: [], taskSkills: [], hostBehaviors: [], activeTaskProfile: null,
     hostBehaviorDraft: null, hostBehaviorSaving: false, hostBehaviorRevision: 0,
   };
   const calls = [];
@@ -1622,39 +1621,27 @@ test('a pending behavior Save locks navigation and editing until its result is k
   assert.equal(ui.el.hostBehaviorSelect.disabled, false);
 });
 
-test('task foundations use independent revisioned drafts, preserve blanks, and cancel on Return', async () => {
-  let foundations = { vision: 'Original foundation', reasoning: 'Keep reasoning' };
-  const ui = editor({ apiHandler: (url, body) => {
-    assert.equal(url, '/v1/admin/cognitive-configuration');
-    if (body) foundations = { ...foundations, ...body.task_foundations };
-    return { revision: body ? 4 : 3, task_foundations: foundations };
-  } });
-  ui.state.taskFoundations = { ...foundations };
-  const assignments = JSON.stringify(ui.state.taskModelAssignments);
+test('task skills keep the required core fixed and save optional skills in displayed order', async () => {
+  const ui = editor();
+  ui.state.taskSkills = [
+    { slug: 'task-vision-core', name: 'Vision Core', enabled: true, required: false, required_tasks: ['vision'] },
+    { slug: 'verify', name: 'Verify', enabled: true, required: false, required_tasks: [] },
+    { slug: 'explain', name: 'Explain', enabled: true, required: false, required_tasks: [] },
+  ];
   ui.openTaskProfile('vision');
-  assert.equal(ui.el.taskProfileFoundation.readOnly, true);
-  await ui.editTaskFoundation();
-  assert.equal(ui.el.taskProfileFoundation.readOnly, false);
-  assert.equal(ui.el.taskFoundationSave.disabled, true);
-  ui.el.taskProfileFoundation.value = 'Unsaved';
-  ui.updateTaskFoundationEditor();
-  ui.closeTaskProfile();
-  assert.equal(ui.state.taskFoundationDraft, null);
-  assert.equal(foundations.vision, 'Original foundation');
-  ui.openTaskProfile('vision');
-  await ui.editTaskFoundation();
-  ui.el.taskProfileFoundation.value = '';
-  ui.updateTaskFoundationEditor();
-  assert.equal(ui.el.taskFoundationSave.disabled, false);
-  await ui.saveTaskFoundation();
-  const saved = ui.calls.find(call => call.body).body;
-  assert.equal(saved.expected_revision, 3);
-  assert.deepEqual(Object.keys(saved.task_foundations), ['vision']);
-  assert.equal(saved.task_foundations.vision, '');
-  assert.equal(foundations.reasoning, 'Keep reasoning');
-  assert.equal(ui.state.taskFoundations.vision, '');
-  assert.equal(ui.el.taskProfileFoundation.readOnly, true);
-  assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
+  assert.match(ui.el.taskProfileSkillSelection.children[0].children[0].children[0].textContent, /Required/);
+  assert.equal(ui.el.taskProfileSkillSelect.options.length, 3);
+  ui.el.taskProfileSkillSelect.value = 'verify';
+  ui.addTaskSkill();
+  ui.el.taskProfileSkillSelect.value = 'explain';
+  ui.addTaskSkill();
+  assert.deepEqual([...ui.state.taskModelAssignments[0].skill_ids], ['verify', 'explain']);
+  ui.moveTaskSkill(1, -1);
+  assert.deepEqual([...ui.state.taskModelAssignments[0].skill_ids], ['explain', 'verify']);
+  assert.equal(ui.el.saveTaskProfile.disabled, false);
+  await ui.saveTaskProfile();
+  assert.deepEqual([...ui.calls.at(-1).body.items[0].skill_ids], ['explain', 'verify']);
+  assert.equal(ui.calls.at(-1).body.items[0].skill_ids.includes('task-vision-core'), false);
 });
 
 test('a pending behavior refresh cannot promote an old draft to a newer catalog revision', async () => {
@@ -2017,7 +2004,7 @@ test('startup edits stay isolated until Save and Cancel restores the saved value
   assert.equal(saved.base_contract, 'Saved contract');
 });
 
-test('startup Save keeps explicit blanks and revision without changing identity or task foundations', async () => {
+test('startup Save keeps explicit blanks and revision without changing identity or legacy task instructions', async () => {
   const saved = { revision: 7, base_contract: 'Original contract', startup_instructions: 'Original startup',
     task_foundations: { vision: 'Keep vision', reasoning: 'Keep reasoning' } };
   let resolveSave;

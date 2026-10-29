@@ -55,6 +55,7 @@ class SensoryEvidenceAdministrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Permanently erase the media bytes for this journal record?", script)
         self.assertIn('data-admin-section="voice"', markup)
         self.assertIn('id="taskProfileAddBehavior"', markup)
+        self.assertIn('id="taskProfileAddSkill"', markup)
         self.assertIn('id="taskProfileModel" aria-label="Model ID"', markup)
         self.assertIn('id="taskProfileFallbackList"', markup)
         self.assertIn('id="taskProfileAddFallback"', markup)

@@ -8,6 +8,7 @@ from aicognitive_mind.task_behaviors import (
 )
 from aicognitive_mind.task_behaviors import TASK_BEHAVIOR_LABELS
 from aicognitive_mind.host_behaviors import HostBehavior, HostBehaviorRegistry
+from aicognitive_mind.effective_skills import EffectiveSkillRegistry
 from aicognitive_mind.task_model_assignments import TaskModelAssignmentRegistry
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
 
@@ -46,7 +47,7 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
         reasoning = next(item for item in assignments if item.task == "reasoning")
         self.assertEqual(reasoning.behavior_ids, [])
 
-    async def test_every_task_has_factory_foundation_and_mutable_profile(self):
+    async def test_every_task_has_required_core_skill_and_mutable_profile(self):
         registry = TaskBehaviorRegistry(FakeRecords())
         profiles = await registry.list()
         self.assertEqual({item.task for item in profiles}, set(TASK_BEHAVIOR_LABELS))
@@ -54,7 +55,7 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
         for profile in profiles:
             self.assertTrue(TASK_FOUNDATIONS[profile.task])
 
-    async def test_external_behavior_is_mutable_but_does_not_replace_foundation(self):
+    async def test_external_behavior_is_mutable_but_does_not_replace_core_skill(self):
         registry = TaskBehaviorRegistry(FakeRecords())
         profiles = await registry.list()
         updated = [
@@ -72,7 +73,7 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(TASK_FOUNDATIONS["vision"].startswith("You are Axiom"), True)
         self.assertFalse(hasattr(vision, "foundation"))
 
-    async def test_prompt_layers_foundation_behavior_assignment_and_compact_context(self):
+    async def test_prompt_layers_task_skills_behavior_assignment_and_compact_context(self):
         registry = TaskBehaviorRegistry(FakeRecords())
         profiles = await registry.list()
         await registry.replace([
@@ -91,7 +92,7 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
             memory_refs=("memory-3",),
             working_context="Current frame shows a doorway.",
         ))
-        self.assertLess(prompt.index("AXIOM TASK FOUNDATION"), prompt.index("CONFIGURABLE TASK BEHAVIOR"))
+        self.assertLess(prompt.index("TASK SKILLS"), prompt.index("CONFIGURABLE TASK BEHAVIOR"))
         self.assertLess(prompt.index("CONFIGURABLE TASK BEHAVIOR"), prompt.index("CURRENT ASSIGNMENT"))
         self.assertIn(TASK_FOUNDATIONS["vision"], prompt)
         self.assertIn("Be concise.", prompt)
@@ -102,12 +103,29 @@ class TaskBehaviorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Current frame shows a doorway.", prompt)
         self.assertNotIn("entire conversation", prompt)
 
-    async def test_empty_behavior_does_not_hide_immutable_foundation(self):
+    async def test_empty_behavior_does_not_hide_required_core_skill(self):
         registry = TaskBehaviorRegistry(FakeRecords())
         assembler = TaskPromptAssembler(registry)
         prompt = await assembler.system_prompt(TaskExecutionContext(task="audio"))
         self.assertIn(TASK_FOUNDATIONS["audio"], prompt)
         self.assertNotIn("CONFIGURABLE TASK BEHAVIOR", prompt)
+
+    async def test_optional_task_skills_apply_only_to_selected_task_in_saved_order(self):
+        records = FakeRecords()
+        skills = EffectiveSkillRegistry(records)
+        await skills.save("verify", {"name": "Verify", "content": "Verify the result."}, expected_revision=0)
+        await skills.save("explain", {"name": "Explain", "content": "Explain the result."}, expected_revision=0)
+        assignments = TaskModelAssignmentRegistry(records)
+        await assignments.replace([
+            item.model_copy(update={"skill_ids": ["explain", "verify"]})
+            if item.task == "coding" else item for item in await assignments.list()
+        ])
+        assembler = TaskPromptAssembler(TaskBehaviorRegistry(records))
+        coding = await assembler.system_prompt(TaskExecutionContext(task="coding"))
+        vision = await assembler.system_prompt(TaskExecutionContext(task="vision"))
+        self.assertLess(coding.index("Explain the result."), coding.index("Verify the result."))
+        self.assertNotIn("Explain the result.", vision)
+        self.assertNotIn("Verify the result.", vision)
 
     async def test_reasoning_has_its_own_mutable_profile_without_model_assignment(self):
         registry = TaskBehaviorRegistry(FakeRecords())

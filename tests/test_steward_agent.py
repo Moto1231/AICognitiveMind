@@ -1498,7 +1498,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
             result = await service.begin_interaction("Please format this text.")
         self.assertEqual([c["model"] for c in calls], ["model-a", "model-b"])
         self.assertIn("name: memory-steward", calls[1]["messages"][0]["content"])
-        self.assertIn("AXIOM TASK FOUNDATION", calls[1]["messages"][0]["content"])
+        self.assertIn("TASK SKILLS", calls[1]["messages"][0]["content"])
         self.assertEqual(result["memory_assessment"]["outcome"], "no_recall_needed")
 
 

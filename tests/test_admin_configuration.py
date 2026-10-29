@@ -48,7 +48,7 @@ class CognitiveConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Do not\napproximate an existing pattern or add a one-off selector", DEFAULT_STARTUP_INSTRUCTIONS)
         self.assertIn("desktop and mobile viewports", DEFAULT_STARTUP_INSTRUCTIONS)
 
-    async def test_overrides_reload_preserve_blanks_and_unedited_task_foundations(self):
+    async def test_legacy_task_instruction_overrides_preserve_blanks_for_skill_migration(self):
         records = Records()
         registry = CognitiveConfigurationRegistry(records)
         original = await registry.effective()
@@ -92,7 +92,7 @@ class CognitiveConfigurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await registry.save({}, expected_revision=0))["revision"], 0)
         self.assertEqual(records.values, {})
 
-    async def test_effective_foundation_reaches_real_task_prompt_after_reload(self):
+    async def test_legacy_task_instruction_reaches_required_core_skill_after_reload(self):
         records = Records()
         original = await CognitiveConfigurationRegistry(records).effective()
         marker = "Administrator-owned visual grounding rule."
@@ -104,7 +104,8 @@ class CognitiveConfigurationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn(marker, prompt)
         self.assertNotIn(original["task_foundations"]["vision"], prompt)
-        self.assertIn("Administrator configurable", prompt)
+        self.assertIn("TASK SKILLS", prompt)
+        self.assertIn("task-vision-core) [required]", prompt)
         await CognitiveConfigurationRegistry(records).save({
             "task_foundations": {"vision": ""},
         }, expected_revision=1)

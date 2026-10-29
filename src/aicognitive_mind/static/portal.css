@@ -1143,7 +1143,7 @@ body {
 #breakerSection .edit-actions,
 #voiceSection .edit-actions,
 #taskProfileEditor .task-fallback-actions,
-#taskProfileEditor .task-profile-foundation-section > .edit-actions,
+#taskProfileEditor .task-skill-actions,
 #behaviorsSection .behavior-library-actions,
 #devicesSection .device-selection-actions { display: flex; flex-wrap: wrap; align-items: center; }
 #foundationsSection .edit-actions button.axiom-icon-button,
@@ -1152,7 +1152,8 @@ body {
 #voiceSection .edit-actions button.axiom-icon-button,
 #taskProfileEditor .task-fallbacks-editor > .panel-heading button.axiom-icon-button,
 #taskProfileEditor .task-fallback-actions button.axiom-icon-button,
-#taskProfileEditor .task-profile-foundation-section > .edit-actions button.axiom-icon-button,
+#taskProfileEditor .task-skill-add-row button.axiom-icon-button,
+#taskProfileEditor .task-skill-actions button.axiom-icon-button,
 #behaviorsSection .behavior-library-actions button.axiom-icon-button,
 #devicesSection .device-selection-actions button.axiom-icon-button {
   inline-size: 36px;
@@ -1194,14 +1195,32 @@ body {
 #clearMemoryFilters,#adminClearMemoryFilters {justify-self:end;align-self:end;margin-left:auto;}
 #taskProfileList .task-profile-card.axiom-icon-button > strong,#taskProfileList .task-profile-card > strong {color:var(--accent)!important;}
 
-/* Keep the read-only task foundation comfortably readable at every viewport. */
-#taskProfileEditor #taskProfileFoundation {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: 210px;
-  resize: vertical;
+.task-skill-selection { display: grid; gap: 10px; margin-top: 14px; }
+.task-skill-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(10, 25, 43, .55);
+}
+.task-skill-option strong, .task-skill-option small { display: block; }
+.task-skill-option small { margin-top: 4px; color: var(--muted); }
+.task-skill-add-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; margin-top: 14px; }
+.task-skill-actions { flex-wrap: nowrap; }
+#taskProfileEditor .task-skill-actions button.axiom-icon-button {
+  inline-size: 36px;
+  min-inline-size: 36px;
+  block-size: 36px;
+  min-block-size: 36px;
+  padding: 6px;
+  flex: 0 0 36px;
+}
+@media (max-width: 680px) {
+  .task-skill-add-row { grid-template-columns: minmax(0, 1fr); }
+  .task-skill-option { align-items: flex-start; flex-direction: column; }
 }
 
 #foundationsSection { grid-column: 1 / -1; }
@@ -1215,7 +1234,7 @@ body {
 .foundation-identity-wide { grid-column: 1 / -1; }
 #deviceSelectionStatus:empty { margin: 0; }
 @media (max-width: 680px) { .foundation-identity { grid-template-columns: minmax(0, 1fr); } }
-#foundationStatus, #taskFoundationStatus { font-size: 12px; color: var(--accent); }
+#foundationStatus { font-size: 12px; color: var(--accent); }
 #startupStatus:empty { display: none; }
 #breakerSettingsStatus:empty { display: none; }
 #skillsConfigurationFlags { margin-block: 14px; }

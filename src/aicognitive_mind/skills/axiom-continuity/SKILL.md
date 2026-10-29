@@ -9,7 +9,7 @@ description: Mandatory Axiom identity and interaction lifecycle for every turn w
 
 This packaged protocol is the factory default. The authenticated Administrator
 can edit and save its full text, name, enabled, required and protected settings,
-as well as identity, values, commitments, behaviors, task foundations, base
+as well as identity, values, commitments, behaviors, task skills, base
 contract and startup instructions. Saved Mind settings are authoritative at
 startup and on subsequent interactions. Use the effective configuration returned
 by the runtime; do not restore a factory instruction or requirement over an

@@ -6,11 +6,13 @@ import hashlib
 from importlib.resources import files
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, REQUIRED_SKILL_NAMES
 from aicognitive_mind.domain import utc_now
+from aicognitive_mind.task_model_assignments import TASK_LABELS
+from aicognitive_mind.task_skill_defaults import packaged_task_skills
 
 
 class SkillRevisionConflict(ValueError):
@@ -26,6 +28,16 @@ class SkillConfiguration(BaseModel):
     enabled: bool = True
     required: bool = False
     protected: bool = False
+    required_tasks: list[str] = Field(default_factory=list, max_length=len(TASK_LABELS))
+
+    @field_validator("required_tasks")
+    @classmethod
+    def clean_required_tasks(cls, values: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(value.strip() for value in values if value.strip()))
+        unknown = set(cleaned) - set(TASK_LABELS)
+        if unknown:
+            raise ValueError("Unknown required task IDs: " + ", ".join(sorted(unknown)))
+        return cleaned
 
 
 def packaged_skill_defaults() -> list[dict[str, Any]]:
@@ -43,6 +55,7 @@ def packaged_skill_defaults() -> list[dict[str, Any]]:
             protected=slug in REQUIRED_SKILLS,
         )
         result.append(config.model_dump())
+    result.extend(packaged_task_skills())
     return sorted(result, key=lambda item: (
         REQUIRED_SKILLS.index(item["slug"]) if item["slug"] in REQUIRED_SKILLS else len(REQUIRED_SKILLS),
         item["slug"],
@@ -63,9 +76,32 @@ class EffectiveSkillRegistry:
             **metadata,
         }
 
-    def _effective(self, record: dict[str, Any] | None) -> list[dict[str, Any]]:
+    def _effective(
+        self,
+        record: dict[str, Any] | None,
+        legacy_configuration: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         items = {item["slug"]: self._view(item, revision=0, source="packaged_default")
                  for item in packaged_skill_defaults()}
+        # Preserve existing Administrator task instruction text without a
+        # destructive migration. A later edit in Skills creates a normal Mind
+        # override and takes precedence over this compatibility source.
+        for task, content in (legacy_configuration or {}).get("task_foundations", {}).items():
+            slug = f"task-{task.replace('_', '-')}-core"
+            if slug not in items or not isinstance(content, str):
+                continue
+            config = {
+                key: value for key, value in items[slug].items()
+                if key in SkillConfiguration.model_fields
+            }
+            config["content"] = content
+            items[slug] = self._view(
+                config,
+                revision=(legacy_configuration or {}).get("revision", 0),
+                source="legacy_task_instruction",
+                updated_by=(legacy_configuration or {}).get("updated_by"),
+                updated_at=(legacy_configuration or {}).get("updated_at"),
+            )
         for saved in (record or {}).get("items", []):
             config = SkillConfiguration.model_validate({
                 key: value for key, value in saved.items() if key in SkillConfiguration.model_fields
@@ -77,7 +113,10 @@ class EffectiveSkillRegistry:
         return list(items.values())
 
     async def list(self) -> list[dict[str, Any]]:
-        return self._effective(await self.records.get(self.RECORD_KEY))
+        return self._effective(
+            await self.records.get(self.RECORD_KEY),
+            await self.records.get("cognitive_configuration"),
+        )
 
     async def get(self, slug: str) -> dict[str, Any] | None:
         return next((item for item in await self.list() if item["slug"] == slug), None)
@@ -91,17 +130,49 @@ class EffectiveSkillRegistry:
             *(f"## {item['name']} ({item['slug']})\n\n{item['content']}" for item in active),
         ])
 
+    async def task_contract(self, task: str, assigned_ids: list[str] | None = None) -> str:
+        """Compose required and ordered optional skills for one Task Profile."""
+
+        catalog = await self.list()
+        required = [item for item in catalog if item["enabled"] and task in item["required_tasks"]]
+        by_slug = {item["slug"]: item for item in catalog}
+        optional = []
+        for slug in assigned_ids or []:
+            item = by_slug.get(slug)
+            if not item or not item["enabled"] or item["required"] or item["required_tasks"]:
+                continue
+            optional.append(item)
+        selected = required + optional
+        if not selected:
+            return ""
+        return "\n\n".join([
+            "TASK SKILLS (required first, then Administrator-selected order):",
+            *(f"## {item['name']} ({item['slug']})"
+              + (" [required]" if task in item["required_tasks"] else "")
+              + f"\n\n{item['content']}" for item in selected),
+        ])
+
     async def save(
         self, slug: str, changes: dict[str, Any], *, expected_revision: int,
     ) -> dict[str, Any]:
         if type(expected_revision) is not int or expected_revision < 0:
             raise SkillRevisionConflict("Refresh the skill configuration before saving.")
         before = await self.records.get(self.RECORD_KEY)
-        current = next((item for item in self._effective(before) if item["slug"] == slug), None)
+        legacy_configuration = await self.records.get("cognitive_configuration")
+        current = next((item for item in self._effective(before, legacy_configuration)
+                        if item["slug"] == slug), None)
         if expected_revision != (current["revision"] if current else 0):
             raise SkillRevisionConflict("Skill configuration changed; refresh before saving.")
         previous = {key: value for key, value in (current or {}).items()
                     if key in SkillConfiguration.model_fields}
+        if current and current["required_tasks"]:
+            changes = {
+                **changes,
+                "enabled": True,
+                "required": False,
+                "protected": True,
+                "required_tasks": current["required_tasks"],
+            }
         config = SkillConfiguration.model_validate({**previous, **changes, "slug": slug}).model_dump()
         saved = {
             **config, "revision": expected_revision + 1,

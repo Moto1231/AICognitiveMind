@@ -89,7 +89,6 @@ from aicognitive_mind.evidence_review import SensoryEvidenceReviewTool
 from aicognitive_mind.fish_audio import FishAudioError, FishAudioRenderer
 from aicognitive_mind.host_behaviors import BehaviorRevisionConflict, HostBehavior, HostBehaviorRegistry
 from aicognitive_mind.task_behaviors import (
-    TASK_FOUNDATIONS,
     TaskBehavior,
     TaskBehaviorRegistry,
     TaskExecutionContext,
@@ -1928,7 +1927,9 @@ async def save_skill_configuration(
         raise HTTPException(status_code=400, detail="Invalid skill slug")
     try:
         return await _skill_registry(request).save(
-            slug, payload.model_dump(exclude={"revision"}), expected_revision=payload.revision,
+            slug,
+            payload.model_dump(exclude={"revision"}, exclude_unset=True),
+            expected_revision=payload.revision,
         )
     except SkillRevisionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -2243,11 +2244,9 @@ async def admin_task_behaviors(request: Request) -> dict[str, Any]:
     require_admin(request)
     runtime = _request_runtime(request)
     items = await runtime.task_behaviors.list()
-    configuration = await CognitiveConfigurationRegistry(runtime.runtime_records).effective()
     return {
         "items": [item.model_dump(mode="json") for item in items],
-        "foundations": configuration["task_foundations"],
-        "foundation_defaults": TASK_FOUNDATIONS,
+        "skills": await EffectiveSkillRegistry(runtime.runtime_records).list(),
     }
 
 

@@ -32,11 +32,9 @@ const state = {
   breakerSaving: false,
   breakerLoadRevision: 0,
   foundationIdentity: null,
-  taskFoundationDraft: null,
-  taskFoundationSaving: false,
   taskModelAssignments: [],
   taskBehaviors: [],
-  taskFoundations: {},
+  taskSkills: [],
   providerEndpoints: [],
   providerEndpointRevision: null,
   mcpServers: [],
@@ -257,6 +255,9 @@ const el = {
   taskProfileFallbackDown: document.getElementById("taskProfileFallbackDown"),
   taskProfileFallbackRemove: document.getElementById("taskProfileFallbackRemove"),
   taskProfileAddFallback: document.getElementById("taskProfileAddFallback"),
+  taskProfileSkillSelection: document.getElementById("taskProfileSkillSelection"),
+  taskProfileSkillSelect: document.getElementById("taskProfileSkillSelect"),
+  taskProfileAddSkill: document.getElementById("taskProfileAddSkill"),
   taskProfileAddBehavior: document.getElementById("taskProfileAddBehavior"),
   voiceRate: document.getElementById("voiceRate"),
   voiceRateValue: document.getElementById("voiceRateValue"),
@@ -269,11 +270,6 @@ const el = {
   voiceSettingsStatus: document.getElementById("voiceSettingsStatus"),
   saveVoiceSettings: document.getElementById("saveVoiceSettings"),
   cancelVoiceSettings: document.getElementById("cancelVoiceSettings"),
-  taskProfileFoundation: document.getElementById("taskProfileFoundation"),
-  taskFoundationEdit: document.getElementById("taskFoundationEdit"),
-  taskFoundationSave: document.getElementById("taskFoundationSave"),
-  taskFoundationCancel: document.getElementById("taskFoundationCancel"),
-  taskFoundationStatus: document.getElementById("taskFoundationStatus"),
   taskProfileBehaviorSelection: document.getElementById("taskProfileBehaviorSelection"),
   taskProfileBehaviorName: document.getElementById("taskProfileBehaviorName"),
   taskProfileInstructions: document.getElementById("taskProfileInstructions"),
@@ -636,7 +632,6 @@ function allTaskNames() {
     ...Object.keys(taskModelLabels),
     ...state.taskModelAssignments.map(item => item.task),
     ...state.taskBehaviors.map(item => item.task),
-    ...Object.keys(state.taskFoundations),
   ])].sort((a, b) => (taskModelLabels[a] || a).localeCompare(taskModelLabels[b] || b));
 }
 
@@ -666,10 +661,11 @@ function renderTaskProfiles() {
     const detail = document.createElement("span");
     detail.textContent = endpoint?.name || (assignment.provider === "connected-host"
       ? "Connected reasoning host" : assignment.provider || "No endpoint selected");
-    const behaviorStatus = document.createElement("small");
-    const ids = selectedTaskBehaviorIds(task, assignment);
-    behaviorStatus.textContent = `${ids.length} behavior${ids.length === 1 ? "" : "s"} selected`;
-    card.append(title, detail, behaviorStatus);
+    const selectionStatus = document.createElement("small");
+    const behaviorIds = selectedTaskBehaviorIds(task, assignment);
+    const skillCount = requiredTaskSkills(task).length + selectedTaskSkillIds(assignment).length;
+    selectionStatus.textContent = `${skillCount} skill${skillCount === 1 ? "" : "s"} · ${behaviorIds.length} behavior${behaviorIds.length === 1 ? "" : "s"}`;
+    card.append(title, detail, selectionStatus);
     card.addEventListener("click", () => openTaskProfile(task));
     el.taskProfileList.append(card);
   }
@@ -802,6 +798,111 @@ function selectedTaskBehaviorIds(task, assignment) {
 
 function taskBehaviorCatalog() {
   return state.hostBehaviorSnapshot ? JSON.parse(state.hostBehaviorSnapshot) : state.hostBehaviors;
+}
+
+function selectedTaskSkillIds(assignment) {
+  return Array.isArray(assignment?.skill_ids) ? [...assignment.skill_ids] : [];
+}
+
+function requiredTaskSkills(task) {
+  return state.taskSkills.filter(skill => Array.isArray(skill.required_tasks) && skill.required_tasks.includes(task));
+}
+
+function optionalTaskSkills() {
+  return state.taskSkills.filter(skill => !skill.required && !(skill.required_tasks || []).length);
+}
+
+function renderTaskSkillSelection() {
+  if (!el.taskProfileSkillSelection || !el.taskProfileSkillSelect) return;
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const selectedIds = selectedTaskSkillIds(assignment);
+  const catalog = new Map(state.taskSkills.map(skill => [skill.slug, skill]));
+  const required = requiredTaskSkills(state.activeTaskProfile);
+  el.taskProfileSkillSelection.replaceChildren();
+
+  function appendSkill(skill, index = -1) {
+    const row = document.createElement("div");
+    row.className = "task-skill-option";
+    const text = document.createElement("div");
+    const title = document.createElement("strong");
+    const isRequired = index < 0;
+    title.textContent = `${skill.name}${isRequired ? " · Required" : ""}${!skill.enabled ? " · Disabled in library" : ""}`;
+    const detail = document.createElement("small");
+    detail.textContent = skill.slug;
+    text.append(title, detail);
+    row.append(text);
+    if (!isRequired) {
+      const actions = document.createElement("div");
+      actions.className = "edit-actions task-skill-actions";
+      const up = document.createElement("button");
+      up.type = "button"; up.className = "secondary-button"; up.textContent = "Up";
+      up.setAttribute("aria-label", `Move ${skill.name} up`); up.disabled = index === 0;
+      up.addEventListener("click", () => moveTaskSkill(index, -1));
+      const down = document.createElement("button");
+      down.type = "button"; down.className = "secondary-button"; down.textContent = "Down";
+      down.setAttribute("aria-label", `Move ${skill.name} down`); down.disabled = index === selectedIds.length - 1;
+      down.addEventListener("click", () => moveTaskSkill(index, 1));
+      const remove = document.createElement("button");
+      remove.type = "button"; remove.className = "secondary-button"; remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove ${skill.name}`);
+      remove.addEventListener("click", () => removeTaskSkill(index));
+      actions.append(up, down, remove);
+      row.append(actions);
+    }
+    el.taskProfileSkillSelection.append(row);
+  }
+
+  required.forEach(skill => appendSkill(skill));
+  selectedIds.forEach((slug, index) => {
+    const skill = catalog.get(slug);
+    if (skill) appendSkill(skill, index);
+  });
+  if (!required.length && !selectedIds.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "No task skills are available.";
+    el.taskProfileSkillSelection.append(empty);
+  }
+
+  const selected = new Set(selectedIds);
+  el.taskProfileSkillSelect.replaceChildren(new Option("Choose a skill", ""));
+  for (const skill of optionalTaskSkills().filter(item => !selected.has(item.slug))) {
+    el.taskProfileSkillSelect.append(new Option(
+      `${skill.name}${skill.enabled ? "" : " · Disabled in library"}`,
+      skill.slug,
+    ));
+  }
+  el.taskProfileSkillSelect.value = "";
+  el.taskProfileSkillSelect.disabled = !assignment || el.taskProfileSkillSelect.options.length === 1;
+  if (el.taskProfileAddSkill) el.taskProfileAddSkill.disabled = el.taskProfileSkillSelect.disabled;
+}
+
+function addTaskSkill() {
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const slug = el.taskProfileSkillSelect?.value;
+  if (!assignment || !slug || selectedTaskSkillIds(assignment).includes(slug)) return;
+  assignment.skill_ids = [...selectedTaskSkillIds(assignment), slug];
+  renderTaskSkillSelection();
+  updateTaskSaveState();
+}
+
+function moveTaskSkill(index, direction) {
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  const ids = selectedTaskSkillIds(assignment);
+  const target = index + direction;
+  if (!assignment || target < 0 || target >= ids.length) return;
+  [ids[index], ids[target]] = [ids[target], ids[index]];
+  assignment.skill_ids = ids;
+  renderTaskSkillSelection();
+  updateTaskSaveState();
+}
+
+function removeTaskSkill(index) {
+  const assignment = state.taskModelAssignments.find(item => item.task === state.activeTaskProfile);
+  if (!assignment) return;
+  assignment.skill_ids = selectedTaskSkillIds(assignment).filter((_, itemIndex) => itemIndex !== index);
+  renderTaskSkillSelection();
+  updateTaskSaveState();
 }
 
 function taskProfileConfiguration() {
@@ -1090,13 +1191,12 @@ function cancelEndpointEdit() {
 }
 
 function openTaskProfile(task) {
-  if (state.taskFoundationSaving || (state.taskProfileSaving && task !== state.activeTaskProfile)) return;
-  if (state.taskFoundationDraft?.task !== task) cancelTaskFoundationEdit();
+  if (state.taskProfileSaving && task !== state.activeTaskProfile) return;
   if (state.activeTaskProfile && state.activeTaskProfile !== task) discardTaskProfileChanges();
   state.activeTaskProfile = task;
   let assignment = state.taskModelAssignments.find(item => item.task === task);
   if (!assignment) {
-    assignment = { task, provider: "", model: "", fallbacks: [], provider_rotation: "ordered", behavior_ids: null, voice_reference_id: "", notes: "" };
+    assignment = { task, provider: "", model: "", fallbacks: [], provider_rotation: "ordered", behavior_ids: null, skill_ids: [], voice_reference_id: "", notes: "" };
     state.taskModelAssignments.push(assignment);
   }
   const behavior = state.taskBehaviors.find(item => item.task === task) || {};
@@ -1116,12 +1216,11 @@ function openTaskProfile(task) {
     else detailIcon.textContent = "◆";
   }
   if (el.taskProfileRevision) el.taskProfileRevision.textContent = "";
-  if (!state.taskFoundationDraft) el.taskProfileFoundation.value = state.taskFoundations[task] ?? "";
-  updateTaskFoundationEditor();
   el.taskProfileInstructions.value = behavior.instructions || "";
   el.taskProfileEnabled.checked = behavior.enabled !== false;
   el.taskProfileVoiceReferenceId.value = assignment.voice_reference_id || "";
   renderTaskBehaviorSelection();
+  renderTaskSkillSelection();
   renderFallbackSelectors();
   state.taskProfileSnapshot = taskProfileConfiguration();
   updateTaskSaveState();
@@ -1131,8 +1230,7 @@ function openTaskProfile(task) {
 }
 
 function closeTaskProfile() {
-  if (state.taskFoundationSaving || state.taskProfileSaving) return;
-  cancelTaskFoundationEdit();
+  if (state.taskProfileSaving) return;
   discardTaskProfileChanges();
   state.activeTaskProfile = null;
   el.taskProfileEditor.classList.add("hidden");
@@ -1174,7 +1272,7 @@ async function refreshTaskModelAssignments() {
 async function refreshTaskBehaviors() {
   const payload = await api("/v1/admin/task-behaviors", {}, true);
   state.taskBehaviors = payload.items || [];
-  state.taskFoundations = payload.foundations || {};
+  state.taskSkills = payload.skills || [];
   renderTaskProfiles();
 }
 
@@ -3402,6 +3500,7 @@ if (el.taskProfileFallbackEndpoint) el.taskProfileFallbackEndpoint.addEventListe
 if (el.taskProfileFallbackUp) el.taskProfileFallbackUp.addEventListener("click", () => moveTaskFallback(-1));
 if (el.taskProfileFallbackDown) el.taskProfileFallbackDown.addEventListener("click", () => moveTaskFallback(1));
 if (el.taskProfileFallbackRemove) el.taskProfileFallbackRemove.addEventListener("click", removeTaskFallback);
+if (el.taskProfileAddSkill) el.taskProfileAddSkill.addEventListener("click", addTaskSkill);
 if (el.taskProfileAddBehavior) el.taskProfileAddBehavior.addEventListener("click", () => {
   el.taskProfileBehaviorSelection?.querySelector("input:not(:disabled)")?.focus();
 });
@@ -3737,7 +3836,6 @@ async function refreshStartupConfiguration() {
     const result = await api("/v1/admin/cognitive-configuration", {}, true);
     if (revision !== state.startupConfigurationLoadRevision || state.cognitiveDraft || state.cognitiveSaving) return;
     state.cognitiveConfiguration = result;
-    state.taskFoundations = state.cognitiveConfiguration.task_foundations || {};
     renderStartupConfiguration();
     document.getElementById("startupStatus").textContent = "";
   } catch (error) {
@@ -3894,58 +3992,6 @@ async function saveBreakerSettings() {
   }
 }
 
-function updateTaskFoundationEditor() {
-  const draft = state.taskFoundationDraft;
-  const editing = draft?.task === state.activeTaskProfile;
-  const busy = state.taskFoundationSaving === true;
-  el.taskProfileFoundation.readOnly = !editing || busy;
-  if (el.taskFoundationEdit) el.taskFoundationEdit.disabled = !state.activeTaskProfile || editing || busy;
-  if (el.taskFoundationCancel) el.taskFoundationCancel.disabled = !editing || busy;
-  if (el.taskFoundationSave) el.taskFoundationSave.disabled = !editing || busy || el.taskProfileFoundation.value === draft.original;
-}
-
-async function editTaskFoundation() {
-  const task = state.activeTaskProfile;
-  if (!task || state.taskFoundationDraft || state.taskFoundationSaving) return;
-  state.taskFoundationSaving = true;
-  updateTaskFoundationEditor();
-  try {
-    const configuration = await api("/v1/admin/cognitive-configuration", {}, true);
-    if (state.activeTaskProfile !== task) return;
-    const value = configuration.task_foundations?.[task] ?? "";
-    state.taskFoundationDraft = { task, revision: configuration.revision, original: value };
-    state.taskFoundations[task] = value;
-    el.taskProfileFoundation.value = value;
-    if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = "Editing task foundation.";
-  } catch (error) { if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = error.message; }
-  finally { state.taskFoundationSaving = false; updateTaskFoundationEditor(); }
-}
-
-function cancelTaskFoundationEdit() {
-  if (state.taskFoundationSaving) return;
-  const draft = state.taskFoundationDraft;
-  if (draft) el.taskProfileFoundation.value = draft.original;
-  state.taskFoundationDraft = null;
-  updateTaskFoundationEditor();
-}
-
-async function saveTaskFoundation() {
-  updateTaskFoundationEditor();
-  if (el.taskFoundationSave.disabled) return;
-  const draft = state.taskFoundationDraft;
-  const payload = { expected_revision: draft.revision, task_foundations: { [draft.task]: el.taskProfileFoundation.value } };
-  state.taskFoundationSaving = true;
-  updateTaskFoundationEditor();
-  try {
-    const configuration = await api("/v1/admin/cognitive-configuration", { method: "PUT", body: JSON.stringify(payload) }, true);
-    state.taskFoundations = configuration.task_foundations || {};
-    state.taskFoundationDraft = null;
-    el.taskProfileFoundation.value = state.taskFoundations[draft.task] ?? "";
-    if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = "Task foundation saved.";
-  } catch (error) { if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = error.message; }
-  finally { state.taskFoundationSaving = false; updateTaskFoundationEditor(); }
-}
-
 for (const id of ["foundationContract", "foundationStartup"]) document.getElementById(id)?.addEventListener("input", updateStartupEditorState);
 document.getElementById("startupEdit")?.addEventListener("click", editStartupConfiguration);
 document.getElementById("startupCancel")?.addEventListener("click", cancelStartupConfiguration);
@@ -3954,11 +4000,6 @@ for (const id of Object.values(breakerFieldIds)) document.getElementById(id)?.ad
 document.getElementById("breakerEdit")?.addEventListener("click", editBreakerSettings);
 document.getElementById("breakerCancel")?.addEventListener("click", cancelBreakerSettings);
 document.getElementById("breakerSave")?.addEventListener("click", saveBreakerSettings);
-el.taskFoundationEdit?.addEventListener("click", editTaskFoundation);
-el.taskFoundationCancel?.addEventListener("click", cancelTaskFoundationEdit);
-el.taskFoundationSave?.addEventListener("click", saveTaskFoundation);
-el.taskProfileFoundation?.addEventListener("input", updateTaskFoundationEditor);
-
 let skillDraftSha = null;
 let skillCatalog = [];
 let skillDraftsAvailable = false;
@@ -3981,6 +4022,7 @@ function skillPayload() {
     enabled: document.getElementById("skillsEnabled").checked,
     required: document.getElementById("skillsRequired").checked,
     protected: document.getElementById("skillsProtected").checked,
+    required_tasks: skillSavedItem?.required_tasks || [],
     revision: skillSavedItem?.revision ?? 0,
   };
 }
@@ -3991,7 +4033,8 @@ function updateSkillEditorState() {
   document.getElementById("skillsSlug").readOnly = locked || Boolean(skillSavedItem);
   document.getElementById("skillsContent").readOnly = locked;
   document.getElementById("skillsName").readOnly = locked;
-  for (const id of ["skillsEnabled", "skillsRequired", "skillsProtected"]) document.getElementById(id).disabled = locked;
+  const taskRequired = Boolean(skillSavedItem?.required_tasks?.length);
+  for (const id of ["skillsEnabled", "skillsRequired", "skillsProtected"]) document.getElementById(id).disabled = locked || taskRequired;
   document.getElementById("skillsNameField").classList.toggle("hidden", !mind);
   document.getElementById("skillsConfigurationFlags").classList.toggle("hidden", !mind);
   document.getElementById("skillsList").disabled = skillEditing || skillSaving;

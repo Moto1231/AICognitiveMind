@@ -20,6 +20,7 @@ from aicognitive_mind.codex_body_receiver import BodyReceiver, DeliveryState, Re
 from aicognitive_mind.config import Settings
 from aicognitive_mind.domain import DiagnosticObservation, ReasoningProposal
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
+from aicognitive_mind.effective_skills import packaged_skill_defaults
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.persistence import scope_storage
 from aicognitive_mind.standalone import StandaloneRuntime
@@ -293,7 +294,10 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         with patch("aicognitive_mind.api._skill_github_call", side_effect=AssertionError("No shared GitHub access")) as github:
             listing = await self.get_json(self.alpha_client, "/v1/admin/skills")
             self.assertFalse(listing["drafts_available"])
-            self.assertEqual({item["slug"] for item in listing["items"]}, {*REQUIRED_SKILLS, "memory-steward"})
+            self.assertEqual(
+                {item["slug"] for item in listing["items"]},
+                {item["slug"] for item in packaged_skill_defaults()},
+            )
             for slug in (*REQUIRED_SKILLS, "memory-steward"):
                 item = await self.get_json(self.alpha_client, "/v1/admin/skills/" + slug)
                 if slug in REQUIRED_SKILLS:

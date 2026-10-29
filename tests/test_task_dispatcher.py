@@ -369,7 +369,7 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(url, "http://localhost:8000/v1/chat/completions")
         self.assertEqual(kwargs["json"]["model"], "vision-arbitrary-model")
         self.assertEqual(kwargs["json"]["messages"][0]["role"], "system")
-        self.assertIn("AXIOM TASK FOUNDATION", kwargs["json"]["messages"][0]["content"])
+        self.assertIn("TASK SKILLS", kwargs["json"]["messages"][0]["content"])
         self.assertIn("vision-arbitrary-model", kwargs["json"]["messages"][0]["content"])
         self.assertIn("image_url", str(kwargs["json"]["messages"]))
         self.assertEqual(set(kwargs["json"]), {"model", "messages"})
@@ -599,7 +599,7 @@ class TaskModelDispatcherTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "Hello there")
         self.assertEqual(client.calls[0][1], "http://localhost:8000/v1/audio/transcriptions")
         self.assertEqual(client.calls[0][2]["data"]["model"], "my-audio-model")
-        self.assertIn("AXIOM TASK FOUNDATION", client.calls[0][2]["data"]["prompt"])
+        self.assertIn("TASK SKILLS", client.calls[0][2]["data"]["prompt"])
         self.assertIn("my-audio-model", client.calls[0][2]["data"]["prompt"])
 
     async def test_v3_provider_base_url_does_not_duplicate_v1_prefix(self):
