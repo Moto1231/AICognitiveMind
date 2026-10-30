@@ -124,6 +124,7 @@ class PortalTests(unittest.TestCase):
         self.assertIn("color: var(--icon-line-color, #83dffe)", button_icons)
         self.assertIn("var(--icon-line-glow, rgba(70,182,255,.65))", button_icons)
         self.assertIn("var(--icon-line-stroke, 1.4)", button_icons)
+        self.assertIn("/^(reset|restore)\\b/", button_icons)
         self.assertNotIn("const halo =", button_icons)
         self.assertNotIn("const light =", button_icons)
 
@@ -231,7 +232,7 @@ class PortalTests(unittest.TestCase):
         )
         self.assertIn("#startupStatus:empty { display: none; }", stylesheet)
         self.assertIn("/static/portal.css?v=20261028-device-inner-panel", markup)
-        self.assertIn("/static/portal.js?v=20261028-speech-cancel", markup)
+        self.assertIn("/static/portal.js?v=20261029-breaker-reset", markup)
 
     def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -251,7 +252,7 @@ class PortalTests(unittest.TestCase):
                 self.assertEqual((tag, page), ("input", "breakerSection"))
                 self.assertEqual(attributes["type"], "number")
                 self.assertIn("readonly", attributes)
-        for control_id in ("breakerEdit", "breakerSave", "breakerCancel"):
+        for control_id in ("breakerEdit", "breakerSave", "breakerCancel", "breakerReset"):
             self.assertIn("disabled", pages.elements[control_id][1])
         back_controls = [
             attrs for tag, attrs in pages.page_controls["breakerSection"]
@@ -267,6 +268,9 @@ class PortalTests(unittest.TestCase):
         self.assertIn("#breakerSection .edit-actions button.axiom-icon-button", stylesheet)
         self.assertIn("#breakerSettingsStatus:empty { display: none; }", stylesheet)
         self.assertNotIn("Revision ${result.revision} loaded.", script)
+        self.assertIn('/v1/admin/continuity-health/reset', script)
+        self.assertIn("Degraded Steward reviews", breaker_markup)
+        self.assertIn("(warning only)", script)
 
     def test_endpoint_api_key_is_an_accessible_masked_text_input(self) -> None:
         class Controls(HTMLParser):

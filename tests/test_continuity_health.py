@@ -32,7 +32,7 @@ class InteractionContinuityHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(held["interaction_outcome"]["report_persistence_error"])
         self.assertEqual(held["consecutive_failures"], 6)
 
-    async def test_rolling_35_of_100_opens_without_five_consecutive_failures(self) -> None:
+    async def test_rolling_35_of_100_waits_for_a_complete_window(self) -> None:
         for index in range(34):
             await self.health.record(
                 f"rolling-failure-{index}",
@@ -49,16 +49,60 @@ class InteractionContinuityHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(threshold["interaction_outcome"]["report_persistence_error"])
         self.assertEqual(threshold["rolling_failures"], 35)
         self.assertEqual(threshold["consecutive_failures"], 1)
-        self.assertEqual(threshold["open_reasons"], ["rolling_failures"])
+        self.assertEqual(threshold["rolling_sample_size"], 69)
+        self.assertFalse(threshold["rolling_window_ready"])
+        self.assertEqual(threshold["open_reasons"], [])
 
-        recovery = await self.health.record("rolling-recovery", succeeded=True)
-        self.assertTrue(recovery["interaction_outcome"]["presentation_allowed"])
-        self.assertTrue(recovery["circuit_open"])
+        for index in range(31):
+            full_window = await self.health.record(f"window-success-{index}", succeeded=True)
+        self.assertEqual(full_window["rolling_sample_size"], 100)
+        self.assertTrue(full_window["rolling_window_ready"])
+        self.assertEqual(full_window["open_reasons"], ["rolling_failures"])
         held = await self.health.record(
             "rolling-failure-35", succeeded=False, failure_class="ReviewUnavailable",
         )
         self.assertFalse(held["interaction_outcome"]["presentation_allowed"])
         self.assertTrue(held["interaction_outcome"]["report_persistence_error"])
+
+    async def test_degraded_review_is_warning_only_even_while_rolling_circuit_is_open(self) -> None:
+        for index in range(65):
+            await self.health.record(f"success-{index}", succeeded=True)
+        for index in range(35):
+            opened = await self.health.record(
+                f"failure-{index}", succeeded=False, failure_class="StorageTimeout",
+            )
+        self.assertTrue(opened["circuit_open"])
+
+        degraded = await self.health.record(
+            "journal-committed",
+            succeeded=True,
+            degraded=True,
+            degradation_class="StewardAssessmentExhausted",
+        )
+        self.assertTrue(degraded["circuit_open"])
+        self.assertTrue(degraded["interaction_outcome"]["presentation_allowed"])
+        self.assertFalse(degraded["interaction_outcome"]["report_persistence_error"])
+        self.assertTrue(degraded["interaction_outcome"]["degraded"])
+        self.assertEqual(degraded["rolling_failures"], 35)
+        self.assertEqual(degraded["degraded_reviews"], 1)
+        self.assertEqual(degraded["consecutive_failures"], 0)
+        self.assertEqual(degraded["last_degradation_class"], "StewardAssessmentExhausted")
+
+    async def test_reset_clears_breaker_history_and_preserves_reset_audit(self) -> None:
+        for index in range(5):
+            await self.health.record(
+                f"failure-{index}", succeeded=False, failure_class="StorageTimeout",
+            )
+        reset = await self.health.reset()
+        self.assertFalse(reset["circuit_open"])
+        self.assertEqual(reset["rolling_sample_size"], 0)
+        self.assertEqual(reset["rolling_failures"], 0)
+        self.assertEqual(reset["degraded_reviews"], 0)
+        self.assertEqual(reset["reset_count"], 1)
+        self.assertIsNotNone(reset["last_reset_at"])
+        stored = await self.records.get(STATE_KEY)
+        self.assertEqual(stored["recent_outcomes"], [])
+        self.assertEqual(stored["version"], 2)
 
     async def test_successful_identical_retry_replaces_failure_once(self) -> None:
         failed = await self.health.record(
@@ -109,6 +153,8 @@ class InteractionContinuityHealthTests(unittest.IsolatedAsyncioTestCase):
                 "interaction_id",
                 "succeeded",
                 "failure_class",
+                "degraded",
+                "degradation_class",
                 "presentation_allowed",
                 "recorded_at",
                 "recovered_after_retry",

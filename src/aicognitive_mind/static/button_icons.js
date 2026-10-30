@@ -84,6 +84,7 @@
     if (/^administration$|\bsettings\b/.test(text)) return ['settings', false];
     if (/^(save|saving)\b/.test(text)) return ['save', false];
     if (/^(refresh|refreshing|reload|query)\b/.test(text)) return ['refresh', false];
+    if (/^(reset|restore)\b/.test(text)) return ['refresh', false];
     if (/^(add|create|sign up|register)\b/.test(text)) return ['add', false];
     if (/^(remove|delete|erase)\b/.test(text)) return ['remove', false];
     if (/^clear\b/.test(text)) return ['clear', false];

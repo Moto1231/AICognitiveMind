@@ -30,6 +30,7 @@ const state = {
   breakerSettings: null,
   breakerDraft: null,
   breakerSaving: false,
+  breakerResetting: false,
   breakerLoadRevision: 0,
   foundationIdentity: null,
   taskFoundationDraft: null,
@@ -3823,14 +3824,17 @@ function renderBreakerSettings() {
   document.getElementById("breakerHealthConsecutive").textContent = Number.isInteger(health.consecutive_failures)
     ? `${health.consecutive_failures} / ${state.breakerSettings?.consecutive_failure_limit ?? "—"}` : "—";
   document.getElementById("breakerHealthRolling").textContent = Number.isInteger(health.rolling_failures)
-    ? `${health.rolling_failures} / ${state.breakerSettings?.rolling_failure_limit ?? "—"} in ${health.rolling_sample_size ?? 0} of ${state.breakerSettings?.rolling_window_size ?? "—"}` : "—";
+    ? `${health.rolling_failures} / ${state.breakerSettings?.rolling_failure_limit ?? "—"} in ${health.rolling_sample_size ?? 0} of ${state.breakerSettings?.rolling_window_size ?? "—"}${health.rolling_window_ready ? "" : " (warming up)"}` : "—";
+  document.getElementById("breakerHealthDegraded").textContent = Number.isInteger(health.degraded_reviews)
+    ? `${health.degraded_reviews} in the rolling window (warning only)` : "—";
   document.getElementById("breakerHealthLastFailure").textContent = health.last_failure_class || "None";
+  document.getElementById("breakerHealthLastDegradation").textContent = health.last_degradation_class || "None";
   updateBreakerEditorState();
 }
 
 function updateBreakerEditorState() {
   const editing = Boolean(state.breakerDraft);
-  const busy = state.breakerSaving === true;
+  const busy = state.breakerSaving === true || state.breakerResetting === true;
   const payload = breakerFormPayload();
   for (const id of Object.values(breakerFieldIds)) {
     document.getElementById(id).readOnly = !editing || busy;
@@ -3839,6 +3843,8 @@ function updateBreakerEditorState() {
   document.getElementById("breakerCancel").disabled = !editing || busy;
   document.getElementById("breakerSave").disabled = !editing || busy
     || !breakerFormValid(payload) || JSON.stringify(payload) === state.breakerDraft?.baseline;
+  document.getElementById("breakerReset").disabled = !state.breakerSettings || editing || busy
+    || !(state.breakerSettings.health?.rolling_sample_size > 0);
 }
 
 async function refreshBreakerSettings() {
@@ -3890,6 +3896,25 @@ async function saveBreakerSettings() {
     document.getElementById("breakerSettingsStatus").textContent = error.message;
   } finally {
     state.breakerSaving = false;
+    updateBreakerEditorState();
+  }
+}
+
+async function resetBreakerHealth() {
+  if (!state.breakerSettings || state.breakerDraft || state.breakerSaving || state.breakerResetting) return;
+  if (!window.confirm("Reset The Breaker for this Mind? This clears its operational failure and degradation history.")) return;
+  state.breakerResetting = true;
+  updateBreakerEditorState();
+  try {
+    state.breakerSettings = await api("/v1/admin/continuity-health/reset", {
+      method: "POST",
+    }, true);
+    renderBreakerSettings();
+    document.getElementById("breakerSettingsStatus").textContent = "The Breaker was reset for this Mind.";
+  } catch (error) {
+    document.getElementById("breakerSettingsStatus").textContent = error.message;
+  } finally {
+    state.breakerResetting = false;
     updateBreakerEditorState();
   }
 }
@@ -3954,6 +3979,7 @@ for (const id of Object.values(breakerFieldIds)) document.getElementById(id)?.ad
 document.getElementById("breakerEdit")?.addEventListener("click", editBreakerSettings);
 document.getElementById("breakerCancel")?.addEventListener("click", cancelBreakerSettings);
 document.getElementById("breakerSave")?.addEventListener("click", saveBreakerSettings);
+document.getElementById("breakerReset")?.addEventListener("click", resetBreakerHealth);
 el.taskFoundationEdit?.addEventListener("click", editTaskFoundation);
 el.taskFoundationCancel?.addEventListener("click", cancelTaskFoundationEdit);
 el.taskFoundationSave?.addEventListener("click", saveTaskFoundation);
