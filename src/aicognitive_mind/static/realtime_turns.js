@@ -28,6 +28,15 @@ function samePayload(left, right) {
   return JSON.stringify(canonical(left)) === JSON.stringify(canonical(right));
 }
 
+function normalizedText(value) {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+}
+
+function namingRequired(naming) {
+  return naming && naming.selection_complete !== true &&
+    (naming.choice_required === true || naming.choice_required_before_completion === true);
+}
+
 export class RealtimeTurns {
   constructor({ send, speak, fail, prepare = async () => "", setTimer = setTimeout, clearTimer = clearTimeout }) {
     Object.assign(this, { send, speak, fail, prepare, setTimer, clearTimer });
@@ -40,6 +49,7 @@ export class RealtimeTurns {
     this.closed = false;
     this.turn = null;
     this.instructions = "";
+    this.tools = new Set();
     this.completedResponses = new Set();
     this.retiredResponses = new Set();
     this.importTimer = this.setTimer(() => this.reject("Realtime interaction tools did not become ready."), 60_000);
@@ -86,7 +96,15 @@ export class RealtimeTurns {
       "Carry the returned context; keep summary within 2000 characters. Do not answer other queued audio turns. " +
       (!turn.key ? "This first response must only call begin_interaction; wait for its result and the next response before completing or executing the requested task. " : "") +
       (turn.key ? "This turn already began with key " + JSON.stringify(turn.key) + "; do not begin again. " : "") +
-      (turn.failedCompletion ? "Retry the failed completion once using exactly these unchanged arguments: " + JSON.stringify(turn.failedCompletion) + ". " : "") +
+      (turn.naming ? "Current naming assessment: " + JSON.stringify(turn.naming) + ". " : "") +
+      (turn.naming?.selection_complete ? "Preserve the established name and pronouns; revise them only with an explicit affirmative naming command in this actual human turn. " : "") +
+      (turn.naming?.autonomous_choice_allowed && this.tools.has("propose_self_name") && !turn.acceptedChoice ?
+        (namingRequired(turn.naming) || turn.awaitingNaming ? "Before ordinary completion, " : "The first joint choice is optional now; you may defer it or ") +
+        "choose your own name and pronouns together with propose_self_name using this exact actual user_message, both candidates and a grounded rationale. Wait for accepted=true before claiming the choice. " : "") +
+      (turn.awaitingNaming ? "The ordinary answer is frozen while the required naming decision commits. After an accepted naming choice, retry complete_interaction with exactly these unchanged arguments: " + JSON.stringify(turn.completionPayload) + ". " : "") +
+      (turn.acceptedChoice ? "The joint naming choice committed: " + JSON.stringify(turn.acceptedChoice) + ". Do not propose another choice in this turn. " +
+        (turn.completionPayload ? "Retry complete_interaction with exactly these unchanged arguments: " + JSON.stringify(turn.completionPayload) + ". " : "") : "") +
+      (turn.failedCompletion && !turn.awaitingNaming ? "Retry the failed completion once using exactly these unchanged arguments: " + JSON.stringify(turn.failedCompletion) + ". " : "") +
       (turn.observation ? "Current camera evidence: " + turn.observation : "")
     } }); } catch (error) { this.reject("Realtime connection failed: " + error.message); }
   }
@@ -113,6 +131,9 @@ export class RealtimeTurns {
       this.calls.clear();
       this.startNext();
     } else if (turn.usedMcp) {
+      if ((turn.awaitingNaming || namingRequired(turn.naming)) && !this.tools.has("propose_self_name")) {
+        return this.reject("Reconnect voice to load the required name and pronoun choice tool. The held answer was not spoken.");
+      }
       if (turn.key && !turn.prepared) {
         turn.preparing = true;
         try {
@@ -149,6 +170,25 @@ export class RealtimeTurns {
       }
       turn.key = result.idempotency_key;
       turn.context = result.host_working_context || this.context;
+      turn.naming = objectValue(result.naming);
+    } else if (call.name === "propose_self_name") {
+      if (!this.tools.has("propose_self_name")) {
+        return this.reject("Reconnect voice to load the name and pronoun choice tool. The held answer was not spoken.");
+      }
+      if (!turn.key || turn.committed || turn.acceptedChoice || !args || args.user_message !== turn.transcript ||
+          !normalizedText(args.candidate_name) || !normalizedText(args.candidate_pronouns) || !normalizedText(args.rationale) ||
+          !turn.naming || (turn.naming.selection_complete !== true && turn.naming.autonomous_choice_allowed !== true)) {
+        return this.reject("Realtime naming choice did not match the active eligible interaction.");
+      }
+      const name = normalizedText(args.candidate_name), pronouns = normalizedText(args.candidate_pronouns);
+      if (call.error || result?.accepted !== true || result.candidate_name !== name || result.current_name !== name ||
+          result.candidate_pronouns !== pronouns || result.current_pronouns !== pronouns) {
+        return this.reject("Realtime naming choice did not return an accepted matching name and pronouns.");
+      }
+      turn.acceptedChoice = { self_name: name, pronouns };
+      turn.awaitingNaming = false;
+      turn.naming = { ...turn.naming, status: "complete", selection_complete: true, is_named: true, has_pronouns: true,
+        autonomous_choice_allowed: false, choice_required: false, choice_required_before_completion: false };
     } else if (call.name === "complete_interaction") {
       if (!turn.key || !turn.prepared || !args || args.user_message !== turn.transcript || args.idempotency_key !== turn.key ||
           typeof args.response_text !== "string" || !args.response_text.trim()) {
@@ -158,11 +198,23 @@ export class RealtimeTurns {
         return this.reject("Realtime completion retry changed the original payload.");
       }
       turn.completionPayload = args;
-      if (call.error || result?.status !== "interaction_committed") {
+      if (!call.error && result?.status === "naming_choice_required") {
+        const naming = objectValue(result.naming);
+        if (!namingRequired(naming) || result.presentation?.allowed !== false || turn.awaitingNaming || turn.acceptedChoice) {
+          return this.reject("Realtime completion did not return a recoverable required naming decision.");
+        }
+        turn.naming = naming;
+        turn.awaitingNaming = true;
+      } else if (turn.awaitingNaming) {
+        return this.reject("Realtime completion retried before its required naming choice committed.");
+      } else if (call.error || result?.status !== "interaction_committed") {
         if (turn.failedCompletion) return this.reject("Realtime interaction could not be committed.");
         turn.failedCompletion = args;
       } else {
         if (result.interaction_trace_id !== turn.key) return this.reject("Realtime completion receipt did not match its key.");
+        if (result.presentation?.allowed === false || result.naming?.choice_required === true) {
+          return this.reject("Realtime completion withheld presentation; the held answer was not spoken.");
+        }
         const context = objectValue(result.host_working_context);
         if (!context || typeof context.summary !== "string" || Array.from(context.summary).length > 2000) {
           return this.reject("Realtime completion returned invalid working context.");
@@ -184,6 +236,7 @@ export class RealtimeTurns {
       const item = event.item;
       const names = new Set((item.tools || []).map(tool => tool.name));
       if (item.server_label === "axiom" && names.has("begin_interaction") && names.has("complete_interaction")) {
+        this.tools = names;
         this.ready = true;
         this.clearTimer(this.importTimer);
         this.startNext();

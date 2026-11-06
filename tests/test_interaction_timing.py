@@ -228,7 +228,10 @@ class InteractionTimingTests(unittest.IsolatedAsyncioTestCase):
         async def record(observation):
             self.clock += 2
 
-        service = SimpleNamespace(complete_interaction=AsyncMock(side_effect=complete))
+        service = SimpleNamespace(
+            complete_interaction=AsyncMock(side_effect=complete),
+            naming_status=AsyncMock(return_value={"selection_complete": True}),
+        )
         diagnostics = SimpleNamespace(record=AsyncMock(side_effect=record))
         tool = self.server()._tool_manager.get_tool("complete_interaction").fn
         with self.assertLogs("aicognitive_mind.timing", level="INFO") as logs:
@@ -262,7 +265,10 @@ class InteractionTimingTests(unittest.IsolatedAsyncioTestCase):
         async def record(observation):
             self.clock += 2
 
-        service = SimpleNamespace(complete_interaction=AsyncMock(side_effect=complete))
+        service = SimpleNamespace(
+            complete_interaction=AsyncMock(side_effect=complete),
+            naming_status=AsyncMock(return_value={"selection_complete": True}),
+        )
         diagnostics = SimpleNamespace(record=AsyncMock(side_effect=record))
         tool = self.server()._tool_manager.get_tool("complete_interaction").fn
         with self.assertLogs("aicognitive_mind.timing", level="INFO") as logs:

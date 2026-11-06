@@ -20,7 +20,7 @@ from aicognitive_mind.domain import (
     SensoryEvidenceArtifact,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
-from aicognitive_mind.storage import MindAlreadyInitializedError
+from aicognitive_mind.storage import MindAlreadyInitializedError, append_journal_committed
 from aicognitive_mind.surreal_schema import bootstrap_tables
 from aicognitive_mind.timing import caller, emit
 
@@ -229,11 +229,7 @@ class SurrealJournalStore:
         recorded_by: CognitiveActor,
     ) -> JournalEntry:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.RECORD_JOURNAL)
-        await self._database.create(
-            "journal",
-            {"mind_id": self.mind_id, **entry.model_dump(mode="json")},
-        )
-        return entry
+        return await append_journal_committed(self, entry)
 
     async def read(self) -> list[JournalEntry]:
         # Reads the entire journal; log who asked and how expensive it was.

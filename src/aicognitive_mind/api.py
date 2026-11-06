@@ -112,6 +112,11 @@ from aicognitive_mind.host_runtime import (
 )
 from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.mcp_registry import MCPServerRecord, MCPServerRegistry
+from aicognitive_mind.naming import (
+    NamingChoiceRequired,
+    ensure_naming_ready,
+    naming_required_result,
+)
 from aicognitive_mind.persistence import create_storage, scope_storage
 from aicognitive_mind.presence_resolver import PresenceResolver
 from aicognitive_mind.standalone import ProviderUnavailable, StandaloneRuntime
@@ -707,6 +712,19 @@ app.include_router(create_host_events_router())
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 performance_samples = deque(maxlen=200)
 
+
+@app.exception_handler(NamingChoiceRequired)
+async def naming_choice_required_handler(request: Request, exc: NamingChoiceRequired) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": {
+            **naming_required_result(exc),
+            "code": "naming_choice_required",
+            "recoverable": True,
+            "message": str(exc),
+        }},
+    )
+
 @app.middleware("http")
 async def record_request_performance(request: Request, call_next: Any) -> Response:
     started = time_module.perf_counter()
@@ -961,6 +979,8 @@ async def mind_see(
         return await bridge.see(
             express=express, presence_scope=_body_presence_scope(request)
         )
+    except NamingChoiceRequired:
+        raise
     except (MindNotInitializedError, RuntimeError, ValueError) as exc:
         code = (
             status.HTTP_404_NOT_FOUND
@@ -991,6 +1011,8 @@ async def mind_hear(
         return await bridge.hear(
             express=express, presence_scope=_body_presence_scope(request)
         )
+    except NamingChoiceRequired:
+        raise
     except (MindNotInitializedError, RuntimeError, ValueError) as exc:
         code = (
             status.HTTP_404_NOT_FOUND
@@ -1128,6 +1150,8 @@ async def receive_browser_observation(
             automatic=True,
             presence_scope=_body_presence_scope(request),
         )
+    except NamingChoiceRequired:
+        raise
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE if isinstance(exc, RuntimeError)
@@ -1194,6 +1218,8 @@ async def receive_browser_audio_observation(
             if not task.done():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+    except NamingChoiceRequired:
+        raise
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE if isinstance(exc, RuntimeError)
@@ -1379,13 +1405,23 @@ async def require_active_body_owner(request: Request) -> None:
         )
 
 
+async def _ensure_direct_speech_ready(request: Request) -> Any:
+    context = _request_runtime(request)
+    mind_store = cast(MindStore, context.mind_store)
+    mind = await mind_store.load()
+    if mind is not None:
+        await ensure_naming_ready(mind, cast(JournalStore, context.journal_store))
+    return context
+
+
 @app.post("/v1/body/mouth/speak", response_model=ExpressionIntent)
 async def speak_through_mouth(
     body: MouthSpeechRequest,
     request: Request,
 ) -> ExpressionIntent:
-    runtime = cast(BodyRuntime, _request_runtime(request).body)
-    voice_settings = await _request_runtime(request).voice_settings.read()
+    context = await _ensure_direct_speech_ready(request)
+    runtime = cast(BodyRuntime, context.body)
+    voice_settings = await context.voice_settings.read()
     intent = configured_voice_intent(
         body.text,
         voice_settings,
@@ -1410,12 +1446,12 @@ async def fish_audio_speech(
     request: Request,
 ) -> Response:
     """Render Axiom's spoken output through Fish Audio without exposing its API key."""
-    context = _request_runtime(request)
+    context = await _ensure_direct_speech_ready(request)
     settings = getattr(context, "runtime_settings", None) or get_settings()
     voice_settings = await context.voice_settings.read()
     # Browser voice settings use a 0-1 volume scale; Fish uses dB.
     fish_volume = (body.volume - 1.0) * 20.0
-    dispatcher = TaskModelDispatcher(_request_runtime(request).runtime_records)
+    dispatcher = TaskModelDispatcher(context.runtime_records)
     try:
         if await dispatcher.is_configured("audio_voice"):
             audio = await dispatcher.execute(
@@ -1457,6 +1493,7 @@ async def fish_audio_speech(
             detail=str(exc),
         ) from exc
 
+    await _ensure_direct_speech_ready(request)
     return Response(
         content=audio,
         media_type=getattr(audio, "media_type", "audio/mpeg"),
@@ -1472,7 +1509,8 @@ async def mouth_status(request: Request) -> DeviceStatus:
 
 @app.get("/v1/body/mouth/next", response_model=ExpressionIntent | None)
 async def next_mouth_intent(request: Request, response: Response) -> ExpressionIntent | None:
-    mouth = cast(BrowserVoiceOutput, _request_runtime(request).browser_mouth)
+    context = await _ensure_direct_speech_ready(request)
+    mouth = cast(BrowserVoiceOutput, context.browser_mouth)
     if body_session.get() == "legacy":
         return await mouth.consume()
     await require_active_body_owner(request)
@@ -2393,6 +2431,8 @@ async def load_mind(request: Request) -> CognitiveMind:
 async def interact(body: InteractionRequest, request: Request) -> InteractionResult:
     try:
         return await get_core(request).interact(body.message)
+    except NamingChoiceRequired:
+        raise
     except MindNotInitializedError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -2426,6 +2466,8 @@ async def embodied_text_interaction(
             express=express,
             presence_scope=_body_presence_scope(request),
         )
+    except NamingChoiceRequired:
+        raise
     except MindNotInitializedError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -26,6 +26,9 @@ from aicognitive_mind.mcp_service import (
     MemoryProposal,
 )
 from aicognitive_mind.memory_steward import ResearchObservation
+from aicognitive_mind.naming import (
+    MIN_NAMING_EXPERIENCES, NamingChoiceRequired, naming_required_result,
+)
 from aicognitive_mind.persistence import StorageRuntime, create_storage
 from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.task_behaviors import TaskExecutionContext
@@ -43,6 +46,42 @@ class AppState:
     hosts: Any = None
     task_dispatcher: TaskModelDispatcher | None = None
     tenancy_probe: dict[str, Any] | None = None
+
+
+async def notify_naming_eligibility_change(ctx: Any, before: dict, after: dict) -> bool:
+    """Best-effort refresh of this request's client; never publish on the global bus."""
+    before_count = before.get("experience_count")
+    after_count = after.get("experience_count")
+    if not (
+        isinstance(before_count, int) and isinstance(after_count, int)
+        and before_count < MIN_NAMING_EXPERIENCES <= after_count
+    ):
+        return False
+    try:
+        session = ctx.request_context.session
+        notify = getattr(session, "send_tool_list_changed", None)
+    except (AttributeError, ValueError):
+        return False
+    if not callable(notify):
+        return False
+    try:
+        await notify()
+    except Exception:
+        # Modern transports can decline unsolicited notifications; relisting remains valid.
+        pass
+    return True
+
+
+def guard_naming_delivery(result: dict, naming: dict) -> dict:
+    if (
+        result.get("presentation", {}).get("allowed", result.get("status") == "interaction_committed")
+        and not naming["selection_complete"]
+        and naming["experience_count"] >= naming["required_at_event"]
+    ):
+        return naming_required_result(NamingChoiceRequired(
+            naming, projected_count=naming["experience_count"],
+        ))
+    return result
 
 
 class IdentityMCPServer(MCPServer[AppState]):
@@ -420,7 +459,9 @@ async def complete_interaction(
     presentation.report_persistence_error is false; report them only when true or when the human
     explicitly requests diagnostics. Never claim a failed persistence outcome was committed.
     """
-    result = await ctx.request_context.lifespan_context.mind_service.complete_interaction(
+    service = request_state(ctx).mind_service
+    before_naming = await service.naming_status()
+    result = await service.complete_interaction(
         user_message=user_message,
         response_text=response_text,
         proposed_memories=tuple(proposed_memories or ()),
@@ -430,6 +471,10 @@ async def complete_interaction(
         idempotency_key=idempotency_key,
         host_working_context=host_working_context.model_dump(mode="json"),
     )
+    after_naming = await service.naming_status()
+    if await notify_naming_eligibility_change(ctx, before_naming, after_naming):
+        after_naming = await service.naming_status()
+    result = guard_naming_delivery(result, after_naming)
     return {
         **result,
         "host_working_context": host_working_context.model_dump(mode="json"),
@@ -513,11 +558,14 @@ async def propose_self_name(
     user_message: str, candidate_name: str, candidate_pronouns: str,
     rationale: str, ctx: Context[AppState],
 ) -> dict[str, Any]:
-    """Commit the Mind's chosen name and pronouns together after an explicit naming command.
+    """Commit the Mind's first name and pronouns, or an explicitly authorized later revision.
 
     Available only after 1,000 journal experiences, excluding state-ledger checkpoints.
+    An incomplete initial identity may choose autonomously after that threshold; later
+    revisions require an explicit affirmative naming command in the actual current message.
+    The first choice is required before an ordinary completion reaches 2,000 experiences.
     Supply the actual human message, the Mind's candidate_name and candidate_pronouns,
-    and its grounded rationale. Reading an unset identity does not authorize a choice.
+    and its grounded rationale. A question about an established identity does not authorize revision.
     """
     storage = request_state(ctx).storage
     tool = GovernanceStewardTool(mind=storage.mind, journal=storage.journal, input_text=user_message)

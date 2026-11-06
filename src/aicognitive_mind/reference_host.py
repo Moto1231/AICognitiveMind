@@ -11,7 +11,11 @@ from typing import Any, Protocol
 from mcp import Client, StdioServerParameters
 from openai import AsyncOpenAI
 
+from aicognitive_mind.governance_steward import ProposeSelfNameCall
 from aicognitive_mind.host_context import HostWorkingContext
+from aicognitive_mind.identity_selection import (
+    choice_is_required, choice_proposal_allowed, parse_initial_choice,
+)
 from aicognitive_mind.mcp_service import MemoryProposal
 
 
@@ -31,6 +35,7 @@ class HostReasoningResult:
     response_text: str
     proposed_memories: tuple[MemoryProposal, ...] = ()
     working_context: "HostWorkingContext" = field(default_factory=lambda: HostWorkingContext())
+    identity_choice: ProposeSelfNameCall | None = None
 
 
 @dataclass(frozen=True)
@@ -197,6 +202,33 @@ class OpenAIHostReasoner:
             "strict": True,
         }
 
+        naming = begin_context.get("naming", {})
+        proposal_allowed = choice_proposal_allowed(naming, user_message)
+        if proposal_allowed:
+            choice_schema = ProposeSelfNameCall.model_json_schema()
+            finalize_tool["parameters"]["properties"]["identity_choice"] = {
+                "anyOf": [choice_schema, {"type": "null"}],
+            }
+            finalize_tool["parameters"]["required"].append("identity_choice")
+            if naming.get("selection_complete"):
+                instructions += (
+                    "\nEXPLICIT IDENTITY REVISION: The actual current human command authorizes "
+                    "you to choose your own name and pronouns again. Include the governed "
+                    "proposal in identity_choice; only an accepted revision changes saved identity. "
+                )
+            else:
+                instructions += (
+                    "\nINITIAL IDENTITY SELECTION: You may choose your own name and pronouns "
+                    "together without another human command. Include that governed proposal in "
+                    "identity_choice; it will be saved before the final response is completed. "
+                    "Return null only when the initial choice remains optional and you are not ready. "
+                )
+            if choice_is_required(naming):
+                instructions += (
+                    "The initial choice is required now. You must return a complete nonnull "
+                    "identity_choice before ordinary response delivery can proceed."
+                )
+
         response = await self._client.responses.create(
             model=self._model,
             instructions=instructions,
@@ -227,10 +259,14 @@ class OpenAIHostReasoner:
                     for memory in (arguments.get("proposed_memories") or [])
                 )
                 context = HostWorkingContext.model_validate(arguments["working_context"])
+                choice = parse_initial_choice(arguments.get("identity_choice"), naming)
+                if choice is not None and not proposal_allowed:
+                    raise RuntimeError("Identity choice was not available in this interaction")
                 return HostReasoningResult(
                     response_text=response_text,
                     proposed_memories=memories,
                     working_context=context,
+                    identity_choice=choice,
                 )
 
         response_text = response.output_text.strip()
@@ -271,26 +307,68 @@ class CognitiveMindHost:
         reasoning_context = dict(begun)
         reasoning = await self._reasoner.reason(user_message, reasoning_context)
 
-        completed = _structured(
-            await self._client.call_tool(
-                "complete_interaction",
-                {
+        async def save_choice(candidate: HostReasoningResult) -> None:
+            choice = parse_initial_choice(
+                candidate.identity_choice, reasoning_context.get("naming", {}),
+            )
+            if choice is None:
+                if choice_is_required(reasoning_context.get("naming", {})):
+                    raise RuntimeError("The required initial name and pronoun choice is missing")
+                return
+            if not choice_proposal_allowed(reasoning_context.get("naming", {}), user_message):
+                raise RuntimeError("Identity selection is not authorized in this interaction")
+            decision = _structured(await self._client.call_tool(
+                "propose_self_name", {
                     "user_message": user_message,
-                    "response_text": reasoning.response_text,
-                    "idempotency_key": begun.get("idempotency_key"),
-                    "host_working_context": reasoning.working_context.model_dump(mode="json"),
-                    "proposed_memories": [
-                        memory.model_dump(mode="json")
-                        for memory in reasoning.proposed_memories
-                    ],
+                    "candidate_name": choice.candidate_name,
+                    "candidate_pronouns": choice.candidate_pronouns,
+                    "rationale": choice.rationale,
                 },
-            ),
-            "complete_interaction",
-        )
+            ), "propose_self_name")
+            if not decision.get("accepted"):
+                raise RuntimeError(
+                    f"Initial identity choice was not accepted: {decision.get('reason')}",
+                )
+            reasoning_context["naming"] = {
+                **reasoning_context.get("naming", {}), "selection_complete": True,
+                "autonomous_choice_allowed": False, "choice_required": False,
+                "choice_required_before_completion": False,
+            }
+            identity = reasoning_context.setdefault("mind", {}).setdefault("identity", {})
+            identity.update(
+                self_name=decision["current_name"], pronouns=decision["current_pronouns"],
+            )
+
+        await save_choice(reasoning)
+
+        completion_arguments = {
+            "user_message": user_message,
+            "response_text": reasoning.response_text,
+            "idempotency_key": begun.get("idempotency_key"),
+            "host_working_context": reasoning.working_context.model_dump(mode="json"),
+            "proposed_memories": [
+                memory.model_dump(mode="json") for memory in reasoning.proposed_memories
+            ],
+        }
+        completed = _structured(await self._client.call_tool(
+            "complete_interaction", completion_arguments,
+        ), "complete_interaction")
+        if completed.get("status") == "naming_choice_required":
+            reasoning_context["naming"] = completed["naming"]
+            recovery = await self._reasoner.reason(user_message, reasoning_context)
+            await save_choice(recovery)
+            # The ordinary response and idempotency payload stay frozen during recovery.
+            completed = _structured(await self._client.call_tool(
+                "complete_interaction", completion_arguments,
+            ), "complete_interaction")
         presentation_allowed = completed.get("presentation", {}).get(
             "allowed", completed.get("status") == "interaction_committed",
         )
         if not presentation_allowed:
+            if completed.get("status") == "naming_choice_required":
+                raise RuntimeError(
+                    "The required identity choice still withholds this ordinary response",
+                )
             raise RuntimeError(f"Mind persistence circuit withheld interaction: {completed}")
 
         self._working_context = HostWorkingContext.model_validate(

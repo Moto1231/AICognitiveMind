@@ -19,6 +19,7 @@ from aicognitive_mind.engines import ReasoningEngine
 from aicognitive_mind.governance_steward import GovernanceStewardTool, naming_is_eligible
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.memory_steward import MemoryStewardTool
+from aicognitive_mind.naming import ensure_naming_ready, naming_assessment, naming_guidance
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
 from aicognitive_mind.storage import DiagnosticStore, JournalStore, MemoryStore, MindStore
 from aicognitive_mind.task_behaviors import (
@@ -119,17 +120,22 @@ class CognitiveCore:
         governance_tools = (
             (governance_steward,) if await naming_is_eligible(self._journal) else ()
         )
+        naming = await naming_assessment(mind, self._journal)
         proposal = await self._engine.propose(
             ReasoningRequest(
                 mind=mind,
                 input_text=input_text,
                 system_prompt="\n\n".join([
                     configuration["base_contract"], configuration["startup_instructions"], task_prompt,
+                    "NAMING LIFECYCLE (software protocol):\n" + naming_guidance(naming),
                 ]),
             ),
             tools=(memory_steward, *governance_tools, *self._reasoning_tools),
         )
         memory_trace = await memory_steward.complete()
+        await ensure_naming_ready(
+            await self.load_mind(), self._journal, additional_entries=1,
+        )
 
         journal_entry = await self._journal.append(
             JournalEntry(
@@ -155,6 +161,7 @@ class CognitiveCore:
             ),
             recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
         )
+        await ensure_naming_ready(await self.load_mind(), self._journal)
         # Diagnostics must not turn a committed cognitive operation into a retry.
         try:
             await self._diagnostics.record(proposal.diagnostic)
@@ -162,6 +169,7 @@ class CognitiveCore:
             import logging
             logging.getLogger(__name__).warning("Diagnostic recording failed", exc_info=True)
 
+        await ensure_naming_ready(await self.load_mind(), self._journal)
         return InteractionResult(
             response_text=proposal.response_text,
             occurred_at=journal_entry.occurred_at,

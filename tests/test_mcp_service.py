@@ -72,7 +72,10 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("excluding current-state ledger checkpoints", contract)
         self.assertIn("candidate_name and candidate_pronouns together", contract)
         self.assertIn("call `propose_self_name` with the actual user_message", contract)
-        self.assertIn("either is unset; a change requires explicit authorization", contract)
+        self.assertIn("first joint choice autonomously", contract)
+        self.assertIn("ordinary completion reaches 2,000 entries", contract)
+        self.assertIn("Later changes require", contract)
+        self.assertIn("naming", begun)
         self.assertIsNone(begun["mind"]["identity"]["pronouns"])
 
     async def test_admin_settings_apply_to_new_turns_without_changing_an_active_turn(self) -> None:

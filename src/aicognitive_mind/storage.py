@@ -24,6 +24,21 @@ class MindAlreadyInitializedError(RuntimeError):
     pass
 
 
+async def append_journal_committed(store: Any, entry: JournalEntry) -> JournalEntry:
+    """Publish a raw persistent append with the same revision as staged cognition."""
+    # commit imports the storage protocols, so resolve this dependency at execution time.
+    from aicognitive_mind.commit import CommitConflict, commit
+
+    for attempt in range(3):
+        try:
+            await commit({"journal": store}, [("journal", "append", None, entry)], None, {})
+            return entry
+        except CommitConflict:
+            if attempt == 2:
+                raise
+    raise RuntimeError("Journal append retry boundary was exhausted")
+
+
 class MindStore(Protocol):
     async def initialize(self, mind: CognitiveMind) -> CognitiveMind: ...
 
@@ -274,6 +289,9 @@ class InMemoryJournalStore:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.RECORD_JOURNAL)
         stored = deepcopy(entry)
         self._entries.append(stored)
+        # The in-memory commit backend coordinates through this journal object.
+        # Publish entry and revision synchronously so staged commits cannot miss it.
+        self._commit_revision = getattr(self, "_commit_revision", 0) + 1
         return deepcopy(stored)
 
     async def read(self) -> list[JournalEntry]:

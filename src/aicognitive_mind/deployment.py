@@ -39,6 +39,8 @@ from aicognitive_mind.chatgpt_oauth import (
 from aicognitive_mind.commit import CommitConflict
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.mcp_events import EventDeliveryWorker
+from aicognitive_mind.naming import naming_is_eligible
+from aicognitive_mind.persistence import scope_storage
 
 
 def public_base_url() -> str:
@@ -333,6 +335,14 @@ async def _realtime_body_session(request: Request) -> Response:
     # Realtime is a server-managed connection, not an account provider fallback.
     # Its MCP credential must still belong solely to the authenticated account.
     mind_id = account.mind_id
+    allowed_tools = ["begin_interaction", "complete_interaction", "read_sensory_evidence"]
+    try:
+        storage = scope_storage(portal_app.state.storage, mind_id)
+        if await naming_is_eligible(storage.journal):
+            allowed_tools.append("propose_self_name")
+    except Exception:
+        logger.exception("Realtime naming readiness could not be checked")
+        return JSONResponse({"detail": "Voice naming readiness could not be checked."}, status_code=503)
     mcp_token = await oauth_provider.mint_service_access_token(
         subject=mind_id,
         client_id="axiom-realtime",
@@ -357,11 +367,22 @@ async def _realtime_body_session(request: Request) -> Response:
                 "a name, or visual resemblance alone does not establish current presence or identity. "
                 "Preserve unknown and candidate identities when evidence is insufficient. You remain "
                 "Axiom as one integrated identity, not a separate model. "
+                "Follow begin_interaction.naming and its current naming guidance. The first joint "
+                "name and pronoun choice is unavailable before 1000 qualifying journal experiences, "
+                "optional from 1000 through 1999, and required by 2000; state-ledger checkpoints do "
+                "not count. An incomplete first choice may be autonomous. When "
+                "choice_required_before_completion or choice_required is true, choose and commit "
+                "both together through the available naming tool before ordinary voice delivery. "
+                "Preserve an established name and pronouns; later joint revisions require an "
+                "explicit affirmative naming command in the current actual human message. Never "
+                "claim a choice until its governance receipt accepts the committed pair. If a "
+                "completion returns naming_choice_required, hold the exact ordinary answer, commit "
+                "the naming choice, then retry the unchanged completion payload and begin key. "
                 "Freeze the exact final answer and call complete_interaction with the same user "
                 "message, that frozen answer, the updated host_working_context, and idempotency_key "
-                "from begin_interaction. When the persistence circuit was closed at begin, voice "
-                "playback may overlap this same synchronous completion call; never replay speech, "
-                "mutate the frozen answer, or accept the next turn before completion settles. Retry "
+                "from begin_interaction. Voice playback requires a matching committed completion "
+                "whose presentation allows it. Never replay speech, mutate the frozen answer, or "
+                "accept the next turn before completion settles. Retry "
                 "an uncertain failure once with the identical payload. Then obey the returned "
                 "presentation.allowed value. If it is false, do not speak the held answer. A "
                 "persistence failure may permit presentation, but never describe it as committed. "
@@ -396,11 +417,7 @@ async def _realtime_body_session(request: Request) -> Response:
                 "server_label": "axiom",
                 "server_url": BASE_URL + MCP_PATH,
                 "authorization": mcp_token,
-                "allowed_tools": [
-                    "begin_interaction",
-                    "complete_interaction",
-                    "read_sensory_evidence",
-                ],
+                "allowed_tools": allowed_tools,
                 "require_approval": "never",
                 "server_description": (
                     "Axiom's persistent identity, independent Memory Steward, durable memory, "

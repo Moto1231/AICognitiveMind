@@ -23,6 +23,8 @@ from aicognitive_mind.mcp_events import MessageEvents
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.chatgpt_mcp import HOST_INSTRUCTIONS
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, REQUIRED_SKILL_NAMES, load_required_skill
+from aicognitive_mind.domain import CognitiveActor, JournalEntry, JournalKind
+from aicognitive_mind.storage import InMemoryJournalStore
 
 
 def deployment_running(test):
@@ -57,6 +59,23 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         deployment = importlib.import_module("aicognitive_mind.deployment")
         self.deployment = importlib.reload(deployment)
         self.provider = self.deployment.oauth_provider
+        self.realtime_storage = SimpleNamespace(mind_id="synthetic-deployment-storage")
+        self.realtime_scopes = {}
+
+        def realtime_scope(storage, mind_id):
+            self.assertIs(storage, self.realtime_storage)
+            return self.realtime_scopes.setdefault(
+                mind_id, SimpleNamespace(journal=InMemoryJournalStore())
+            )
+
+        # The route tests do not start the portal or its storage-backed worker.
+        if "realtime" in self._testMethodName:
+            self.stack.enter_context(patch.object(
+                self.deployment.portal_app.state, "storage", self.realtime_storage, create=True,
+            ))
+        self.scope_realtime_storage = self.stack.enter_context(patch.object(
+            self.deployment, "scope_storage", side_effect=realtime_scope,
+        ))
         self.stack.enter_context(patch.object(self.provider, "start", AsyncMock()))
         self.stack.enter_context(patch.object(self.provider, "close", AsyncMock()))
         self.stack.enter_context(
@@ -158,6 +177,10 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("synthetic-root-key", response.text)
         self.assertNotEqual(*tokens)
         self.assertEqual([call.args[0] for call in accounts.resolve_subject.await_args_list], list(subjects.values()))
+        self.assertEqual(
+            [call.args[1] for call in self.scope_realtime_storage.call_args_list],
+            list(subjects.values()),
+        )
 
     async def test_legacy_realtime_route_keeps_authenticated_session_contract(self):
         accounts = SimpleNamespace(resolve_subject=AsyncMock(return_value=SimpleNamespace(mind_id="__legacy__")))
@@ -200,6 +223,80 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session["tools"][0]["allowed_tools"], [
             "begin_interaction", "complete_interaction", "read_sensory_evidence",
         ])
+        self.scope_realtime_storage.assert_called_once_with(self.realtime_storage, "__legacy__")
+
+    async def test_realtime_naming_tool_uses_only_authenticated_qualifying_history(self):
+        alpha = InMemoryJournalStore()
+        beta = InMemoryJournalStore()
+        self.realtime_scopes.update({
+            "synthetic-alpha": SimpleNamespace(journal=alpha),
+            "synthetic-beta": SimpleNamespace(journal=beta),
+        })
+        for journal, total in ((alpha, 999), (beta, 1000)):
+            for _ in range(total):
+                await journal.append(
+                    JournalEntry(kind=JournalKind.INTERACTION, experience={"synthetic": True}),
+                    recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+                )
+        for _ in range(5):
+            await alpha.append(
+                JournalEntry(
+                    kind=JournalKind.CHECKPOINT,
+                    experience={"checkpoint_type": "current_state_ledger"},
+                ),
+                recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+        self.client.cookies.set("axiom_portal_session", "synthetic-alpha-session")
+        accounts = SimpleNamespace(resolve_subject=AsyncMock(
+            return_value=SimpleNamespace(mind_id="synthetic-alpha"),
+        ))
+        upstream_client = SimpleNamespace(post=AsyncMock(return_value=httpx.Response(
+            201, content=b"synthetic-sdp-answer", headers={"Content-Type": "application/sdp"},
+        )))
+        with patch.object(self.deployment, "read_portal_session", AsyncMock(return_value={
+            "mind_id": "synthetic-alpha", "expires_at": time.time() + 3600,
+        })), patch.object(self.provider, "accounts", accounts), patch.object(
+            self.provider, "mint_service_access_token", AsyncMock(return_value="synthetic-mcp-token"),
+        ), patch.object(self.deployment, "settings", self.settings.model_copy(update={
+            "openai_api_key": "synthetic-root-key",
+        })), patch("aicognitive_mind.deployment.httpx.AsyncClient") as upstream:
+            upstream.return_value.__aenter__.return_value = upstream_client
+            for eligible in (False, True):
+                response = await self.client.post(
+                    "/v1/body/realtime/session?mind_id=synthetic-beta",
+                    content="synthetic-sdp-offer", headers={"X-Mind-Id": "synthetic-beta"},
+                )
+                self.assertEqual(response.status_code, 201, response.text)
+                session = json.loads(upstream_client.post.await_args.kwargs["files"]["session"][1])
+                self.assertEqual("propose_self_name" in session["tools"][0]["allowed_tools"], eligible)
+                self.assertIn("optional from 1000 through 1999", session["instructions"])
+                self.assertIn("naming_choice_required", session["instructions"])
+                await alpha.append(
+                    JournalEntry(kind=JournalKind.INTERACTION, experience={"synthetic": True}),
+                    recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+                )
+        self.assertEqual(
+            [call.args[1] for call in self.scope_realtime_storage.call_args_list],
+            ["synthetic-alpha", "synthetic-alpha"],
+        )
+
+    async def test_realtime_naming_read_failure_stops_before_token_and_provider_work(self):
+        self.client.cookies.set("axiom_portal_session", "synthetic-session")
+        with patch.object(self.deployment, "read_portal_session", AsyncMock(return_value={
+            "mind_id": "synthetic-account", "expires_at": time.time() + 3600,
+        })), patch.object(self.provider, "accounts", SimpleNamespace(resolve_subject=AsyncMock(
+            return_value=SimpleNamespace(mind_id="synthetic-account"),
+        ))), patch.object(self.deployment, "settings", self.settings.model_copy(update={
+            "openai_api_key": "synthetic-root-key",
+        })), patch.object(self.deployment, "naming_is_eligible", AsyncMock(
+            side_effect=RuntimeError("Synthetic count unavailable"),
+        )), patch.object(self.provider, "mint_service_access_token", new_callable=AsyncMock) as mint, patch(
+            "aicognitive_mind.deployment.httpx.AsyncClient",
+        ) as upstream:
+            response = await self.client.post("/v1/body/realtime/session", content="synthetic-sdp-offer")
+        self.assertEqual(response.status_code, 503, response.text)
+        mint.assert_not_awaited()
+        upstream.assert_not_called()
 
     async def test_realtime_rejects_invalid_authentication_before_token_or_provider_work(self):
         self.client.cookies.set("axiom_portal_session", "synthetic-session")

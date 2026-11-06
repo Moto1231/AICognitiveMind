@@ -8,7 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
-from aicognitive_mind.commit import atomic
+from aicognitive_mind.commit import CommitConflict, atomic
 from aicognitive_mind.continuity_health import InteractionContinuityHealth
 from aicognitive_mind.continuity_settings import ContinuitySettingsRegistry
 from aicognitive_mind.domain import (
@@ -20,7 +20,6 @@ from aicognitive_mind.domain import (
     MindIdentity,
 )
 from aicognitive_mind.effective_skills import EffectiveSkillRegistry
-from aicognitive_mind.governance_steward import MIN_NAMING_EXPERIENCES
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.journal_payload import journal_safe_value
@@ -29,6 +28,13 @@ from aicognitive_mind.memory_steward import (
     MemoryStewardTool,
     ResearchObservation,
     SemanticScope,
+)
+from aicognitive_mind.naming import (
+    NamingChoiceRequired,
+    ensure_naming_ready as require_naming_ready,
+    naming_assessment,
+    naming_guidance,
+    naming_required_result,
 )
 from aicognitive_mind.state_context import CurrentStateLedger, CurrentStateLedgerRepository
 from aicognitive_mind.steward_agent import ModelMemorySteward, StewardProtocolError
@@ -140,16 +146,9 @@ class CognitiveMcpService:
             "journal_experience_count": journal_count,
             "provider_routing": await TaskModelDispatcher(self._records).routing_status(),
             "interaction_continuity": await self._continuity_snapshot(),
-            "naming": {
-                "status": (
-                    "prohibited" if journal_count < MIN_NAMING_EXPERIENCES
-                    else "eligible" if journal_count < 2000
-                    else "required"
-                ),
-                "eligible_at_event": MIN_NAMING_EXPERIENCES,
-                "required_at_event": 2000,
-                "is_named": mind.identity.self_name is not None,
-            },
+            "naming": await naming_assessment(
+                mind, self._journal, experience_count=journal_count,
+            ),
             "integration": {
                 "protocol": "MCP",
                 "reasoning_owner": "connected MCP host",
@@ -157,6 +156,14 @@ class CognitiveMcpService:
                 "memory_owner": "Cognitive Mind",
             },
         }
+
+    async def naming_status(self) -> dict[str, Any]:
+        return await naming_assessment(await self._require_mind(), self._journal)
+
+    async def ensure_naming_ready(self, *, additional_entries: int = 0) -> None:
+        await require_naming_ready(
+            await self._require_mind(), self._journal, additional_entries=additional_entries,
+        )
 
     @atomic
     async def begin_interaction(
@@ -194,8 +201,12 @@ class CognitiveMcpService:
                     "focus": user_message,
                 }
             )
+        with timer.stage("naming"):
+            naming = await naming_assessment(mind, self._journal)
+            naming_instruction = naming_guidance(naming)
         with timer.stage("contract"):
             contract = await self._compose_reasoning_contract()
+            contract += "\n\nNAMING LIFECYCLE (software protocol):\n" + naming_instruction
         with timer.stage("behaviors"):
             behaviors = await self._host_behaviors.selected("reasoning")
         with timer.stage("state"):
@@ -211,6 +222,7 @@ class CognitiveMcpService:
             "status": "ready_to_reason",
             "idempotency_key": interaction_id,
             "mind": mind.model_dump(mode="json"),
+            "naming": naming,
             "recalled_context": recalled["context"],
             "memory_assessment": steward.assessment,
             "current_state": current_state.as_context(),
@@ -224,11 +236,21 @@ class CognitiveMcpService:
                 "name": "The Breaker",
                 "settings_revision": continuity_settings["revision"],
                 "mode": (
-                    "recovery_required"
+                    "naming_required"
+                    if naming["choice_required_before_completion"]
+                    else "recovery_required"
                     if continuity_health.get("circuit_open")
+                    else "completion_required_for_initial_identity"
+                    if not naming["selection_complete"]
                     else "presentation_first"
                 ),
-                "instruction": (
+                "instruction": naming_instruction + " " + (
+                    "While the first joint identity choice remains incomplete, ordinary work "
+                    "may continue below its deadline, but hold the frozen answer until completion "
+                    "returns its final presentation.allowed decision. Qualifying events created "
+                    "during completion can advance the naming deadline. "
+                    if not naming["selection_complete"] else ""
+                ) + (
                     "The Breaker is open. Freeze one answer, run completion as the recovery "
                     "check, and present it only when completion returns "
                     "presentation.allowed=true. Do not mention the earlier persistence errors; "
@@ -240,7 +262,7 @@ class CognitiveMcpService:
                     "while presentation.report_persistence_error=false."
                 ),
             },
-            "next_step": (
+            "next_step": naming_instruction + " " + (
                 "Use the Steward's assessment and any returned brief. A no_recall_needed outcome "
                 "means work can proceed using current context; do not force a lookup. "
                 "If unresolved evidence includes "
@@ -280,6 +302,9 @@ class CognitiveMcpService:
         interaction_id = idempotency_key or f"legacy-{uuid4().hex}"
         continuity_settings = await self._continuity_settings.for_interaction(interaction_id)
         try:
+            # Recheck current state even when the atomic method returns an old receipt.
+            # A pure receipt replay does not itself add a qualifying journal entry.
+            await self.ensure_naming_ready()
             result = await self._commit_interaction(
                 user_message=user_message,
                 response_text=response_text,
@@ -293,6 +318,18 @@ class CognitiveMcpService:
                 runtime_source=runtime_source,
                 host_working_context=host_working_context,
             )
+            await self.ensure_naming_ready()
+        except NamingChoiceRequired as exc:
+            return naming_required_result(exc)
+        except CommitConflict:
+            # A background journal writer may advance the deadline after the staged
+            # check. Its revision invalidates publication; recover through the same
+            # governed choice instead of treating this as a persistence failure.
+            try:
+                await self.ensure_naming_ready(additional_entries=1)
+            except NamingChoiceRequired as exc:
+                return naming_required_result(exc)
+            raise
         except (TaskDispatchError, TimeoutError, OSError) as exc:
             if idempotency_key is None:
                 # Legacy direct-core callers cannot deduplicate attempts into one
@@ -306,8 +343,14 @@ class CognitiveMcpService:
             presentation_allowed = health.get("interaction_outcome", {}).get(
                 "presentation_allowed", True,
             )
+            naming = await self.naming_status()
+            if naming["choice_required"]:
+                return naming_required_result(NamingChoiceRequired(
+                    naming, projected_count=naming["experience_count"],
+                ))
             return {
                 "status": "interaction_persistence_failed",
+                "naming": naming,
                 "memory_decisions": [],
                 "memory_review": {
                     "outcome": "unavailable",
@@ -348,8 +391,16 @@ class CognitiveMcpService:
         presentation_allowed = health.get("interaction_outcome", {}).get(
             "presentation_allowed", True,
         )
+        # Continuity bookkeeping can yield while another qualifying event commits.
+        # Make the final delivery decision from one fresh snapshot with no later await.
+        naming = await self.naming_status()
+        if naming["choice_required"]:
+            return naming_required_result(NamingChoiceRequired(
+                naming, projected_count=naming["experience_count"],
+            ))
         return {
             **result,
+            "naming": naming,
             "continuity_health": health,
             "presentation": {
                 "policy_name": "The Breaker",
@@ -390,6 +441,7 @@ class CognitiveMcpService:
         timer = StageTimer(f"complete_interaction source={source}")
         with timer.stage("mind"):
             mind = await self._require_mind()
+        await require_naming_ready(mind, self._journal, additional_entries=1)
         with timer.stage("state_context"):
             state_context = await self._load_current_state()
         continuity_settings = await self._continuity_settings.for_interaction(
@@ -419,6 +471,7 @@ class CognitiveMcpService:
         except StewardProtocolError as exc:
             if idempotency_key is None:
                 raise
+            await self.ensure_naming_ready(additional_entries=1)
             with timer.stage("journal_append_degraded"):
                 journal_entry = await self._journal.append(
                     JournalEntry(
@@ -443,6 +496,7 @@ class CognitiveMcpService:
                     ),
                     recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
                 )
+            await self.ensure_naming_ready()
             timer.log()
             return {
                 "status": "interaction_committed",
@@ -512,6 +566,7 @@ class CognitiveMcpService:
             trace_payload = trace.model_dump(mode="python")
             trace_payload["recalled_context"] = steward.host_context()
             trace_payload["assessment"] = steward.assessment
+        await self.ensure_naming_ready(additional_entries=1)
         with timer.stage("journal_append"):
             journal_entry = await self._journal.append(
                 JournalEntry(
@@ -534,6 +589,7 @@ class CognitiveMcpService:
                 ),
                 recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
             )
+        await self.ensure_naming_ready()
         timer.log()
 
         return {

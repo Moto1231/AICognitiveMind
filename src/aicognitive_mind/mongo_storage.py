@@ -22,7 +22,7 @@ from aicognitive_mind.domain import (
     SensoryEvidenceArtifact,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
-from aicognitive_mind.storage import MindAlreadyInitializedError
+from aicognitive_mind.storage import MindAlreadyInitializedError, append_journal_committed
 
 
 async def _candidate_documents(
@@ -300,10 +300,7 @@ class MongoJournalStore:
         recorded_by: CognitiveActor,
     ) -> JournalEntry:
         self._policy.assert_allowed(recorded_by, CognitiveOperation.RECORD_JOURNAL)
-        await self._collection.insert_one(
-            {"mind_id": self.mind_id, **entry.model_dump(mode="python")}
-        )
-        return entry
+        return await append_journal_committed(self, entry)
 
     async def read(self) -> list[JournalEntry]:
         cursor = self._collection.find(
