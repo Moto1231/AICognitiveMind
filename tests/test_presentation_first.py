@@ -24,6 +24,8 @@ class PresentationFirstBodyTests(unittest.IsolatedAsyncioTestCase):
             }
 
         service = SimpleNamespace(
+            naming_status=AsyncMock(return_value={"selection_complete": True}),
+            ensure_naming_ready=AsyncMock(),
             begin_interaction=AsyncMock(return_value={
                 "status": "ready_to_reason",
                 "continuity_health": {"circuit_open": False},

@@ -27,6 +27,7 @@ from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_server import AppState
 from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
 from aicognitive_mind.memory_steward import MemoryStewardTool
+from aicognitive_mind.naming import NamingChoiceRequired
 from aicognitive_mind.persistence import create_storage, scope_storage
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_dispatcher import TaskModelDispatcher
@@ -271,6 +272,36 @@ class AuthenticatedMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("propose_self_name", alpha_tools)
         self.assertNotIn("propose_self_name", beta_tools)
         self.assertNotIn("propose_self_name", {tool.name for tool in await self.server.list_tools()})
+
+    async def test_ordinary_speech_requires_initial_choice_in_its_own_account(self):
+        await self.seed_naming_history(self.alpha, 2000)
+        with self.assertRaises(NamingChoiceRequired):
+            await self.invoke("speak_body_text", self.alpha, text="An ordinary spoken answer.")
+        with self.assertRaisesRegex(RuntimeError, "No active live Body session"):
+            await self.invoke("speak_body_text", self.beta, text="A different account's answer.")
+        choice = await self.invoke(
+            "propose_self_name", self.alpha,
+            user_message="An ordinary task.", candidate_name="Aster",
+            candidate_pronouns="he/him", rationale="My initial identity choice is now required.",
+        )
+        self.assertTrue(choice["accepted"])
+        with self.assertRaisesRegex(RuntimeError, "No active live Body session"):
+            await self.invoke("speak_body_text", self.alpha, text="An answer after choosing.")
+
+    async def test_eligibility_crossing_notifies_only_the_current_session_once(self):
+        await self.seed_naming_history(self.alpha, 999)
+        await self.seed_naming_history(self.beta, 999)
+        sender = AsyncMock()
+        self.ctx.request_context.session = SimpleNamespace(send_tool_list_changed=sender)
+        with patch.object(self.server._subscriptions, "publish", new=AsyncMock()) as broadcast:
+            completed = await self.complete(self.alpha, "crossing-1000", "Alpha")
+            self.assertEqual(completed["status"], "interaction_committed")
+            sender.assert_awaited_once_with()
+            broadcast.assert_not_awaited()
+            await self.complete(self.alpha, "crossing-1000", "Alpha")
+            sender.assert_awaited_once_with()
+        self.assertIn("propose_self_name", await self.discover_tools(self.alpha))
+        self.assertNotIn("propose_self_name", await self.discover_tools(self.beta))
 
     async def test_receipts_and_trace_are_isolated_for_same_completion_key(self):
         first = await self.complete(self.alpha, "same-turn", "Alpha")

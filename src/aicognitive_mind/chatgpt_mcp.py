@@ -27,11 +27,14 @@ from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_events import STATE_KEY, event_owner, register_message_events
 from aicognitive_mind.mcp_registry import MCPServerRegistry
-from aicognitive_mind.mcp_server import AppState, IdentityMCPServer, lifespan
+from aicognitive_mind.mcp_server import (
+    AppState, IdentityMCPServer, guard_naming_delivery, lifespan, notify_naming_eligibility_change,
+)
 from aicognitive_mind.mcp_server import execute_task as execute_configured_task
 from aicognitive_mind.mcp_server import propose_self_name as choose_self_name
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
+from aicognitive_mind.naming import ensure_naming_ready
 from aicognitive_mind.sleep import SleepConsolidator
 from aicognitive_mind.task_model_assignments import TaskKind
 from aicognitive_mind.timing import StageTimer, emit
@@ -127,6 +130,11 @@ true, unless the human explicitly requests diagnostics. Do not invent a key, mut
 repeat an external action.
 These API lifecycle, schema, authentication and request-delivery requirements are software protocol;
 application cognitive content is the effective Administrator-owned contract returned by begin.
+The returned naming lifecycle is an enforced operational constraint. When initial identity
+selection is required, save that governed choice before presenting an ordinary response.
+A naming_choice_required completion is recoverable and is not a persistence failure: resolve
+the choice, then retry the identical frozen completion payload. Presentation-first behavior
+does not override a mandatory initial identity choice or presentation.allowed=false.
 
 MESSAGE EVENT TASKS:
 - For message.created, claim_incoming_message with the event's request_id. Process every event
@@ -270,11 +278,14 @@ def build_chatgpt_mcp(
         user_message: str, candidate_name: str, candidate_pronouns: str,
         rationale: str, ctx: Context[AppState],
     ) -> dict[str, Any]:
-        """Commit the Mind's chosen name and pronouns together after an explicit naming command.
+        """Commit an eligible initial name/pronoun choice or an authorized later revision.
 
         Available after 1,000 journal experiences, excluding state-ledger checkpoints.
+        The incomplete first choice may be autonomous; later changes require an explicit
+        affirmative naming command in the current human message.
+        The first choice must commit before ordinary completion reaches 2,000 experiences.
         Use the actual user_message and the Mind's candidate_name, candidate_pronouns and
-        grounded rationale. An identity question or an unset value does not authorize a choice.
+        grounded rationale. A question about an established identity does not authorize revision.
         Both choices are validated and saved atomically in this authenticated account's Mind.
         """
         return await choose_self_name(
@@ -502,12 +513,17 @@ def build_chatgpt_mcp(
         Use for ordinary reasoning-host replies when a live Body session is active.
         Completing a claimed Body interaction already returns through the normal Body
         expression path, so do not queue the same response twice.
+        A mandatory initial identity choice must be committed before ordinary speech.
         """
         speech_text = text.strip()
         if not speech_text:
             raise ValueError("Speech text cannot be empty")
 
         state = request_state(ctx)
+        mind = await state.storage.mind.load()
+        if mind is None:
+            raise RuntimeError("The Mind is not initialized")
+        await ensure_naming_ready(mind, state.storage.journal)
         records = RuntimeRecords(state.storage.mind)
         active = await records.get("active_body_session")
         if not active:
@@ -935,6 +951,7 @@ def build_chatgpt_mcp(
         try:
             with timer.stage("context"):
                 state = request_state(ctx)
+                before_naming = await state.mind_service.naming_status()
                 context_json = host_working_context.model_dump(mode="json")
                 request_payload = {
                     "user_message": user_message,
@@ -974,6 +991,17 @@ def build_chatgpt_mcp(
             }
             with timer.stage("trace_response"):
                 await _trace_event(state.storage, idempotency_key, "complete_response", response_payload)
+            if result.get("presentation", {}).get(
+                "allowed", result.get("status") == "interaction_committed",
+            ):
+                naming = await state.mind_service.naming_status()
+                if await notify_naming_eligibility_change(ctx, before_naming, naming):
+                    naming = await state.mind_service.naming_status()
+                response_payload = {
+                    **guard_naming_delivery(result, naming),
+                    "interaction_trace_id": idempotency_key,
+                    "host_working_context": context_json,
+                }
             return response_payload
         except Exception as exc:
             emit("timing mcp.complete_interaction error=%s", type(exc).__name__)

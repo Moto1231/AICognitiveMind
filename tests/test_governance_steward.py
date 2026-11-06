@@ -179,7 +179,7 @@ class GovernanceNameAndPronounTests(unittest.IsolatedAsyncioTestCase):
         tool = GovernanceStewardTool(
             mind=mind_store,
             journal=journal,
-            input_text="Please choose a name and your pronouns.",
+            input_text="Good evening.",
         )
 
         decision = await tool.invoke(
@@ -214,6 +214,72 @@ class GovernanceNameAndPronounTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             entries[-1].experience["after"], {"self_name": "Aster", "pronouns": "he/him"}
         )
+        self.assertEqual(entries[-1].experience["selection_mode"], "initial_choice")
+
+    async def test_first_choice_is_autonomous_when_required_at_2000(self) -> None:
+        mind_store = InMemoryMindStore()
+        original = CognitiveMind(identity=MindIdentity())
+        await mind_store.initialize(original)
+        journal = InMemoryJournalStore()
+        await seed_qualifying_history(journal, 2000)
+        tool = GovernanceStewardTool(
+            mind=mind_store,
+            journal=journal,
+            input_text="Continue our conversation.",
+        )
+
+        decision = await tool.invoke(
+            {
+                "action": "propose_self_name",
+                "candidate_name": "Aster",
+                "candidate_pronouns": "he/him",
+                "rationale": "Making the required first joint identity choice.",
+            }
+        )
+
+        self.assertTrue(decision["accepted"])
+        current = await mind_store.load()
+        assert current is not None
+        self.assertEqual(current.identity.self_name, "Aster")
+        self.assertEqual(current.identity.pronouns, "he/him")
+        self.assertEqual((await journal.read())[-1].experience["selection_mode"], "initial_choice")
+
+    async def test_saved_pronouns_require_explicit_revision_with_same_name(self) -> None:
+        for input_text, accepted in (
+            ("Good evening.", False),
+            ("Choose your own name and pronouns.", True),
+        ):
+            with self.subTest(input_text=input_text):
+                mind_store = InMemoryMindStore()
+                original = CognitiveMind(
+                    identity=MindIdentity(self_name="Aster", pronouns="she/her")
+                )
+                await mind_store.initialize(original)
+                journal = InMemoryJournalStore()
+                await seed_qualifying_history(journal, 2000)
+                tool = GovernanceStewardTool(
+                    mind=mind_store, journal=journal, input_text=input_text
+                )
+
+                decision = await tool.invoke(
+                    {
+                        "action": "propose_self_name",
+                        "candidate_name": "Aster",
+                        "candidate_pronouns": "he/him",
+                        "rationale": "Considering a change to established pronouns.",
+                    }
+                )
+
+                self.assertEqual(decision["accepted"], accepted)
+                current = await mind_store.load()
+                assert current is not None
+                self.assertEqual(current.identity.self_name, "Aster")
+                self.assertEqual(current.identity.pronouns, "he/him" if accepted else "she/her")
+                self.assertEqual(len(await journal.read()), 2001 if accepted else 2000)
+                if accepted:
+                    self.assertEqual(
+                        (await journal.read())[-1].experience["selection_mode"], "explicit_revision"
+                    )
 
     async def test_naming_can_replace_legacy_she_her_pronouns(self) -> None:
         for previous_name in (None, "Aster"):
@@ -300,6 +366,7 @@ class GovernanceNameAndPronounTests(unittest.IsolatedAsyncioTestCase):
         initial = CognitiveMind(
             identity=MindIdentity(
                 self_name="AICognitiveMind",
+                pronouns="she/her",
                 foundational_values=("Preserve continuity of identity",),
             )
         )
@@ -340,7 +407,9 @@ class GovernanceNameAndPronounTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.subTest(input_text=input_text):
                 mind_store = InMemoryMindStore()
-                original = CognitiveMind(identity=MindIdentity())
+                original = CognitiveMind(
+                    identity=MindIdentity(self_name="Aster", pronouns="she/her")
+                )
                 await mind_store.initialize(original)
                 journal = await self.eligible_journal()
                 tool = GovernanceStewardTool(

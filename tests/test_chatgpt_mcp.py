@@ -427,7 +427,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         server = build_chatgpt_mcp(self.base, self.provider)
         service = SimpleNamespace(complete_interaction=AsyncMock(return_value={
             "status": "interaction_committed", "memory_decisions": [],
-        }))
+        }), naming_status=AsyncMock(return_value={"selection_complete": True}))
         record = AsyncMock()
         storage = SimpleNamespace(diagnostics=SimpleNamespace(record=record))
         ctx = SimpleNamespace(request_context=SimpleNamespace(
@@ -453,6 +453,33 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request["payload"]["proposed_memories"], [])
         self.assertEqual(request["payload"]["current_evidence"], [])
 
+    async def test_completion_rechecks_naming_after_its_final_diagnostic_write(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        naming = {"selection_complete": False, "experience_count": 1999, "required_at_event": 2000}
+
+        async def record(observation):
+            if observation.implementation["phase"] == "complete_response":
+                naming["experience_count"] = 2000
+
+        service = SimpleNamespace(
+            complete_interaction=AsyncMock(return_value={
+                "status": "interaction_committed", "presentation": {"allowed": True},
+            }), naming_status=AsyncMock(side_effect=lambda: dict(naming)),
+        )
+        ctx = SimpleNamespace(request_context=SimpleNamespace(lifespan_context=SimpleNamespace(
+            mind_service=service, storage=SimpleNamespace(diagnostics=SimpleNamespace(record=record)),
+        )))
+        working = HostWorkingContext(summary="The ordinary response stays frozen.")
+        result = await server._tool_manager.get_tool("complete_interaction").fn(
+            user_message="Continue.", response_text="An ordinary answer.",
+            host_working_context=working, idempotency_key="crossed-during-trace", ctx=ctx,
+        )
+        self.assertEqual(result["status"], "naming_choice_required")
+        self.assertFalse(result["presentation"]["allowed"])
+        self.assertEqual(result["interaction_trace_id"], "crossed-during-trace")
+        self.assertEqual(result["host_working_context"], working.model_dump(mode="json"))
+        self.assertEqual(service.naming_status.await_count, 2)
+
     async def test_administrative_completion_accepts_omitted_memory_suggestions(self):
         from aicognitive_mind.mcp_server import mcp
 
@@ -462,7 +489,7 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
         complete = mcp._tool_manager.get_tool("complete_interaction").fn
         service = SimpleNamespace(complete_interaction=AsyncMock(return_value={
             "status": "interaction_committed", "memory_decisions": [],
-        }))
+        }), naming_status=AsyncMock(return_value={"selection_complete": True}))
         hosts = SimpleNamespace(complete=AsyncMock(return_value={"status": "complete"}))
         ctx = SimpleNamespace(request_context=SimpleNamespace(
             lifespan_context=SimpleNamespace(mind_service=service, hosts=hosts)

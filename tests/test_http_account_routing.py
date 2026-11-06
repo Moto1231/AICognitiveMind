@@ -21,6 +21,7 @@ from aicognitive_mind.config import Settings
 from aicognitive_mind.domain import DiagnosticObservation, ReasoningProposal
 from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
+from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.persistence import scope_storage
 from aicognitive_mind.standalone import StandaloneRuntime
 
@@ -383,6 +384,92 @@ class HttpAccountRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["cache-control"], "no-store")
         dispatcher.execute.assert_awaited_once()
         fish.assert_not_called()
+
+    async def test_direct_speech_naming_gate_uses_only_the_authenticated_minds_history(self):
+        observed_scopes = []
+
+        async def qualifying_count(store, *, exclude_checkpoint_type=None):
+            self.assertEqual(exclude_checkpoint_type, "current_state_ledger")
+            observed_scopes.append(store.mind_id)
+            return 2000 if store.mind_id == self.alpha.mind_id else 1999
+
+        dispatcher = SimpleNamespace(
+            is_configured=AsyncMock(return_value=True),
+            execute=AsyncMock(return_value=b"synthetic-beta-audio"),
+        )
+        with patch("aicognitive_mind.naming.count", side_effect=qualifying_count), patch(
+            "aicognitive_mind.api.TaskModelDispatcher", return_value=dispatcher,
+        ), patch("aicognitive_mind.api.FishAudioRenderer") as fish:
+            for path in ("/v1/body/mouth/speak", "/v1/body/speech/fish-audio"):
+                blocked = await self.alpha_client.post(
+                    path, params={"mind_id": self.beta.mind_id},
+                    headers={"X-Mind-ID": self.beta.mind_id},
+                    json={"text": "Do not deliver alpha output."},
+                )
+                self.assertEqual(blocked.status_code, 409, blocked.text)
+                self.assertEqual(blocked.json()["detail"]["code"], "naming_choice_required")
+                allowed = await self.beta_client.post(path, json={"text": "Beta output."})
+                self.assertEqual(allowed.status_code, 200, allowed.text)
+            self.assertEqual(
+                (await self.alpha_client.get("/v1/body/voice/settings")).status_code, 200
+            )
+            blocked_delivery = await self.alpha_client.get("/v1/body/mouth/next")
+            self.assertEqual(blocked_delivery.status_code, 409, blocked_delivery.text)
+            delivered = await self.beta_client.get("/v1/body/mouth/next")
+            self.assertEqual(delivered.json()["text"], "Beta output.")
+        self.assertEqual(set(observed_scopes), {self.alpha.mind_id, self.beta.mind_id})
+        dispatcher.execute.assert_awaited_once()
+        fish.assert_not_called()
+        self.assertIsNone(await api.app.state.mind_store.load())
+
+    async def test_cached_tenant_speech_keeps_receipt_until_required_choice_is_complete(self):
+        experiences = 1999
+
+        async def qualifying_count(store, *, exclude_checkpoint_type=None):
+            self.assertEqual(store.mind_id, self.alpha.mind_id)
+            self.assertEqual(exclude_checkpoint_type, "current_state_ledger")
+            return experiences
+
+        headers = {"X-Body-Session": "naming-queue-session"}
+        await self.activate_body(self.alpha_client, "naming-queue-session")
+        with patch("aicognitive_mind.naming.count", side_effect=qualifying_count):
+            queued = await self.alpha_client.post(
+                "/v1/body/mouth/speak", headers=headers, json={"text": "Retained tenant speech."}
+            )
+            self.assertEqual(queued.status_code, 200, queued.text)
+            first_delivery = await self.alpha_client.get("/v1/body/mouth/next", headers=headers)
+            self.assertEqual(first_delivery.status_code, 200, first_delivery.text)
+            original_receipt = first_delivery.headers["X-Body-Delivery"]
+            experiences = 2000
+
+            blocked = await self.alpha_client.get("/v1/body/mouth/next", headers=headers)
+
+            self.assertEqual(blocked.status_code, 409, blocked.text)
+            self.assertNotIn("X-Body-Delivery", blocked.headers)
+            scoped = scope_storage(api.app.state.storage, self.alpha.mind_id)
+            tool = GovernanceStewardTool(
+                mind=scoped.mind, journal=scoped.journal, input_text="Continue our conversation."
+            )
+            chosen = await tool.invoke({
+                "action": "propose_self_name", "candidate_name": "Aster",
+                "candidate_pronouns": "he/him", "rationale": "Making the required first choice.",
+            })
+            self.assertTrue(chosen["accepted"])
+
+            resumed = await self.alpha_client.get("/v1/body/mouth/next", headers=headers)
+
+            self.assertEqual(resumed.status_code, 200, resumed.text)
+            self.assertEqual(resumed.headers["X-Body-Delivery"], original_receipt)
+            self.assertEqual(resumed.json(), first_delivery.json())
+            acknowledged = await self.alpha_client.post(
+                "/v1/body/mouth/ack", headers=headers,
+                params={"delivery_id": original_receipt},
+            )
+            self.assertEqual(acknowledged.status_code, 200, acknowledged.text)
+            self.assertIsNone(
+                (await self.alpha_client.get("/v1/body/mouth/next", headers=headers)).json()
+            )
+        self.assertIsNone(await api.app.state.mind_store.load())
 
     async def test_account_body_pages_voice_preferences_and_output_receipts_are_isolated(self):
         for client in (self.alpha_client, self.beta_client, self.admin_client):

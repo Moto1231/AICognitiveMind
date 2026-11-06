@@ -17,18 +17,11 @@ from aicognitive_mind.domain import (
     JournalEntry,
     JournalKind,
 )
+from aicognitive_mind.naming import MIN_NAMING_EXPERIENCES as MIN_NAMING_EXPERIENCES
+from aicognitive_mind.naming import naming_assessment
+from aicognitive_mind.naming import naming_is_eligible as naming_is_eligible
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
-from aicognitive_mind.retrieval import count
 from aicognitive_mind.storage import JournalStore, MindStore
-
-MIN_NAMING_EXPERIENCES = 1000
-
-
-async def naming_is_eligible(journal: JournalStore) -> bool:
-    return (
-        await count(journal, exclude_checkpoint_type="current_state_ledger")
-        >= MIN_NAMING_EXPERIENCES
-    )
 
 
 class ProposeSelfNameCall(BaseModel):
@@ -66,8 +59,10 @@ class GovernanceStewardTool:
     description = (
         "Govern identity revisions that the Memory Steward may not perform. "
         "Supports only propose_self_name, which requires both a candidate name and "
-        "candidate pronouns as one atomic choice, and only when the current human "
-        "interaction explicitly asks the Mind to choose, select, or change its own name. "
+        "candidate pronouns as one atomic choice. An incomplete identity may make its first "
+        "joint choice autonomously after 1000 experiences and must do so by 2000. "
+        "Later revisions of an established pair require an explicit affirmative naming "
+        "command in the current human interaction. "
         "Selection is unavailable until 1000 qualifying journal experiences exist; "
         "current-state ledger checkpoints do not count. "
         "Foundational values, commitments, relationships, developmental state, and "
@@ -119,8 +114,9 @@ class GovernanceStewardTool:
     ) -> GovernanceDecision:
         previous = current.identity.self_name
         previous_pronouns = current.identity.pronouns
+        assessment = await naming_assessment(current, self._journal)
 
-        if not await naming_is_eligible(self._journal):
+        if assessment["experience_count"] < MIN_NAMING_EXPERIENCES:
             return GovernanceDecision(
                 accepted=False,
                 reason=(
@@ -136,12 +132,14 @@ class GovernanceStewardTool:
                 current_pronouns=previous_pronouns,
             )
 
-        if not self._interaction_authorizes_self_name_selection(self._input_text):
+        if assessment["selection_complete"] and not (
+            self._interaction_authorizes_self_name_selection(self._input_text)
+        ):
             return GovernanceDecision(
                 accepted=False,
                 reason=(
                     "The current human interaction does not explicitly authorize the Mind "
-                    "to choose its own name and pronouns together."
+                    "to revise its established name and pronouns."
                 ),
                 previous_name=previous,
                 candidate_name=candidate_name,
@@ -171,6 +169,9 @@ class GovernanceStewardTool:
         self._policy.assert_allowed(
             CognitiveActor.REASONING_ENGINE,
             CognitiveOperation.PROPOSE_IDENTITY_REVISION,
+        )
+        selection_mode = (
+            "explicit_revision" if assessment["selection_complete"] else "initial_choice"
         )
         self._policy.assert_allowed(
             CognitiveActor.VALUES_STEWARD,
@@ -209,6 +210,7 @@ class GovernanceStewardTool:
                 experience={
                     "source": "governance_steward",
                     "revision": "self_name_and_pronouns",
+                    "selection_mode": selection_mode,
                     "before": {"self_name": previous, "pronouns": previous_pronouns},
                     "after": {"self_name": candidate_name, "pronouns": candidate_pronouns},
                     "rationale": rationale,
@@ -222,7 +224,10 @@ class GovernanceStewardTool:
         return GovernanceDecision(
             accepted=True,
             reason=(
-                "The name and pronoun choice was explicitly authorized by the current "
+                "The initial name and pronoun choice is authorized by the naming lifecycle "
+                "and preserves protected identity state."
+                if selection_mode == "initial_choice"
+                else "The name and pronoun revision was explicitly authorized by the current "
                 "interaction and preserves protected identity state."
             ),
             previous_name=previous,

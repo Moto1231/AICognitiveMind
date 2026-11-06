@@ -50,6 +50,15 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
             .model_dump(mode="json") | {"mind_id": self.journal.mind_id}
             for index in range(999)
         ]})
+        # Revision authority applies to an established pair; first choice is autonomous.
+        original = await self.mind.load()
+        established = original.model_copy(update={
+            "identity": original.identity.model_copy(update={"pronouns": "they/them"}),
+        })
+        self.assertIsNotNone(await self.mind.replace_exact(
+            original, established, CognitiveActor.VALUES_STEWARD,
+        ))
+        previous_journal = await self.journal.read()
         for message in [
             "Do not choose a new name",
             "Explain how you choose your name",
@@ -58,13 +67,15 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
             "Choose a name for the dog",
             "Please choose a new name, but do not change it",
         ]:
-            tool = GovernanceStewardTool(mind=self.mind, journal=self.journal, input_text=message)
-            result = await tool.invoke(
-                {"action": "propose_self_name", "candidate_name": "Changed",
-                 "candidate_pronouns": "he/him", "rationale": "test"}
-            )
-            self.assertFalse(result["accepted"], message)
-        self.assertEqual((await self.mind.load()).identity.self_name, "Axiom")
+            with self.subTest(message=message):
+                tool = GovernanceStewardTool(mind=self.mind, journal=self.journal, input_text=message)
+                result = await tool.invoke(
+                    {"action": "propose_self_name", "candidate_name": "Changed",
+                     "candidate_pronouns": "he/him", "rationale": "test"}
+                )
+                self.assertFalse(result["accepted"])
+                self.assertEqual(await self.mind.load(), established)
+        self.assertEqual(await self.journal.read(), previous_journal)
 
     async def test_receipt_retries_commit_once_and_reject_different_payload(self):
         proposal = MemoryProposal(

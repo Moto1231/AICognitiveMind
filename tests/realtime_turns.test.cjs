@@ -28,8 +28,8 @@ async function fixture(options = {}) {
     controller.handle({ type: 'response.output_item.done', item });
     return item;
   };
-  const ready = () => controller.handle({ type: 'conversation.item.done', item: {
-    type: 'mcp_list_tools', server_label: 'axiom', tools: [{ name: 'begin_interaction' }, { name: 'complete_interaction' }],
+  const ready = (additional = []) => controller.handle({ type: 'conversation.item.done', item: {
+    type: 'mcp_list_tools', server_label: 'axiom', tools: ['begin_interaction', 'complete_interaction', ...additional].map(name => ({ name })),
   } });
   const transcript = (text = 'Hello Axiom.', id = 'audio-1') => controller.handle({
     type: 'conversation.item.input_audio_transcription.completed', transcript: text, item_id: id,
@@ -41,7 +41,7 @@ async function fixture(options = {}) {
     user_message: 'Hello Axiom.', response_text: 'Hello Will.', idempotency_key: 'key-1', host_working_context: context, ...args,
   }, { status: 'interaction_committed', interaction_trace_id: 'key-1', host_working_context: context, ...result }, extra);
   const done = (id, output = []) => controller.handle({ type: 'response.done', response: { id, status: 'completed', output } });
-  const beginReady = async () => { begin(); done('begin-phase'); await settle(); };
+  const beginReady = async (result = {}) => { begin({}, result); done('begin-phase'); await settle(); };
   return { controller, sent, spoken, failures, ready, transcript, call, begin, beginReady, complete, done, timeout: () => timeout() };
 }
 
@@ -195,4 +195,138 @@ test('prepared camera evidence and recalled context persist through completion r
   assert.match(ui.sent[2].response.instructions, /sha256:abc/);
   assert.match(ui.sent[2].response.instructions, /Current voice conversation/);
   ui.controller.close();
+});
+
+const naming = (count, complete = false) => ({
+  experience_count: count, status: complete ? 'complete' : count < 1000 ? 'prohibited' : count < 2000 ? 'eligible' : 'required',
+  selection_complete: complete, is_named: complete, has_pronouns: complete,
+  autonomous_choice_allowed: !complete && count >= 1000,
+  choice_required: !complete && count >= 2000, choice_required_before_completion: !complete && count >= 1999,
+  eligible_at_event: 1000, required_at_event: 2000,
+});
+const choiceArguments = { user_message: 'Hello Axiom.', candidate_name: 'Delta', candidate_pronouns: 'they/them', rationale: 'A considered first joint choice.' };
+const choiceReceipt = { accepted: true, candidate_name: 'Delta', current_name: 'Delta', candidate_pronouns: 'they/them', current_pronouns: 'they/them' };
+const blockedNaming = {
+  status: 'naming_choice_required', naming: naming(2000),
+  presentation: { allowed: false, report_persistence_error: false, answer_frozen: true },
+};
+
+test('optional first choice may be deferred with either a current or a stale tool catalog', async () => {
+  for (const tools of [[], ['propose_self_name']]) {
+    const ui = await fixture(); ui.ready(tools); ui.transcript(); await settle();
+    await ui.beginReady({ naming: naming(1000) });
+    ui.complete({}, { naming: naming(1001), presentation: { allowed: true } }); ui.done('complete'); await settle();
+    assert.deepEqual(ui.spoken, ['Hello Will.']); assert.deepEqual(ui.failures, []);
+  }
+});
+
+test('a required or upcoming naming deadline with a stale catalog requests reconnect once', async () => {
+  for (const count of [1999, 2000]) {
+    let preparations = 0;
+    const ui = await fixture({ prepare: async () => { preparations++; return ''; } });
+    ui.ready(); ui.transcript(); await settle(); await ui.beginReady({ naming: naming(count) });
+    ui.controller.handle({ type: 'error', error: { message: 'A later duplicate failure.' } });
+    assert.equal(ui.controller.closed, true); assert.equal(ui.failures.length, 1);
+    assert.match(ui.failures[0], /Reconnect voice.*required name and pronoun choice tool/);
+    assert.equal(preparations, 0); assert.deepEqual(ui.spoken, []); assert.equal(ui.sent.length, 1);
+  }
+});
+
+test('a refreshed tool catalog permits the required autonomous first choice before speech', async () => {
+  const ui = await fixture(); ui.ready(); ui.transcript(); await settle();
+  ui.begin({}, { naming: naming(1999) });
+  ui.ready(['propose_self_name']); ui.done('begin-phase'); await settle();
+  assert.match(ui.sent[1].response.instructions, /Before ordinary completion, choose your own name and pronouns/);
+  ui.call('propose_self_name', choiceArguments, choiceReceipt); ui.done('choice'); await settle();
+  assert.deepEqual(ui.spoken, []);
+  assert.match(ui.sent[2].response.instructions, /joint naming choice committed/);
+  ui.complete({}, { naming: naming(2001, true), presentation: { allowed: true } }); ui.done('complete'); await settle();
+  assert.deepEqual(ui.spoken, ['Hello Will.']); assert.deepEqual(ui.failures, []);
+});
+
+test('a late naming deadline holds the frozen answer, accepts a choice, and preserves the completion retry allowance', async () => {
+  const ui = await fixture(); ui.ready(['propose_self_name']); ui.transcript(); await settle();
+  await ui.beginReady({ naming: naming(1998) });
+  ui.complete({}, blockedNaming); ui.done('blocked'); await settle();
+  assert.equal(ui.controller.closed, false); assert.deepEqual(ui.failures, []); assert.deepEqual(ui.spoken, []);
+  assert.match(ui.sent[2].response.instructions, /ordinary answer is frozen/);
+  assert.match(ui.sent[2].response.instructions, /"response_text":"Hello Will\."/);
+  ui.call('propose_self_name', choiceArguments, choiceReceipt); ui.done('choice'); await settle();
+  assert.match(ui.sent[3].response.instructions, /exactly these unchanged arguments/);
+  ui.complete({}, { status: 'failed' }); ui.done('uncertain-complete'); await settle();
+  assert.deepEqual(ui.spoken, []); assert.deepEqual(ui.failures, []);
+  ui.complete({}, { naming: naming(2002, true), presentation: { allowed: true } }); ui.done('committed'); await settle();
+  assert.deepEqual(ui.spoken, ['Hello Will.']); assert.deepEqual(ui.failures, []);
+});
+
+test('naming recovery cannot replace the held answer or complete before its choice commits', async () => {
+  for (const action of [
+    ui => ui.complete(),
+    ui => { ui.call('propose_self_name', choiceArguments, choiceReceipt); ui.complete({ response_text: 'A replacement answer.' }); },
+  ]) {
+    const ui = await fixture(); ui.ready(['propose_self_name']); ui.transcript(); await settle();
+    await ui.beginReady({ naming: naming(1998) }); ui.complete({}, blockedNaming); ui.done('blocked'); await settle();
+    action(ui); ui.done('invalid-retry'); await settle();
+    assert.equal(ui.failures.length, 1); assert.deepEqual(ui.spoken, []);
+  }
+});
+
+test('a naming deadline reached on an uncertain retry is resolved before retrying again', async () => {
+  const ui = await fixture(); ui.ready(['propose_self_name']); ui.transcript(); await settle();
+  await ui.beginReady({ naming: naming(1998) });
+  ui.complete({}, { status: 'failed' }); ui.done('uncertain'); await settle();
+  ui.complete({}, blockedNaming); ui.done('blocked'); await settle();
+  assert.match(ui.sent[3].response.instructions, /ordinary answer is frozen/);
+  assert.doesNotMatch(ui.sent[3].response.instructions, /Retry the failed completion once/);
+  ui.call('propose_self_name', choiceArguments, choiceReceipt); ui.done('choice'); await settle();
+  ui.complete({}, { naming: naming(2001, true), presentation: { allowed: true } }); ui.done('committed'); await settle();
+  assert.deepEqual(ui.spoken, ['Hello Will.']); assert.deepEqual(ui.failures, []);
+});
+
+test('naming calls require an imported tool, actual transcript, eligibility, and a matching accepted pair', async () => {
+  const variants = [
+    { tools: [], assessment: naming(1000), args: choiceArguments, receipt: choiceReceipt, reconnect: true },
+    { assessment: naming(999), args: choiceArguments, receipt: choiceReceipt },
+    { args: { ...choiceArguments, user_message: 'A different human turn.' }, receipt: choiceReceipt },
+    { args: { ...choiceArguments, candidate_pronouns: ' ' }, receipt: choiceReceipt },
+    { args: choiceArguments, receipt: { ...choiceReceipt, accepted: false } },
+    { args: choiceArguments, receipt: { ...choiceReceipt, current_name: 'Other' } },
+    { args: choiceArguments, receipt: { ...choiceReceipt, current_pronouns: 'she/her' } },
+    { args: choiceArguments, receipt: { ...choiceReceipt, candidate_name: 'Other' } },
+    { args: choiceArguments, receipt: choiceReceipt, extra: { error: { message: 'Governance failed.' } } },
+  ];
+  for (const variant of variants) {
+    const ui = await fixture(); ui.ready(variant.tools || ['propose_self_name']); ui.transcript(); await settle();
+    await ui.beginReady({ naming: variant.assessment || naming(1000) });
+    ui.call('propose_self_name', variant.args, variant.receipt, variant.extra); ui.done('choice'); await settle();
+    assert.equal(ui.failures.length, 1); assert.deepEqual(ui.spoken, []);
+    if (variant.reconnect) assert.match(ui.failures[0], /Reconnect voice/);
+  }
+});
+
+test('established identity stays established during ordinary work and cannot be chosen twice in a turn', async () => {
+  const ui = await fixture(); ui.ready(['propose_self_name']); ui.transcript(); await settle();
+  await ui.beginReady({ naming: naming(2000, true) });
+  assert.match(ui.sent[1].response.instructions, /Preserve the established name and pronouns/);
+  assert.doesNotMatch(ui.sent[1].response.instructions, /choose your own name and pronouns together with propose_self_name/);
+  ui.complete({}, { naming: naming(2001, true) }); ui.done('complete'); await settle();
+  assert.deepEqual(ui.spoken, ['Hello Will.']); assert.deepEqual(ui.failures, []);
+  const duplicate = await fixture(); duplicate.ready(['propose_self_name']); duplicate.transcript(); await settle();
+  await duplicate.beginReady({ naming: naming(1000) });
+  duplicate.call('propose_self_name', choiceArguments, choiceReceipt);
+  duplicate.call('propose_self_name', choiceArguments, choiceReceipt); duplicate.done('choice'); await settle();
+  assert.equal(duplicate.failures.length, 1); assert.deepEqual(duplicate.spoken, []);
+});
+
+test('explicit presentation denial and malformed naming blocks never authorize voice', async () => {
+  for (const receipt of [
+    { presentation: { allowed: false, report_persistence_error: false } },
+    { naming: naming(2000), presentation: { allowed: true } },
+    { ...blockedNaming, naming: naming(1000) },
+    { ...blockedNaming, presentation: { allowed: true } },
+  ]) {
+    const ui = await fixture(); ui.ready(['propose_self_name']); ui.transcript(); await settle();
+    await ui.beginReady({ naming: naming(1998) }); ui.complete({}, receipt); ui.done('withheld'); await settle();
+    assert.equal(ui.failures.length, 1); assert.deepEqual(ui.spoken, []);
+  }
 });

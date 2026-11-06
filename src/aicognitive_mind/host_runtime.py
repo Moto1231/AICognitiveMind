@@ -14,6 +14,11 @@ from typing import Any
 from uuid import uuid4
 
 from aicognitive_mind.commit import CommitConflict, backend, surreal_query
+from aicognitive_mind.governance_steward import GovernanceStewardTool
+from aicognitive_mind.identity_selection import (
+    choice_proposal_allowed, initial_choice_instructions, parse_initial_choice,
+)
+from aicognitive_mind.naming import NamingChoiceRequired, naming_guidance, naming_required_result
 from aicognitive_mind.pending_diagnostics import PendingReadDiagnostics
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 
@@ -371,8 +376,34 @@ class HostRuntime:
     REQUEST_WAIT_SECONDS = 25
 
     def __init__(self, mind: Any, service: Any, timeout: float = 120) -> None:
+        self._mind = mind
         self.records = RuntimeRecords(mind)
         self.service, self.timeout = service, timeout
+
+    async def _naming_for_delivery(self, *, additional_entries: int = 0) -> dict | None:
+        status = getattr(self.service, "naming_status", None)
+        if not callable(status):
+            # Legacy injected services cannot authorize presentation before completion.
+            return None
+        naming = await status()
+        if not naming["selection_complete"]:
+            projected_count = naming["experience_count"] + additional_entries
+            if projected_count >= naming["required_at_event"]:
+                raise NamingChoiceRequired(naming, projected_count=projected_count)
+        return naming
+
+    @staticmethod
+    def _naming_blocked(choice: NamingChoiceRequired) -> dict:
+        return naming_required_result(choice)
+
+    async def _retain_naming_blocked_response(self, request: dict, response_text: str) -> None:
+        frozen = request.get("naming_blocked_response")
+        if frozen is not None and frozen != response_text:
+            raise CommitConflict("Retry the naming-blocked request with the same response")
+        if frozen is None:
+            frozen_request = {**request, "naming_blocked_response": response_text}
+            if not await self.records.replace(request["request_id"], request, frozen_request):
+                raise CommitConflict("Body request changed while awaiting its identity choice")
 
     @classmethod
     def _heartbeat_stale(cls, host: dict | None, now: float | None = None) -> bool:
@@ -644,6 +675,8 @@ class HostRuntime:
                 if latest and (
                     latest["state"] == "complete" or latest.get("presented") is True
                 ):
+                    if not passive_sensory:
+                        await self._naming_for_delivery()
                     return latest["result"]
                 if latest and latest.get("state") == "failed":
                     reason = latest.get("error", {}).get(
@@ -919,6 +952,11 @@ class HostRuntime:
         if request["state"] == "complete":
             if request["result"]["response_text"] != response_text:
                 raise CommitConflict("Body request already completed with another response")
+            if not passive_sensory:
+                try:
+                    await self._naming_for_delivery()
+                except NamingChoiceRequired as choice:
+                    return self._naming_blocked(choice)
             return request["result"]
         if request["state"] != "pending":
             raise CommitConflict(f"Body request is {request['state']}")
@@ -949,6 +987,14 @@ class HostRuntime:
                     raise ValueError("Derived audio does not match the preserved evidence")
                 result["derived_audio"] = deepcopy(derived)
         else:
+            frozen = request.get("naming_blocked_response")
+            if frozen is not None and frozen != response_text:
+                raise CommitConflict("Retry the naming-blocked request with the same response")
+            try:
+                naming = await self._naming_for_delivery()
+            except NamingChoiceRequired as choice:
+                await self._retain_naming_blocked_response(request, response_text)
+                return self._naming_blocked(choice)
             options = {}
             if "source" in request:
                 options["source"] = request["source"]
@@ -964,6 +1010,7 @@ class HostRuntime:
             release_before_completion = (
                 not request.get("continuity_circuit_open_at_begin", False)
                 and not request.get("presented", False)
+                and naming is not None and naming["selection_complete"]
             )
             if release_before_completion:
                 provisional = {
@@ -980,8 +1027,11 @@ class HostRuntime:
                     )
                 request = presented
             committed = await completion
+            if committed.get("status") == "naming_choice_required":
+                await self._retain_naming_blocked_response(request, response_text)
+                return committed
             presentation_allowed = committed.get("presentation", {}).get(
-                "allowed", committed.get("status") == "interaction_committed",
+                "allowed", committed.get("status", "interaction_committed") == "interaction_committed",
             )
             if not presentation_allowed and not request.get("presented"):
                 latest = await self.records.get(request_id)
@@ -1000,6 +1050,11 @@ class HostRuntime:
                 raise RuntimeError(
                     "Interaction persistence remained unhealthy; the response was not presented"
                 )
+            try:
+                await self._naming_for_delivery()
+            except NamingChoiceRequired as choice:
+                await self._retain_naming_blocked_response(request, response_text)
+                return self._naming_blocked(choice)
             result = {
                 "response_text": response_text,
                 "occurred_at": committed.get(
@@ -1015,6 +1070,11 @@ class HostRuntime:
             request_id, latest, {**latest, "state": "complete", "result": result}
         ):
             raise CommitConflict("Body request changed; retry completion with the same response")
+        if not passive_sensory:
+            try:
+                await self._naming_for_delivery()
+            except NamingChoiceRequired as choice:
+                return self._naming_blocked(choice)
         return result
 
 
@@ -1025,12 +1085,18 @@ class HostRuntime:
             or request.get("priority", 0) != 0
         ):
             raise ValueError("Incoming human message was not found")
+        result = request.get("result", {})
+        if result and (request["state"] == "complete" or request.get("presented")):
+            try:
+                await self._naming_for_delivery()
+            except NamingChoiceRequired as choice:
+                result = self._naming_blocked(choice)
         return {
             "request_id": request_id, "state": request["state"],
             "user_message": request["message"],
             "session_id": request.get("body_session", "legacy"),
             "created": request["created"],
-            "result": request.get("result", {}),
+            "result": result,
         }
 
     async def read_incoming_sensory(self, request_id: str) -> dict:
@@ -1152,6 +1218,68 @@ class HostAwareCore:
     def __getattr__(self, name: str) -> Any:
         return getattr(self.core, name)
 
+    async def _choose_initial_identity(
+        self, dispatcher: Any, message: str, recalled: dict,
+    ) -> dict:
+        import json
+
+        from aicognitive_mind.task_behaviors import TaskExecutionContext
+
+        naming = recalled.get("naming", {})
+        if not choice_proposal_allowed(naming, message):
+            return recalled
+        current = await self.hosts._mind.load()
+        if current is None:
+            raise RuntimeError("The Mind is not initialized")
+        context = {**recalled, "mind": current.model_dump(mode="json")}
+        messages = [
+            {"role": "system", "content": initial_choice_instructions(context)},
+            {"role": "user", "content": json.dumps({
+                "actual_human_input": message, "mind": context["mind"],
+                "recalled_context": context.get("recalled_context", {}),
+                "current_state": context.get("current_state", {}),
+            }, default=str)},
+        ]
+        for attempt in range(2):
+            selected = await dispatcher.complete_chat(
+                "reasoning", messages,
+                context=TaskExecutionContext(
+                    task="reasoning", working_context=json.dumps(context, default=str),
+                ),
+            )
+            try:
+                choice = parse_initial_choice(selected, naming)
+            except ValueError:
+                if attempt == 1:
+                    raise RuntimeError("The reasoning endpoint did not supply a valid identity choice")
+                messages.append({
+                    "role": "user", "content": (
+                        "The previous output was not a valid complete identity-choice JSON object. "
+                        "Follow the supplied schema exactly; do not return prose or Markdown."
+                    ),
+                })
+                continue
+            if choice is None:
+                return context
+            tool = GovernanceStewardTool(
+                mind=self.hosts._mind, journal=self.hosts.service._journal, input_text=message,
+            )
+            decision = await tool.invoke(choice.model_dump())
+            if not decision.get("accepted"):
+                raise RuntimeError(f"Initial identity choice was not accepted: {decision.get('reason')}")
+            latest = await self.hosts._mind.load()
+            latest_naming = await self.hosts.service.naming_status()
+            return {
+                **context, "mind": latest.model_dump(mode="json"),
+                "naming": latest_naming,
+                "conscious_workspace_contract": (
+                    context.get("conscious_workspace_contract", "")
+                    + "\n\nINITIAL IDENTITY CHOICE COMMITTED:\n"
+                    + naming_guidance(latest_naming)
+                ),
+            }
+        raise RuntimeError("The initial identity choice could not be completed")
+
     async def interact(
         self, message: str, *, source: str = "human", input_context: dict | None = None
     ) -> Any:
@@ -1189,6 +1317,7 @@ class HostAwareCore:
             recalled = await self.hosts.service.begin_interaction(
                 message, source=source, input_context=input_context,
             )
+            recalled = await self._choose_initial_identity(dispatcher, message, recalled)
             response_text = await dispatcher.complete_chat(
                 "reasoning",
                 [{"role": "system", "content": recalled.get("conscious_workspace_contract", "")},
@@ -1208,12 +1337,22 @@ class HostAwareCore:
                 source=source, input_context=input_context,
                 runtime_source="configured_reasoning_endpoint",
             )
+            if committed.get("status") == "naming_choice_required":
+                await self._choose_initial_identity(
+                    dispatcher, message, {**recalled, "naming": committed["naming"]},
+                )
+                committed = await self.hosts.service.complete_interaction(
+                    message, response_text, idempotency_key=recalled["idempotency_key"],
+                    source=source, input_context=input_context,
+                    runtime_source="configured_reasoning_endpoint",
+                )
             presentation_allowed = committed.get("presentation", {}).get(
                 "allowed", committed.get("status") == "interaction_committed",
             )
             if not presentation_allowed:
                 raise RuntimeError(
-                    "Configured reasoning endpoint persistence circuit withheld the interaction"
+                    "Configured reasoning endpoint withheld the interaction: "
+                    + str(committed.get("status", "presentation blocked"))
                 )
             return InteractionResult(
                 response_text=response_text,
