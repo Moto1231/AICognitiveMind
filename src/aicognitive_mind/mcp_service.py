@@ -8,7 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
-from aicognitive_mind.commit import atomic
+from aicognitive_mind.commit import CommitConflict, atomic
 from aicognitive_mind.continuity_health import InteractionContinuityHealth
 from aicognitive_mind.continuity_settings import ContinuitySettingsRegistry
 from aicognitive_mind.domain import (
@@ -321,6 +321,15 @@ class CognitiveMcpService:
             await self.ensure_naming_ready()
         except NamingChoiceRequired as exc:
             return naming_required_result(exc)
+        except CommitConflict:
+            # A background journal writer may advance the deadline after the staged
+            # check. Its revision invalidates publication; recover through the same
+            # governed choice instead of treating this as a persistence failure.
+            try:
+                await self.ensure_naming_ready(additional_entries=1)
+            except NamingChoiceRequired as exc:
+                return naming_required_result(exc)
+            raise
         except (TaskDispatchError, TimeoutError, OSError) as exc:
             if idempotency_key is None:
                 # Legacy direct-core callers cannot deduplicate attempts into one

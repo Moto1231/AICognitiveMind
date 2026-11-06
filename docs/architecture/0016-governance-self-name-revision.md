@@ -76,6 +76,8 @@ completion, and the final delivery state after asynchronous bookkeeping. At 1,99
 ordinary entry requires a prior committed choice. Additional qualifying Steward events are
 included in the staged check. A blocked attempt returns `naming_choice_required`, does not poison
 the retry receipt or the persistence circuit, and can be retried unchanged after selection.
+Direct journal appends participate in the same storage revision protocol, so a background
+experience arriving after the staged check invalidates publication and triggers a fresh check.
 While the initial choice is incomplete, ordinary work below the deadline can continue, but hosts
 hold the answer until the final completion delivery decision. Established identities retain the
 configured presentation-first policy.
