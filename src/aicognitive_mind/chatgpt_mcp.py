@@ -11,7 +11,7 @@ from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import AnyHttpUrl
 
-from aicognitive_mind.account_mcp import account_tools, request_state
+from aicognitive_mind.account_mcp import account_tools, authorized_state, request_state
 from aicognitive_mind.body import (
     BodyRuntime,
     BrowserVoiceOutput,
@@ -27,8 +27,9 @@ from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_events import STATE_KEY, event_owner, register_message_events
 from aicognitive_mind.mcp_registry import MCPServerRegistry
-from aicognitive_mind.mcp_server import AppState, lifespan
+from aicognitive_mind.mcp_server import AppState, IdentityMCPServer, lifespan
 from aicognitive_mind.mcp_server import execute_task as execute_configured_task
+from aicognitive_mind.mcp_server import propose_self_name as choose_self_name
 from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.sleep import SleepConsolidator
@@ -208,13 +209,17 @@ def build_chatgpt_mcp(
         validate_token_resource=True,
     )
 
-    server: MCPServer[AppState] = MCPServer(
+    async def naming_state(ctx: Any) -> Any:
+        return await authorized_state(ctx.lifespan_context, provider)
+
+    server: MCPServer[AppState] = IdentityMCPServer(
         "Axiom",
         title="Axiom",
         description="Persistent identity, memory, continuity, and governed experience for an external AI reasoning host.",
         instructions=HOST_INSTRUCTIONS,
         version="0.2.0",
         lifespan=lifespan,
+        naming_state_loader=naming_state,
         auth=auth,
         auth_server_provider=provider,
     )
@@ -257,6 +262,25 @@ def build_chatgpt_mcp(
             "mind_id": state.storage.mind_id,
         }
         return result
+
+    @account_tool(annotations=ToolAnnotations(
+        read_only_hint=False, destructive_hint=False, open_world_hint=False,
+    ))
+    async def propose_self_name(
+        user_message: str, candidate_name: str, candidate_pronouns: str,
+        rationale: str, ctx: Context[AppState],
+    ) -> dict[str, Any]:
+        """Commit the Mind's chosen name and pronouns together after an explicit naming command.
+
+        Available after 1,000 journal experiences, excluding state-ledger checkpoints.
+        Use the actual user_message and the Mind's candidate_name, candidate_pronouns and
+        grounded rationale. An identity question or an unset value does not authorize a choice.
+        Both choices are validated and saved atomically in this authenticated account's Mind.
+        """
+        return await choose_self_name(
+            user_message=user_message, candidate_name=candidate_name,
+            candidate_pronouns=candidate_pronouns, rationale=rationale, ctx=ctx,
+        )
 
     @account_tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def read_incoming_message(request_id: str, ctx: Context[AppState]) -> dict[str, Any]:

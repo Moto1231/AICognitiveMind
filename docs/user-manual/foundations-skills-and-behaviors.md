@@ -26,17 +26,19 @@ Packaged defaults supply unset settings. Saved Administrator overrides take prec
 2. Wait for **Identity loaded.**
 3. Read **Self-name**, **Pronouns**, **Developmental state**, **Foundational values**, **Commitments** and **Relationships**.
 
-These are text displays. Foundations has no editable identity fields or Edit, Save or Cancel actions. An unset Self-name displays **Not selected**; empty value, commitment and relationship lists display **None recorded**. Missing data displays **Unknown**. If the identity request fails, the view clears the previous identity and shows the error.
+These are text displays. Foundations has no editable identity fields or Edit, Save or Cancel actions. An unset Self-name or Pronouns value displays **Not selected**; empty value, commitment and relationship lists display **None recorded**. Missing data displays **Unknown**. If the identity request fails, the view clears the previous identity and shows the error.
 
 Refreshing Foundations reads both the identity display and saved Startup configuration. Identity remains read-only in this view; Startup has its own editor below.
 
-Choosing or changing my name in conversation follows its own governance protocol. An unset name does not authorize an automatic rename.
+Choosing or changing my name in conversation follows its own governance protocol and selects pronouns in the same revision. An unset name or pronouns value does not authorize an automatic choice.
 
 Section sources: [Foundations display](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/index.html), [identity and Startup refresh](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/static/portal.js), [authorized identity API](https://github.com/Moto1231/AICognitiveMind/blob/56dd9a5faefcc6adde578ed49a6aaad30e968153/src/aicognitive_mind/admin_configuration.py).
 
 ## Naming milestone and current limits
 
 > This section was reviewed against `dbbc246860115153f3c11d05b505014cfcb874b8` on 2026-10-25. Sections without another explicit review block retain the opening baseline.
+
+> Updated on **2026-11-06** for combined name and pronoun selection and the enforced 1,000-entry eligibility gate. The current implementation sources are linked after the selection rules.
 
 The status response reports a naming milestone based on the journal experience count. Current-state ledger checkpoints do not advance that count.
 
@@ -46,9 +48,19 @@ The status response reports a naming milestone based on the journal experience c
 | 1,000–1,999 | Eligible |
 | 2,000 or more | Required |
 
-These are reported status labels. Reaching a threshold does **not** automatically choose or save a name. The current Governance Steward accepts a self-name proposal only after an explicit naming command in the current human interaction. Its name-write path does not itself check the experience threshold; the reported milestone and write enforcement are separate.
+Before **1,000 qualifying journal experiences**, the name-and-pronoun tool is not exposed. Governance also checks the same count at execution and rejects premature calls, including direct or previously cached calls. Current-state ledger checkpoints do not count toward eligibility. Discovery and execution use the authenticated Mind's own journal.
 
-Automatic name-and-gender selection at the milestone is not implemented in this revision. The identity schema has a **Pronouns** field, defaulting to `she/her`, and no separate gender field. Pronouns are not a gender selection. The self-name action preserves pronouns. The [current Foundations view](#read-loaded-identity) displays stored identity without editing it.
+At 1,000 experiences, the tool becomes available. Reaching a threshold does **not** automatically choose or save a name or pronouns: selection still requires an explicit naming command in the current human interaction. The **Required** status at 2,000 remains a reported milestone rather than an automatic identity rewrite.
+
+Tool discovery checks eligibility on each request. A connected client that caches its tool list may need to refresh that list or reconnect after the threshold is reached.
+
+New Minds begin with both **Self-name** and **Pronouns** unselected (`null`). There is no default pronoun set. When an explicit naming command authorizes selection, the Mind chooses a name and pronouns together. The `propose_self_name` action requires `candidate_name`, `candidate_pronouns` and a rationale, and saves both fields in one governed identity revision. A command such as **Choose your own name and pronouns** authorizes that joint selection; asking what the current name or pronouns are does not.
+
+Existing stored names and pronouns are retained until an authorized choice changes them. The combined action can choose different pronouns while retaining the same name, and preserves values, commitments, relationships, developmental state and creation history. Opening another chat or changing reasoning hosts does not make a new selection.
+
+Reaching a milestone does not automatically perform selection. The schema still has no separate gender field; pronouns do not establish a gender identity. The [current Foundations view](#read-loaded-identity) displays stored identity without editing it, and shows unselected pronouns as **Not selected**.
+
+Current selection sources: [identity fields](../../src/aicognitive_mind/domain.py), [governed selection](../../src/aicognitive_mind/governance_steward.py), [connected-host naming tool](../../src/aicognitive_mind/chatgpt_mcp.py), [reasoning instructions](../../src/aicognitive_mind/prompts.py).
 
 Section sources: [reported milestone and count](https://github.com/Moto1231/AICognitiveMind/blob/dbbc246860115153f3c11d05b505014cfcb874b8/src/aicognitive_mind/mcp_service.py#L128-L147), [self-name authorization and protected fields](https://github.com/Moto1231/AICognitiveMind/blob/dbbc246860115153f3c11d05b505014cfcb874b8/src/aicognitive_mind/governance_steward.py#L88-L143), [identity fields and defaults](https://github.com/Moto1231/AICognitiveMind/blob/dbbc246860115153f3c11d05b505014cfcb874b8/src/aicognitive_mind/domain.py#L55-L60).
 

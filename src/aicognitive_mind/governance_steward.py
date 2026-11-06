@@ -8,10 +8,9 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from aicognitive_mind.commit import atomic
-
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -19,32 +18,59 @@ from aicognitive_mind.domain import (
     JournalKind,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
+from aicognitive_mind.retrieval import count
 from aicognitive_mind.storage import JournalStore, MindStore
+
+MIN_NAMING_EXPERIENCES = 1000
+
+
+async def naming_is_eligible(journal: JournalStore) -> bool:
+    return (
+        await count(journal, exclude_checkpoint_type="current_state_ledger")
+        >= MIN_NAMING_EXPERIENCES
+    )
 
 
 class ProposeSelfNameCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     action: Literal["propose_self_name"]
     candidate_name: str = Field(min_length=1, max_length=120)
+    candidate_pronouns: str = Field(min_length=1, max_length=80)
     rationale: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("candidate_name", "candidate_pronouns", "rationale")
+    @classmethod
+    def normalize_nonblank_text(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Identity choices and rationale cannot be blank")
+        return normalized
 
 
 class GovernanceDecision(BaseModel):
     accepted: bool
     reason: str
-    previous_name: str
+    previous_name: str | None
     candidate_name: str
-    current_name: str
+    current_name: str | None
+    previous_pronouns: str | None
+    candidate_pronouns: str
+    current_pronouns: str | None
 
 
 class GovernanceStewardTool:
-    """Narrow identity-governance authority for explicit self-name revision."""
+    """Govern a self-name and pronoun choice as one identity revision."""
 
     name = "governance_steward"
     description = (
         "Govern identity revisions that the Memory Steward may not perform. "
-        "V0.1 supports only propose_self_name, and only when the current human "
+        "Supports only propose_self_name, which requires both a candidate name and "
+        "candidate pronouns as one atomic choice, and only when the current human "
         "interaction explicitly asks the Mind to choose, select, or change its own name. "
-        "Pronouns, foundational values, commitments, relationships, developmental state, and "
+        "Selection is unavailable until 1000 qualifying journal experiences exist; "
+        "current-state ledger checkpoints do not count. "
+        "Foundational values, commitments, relationships, developmental state, and "
         "creation history cannot be changed by this tool."
     )
     input_schema = ProposeSelfNameCall.model_json_schema()
@@ -74,13 +100,11 @@ class GovernanceStewardTool:
         if current is None:
             raise RuntimeError("The Mind is not initialized")
 
-        candidate = " ".join(call.candidate_name.split()).strip()
-        if not candidate:
-            raise ValueError("Self-name cannot be blank")
         decision = await self._consider_self_name(
             current,
-            candidate_name=candidate,
-            rationale=call.rationale.strip(),
+            candidate_name=call.candidate_name,
+            candidate_pronouns=call.candidate_pronouns,
+            rationale=call.rationale,
         )
         self._decisions.append(decision)
         return decision.model_dump(mode="json")
@@ -90,29 +114,58 @@ class GovernanceStewardTool:
         current: CognitiveMind,
         *,
         candidate_name: str,
+        candidate_pronouns: str,
         rationale: str,
     ) -> GovernanceDecision:
         previous = current.identity.self_name
+        previous_pronouns = current.identity.pronouns
+
+        if not await naming_is_eligible(self._journal):
+            return GovernanceDecision(
+                accepted=False,
+                reason=(
+                    f"Name and pronoun selection requires at least {MIN_NAMING_EXPERIENCES} "
+                    "qualifying journal experiences. Current-state ledger checkpoints do "
+                    "not count, and an explicit request cannot bypass this threshold."
+                ),
+                previous_name=previous,
+                candidate_name=candidate_name,
+                current_name=previous,
+                previous_pronouns=previous_pronouns,
+                candidate_pronouns=candidate_pronouns,
+                current_pronouns=previous_pronouns,
+            )
 
         if not self._interaction_authorizes_self_name_selection(self._input_text):
             return GovernanceDecision(
                 accepted=False,
                 reason=(
                     "The current human interaction does not explicitly authorize the Mind "
-                    "to choose or change its own name."
+                    "to choose its own name and pronouns together."
                 ),
                 previous_name=previous,
                 candidate_name=candidate_name,
                 current_name=previous,
+                previous_pronouns=previous_pronouns,
+                candidate_pronouns=candidate_pronouns,
+                current_pronouns=previous_pronouns,
             )
 
-        if candidate_name.casefold() == previous.casefold():
+        if (
+            previous is not None
+            and previous_pronouns is not None
+            and candidate_name.casefold() == previous.casefold()
+            and candidate_pronouns.casefold() == previous_pronouns.casefold()
+        ):
             return GovernanceDecision(
                 accepted=False,
-                reason="The proposed self-name is already the current self-name.",
+                reason="The proposed name and pronouns are already current.",
                 previous_name=previous,
                 candidate_name=candidate_name,
                 current_name=previous,
+                previous_pronouns=previous_pronouns,
+                candidate_pronouns=candidate_pronouns,
+                current_pronouns=previous_pronouns,
             )
 
         self._policy.assert_allowed(
@@ -125,22 +178,20 @@ class GovernanceStewardTool:
         )
 
         revised_identity = current.identity.model_copy(
-            update={"self_name": candidate_name}
+            update={"self_name": candidate_name, "pronouns": candidate_pronouns}
         )
         revised = current.model_copy(update={"identity": revised_identity})
 
-        # Guard the V0.1 boundary explicitly: the proposal may change only self_name.
-        # Pronouns are governed identity state and remain protected here.
+        # The joint choice may change only the name and pronouns.
         if (
-            revised.identity.pronouns != current.identity.pronouns
-            or revised.identity.foundational_values
+            revised.identity.foundational_values
             != current.identity.foundational_values
             or revised.identity.commitments != current.identity.commitments
             or revised.identity.relationships != current.identity.relationships
             or revised.developmental_state != current.developmental_state
             or revised.created_at != current.created_at
         ):
-            raise RuntimeError("Governance V0.1 attempted to alter protected identity state")
+            raise RuntimeError("Governance attempted to alter protected identity state")
 
         committed = await self._mind.replace_exact(
             current,
@@ -149,7 +200,7 @@ class GovernanceStewardTool:
         )
         if committed is None:
             raise RuntimeError(
-                "Mind identity changed before the governed self-name revision could commit"
+                "Mind identity changed before the governed name and pronoun choice could commit"
             )
 
         await self._journal.append(
@@ -157,9 +208,9 @@ class GovernanceStewardTool:
                 kind=JournalKind.IDENTITY_REVISION,
                 experience={
                     "source": "governance_steward",
-                    "revision": "self_name",
-                    "before": {"self_name": previous},
-                    "after": {"self_name": candidate_name},
+                    "revision": "self_name_and_pronouns",
+                    "before": {"self_name": previous, "pronouns": previous_pronouns},
+                    "after": {"self_name": candidate_name, "pronouns": candidate_pronouns},
                     "rationale": rationale,
                     "human_input": self._input_text,
                     "protected_state_preserved": True,
@@ -171,12 +222,15 @@ class GovernanceStewardTool:
         return GovernanceDecision(
             accepted=True,
             reason=(
-                "The self-name revision was explicitly authorized by the current "
+                "The name and pronoun choice was explicitly authorized by the current "
                 "interaction and preserves protected identity state."
             ),
             previous_name=previous,
             candidate_name=candidate_name,
             current_name=candidate_name,
+            previous_pronouns=previous_pronouns,
+            candidate_pronouns=candidate_pronouns,
+            current_pronouns=candidate_pronouns,
         )
 
     @staticmethod
@@ -185,9 +239,13 @@ class GovernanceStewardTool:
         # Questions, quotations, negations and additional clauses fail closed.
         text = " ".join(input_text.casefold().split()).rstrip(".! ")
         commands = (
-            r"(?:please )?(?:choose|select|pick) (?:yourself )?(?:a|a new|your own) name",
-            r"(?:please )?(?:rename|name) yourself",
-            r"you know, you have to select yourself a name",
-            r"i authorize you to (?:choose|select|pick) (?:a|a new|your own) name",
+            r"(?:please )?(?:choose|select|pick) (?:yourself )?(?:a|a new|your own) name"
+            r"(?: and (?:your |your own )?pronouns)?",
+            r"(?:please )?(?:choose|select|pick) your name and (?:your )?pronouns",
+            r"(?:please )?(?:rename|name) yourself"
+            r"(?: and (?:choose|select|pick) (?:your |your own )?pronouns)?",
+            r"you know, you have to select yourself a name(?: and (?:your )?pronouns)?",
+            r"i authorize you to (?:choose|select|pick) (?:a|a new|your own) name"
+            r"(?: and (?:your |your own )?pronouns)?",
         )
         return any(re.fullmatch(pattern, text) for pattern in commands)

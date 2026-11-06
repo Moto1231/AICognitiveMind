@@ -12,7 +12,9 @@ from aicognitive_mind.body import BrowserVoiceOutput, ExpressionIntent, Expressi
 from aicognitive_mind.body_sessions import BodyQueue, body_session
 from aicognitive_mind.commit import CommitConflict, commit
 from aicognitive_mind.config import Settings
-from aicognitive_mind.domain import CognitiveActor, CognitiveMind, MemoryClass, MindIdentity
+from aicognitive_mind.domain import (
+    CognitiveActor, CognitiveMind, JournalEntry, JournalKind, MemoryClass, MindIdentity,
+)
 from aicognitive_mind.governance_steward import GovernanceStewardTool
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_server import McpTokenAuth
@@ -43,6 +45,11 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         await self.runtime.close()
 
     async def test_negation_quotation_and_questions_cannot_rename(self):
+        await self.journal._database.query("INSERT INTO journal $entries;", {"entries": [
+            JournalEntry(kind=JournalKind.INTERACTION, experience={"synthetic": index})
+            .model_dump(mode="json") | {"mind_id": self.journal.mind_id}
+            for index in range(999)
+        ]})
         for message in [
             "Do not choose a new name",
             "Explain how you choose your name",
@@ -53,7 +60,8 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         ]:
             tool = GovernanceStewardTool(mind=self.mind, journal=self.journal, input_text=message)
             result = await tool.invoke(
-                {"action": "propose_self_name", "candidate_name": "Changed", "rationale": "test"}
+                {"action": "propose_self_name", "candidate_name": "Changed",
+                 "candidate_pronouns": "he/him", "rationale": "test"}
             )
             self.assertFalse(result["accepted"], message)
         self.assertEqual((await self.mind.load()).identity.self_name, "Axiom")

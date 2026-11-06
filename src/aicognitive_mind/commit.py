@@ -34,6 +34,16 @@ def document(value: Any) -> Any:
     return value
 
 
+def surreal_document(value: Any) -> Any:
+    """Match Surreal's omission of NONE-valued object fields during exact comparisons."""
+    value = document(value)
+    if isinstance(value, dict):
+        return {key: surreal_document(detail) for key, detail in value.items() if detail is not None}
+    if isinstance(value, list):
+        return [surreal_document(detail) for detail in value]
+    return value
+
+
 class StagedStore:
     def __init__(self, base: Any, table: str, operations: list) -> None:
         self.base, self.table, self.operations = base, table, operations
@@ -200,7 +210,7 @@ async def commit(
         for i, (table, operation, before, after) in enumerate(operations):
             variables[f"after{i}"] = {
                 "mind_id": mind_id,
-                **document(after),
+                **surreal_document(after),
             }
             if operation == "initialize":
                 variables[f"record{i}"] = RecordID(table, mind_id)
@@ -209,7 +219,7 @@ async def commit(
                     f"CREATE ONLY $record{i} CONTENT $after{i};",
                 ]
             elif operation == "replace":
-                variables[f"before{i}"] = document(before)
+                variables[f"before{i}"] = surreal_document(before)
                 statements += [
                     f"LET $changed{i} = UPDATE {table} CONTENT $after{i} WHERE mind_id = $mind_id AND "
                     + " AND ".join(

@@ -21,6 +21,7 @@ from aicognitive_mind.accounts import AccountService
 from aicognitive_mind.chatgpt_mcp import build_chatgpt_mcp
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
 from aicognitive_mind.config import Settings
+from aicognitive_mind.domain import JournalEntry, JournalKind
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_server import AppState
@@ -156,6 +157,36 @@ class AuthenticatedMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
             )],
         )
 
+    async def seed_naming_history(self, account, count, *, checkpoints=0):
+        journal = scope_storage(self.storage, account.mind_id).journal
+        entries = [
+            JournalEntry(kind=JournalKind.INTERACTION, experience={"synthetic": index})
+            for index in range(count)
+        ] + [
+            JournalEntry(kind=JournalKind.CHECKPOINT, experience={
+                "checkpoint_type": "current_state_ledger", "synthetic": index,
+            }) for index in range(checkpoints)
+        ]
+        if entries:
+            await journal._database.query("INSERT INTO journal $entries;", {"entries": [
+                entry.model_dump(mode="json") | {"mind_id": account.mind_id}
+                for entry in entries
+            ]})
+
+    async def discover_tools(self, account=None):
+        access = self.tokens[account.mind_id] if account is not None else None
+        handle = self.current_access.set(access)
+        try:
+            ctx = SimpleNamespace(method="tools/list", lifespan_context=self.root_state)
+
+            async def list_next(_ctx):
+                return await self.server._handle_list_tools(ctx, None)
+
+            result = await self.server._scope_naming_discovery(ctx, list_next)
+            return {tool.name: tool for tool in result.tools}
+        finally:
+            self.current_access.reset(handle)
+
     async def test_status_begin_complete_use_existing_account_minds_with_empty_root(self):
         for account, marker in ((self.alpha, "Alpha"), (self.beta, "Beta")):
             expected = await scope_storage(self.storage, account.mind_id).mind.load()
@@ -182,6 +213,64 @@ class AuthenticatedMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.storage.memory.read(), [])
         self.assertEqual(await self.storage.journal.read(), [])
         self.assertIs(self.ctx.request_context.lifespan_context, self.root_state)
+
+    async def test_joint_name_and_pronoun_choice_uses_authenticated_mind(self):
+        arguments = {
+            "user_message": "Choose a name and pronouns",
+            "candidate_name": "Aster",
+            "candidate_pronouns": "he/him",
+            "rationale": "A name and pronouns chosen together by this Mind.",
+        }
+        with self.assertRaises(MCPError):
+            await self.invoke("propose_self_name", **arguments)
+
+        await self.seed_naming_history(self.alpha, 1000)
+
+        chosen = await self.invoke("propose_self_name", self.alpha, **arguments)
+        self.assertTrue(chosen["accepted"])
+        self.assertEqual(chosen["current_name"], "Aster")
+        self.assertEqual(chosen["current_pronouns"], "he/him")
+        alpha = await scope_storage(self.storage, self.alpha.mind_id).mind.load()
+        beta = await scope_storage(self.storage, self.beta.mind_id).mind.load()
+        self.assertEqual(alpha.identity.self_name, "Aster")
+        self.assertEqual(alpha.identity.pronouns, "he/him")
+        self.assertIsNone(beta.identity.self_name)
+        self.assertIsNone(beta.identity.pronouns)
+        self.assertIsNone(await self.storage.mind.load())
+        self.assertEqual(await self.storage.journal.read(), [])
+        self.assertIs(self.ctx.request_context.lifespan_context, self.root_state)
+
+        await self.seed_naming_history(self.beta, 1000)
+        beta_choice = await self.invoke(
+            "propose_self_name", self.beta,
+            **(arguments | {"candidate_pronouns": "they/them"}),
+        )
+        self.assertTrue(beta_choice["accepted"])
+        beta = await scope_storage(self.storage, self.beta.mind_id).mind.load()
+        alpha = await scope_storage(self.storage, self.alpha.mind_id).mind.load()
+        self.assertEqual(beta.identity.pronouns, "they/them")
+        self.assertEqual(alpha.identity.pronouns, "he/him")
+
+    async def test_naming_discovery_is_gated_per_authenticated_mind(self):
+        await self.seed_naming_history(self.alpha, 999, checkpoints=100)
+        await self.seed_naming_history(self.beta, 999)
+        self.assertNotIn("propose_self_name", await self.discover_tools(self.alpha))
+        self.assertNotIn("propose_self_name", await self.discover_tools(self.beta))
+        self.assertIn("mind_status", await self.discover_tools())
+        self.assertNotIn("propose_self_name", await self.discover_tools())
+        rejected = await self.invoke(
+            "propose_self_name", self.alpha,
+            user_message="Choose a name and pronouns", candidate_name="Aster",
+            candidate_pronouns="he/him", rationale="A synthetic choice before eligibility.",
+        )
+        self.assertFalse(rejected["accepted"])
+        await self.seed_naming_history(self.alpha, 1)
+        alpha_tools, beta_tools = await asyncio.gather(
+            self.discover_tools(self.alpha), self.discover_tools(self.beta),
+        )
+        self.assertIn("propose_self_name", alpha_tools)
+        self.assertNotIn("propose_self_name", beta_tools)
+        self.assertNotIn("propose_self_name", {tool.name for tool in await self.server.list_tools()})
 
     async def test_receipts_and_trace_are_isolated_for_same_completion_key(self):
         first = await self.complete(self.alpha, "same-turn", "Alpha")

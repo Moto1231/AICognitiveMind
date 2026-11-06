@@ -20,6 +20,7 @@ from aicognitive_mind.domain import (
     MindIdentity,
 )
 from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+from aicognitive_mind.governance_steward import MIN_NAMING_EXPERIENCES
 from aicognitive_mind.host_behaviors import HostBehaviorRegistry
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.journal_payload import journal_safe_value
@@ -116,6 +117,7 @@ class CognitiveMcpService:
                 kind=JournalKind.INITIALIZATION,
                 experience={
                     "self_name": mind.identity.self_name,
+                    "pronouns": mind.identity.pronouns,
                     "foundational_values": list(mind.identity.foundational_values),
                     "developmental_state": mind.developmental_state,
                 },
@@ -140,11 +142,11 @@ class CognitiveMcpService:
             "interaction_continuity": await self._continuity_snapshot(),
             "naming": {
                 "status": (
-                    "prohibited" if journal_count < 1000
+                    "prohibited" if journal_count < MIN_NAMING_EXPERIENCES
                     else "eligible" if journal_count < 2000
                     else "required"
                 ),
-                "eligible_at_event": 1000,
+                "eligible_at_event": MIN_NAMING_EXPERIENCES,
                 "required_at_event": 2000,
                 "is_named": mind.identity.self_name is not None,
             },

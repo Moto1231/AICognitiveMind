@@ -99,6 +99,7 @@ class SurrealAccountTests(unittest.IsolatedAsyncioTestCase):
         tenant = SurrealMindStore(self.storage.runtime.database, created.mind_id)
         mind = await tenant.load()
         self.assertIsNone(mind.identity.self_name)
+        self.assertIsNone(mind.identity.pronouns)
         self.assertEqual(mind.developmental_state, "genesis")
         self.assertIsNone(await self.storage.mind.load())
         self.assertEqual(await self.count("mind"), 1)

@@ -15,8 +15,10 @@ from aicognitive_mind.chatgpt_mcp import (
     build_chatgpt_mcp,
 )
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
+from aicognitive_mind.domain import CognitiveActor, CognitiveMind, JournalEntry, JournalKind, MindIdentity
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import RuntimeRecords
+from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMindStore
 
 
 class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
@@ -223,6 +225,60 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
                 "github_write_file",
             }.issubset(names)
         )
+
+    async def test_deployed_surface_registers_gated_joint_identity_selection(self):
+        provider = AxiomAuthorizationServerProvider(
+            "https://axiom.example", username="mind", password="secret",
+        )
+        server = build_chatgpt_mcp("https://axiom.example", provider)
+        self.assertNotIn("propose_self_name", {tool.name for tool in await server.list_tools()})
+        selection = server._tool_manager.get_tool("propose_self_name")
+        schema = selection.parameters
+        self.assertEqual(
+            set(schema["required"]),
+            {"user_message", "candidate_name", "candidate_pronouns", "rationale"},
+        )
+        self.assertNotIn("default", schema["properties"]["candidate_pronouns"])
+        self.assertIn("saved atomically", selection.description)
+        self.assertFalse(selection.annotations.read_only_hint)
+
+    async def test_stdio_naming_discovery_uses_qualifying_experience_count(self):
+        from aicognitive_mind.mcp_server import mcp
+
+        mind = InMemoryMindStore()
+        journal = InMemoryJournalStore()
+        await mind.initialize(CognitiveMind(identity=MindIdentity()))
+        for index in range(999):
+            await journal.append(
+                JournalEntry(kind=JournalKind.INTERACTION, experience={"synthetic": index}),
+                recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+        for index in range(10):
+            await journal.append(
+                JournalEntry(kind=JournalKind.CHECKPOINT, experience={
+                    "checkpoint_type": "current_state_ledger", "synthetic": index,
+                }), recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+            )
+        state = SimpleNamespace(storage=SimpleNamespace(mind=mind, journal=journal))
+        ctx = SimpleNamespace(method="tools/list", lifespan_context=state)
+
+        async def list_next(_ctx):
+            return await mcp.list_tools()
+
+        before = await mcp._scope_naming_discovery(ctx, list_next)
+        self.assertNotIn("propose_self_name", {tool.name for tool in before})
+        self.assertIn("mind_status", {tool.name for tool in before})
+        await journal.append(
+            JournalEntry(kind=JournalKind.INTERACTION, experience={"synthetic": 1000}),
+            recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE,
+        )
+        after = await mcp._scope_naming_discovery(ctx, list_next)
+        self.assertIn("propose_self_name", {tool.name for tool in after})
+        self.assertNotIn("propose_self_name", {tool.name for tool in await mcp.list_tools()})
+
+        state.storage.mind = InMemoryMindStore()
+        missing_mind = await mcp._scope_naming_discovery(ctx, list_next)
+        self.assertNotIn("propose_self_name", {tool.name for tool in missing_mind})
 
     async def test_deployed_surface_registers_execute_task(self):
         provider = AxiomAuthorizationServerProvider(

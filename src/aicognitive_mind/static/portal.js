@@ -3681,7 +3681,7 @@ function renderIdentityConfiguration() {
   const identity = value?.identity || {};
   const fields = {
     SelfName: value ? identity.self_name || "Not selected" : "Unknown",
-    Pronouns: identity.pronouns,
+    Pronouns: value && identity.pronouns === null ? "Not selected" : identity.pronouns,
     Development: value?.developmental_state,
     Values: identity.foundational_values,
     Commitments: identity.commitments,

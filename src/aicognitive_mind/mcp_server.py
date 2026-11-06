@@ -3,18 +3,20 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent
+from mcp.types import Tool as MCPTool
 
 from aicognitive_mind.account_mcp import request_state
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.github_capability import GitHubCapability
-from aicognitive_mind.governance_steward import GovernanceStewardTool
+from aicognitive_mind.governance_steward import GovernanceStewardTool, naming_is_eligible
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_service import (
@@ -43,6 +45,53 @@ class AppState:
     tenancy_probe: dict[str, Any] | None = None
 
 
+class IdentityMCPServer(MCPServer[AppState]):
+    """Expose naming only after this request's Mind reaches its journal milestone."""
+
+    def __init__(
+        self, *args: Any,
+        naming_state_loader: Callable[[Any], Awaitable[Any]] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._naming_state_loader = naming_state_loader
+        self._naming_discovery_state: ContextVar[Any | None] = ContextVar(
+            "axiom_naming_discovery_state", default=None,
+        )
+        self.middleware.append(self._scope_naming_discovery)
+
+    async def _scope_naming_discovery(self, ctx: Any, call_next: Any) -> Any:
+        if ctx.method != "tools/list":
+            return await call_next(ctx)
+        try:
+            state = (
+                await self._naming_state_loader(ctx)
+                if self._naming_state_loader is not None else ctx.lifespan_context
+            )
+        except Exception:
+            # A missing or invalid scope must not reveal the identity-choice tool.
+            state = None
+        token = self._naming_discovery_state.set(state)
+        try:
+            return await call_next(ctx)
+        finally:
+            self._naming_discovery_state.reset(token)
+
+    async def list_tools(self) -> list[MCPTool]:
+        tools = await super().list_tools()
+        state = self._naming_discovery_state.get()
+        eligible = False
+        if state is not None:
+            try:
+                eligible = (
+                    await state.storage.mind.load() is not None
+                    and await naming_is_eligible(state.storage.journal)
+                )
+            except Exception:
+                eligible = False
+        return tools if eligible else [tool for tool in tools if tool.name != "propose_self_name"]
+
+
 @asynccontextmanager
 async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
     storage = await create_storage(get_settings())
@@ -66,7 +115,7 @@ async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
         await storage.runtime.close()
 
 
-mcp = MCPServer("Axiom", lifespan=lifespan)
+mcp = IdentityMCPServer("Axiom", lifespan=lifespan)
 
 @mcp.tool()
 async def initialize_mind(
@@ -460,12 +509,24 @@ async def fail_body_interaction(lease_token: str, request_id: str, reason: str,
     return await ctx.request_context.lifespan_context.hosts.fail(lease_token, request_id, reason)
 
 @mcp.tool()
-async def propose_self_name(user_message: str, candidate_name: str, rationale: str,
-    ctx: Context[AppState]) -> dict[str, Any]:
-    """Submit an explicit human self-name command to the same Governance Steward as fallback reasoning."""
-    storage = ctx.request_context.lifespan_context.storage
+async def propose_self_name(
+    user_message: str, candidate_name: str, candidate_pronouns: str,
+    rationale: str, ctx: Context[AppState],
+) -> dict[str, Any]:
+    """Commit the Mind's chosen name and pronouns together after an explicit naming command.
+
+    Available only after 1,000 journal experiences, excluding state-ledger checkpoints.
+    Supply the actual human message, the Mind's candidate_name and candidate_pronouns,
+    and its grounded rationale. Reading an unset identity does not authorize a choice.
+    """
+    storage = request_state(ctx).storage
     tool = GovernanceStewardTool(mind=storage.mind, journal=storage.journal, input_text=user_message)
-    return await tool.invoke({"action": "propose_self_name", "candidate_name": candidate_name, "rationale": rationale})
+    return await tool.invoke({
+        "action": "propose_self_name",
+        "candidate_name": candidate_name,
+        "candidate_pronouns": candidate_pronouns,
+        "rationale": rationale,
+    })
 
 @mcp.tool()
 async def read_sensory_evidence(sha256: str, captured_at: str, ctx: Context[AppState]) -> CallToolResult:
