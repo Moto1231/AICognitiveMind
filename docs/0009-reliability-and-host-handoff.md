@@ -38,7 +38,7 @@ requests. A persistence warning is presented only when a later recovery fails wh
 Breaker was already open and `presentation.report_persistence_error=true`. This boundary
 does not suppress authorization, security, corrupt delivery, or begin/connection failures.
 
-The governance gate only accepts complete affirmative self-name commands, such as `Please choose a new name` or `I authorize you to choose your own name`. Questions, quoted commands, hypothetical requests, additional clauses, and negation fail closed. Naming still passes through the Governance Steward and preserves protected identity fields.
+The governance gate requires 1,000 qualifying journal experiences before the selection tool is exposed or allowed to execute; current-state ledger checkpoints do not advance eligibility. After that threshold, it only accepts complete affirmative self-name commands, such as `Please choose a new name`, `I authorize you to choose your own name`, or `Choose your own name and pronouns`. Questions, quoted commands, hypothetical requests, unrelated additional clauses, and negation fail closed. Naming chooses and saves both name and pronouns through the Governance Steward while preserving all other protected identity fields. New Minds start with both fields unset.
 
 ## External-host operation
 

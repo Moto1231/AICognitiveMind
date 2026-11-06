@@ -20,11 +20,7 @@ from aicognitive_mind.domain import (
     SensoryEvidenceArtifact,
 )
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
-from aicognitive_mind.storage import (
-    MindAlreadyInitializedError,
-    _journal_matches,
-    _memory_matches,
-)
+from aicognitive_mind.storage import MindAlreadyInitializedError
 from aicognitive_mind.surreal_schema import bootstrap_tables
 from aicognitive_mind.timing import caller, emit
 
@@ -188,6 +184,8 @@ class SurrealMindStore:
         replacement: CognitiveMind,
         recorded_by: CognitiveActor,
     ) -> CognitiveMind | None:
+        from aicognitive_mind.commit import surreal_document
+
         self._policy.assert_allowed(
             recorded_by,
             CognitiveOperation.APPROVE_IDENTITY_REVISION,
@@ -202,10 +200,10 @@ class SurrealMindStore:
             + " RETURN AFTER;",
             {
                 "mind_id": self.mind_id,
-                "original": original.model_dump(mode="json"),
+                "original": surreal_document(original),
                 "replacement": {
                     "mind_id": self.mind_id,
-                    **replacement.model_dump(mode="json"),
+                    **surreal_document(replacement),
                 },
             },
         )

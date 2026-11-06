@@ -63,6 +63,18 @@ class CognitiveMcpServiceTests(unittest.IsolatedAsyncioTestCase):
             begun["presentation_policy"]["instruction"],
         )
 
+    async def test_begin_contract_explains_joint_name_and_pronoun_selection(self) -> None:
+        begun = await self.service.begin_interaction("What are your name and pronouns?")
+
+        contract = begun["conscious_workspace_contract"]
+        self.assertIn("Name selection includes choosing pronouns", contract)
+        self.assertIn("at least 1,000 journal experiences", contract)
+        self.assertIn("excluding current-state ledger checkpoints", contract)
+        self.assertIn("candidate_name and candidate_pronouns together", contract)
+        self.assertIn("call `propose_self_name` with the actual user_message", contract)
+        self.assertIn("either is unset; a change requires explicit authorization", contract)
+        self.assertIsNone(begun["mind"]["identity"]["pronouns"])
+
     async def test_admin_settings_apply_to_new_turns_without_changing_an_active_turn(self) -> None:
         begun = await self.service.begin_interaction("Use the current continuity policy.")
         self.assertEqual(begun["presentation_policy"]["settings_revision"], 0)

@@ -3,8 +3,8 @@
 # of this file is prohibited without prior written permission from the
 # copyright holder.
 
+from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
 from aicognitive_mind.commit import atomic
-
 from aicognitive_mind.domain import (
     CognitiveActor,
     CognitiveMind,
@@ -16,13 +16,16 @@ from aicognitive_mind.domain import (
     ReasoningRequest,
 )
 from aicognitive_mind.engines import ReasoningEngine
-from aicognitive_mind.governance_steward import GovernanceStewardTool
+from aicognitive_mind.governance_steward import GovernanceStewardTool, naming_is_eligible
+from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.permissions import CognitiveOperation, PermissionPolicy
-from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
-from aicognitive_mind.host_runtime import RuntimeRecords
-from aicognitive_mind.task_behaviors import TaskBehaviorRegistry, TaskExecutionContext, TaskPromptAssembler
 from aicognitive_mind.storage import DiagnosticStore, JournalStore, MemoryStore, MindStore
+from aicognitive_mind.task_behaviors import (
+    TaskBehaviorRegistry,
+    TaskExecutionContext,
+    TaskPromptAssembler,
+)
 from aicognitive_mind.tooling import ReasoningTool
 
 
@@ -113,6 +116,9 @@ class CognitiveCore:
         task_prompt = await TaskPromptAssembler(TaskBehaviorRegistry(records)).system_prompt(
             TaskExecutionContext(task="reasoning"),
         )
+        governance_tools = (
+            (governance_steward,) if await naming_is_eligible(self._journal) else ()
+        )
         proposal = await self._engine.propose(
             ReasoningRequest(
                 mind=mind,
@@ -121,7 +127,7 @@ class CognitiveCore:
                     configuration["base_contract"], configuration["startup_instructions"], task_prompt,
                 ]),
             ),
-            tools=(memory_steward, governance_steward, *self._reasoning_tools),
+            tools=(memory_steward, *governance_tools, *self._reasoning_tools),
         )
         memory_trace = await memory_steward.complete()
 

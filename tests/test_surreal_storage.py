@@ -136,6 +136,29 @@ class SurrealStorageTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(MindAlreadyInitializedError):
             await store.initialize(revised)
 
+    async def test_unselected_identity_can_be_chosen_without_weakening_stale_checks(self) -> None:
+        store = SurrealMindStore(self.runtime.database)
+        original = CognitiveMind(identity=MindIdentity())
+        await store.initialize(original)
+        loaded = await store.load()
+        self.assertEqual(loaded, original)
+        chosen = original.model_copy(
+            update={"identity": MindIdentity(self_name="Aster", pronouns="he/him")}
+        )
+        self.assertEqual(
+            await store.replace_exact(loaded, chosen, CognitiveActor.VALUES_STEWARD),
+            chosen,
+        )
+        self.assertEqual(await store.load(), chosen)
+
+        stale_choice = original.model_copy(
+            update={"identity": MindIdentity(self_name="Other", pronouns="they/them")}
+        )
+        self.assertIsNone(
+            await store.replace_exact(original, stale_choice, CognitiveActor.VALUES_STEWARD)
+        )
+        self.assertEqual(await store.load(), chosen)
+
     async def test_latest_checkpoint_is_exact_ordered_and_isolated_per_mind(self) -> None:
         alpha = SurrealJournalStore(self.runtime.database, "alpha")
         beta = SurrealJournalStore(self.runtime.database, "beta")

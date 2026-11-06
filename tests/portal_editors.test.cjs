@@ -1918,7 +1918,7 @@ test('Foundations distinguishes unavailable identity from unselected and empty i
   }
   await ui.refreshIdentityConfiguration();
   assert.equal(ui.elements.foundationSelfName.textContent, 'Not selected');
-  assert.equal(ui.elements.foundationPronouns.textContent, 'Unknown');
+  assert.equal(ui.elements.foundationPronouns.textContent, 'Not selected');
   for (const name of ['Values', 'Commitments', 'Relationships']) {
     assert.equal(ui.elements['foundation' + name].textContent, 'None recorded');
   }
