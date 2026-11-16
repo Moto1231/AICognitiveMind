@@ -63,13 +63,34 @@ class PortalPageMap(HTMLParser):
 
 
 class PortalTests(unittest.TestCase):
+    def test_instructions_centralizes_editors_without_duplicates(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        pages = PortalPageMap(markup)
+        self.assertFalse(pages.duplicate_ids)
+        for element in ("taskProfileFoundation", "taskFoundationEdit", "foundationTaskSelect"):
+            self.assertEqual(pages.elements[element][2], "foundationsSection")
+        for element in ("hostBehaviorList", "taskProfileBehaviorSelection", "saveTaskProfile",
+                        "behaviorTaskSelect", "cancelTaskBehaviorMembership"):
+            self.assertEqual(pages.elements[element][2], "behaviorsSection")
+        for element in ("taskProviderSelect", "saveTaskEndpoints", "taskProfileFoundationsLink",
+                        "taskProfileBehaviorsLink"):
+            self.assertEqual(pages.elements[element][2], "tasksSection")
+        self.assertEqual(pages.elements["skillsContent"][2], "skillsSection")
+        controls = pages.page_controls["instructionsSection"]
+        self.assertEqual({attrs["data-admin-section"] for _, attrs in controls
+                          if "data-admin-section" in attrs}, {"foundations", "behaviors", "skills"})
+        for section in ("foundations", "behaviors", "skills"):
+            back = [attrs for _, attrs in pages.page_controls[section + "Section"]
+                    if "data-admin-back" in attrs]
+            self.assertEqual(back[0]["data-admin-back"], "instructions")
+
     def test_all_portal_icons_share_one_transparent_neon_component(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
         button_icons = (STATIC_DIR / "button_icons.js").read_text(encoding="utf-8")
 
         sections = {
-            "overview": "overview", "foundations": "foundations", "breaker": "breaker",
+            "overview": "overview", "instructions": "foundations", "foundations": "foundations", "breaker": "breaker",
             "behaviors": "behaviors",
             "devices": "devices", "voice": "voice", "tasks": "tasks", "mcp": "mcp",
             "tools": "tools", "skills": "skills", "memories": "memories", "journals": "journals",
@@ -211,11 +232,11 @@ class PortalTests(unittest.TestCase):
         for name in ("SelfName", "Pronouns", "Development", "Values", "Commitments", "Relationships"):
             with self.subTest(name=name):
                 self.assertEqual(foundations.fields["foundation" + name][0], "dd")
-        self.assertEqual(len(foundations.controls), 6)
+        self.assertEqual(len(foundations.controls), 11)
         tag, back = foundations.controls[0]
         self.assertEqual(tag, "button")
         self.assertIn("data-admin-back", back)
-        self.assertEqual(back["aria-label"], "Back to System Overview")
+        self.assertEqual(back["aria-label"], "Back to Instructions")
         self.assertEqual(foundations.fields["foundationStatus"][1]["role"], "status")
         for name in ("foundationContract", "foundationStartup"):
             self.assertEqual(foundations.fields[name][0], "textarea")
@@ -232,7 +253,7 @@ class PortalTests(unittest.TestCase):
         )
         self.assertIn("#startupStatus:empty { display: none; }", stylesheet)
         self.assertIn("/static/portal.css?v=20261028-device-inner-panel", markup)
-        self.assertIn("/static/portal.js?v=20261029-breaker-reset", markup)
+        self.assertIn("/static/portal.js?v=20261116-instruction-navigation", markup)
 
     def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
