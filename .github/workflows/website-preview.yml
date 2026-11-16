@@ -1,0 +1,21 @@
+name: Website preview boundaries
+on:
+  pull_request:
+    branches: [main]
+    paths: ['website/**', '.github/workflows/website-preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: website-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  access-boundaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test website/tests/access.test.mjs
