@@ -221,24 +221,32 @@
         </svg>
 
         <nav class="admin-section-nav" aria-label="Administration sections">
+          <button class="admin-section-button" type="button" data-admin-section="instructions"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Instructions</span></button>
           <button class="admin-section-button active" type="button" data-admin-section="overview"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-overview"/></svg></span><span>System Overview</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Foundations</span></button>
           <button class="admin-section-button" type="button" data-admin-section="breaker"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-breaker"/></svg></span><span>The Breaker</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><span>Behavior</span></button>
           <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-devices"/></svg></span><span>Devices</span></button>
           <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-voice"/></svg></span><span>Speech Settings</span></button>
           <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tasks"/></svg></span><span>Task Profiles</span></button>
           <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-mcp"/></svg></span><span>Endpoints &amp; MCP Servers</span></button>
           <button class="admin-section-button" type="button" data-admin-section="tools"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tools"/></svg></span><span>Tools</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-skills"/></svg></span><span>Skills</span></button>
           <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-memories"/></svg></span><span>Memories</span></button>
           <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-journals"/></svg></span><span>Journals</span></button>
           <button id="adminRefreshButton" class="secondary-button" type="button" aria-label="Refresh" title="Refresh">Refresh</button>
         </nav>
 
         <div class="admin-grid">
+          <article id="instructionsSection" class="panel hidden">
+            <div class="panel-heading"><div><p class="eyebrow">INSTRUCTION SETTINGS</p><h3>Instructions</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
+            <p>Keep foundations, behaviors, and skills separate while managing them in one place.</p>
+            <nav class="admin-section-nav" aria-label="Instruction sections">
+          <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Foundations</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><span>Behaviors</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-skills"/></svg></span><span>Skills</span></button>
+            </nav>
+          </article>
+
           <article id="foundationsSection" class="panel hidden">
-            <div class="panel-heading"><div><p class="eyebrow">MIND CONFIGURATION</p><h3>Foundations</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">MIND CONFIGURATION</p><h3>Foundations</h3></div><button type="button" class="secondary-button" data-admin-back="instructions" aria-label="Back to Instructions" title="Back to Instructions">Back</button></div>
             <section class="overview-group"><h4>Identity</h4>
               <dl class="foundation-identity">
                 <div><dt>Self-name</dt><dd id="foundationSelfName">Unknown</dd></div>
@@ -256,6 +264,13 @@
             </div>
             <div class="edit-actions"><button id="startupEdit" class="secondary-button" type="button" aria-label="Edit startup instructions" title="Edit startup instructions" disabled>Edit</button><button id="startupSave" class="primary-button" type="button" aria-label="Save startup instructions" title="Save startup instructions" disabled>Save Startup</button><button id="startupCancel" class="secondary-button" type="button" aria-label="Cancel startup changes" title="Cancel startup changes" disabled>Cancel</button></div>
             <p id="startupStatus" role="status" aria-live="polite"></p></section>
+              <section class="task-profile-section task-profile-foundation-section">
+                <h4>Task Foundations</h4>
+                <label class="host-behavior-field">Task<select id="foundationTaskSelect" aria-label="Task foundation selection"></select></label>
+                <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Task foundation"></textarea>
+                <div class="edit-actions"><button id="taskFoundationEdit" class="secondary-button" type="button" aria-label="Edit task foundation" title="Edit task foundation">Edit</button><button id="taskFoundationSave" class="primary-button" type="button" aria-label="Save task foundation" title="Save task foundation" disabled>Save</button><button id="taskFoundationCancel" class="secondary-button" type="button" aria-label="Cancel task foundation changes" title="Cancel task foundation changes" disabled>Cancel</button></div>
+                <p id="taskFoundationStatus" role="status" aria-live="polite"></p>
+              </section>
           </article>
           <article id="breakerSection" class="panel breaker-settings-panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">CONTINUITY CONTROL</p><h3>The Breaker</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
@@ -285,7 +300,7 @@
             </section>
           </article>
           <article id="skillsSection" class="panel hidden">
-            <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back="instructions" aria-label="Back to Instructions" title="Back to Instructions">Back</button></div>
             <section class="overview-group">
               <h4>Required Skills and Drafts</h4>
               <label class="host-behavior-field">Available skills<select id="skillsList"><option value="">New skill</option></select></label>
@@ -306,7 +321,7 @@
             <div class="panel-heading">
               <div><p class="eyebrow">BEHAVIOR LIBRARY</p><h3>Behaviors</h3></div>
               <button id="addHostBehavior" class="secondary-button" type="button">Add Behavior</button>
-              <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
+              <button class="secondary-button" type="button" data-admin-back="instructions" aria-label="Back to Instructions" title="Back to Instructions">Back</button>
             </div>
             
             <div class="behavior-library-navigation">
@@ -320,6 +335,23 @@
             </div>
             <p id="hostBehaviorSummary" class="record-empty" role="status" aria-live="polite"></p>
             <div id="hostBehaviorList" class="record-list"></div>
+              <section class="task-profile-section task-profile-behaviors-section">
+                 <div class="panel-heading task-profile-behavior-heading"><h4>Task Memberships</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
+                <label class="host-behavior-field">Task<select id="behaviorTaskSelect" aria-label="Task behavior selection"></select></label>
+                <div id="taskProfileBehaviorSelection" class="task-behavior-selection"></div>
+
+                <label class="host-behavior-field hidden">Behavior name
+                  <input id="taskProfileBehaviorName" type="text" maxlength="120" placeholder="Task behavior name">
+                </label>
+                <label class="host-behavior-field hidden">Editable behavior instructions
+                  <textarea id="taskProfileInstructions" maxlength="4000" rows="6" placeholder="Task-specific style, priorities, workflow, and preferences"></textarea>
+                </label>
+                <label class="host-behavior-enabled hidden"><input id="taskProfileEnabled" type="checkbox"> Enable editable behavior layer</label>
+              </section>
+              <div class="edit-actions">
+                <button id="saveTaskProfile" class="primary-button" type="button">Save</button>
+                <button id="cancelTaskBehaviorMembership" type="button" class="secondary-button">Cancel</button>
+              </div>
           </article>
 
           <article id="tasksSection" class="panel admin-task-model-panel task-profiles-panel hidden">
@@ -372,27 +404,13 @@
                 </div>
                 <div class="edit-actions"><button id="saveTaskEndpoints" class="primary-button" type="button" disabled>Save</button></div>
               </section>
-              <section class="task-profile-section task-profile-foundation-section">
-                <h4>Task Foundation</h4>
-                <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Task foundation"></textarea>
-                <div class="edit-actions"><button id="taskFoundationEdit" class="secondary-button" type="button" aria-label="Edit task foundation" title="Edit task foundation">Edit</button><button id="taskFoundationSave" class="primary-button" type="button" aria-label="Save task foundation" title="Save task foundation" disabled>Save</button><button id="taskFoundationCancel" class="secondary-button" type="button" aria-label="Cancel task foundation changes" title="Cancel task foundation changes" disabled>Cancel</button></div>
-                <p id="taskFoundationStatus" role="status" aria-live="polite"></p>
+              <section class="task-profile-section" aria-label="Applicable instructions">
+                <h4>Instructions</h4>
+                <p>Edit this task’s instructions in their central settings.</p>
+                <button id="taskProfileFoundationsLink" type="button" class="secondary-button">Task foundation</button>
+                <button id="taskProfileBehaviorsLink" type="button" class="secondary-button">Task behaviors</button>
+                <button id="taskProfileSkillsLink" type="button" class="secondary-button">Skills library</button>
               </section>
-              <section class="task-profile-section task-profile-behaviors-section">
-                 <div class="panel-heading task-profile-behavior-heading"><h4>Behaviors</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
-                <div id="taskProfileBehaviorSelection" class="task-behavior-selection"></div>
-                
-                <label class="host-behavior-field hidden">Behavior name
-                  <input id="taskProfileBehaviorName" type="text" maxlength="120" placeholder="Task behavior name">
-                </label>
-                <label class="host-behavior-field hidden">Editable behavior instructions
-                  <textarea id="taskProfileInstructions" maxlength="4000" rows="6" placeholder="Task-specific style, priorities, workflow, and preferences"></textarea>
-                </label>
-                <label class="host-behavior-enabled hidden"><input id="taskProfileEnabled" type="checkbox"> Enable editable behavior layer</label>
-              </section>
-              <div class="edit-actions">
-                <button id="saveTaskProfile" class="primary-button" type="button">Save</button>
-              </div>
             </section>
           </article>
 
@@ -867,6 +885,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261029-breaker-reset"></script>
+  <script src="/static/portal.js?v=20261116-instruction-navigation"></script>
 </body>
 </html>

@@ -531,19 +531,27 @@ function renderHostBehaviors() {
     el.hostBehaviorList.append(row);
   }
   updateBehaviorSaveState();
+  renderTaskBehaviorSelection();
+  updateTaskSaveState();
+}
+
+function taskSelectionDirty() {
+  return Boolean(state.activeTaskProfile && state.taskProfileSnapshot
+    && taskProfileConfiguration() !== state.taskProfileSnapshot);
 }
 
 function updateBehaviorSaveState() {
+  const taskLocked = state.taskProfileSaving || taskSelectionDirty();
   const editing = Boolean(state.hostBehaviorDraft);
   const items = state.hostBehaviorDraft || state.hostBehaviors;
   const dirty = editing && JSON.stringify(state.hostBehaviorDraft) !== state.hostBehaviorSnapshot;
   const invalid = editing && state.hostBehaviorDraft.some(item => !item.name.trim() || !item.instruction.trim()
     || !Number.isInteger(item.priority) || item.priority < 0 || item.priority > 10000);
   if (el.saveHostBehaviors) el.saveHostBehaviors.disabled =
-    !editing || state.hostBehaviorSaving || !dirty || invalid;
-  if (el.editHostBehaviors) el.editHostBehaviors.disabled = !Number.isInteger(state.hostBehaviorRevision) || editing || state.hostBehaviorSaving;
+    !editing || state.hostBehaviorSaving || taskLocked || !dirty || invalid;
+  if (el.editHostBehaviors) el.editHostBehaviors.disabled = !Number.isInteger(state.hostBehaviorRevision) || editing || state.hostBehaviorSaving || taskLocked;
   if (el.cancelHostBehaviors) el.cancelHostBehaviors.disabled = !editing || state.hostBehaviorSaving;
-  if (el.addHostBehavior) el.addHostBehavior.disabled = !Number.isInteger(state.hostBehaviorRevision) || state.hostBehaviorSaving;
+  if (el.addHostBehavior) el.addHostBehavior.disabled = !Number.isInteger(state.hostBehaviorRevision) || state.hostBehaviorSaving || taskLocked;
   if (el.hostBehaviorSelect) {
     const selected = items.find(item => item.id === state.activeHostBehaviorId);
     const option = [...el.hostBehaviorSelect.options].find(item => item.value === state.activeHostBehaviorId);
@@ -551,7 +559,7 @@ function updateBehaviorSaveState() {
   }
   if (el.hostBehaviorSummary) {
     const count = state.hostBehaviorMatchCount ?? items.length;
-    const mode = state.hostBehaviorSaving ? "Saving…" : editing ? dirty ? "Unsaved changes" : "Editing · No changes" : "Read-only";
+    const mode = state.hostBehaviorSaving ? "Saving…" : taskLocked ? "Save or cancel task selections before editing the library" : editing ? dirty ? "Unsaved changes" : "Editing · No changes" : "Read-only";
     el.hostBehaviorSummary.textContent = `${items.length} behavior${items.length === 1 ? "" : "s"} · ${count} match${count === 1 ? "" : "es"} · ${mode}${invalid ? " · Complete all draft fields before saving." : ""}`;
   }
 }
@@ -568,6 +576,7 @@ async function refreshHostBehaviors() {
 }
 
 function editHostBehaviors() {
+  if (state.taskProfileSaving || taskSelectionDirty()) return;
   if (!Number.isInteger(state.hostBehaviorRevision) || state.hostBehaviorDraft || state.hostBehaviorSaving) return;
   state.hostBehaviorLoadRevision = (state.hostBehaviorLoadRevision || 0) + 1;
   state.hostBehaviorDraft = JSON.parse(JSON.stringify(state.hostBehaviors));
@@ -581,6 +590,7 @@ function cancelHostBehaviorEdit() {
 }
 
 function addHostBehavior() {
+  if (state.taskProfileSaving || taskSelectionDirty()) return;
   if (!Number.isInteger(state.hostBehaviorRevision) || state.hostBehaviorSaving) return;
   if (!state.hostBehaviorDraft) editHostBehaviors();
   const id = "behavior-" + Date.now() + "-" + state.hostBehaviorDraft.length;
@@ -613,6 +623,7 @@ async function saveHostBehaviors() {
     state.hostBehaviorSnapshot = JSON.stringify(state.hostBehaviors);
     renderHostBehaviors();
     await refreshTaskModelAssignments();
+    if (state.activeTaskProfile) openTaskProfile(state.activeTaskProfile);
     toast("Behaviors saved");
   } catch (error) {
     toast(error.message, true);
@@ -826,10 +837,14 @@ function updateTaskSaveState() {
   const invalidFallback = assignment?.fallbacks?.some(item => !item.provider || !item.model);
   // Save must become actionable for every changed selection. Validate on click,
   // rather than silently disabling the control when an endpoint lacks a model.
-  const disabled = state.taskProfileSaving || !assignment
+  const disabled = state.taskProfileSaving || state.hostBehaviorSaving || Boolean(state.hostBehaviorDraft) || !assignment
     || taskProfileConfiguration() === state.taskProfileSnapshot;
   el.saveTaskProfile.disabled = disabled;
   if (el.saveTaskEndpoints) el.saveTaskEndpoints.disabled = disabled;
+  const cancelMembership = document.getElementById("cancelTaskBehaviorMembership");
+  if (cancelMembership) cancelMembership.disabled = disabled;
+  renderInstructionTaskSelectors();
+  updateBehaviorSaveState();
 }
 
 function renderTaskBehaviorSelection() {
@@ -846,8 +861,11 @@ function renderTaskBehaviorSelection() {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = selected.has(behavior.id);
-    checkbox.disabled = false;
+    checkbox.disabled = Boolean(!assignment || state.hostBehaviorDraft
+      || state.hostBehaviorSaving || state.taskProfileSaving);
     checkbox.addEventListener("change", () => {
+      if (checkbox.disabled || state.hostBehaviorDraft || state.hostBehaviorSaving
+          || state.taskProfileSaving || assignment !== activeProfileRecords().assignment) return;
       if (checkbox.checked) selected.add(behavior.id); else selected.delete(behavior.id);
       assignment.behavior_ids = [...selected];
       updateTaskSaveState();
@@ -1258,7 +1276,7 @@ async function removeEndpoint() {
 
 async function saveTaskProfile() {
   const task = state.activeTaskProfile;
-  if (!task || el.saveTaskProfile.disabled) return;
+  if (!task || el.saveTaskProfile.disabled || state.hostBehaviorSaving || state.hostBehaviorDraft) return;
   const selectedAssignment = state.taskModelAssignments.find(item => item.task === task);
   const selectedEndpoint = state.providerEndpoints.find(item =>
     item.id === selectedAssignment?.provider || item.name === selectedAssignment?.provider);
@@ -1273,6 +1291,8 @@ async function saveTaskProfile() {
   }
   state.taskProfileSaving = true;
   el.saveTaskProfile.disabled = true;
+  renderTaskBehaviorSelection();
+  updateBehaviorSaveState();
   renderFallbackSelectors();
   try {
     const assignment = state.taskModelAssignments.find(item => item.task === task);
@@ -1285,7 +1305,7 @@ async function saveTaskProfile() {
     renderTaskProfiles();
     openTaskProfile(task);
   } catch (error) { toast(error.message, true); }
-  finally { state.taskProfileSaving = false; renderFallbackSelectors(); updateTaskSaveState(); }
+  finally { state.taskProfileSaving = false; renderFallbackSelectors(); renderTaskBehaviorSelection(); updateTaskSaveState(); }
 }
 
 async function discoverTaskProfileModels() {
@@ -2736,6 +2756,7 @@ async function refreshDiagnostics() {
 document.getElementById("apiActivityFilter")?.addEventListener("change", refreshDiagnostics);
 
 const adminSectionIds = {
+  instructions: "instructionsSection",
   mcp: "mcpSection",
   tools: "toolsSection",
   tasks: "tasksSection",
@@ -3282,7 +3303,31 @@ async function refreshIntegrations() {
   catch (error) { toast(`Could not refresh integrations: ${error.message}`, true); }
 }
 
+function selectInstructionTask(task) {
+  if (state.taskFoundationSaving || state.taskProfileSaving || state.hostBehaviorSaving) {
+    renderInstructionTaskSelectors();
+    return;
+  }
+  closeTaskProfile();
+  openTaskProfile(task);
+  renderInstructionTaskSelectors();
+}
+
+function renderInstructionTaskSelectors() {
+  for (const id of ["foundationTaskSelect", "behaviorTaskSelect"]) {
+    const select = document.getElementById(id);
+    if (!select) continue;
+    select.replaceChildren(...allTaskNames().map(task =>
+      new Option(taskModelLabels[task] || displayLabel(task), task)));
+    select.value = state.activeTaskProfile || "";
+    select.disabled = state.taskFoundationSaving || state.taskProfileSaving || state.hostBehaviorSaving;
+  }
+}
+
 function showAdminSection(sectionName) {
+  if (state.taskFoundationSaving || state.taskProfileSaving || state.hostBehaviorSaving) return;
+  const instructionChild = ["foundations", "behaviors", "skills"].includes(sectionName);
+  const instructionTask = state.activeTaskProfile || "reasoning";
   if (sectionName !== "devices" && typeof discardDeviceSelectionChanges === "function") discardDeviceSelectionChanges();
   if (sectionName !== "mcp" && state.providerSetupDraft) cancelProviderConnections();
   for (const [name, id] of Object.entries(adminSectionIds)) {
@@ -3290,11 +3335,13 @@ function showAdminSection(sectionName) {
     if (panel) panel.classList.toggle("hidden", name !== sectionName);
   }
   document.querySelectorAll("[data-admin-section]").forEach(button => {
-    const active = button.dataset.adminSection === sectionName;
+    const active = button.dataset.adminSection === sectionName
+      || (button.dataset.adminSection === "instructions" && instructionChild);
     button.classList.toggle("active", active);
     button.setAttribute("aria-current", active ? "page" : "false");
   });
-  if (sectionName !== "tasks" && state.activeTaskProfile) closeTaskProfile();
+  if (state.activeTaskProfile) closeTaskProfile();
+  if (["foundations", "behaviors"].includes(sectionName)) selectInstructionTask(instructionTask);
   if (sectionName === "tasks") renderTaskProfiles();
   if (sectionName === "devices") refreshDeviceInventory();
   if (sectionName === "skills") refreshSkillDrafts();
@@ -3312,8 +3359,15 @@ document.querySelectorAll("[data-admin-section]").forEach(button => {
   button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
 });
 document.querySelectorAll("[data-admin-back]").forEach(button => {
-  button.addEventListener("click", () => showAdminSection("overview"));
+  button.addEventListener("click", () => showAdminSection(button.dataset.adminBack || "overview"));
 });
+for (const id of ["foundationTaskSelect", "behaviorTaskSelect"]) {
+  document.getElementById(id)?.addEventListener("change", event => selectInstructionTask(event.target.value));
+}
+document.getElementById("taskProfileFoundationsLink")?.addEventListener("click", () => showAdminSection("foundations"));
+document.getElementById("taskProfileBehaviorsLink")?.addEventListener("click", () => showAdminSection("behaviors"));
+document.getElementById("taskProfileSkillsLink")?.addEventListener("click", () => showAdminSection("skills"));
+document.getElementById("cancelTaskBehaviorMembership")?.addEventListener("click", () => selectInstructionTask(state.activeTaskProfile));
 if (el.mcpAddServer) el.mcpAddServer.addEventListener("click", addMcpServer);
 if (el.mcpServerSelect) el.mcpServerSelect.addEventListener("change", () => {
   const selectedId = el.mcpServerSelect.value;
@@ -3924,6 +3978,7 @@ function updateTaskFoundationEditor() {
   const editing = draft?.task === state.activeTaskProfile;
   const busy = state.taskFoundationSaving === true;
   el.taskProfileFoundation.readOnly = !editing || busy;
+  renderInstructionTaskSelectors();
   if (el.taskFoundationEdit) el.taskFoundationEdit.disabled = !state.activeTaskProfile || editing || busy;
   if (el.taskFoundationCancel) el.taskFoundationCancel.disabled = !editing || busy;
   if (el.taskFoundationSave) el.taskFoundationSave.disabled = !editing || busy || el.taskProfileFoundation.value === draft.original;
