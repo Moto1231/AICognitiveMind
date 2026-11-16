@@ -153,6 +153,8 @@ class RuntimeAdministratorSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(runtime.calls), 2)
         for _, payload in runtime.calls:
             self.assertTrue(payload["messages"][0]["content"].startswith("Administrator internal Steward marker."))
+        self.assertIn("Recall search protocol:", runtime.calls[0][1]["messages"][0]["content"])
+        self.assertNotIn("Recall search protocol:", runtime.calls[1][1]["messages"][0]["content"])
         self.assertNotIn("Administrator internal Steward marker.", begun["conscious_workspace_contract"])
 
         await skills.save("memory-steward", {"enabled": False}, expected_revision=1)
@@ -164,4 +166,5 @@ class RuntimeAdministratorSettingsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(content.startswith("\n\nPHASE SCHEMA:"))
         self.assertNotIn("Administrator internal Steward marker.", content)
         self.assertNotIn("# Memory Steward", content)
+        self.assertNotIn("Recall search protocol:", content)
 
