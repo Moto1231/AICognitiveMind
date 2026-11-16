@@ -85,3 +85,43 @@ hidden by this policy.
 Configure a working Memory Recall endpoint in Task Profiles before use. Model tests
 use scripted responses; the explicitly named `mcp_test_server.py` harness tests
 transport/storage without consuming API quota and is not used by production.
+
+## Bounded meaning expansion and confidence-triggered deep recall
+
+Recall search actions accept up to three `meanings`: model-authored alternative
+phrases representing plausible interpretations, not facts or source evidence.
+The first lookup stays quick and targets the prior decision separately from any
+new request for prices or recommendations. The runtime supplies this protocol
+alongside the effective saved skill; changing the packaged default is not required
+for an enabled administrator-customized skill to receive the search semantics.
+Disabling the effective skill suppresses this added wording as well; mechanical
+search bounds and evidence validation still apply.
+
+The same configured Steward model chooses `depth: deep` when the human challenges
+a prior miss, quoting exact current-user-message evidence in
+`escalation_evidence`. Code validates the quote's presence, not whether its meaning
+constitutes a challenge: that interpretation remains a model decision. Depth is
+sticky only inside the assessment. No global last-miss flag or new cross-session
+state is introduced. Generic follow-ups therefore depend on the host preserving
+the unresolved topic and prior limited miss in its existing working context. An older
+quote from that context cannot activate deep mode on a new unrelated message.
+
+Each of the existing three search actions can perform at most four targeted
+candidate reads (original phrase plus meanings), with at most 16 candidates per
+read. Deep searches also read a bounded recent unfiltered sample, reserving half
+the returned slots so lexical distractors do not crowd it out. This lets the
+Steward assess vocabulary-disjoint candidates **within that sample**. It is not
+an embedding index or an all-history semantic scan. Older records still need to
+match a reformulated phrase. Mind scoping remains owned by the same store adapter.
+The result limit remains eight, and the existing assessment timeout remains in
+force. A deep negative requires checks of both memory and journal; positive
+results may finish early. Search depth and source/query/count traces are exposed
+in recall context for diagnosis. Query text is not source evidence.
+
+Offline scripted-model tests cover the transport and enforcement, not a measured
+increase in real-model recall accuracy. They exercise reformulated infrastructure
+intent against a portal hosting checkpoint and a distinct core-capacity distractor,
+lexically disjoint journal sampling, quick-path cost, quote validation, cross-store
+coverage, and budgets. A live paraphrase benchmark remains required after review
+and deployment; no live provider calls or data migrations are needed to run these
+tests. A failed search or timeout must not be represented as proof of no history.
