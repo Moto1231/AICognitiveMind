@@ -273,6 +273,102 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         await service.initialize("Axiom")
         return service, journal, memory
 
+    async def test_quick_meaning_query_finds_plan_not_pricing_distractor(self):
+        model = ScriptedModel(
+            {"action": "search", "source": "memory", "query": "infrastructure",
+             "meanings": ["hosting deployment"], "limit": 4},
+            {**BRIEF, "summary": "The portal needs AWS hosting before PR 325.",
+             "references": ["record_2"]},
+        )
+        agent = self.agent(model, "Didn't we develop an infrastructure plan? What does it cost?")
+        for content in ("Portal AWS hosting before PR 325.",
+                        "Infrastructure runtime capacity prices are not decided."):
+            await agent._memory.remember(DurableMemory(
+                memory_class=MemoryClass.SEMANTIC, content=content, grounding=("test",),
+            ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+        result = await agent.invoke({"action": "recall", "focus": agent._input_text})
+        self.assertEqual(result["context"]["search_depth"], "quick")
+        self.assertEqual(len(model.calls), 2)
+        self.assertEqual(result["context"]["sources"][0]["reference"], "record_2")
+        self.assertEqual(result["context"]["search_trace"][0]["unfiltered_sample"], 0)
+
+    async def test_meaning_candidate_is_not_crowded_out_by_literal_distractors(self):
+        from aicognitive_mind.steward_agent import Search
+        agent = self.agent(ScriptedModel(), "What was our infrastructure plan?")
+        for content in (["Portal hosting uses AWS."] +
+                        [f"Infrastructure distraction {i}." for i in range(8)]):
+            await agent._memory.remember(DurableMemory(
+                memory_class=MemoryClass.SEMANTIC, content=content, grounding=("test",),
+            ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+        found = await agent._search(Search(action="search", source="memory",
+                                          query="infrastructure", meanings=("hosting",), limit=4))
+        self.assertIn("Portal hosting uses AWS.", [r["record"]["content"] for r in found])
+
+    async def test_deep_recall_reaches_disjoint_sample_and_preserves_sources(self):
+        from aicognitive_mind.domain import JournalEntry, JournalKind
+        message = "No, I'm pretty sure we settled that deployment question."
+        model = ScriptedModel(
+            {"action": "search", "source": "memory", "query": "deployment",
+             "meanings": ["hosting"], "depth": "deep", "escalation_evidence": message},
+            {"action": "search", "source": "journal", "query": "deployment",
+             "meanings": ["hosting"]},
+            {**BRIEF, "summary": "The public portal was assigned to AWS, not the core.",
+             "references": ["record_2"]},
+        )
+        agent = self.agent(model, message)
+        await agent._memory.remember(DurableMemory(
+            memory_class=MemoryClass.SEMANTIC,
+            content="Deployment: the core stays on Render.", grounding=("test",),
+        ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+        await agent._journal.append(JournalEntry(
+            kind=JournalKind.INTERACTION,
+            experience={"decision": "Public portal: AWS; revisit PR 325 after domain setup."},
+        ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+        result = await agent.invoke({"action": "recall", "focus": agent._input_text})
+        self.assertEqual(result["context"]["search_depth"], "deep")
+        trace = result["context"]["search_trace"]
+        self.assertEqual([item["source"] for item in trace], ["memory", "journal"])
+        self.assertEqual(trace[1]["unfiltered_sample"], 1)
+        self.assertEqual(result["context"]["sources"][0]["kind"], "interaction")
+
+    async def test_deep_negative_requires_both_stores_and_quote(self):
+        from aicognitive_mind.steward_agent import RecallFinish, Search
+        agent = self.agent(ScriptedModel(), "No, I am sure.")
+        with self.assertRaisesRegex(StewardProtocolError, "exact current-user-message quote"):
+            await agent._search(Search(action="search", source="memory", query="plan",
+                                       depth="deep", escalation_evidence="invented"))
+        await agent._search(Search(action="search", source="memory", query="plan",
+                                   depth="deep", escalation_evidence="I am sure"))
+        negative = RecallFinish(action="finish", outcome="no_relevant_memory", reason="Not found")
+        with self.assertRaisesRegex(StewardProtocolError, "memory and journal"):
+            agent._validate_recall(negative)
+        await agent._search(Search(action="search", source="journal", query="hosting"))
+        agent._validate_recall(negative)
+        await agent._search(Search(action="search", source="journal", query="capacity"))
+        with self.assertRaisesRegex(StewardProtocolError, "budget exhausted"):
+            await agent._search(Search(action="search", source="journal", query="more"))
+
+    async def test_stale_context_pushback_cannot_enable_deep_search(self):
+        from aicognitive_mind.steward_agent import Search
+        agent = self.agent(ScriptedModel(), "What is today's weather?",
+                           working={"summary": "Earlier user said: No, I am sure."})
+        with self.assertRaisesRegex(StewardProtocolError, "current-user-message quote"):
+            await agent._search(Search(action="search", source="memory", query="weather",
+                                       depth="deep", escalation_evidence="No, I am sure."))
+
+    async def test_expansion_schema_and_bounded_candidate_calls(self):
+        from aicognitive_mind.steward_agent import Search
+        with self.assertRaises(ValidationError):
+            Search(action="search", source="memory", query="x", meanings=("a", "b", "c", "d"))
+        agent = self.agent(ScriptedModel(), "Please look harder")
+        with patch("aicognitive_mind.steward_agent.candidates", new_callable=AsyncMock,
+                   return_value=[]) as search:
+            await agent._search(Search(action="search", source="memory", query="infra",
+                                       meanings=("hosting", "capacity", "deployment"), depth="deep",
+                                       escalation_evidence="look harder", limit=8))
+        self.assertEqual(search.await_count, 5)
+        self.assertTrue(all(item.kwargs["limit"] == 16 for item in search.await_args_list))
+
     def learning(self, **updates):
         memory = {
             "action": "propose_memory",

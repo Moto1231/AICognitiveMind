@@ -51,6 +51,32 @@ class Search(Step):
     source: Literal["memory", "journal", "recent"]
     query: str = Field(default="", max_length=1000)
     limit: int = Field(default=6, ge=1, le=8)
+    meanings: tuple[str, ...] = Field(default=(), max_length=3)
+    depth: Literal["quick", "deep"] = "quick"
+    escalation_evidence: str = Field(default="", max_length=500)
+
+
+# Supplied by the runtime even when an administrator customizes the skill. These
+# are search protocol semantics, not canonical identity or learned personality.
+RECALL_SEARCH_PROTOCOL = """
+Recall search protocol:
+Separate a reference to a prior decision from any new question (such as prices).
+Interpret its intended meaning in the conversation, not just its literal words.
+For a quick search, put up to three distinct plausible related search phrases in
+meanings. These are hypotheses, never evidence. Keep unrelated interpretations
+separate. A first miss is a limited search result, not proof nothing was recorded.
+If the user challenges an earlier miss, choose depth=deep and quote exact evidence
+from the current user message in escalation_evidence. Use working context only
+to resolve the subject, never to reuse an older pushback as a new escalation. Do not
+escalate merely because there was a first miss. Deep mode remains active for this
+assessment. Reformulate the unresolved intent, search both memory and journal,
+and evaluate the bounded unfiltered sample as well as targeted results by meaning.
+Do not invent source facts, merge distinct plans, or demand an exact date.
+No-recall remains valid when the supplied context already answers the question.
+Searches remain bounded to three actions, each with at most four targeted queries
+and one recent sample. A recent sample is not a global semantic index; disclose
+unresolved recall, rather than claiming that all history was searched.
+"""
 
 
 class RecallFinish(Step):
@@ -192,10 +218,14 @@ class ModelMemorySteward(MemoryStewardTool):
         self.skill_records: Any | None = None
         self._records: dict[str, DurableMemory | JournalEntry] = {}
         self._search_count = 0
+        self._search_budget_start = 0
         self.assessment: dict[str, Any] = {}
         self._public_context: dict[str, Any] = {}
         self._validation_corrections = 0
         self.assessment_timeout_seconds = 60.0
+        self._recall_depth = "quick"
+        self._search_sources: set[str] = set()
+        self._search_trace: list[dict[str, Any]] = []
 
     async def _run(
         self, phase: Literal["recall", "review"], result: dict[str, Any],
@@ -217,6 +247,7 @@ class ModelMemorySteward(MemoryStewardTool):
                 records = self.skill_records
                 if records is None:
                     records = getattr(getattr(self.runtime, "assignments", None), "records", None)
+                skill_enabled = True
                 if records is None:
                     # Standalone test/custom runtimes without Mind storage retain defaults.
                     skill = files("aicognitive_mind").joinpath("skills/memory-steward/SKILL.md").read_text()
@@ -224,7 +255,10 @@ class ModelMemorySteward(MemoryStewardTool):
                     from aicognitive_mind.effective_skills import EffectiveSkillRegistry
 
                     configured = await EffectiveSkillRegistry(records).get("memory-steward")
-                    skill = configured["content"] if configured and configured["enabled"] else ""
+                    skill_enabled = bool(configured and configured["enabled"])
+                    skill = configured["content"] if skill_enabled else ""
+                if phase == "recall" and skill_enabled:
+                    skill += "\n\n" + RECALL_SEARCH_PROTOCOL
                 context = {
                     "phase": phase,
                     "identity": self._mind.identity.model_dump(mode="json"),
@@ -251,6 +285,7 @@ class ModelMemorySteward(MemoryStewardTool):
                 finite_pool = type(provider_session) is _StewardAssessment
                 candidate_count = provider_session.candidate_count if finite_pool else None
                 searches_at_start = self._search_count
+                self._search_budget_start = searches_at_start
                 singleton_review = phase == "review" and (
                     provider_session is None or provider_session.single_provider
                 )
@@ -271,6 +306,11 @@ class ModelMemorySteward(MemoryStewardTool):
                             decisions_remaining,
                             searches_remaining + remaining_candidates + corrections_remaining,
                         )
+                    context["recall_search_state"] = {
+                        "depth": self._recall_depth,
+                        "sources_checked": sorted(self._search_sources),
+                        "search_trace": self._search_trace,
+                    }
                     context["assessment_budget"] = {
                         "decision_attempts_remaining": decisions_remaining,
                         "provider_candidates_total": candidate_count,
@@ -305,8 +345,7 @@ class ModelMemorySteward(MemoryStewardTool):
                             response = response.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
                         step = round_adapter.validate_json(response)
                         if isinstance(step, Search):
-                            if step.source != "recent" and not _tokens(step.query):
-                                raise StewardProtocolError("A targeted memory search requires a query.")
+                            self._validate_search(step, phase)
                         elif validate_finish is not None:
                             validate_finish(step)
                     except (ValidationError, StewardProtocolError) as exc:
@@ -363,36 +402,82 @@ class ModelMemorySteward(MemoryStewardTool):
             last_error = getattr(provider_session, "last_error", None) or last_rejection
             raise StewardAssessmentTimeout(last_error) from exc
 
-    async def _search(self, step: Search) -> list[dict[str, Any]]:
+    def _validate_search(self, step: Search, phase: str = "recall") -> None:
         if step.source != "recent" and not _tokens(step.query):
             raise StewardProtocolError("A targeted memory search requires a query.")
-        store = self._memory if step.source == "memory" else self._journal
-        tokens = set() if step.source == "recent" else _tokens(step.query)
-        rows = await candidates(store, tokens, limit=step.limit * 2)
-        date = "formed_at" if step.source == "memory" else "occurred_at"
-        rows = sorted(rows, key=lambda row: getattr(row, date), reverse=True)
-        self._search_count += 1
+        if any(not _tokens(phrase) or len(phrase) > 300 for phrase in step.meanings):
+            raise StewardProtocolError("Meaning queries require searchable words and at most 300 characters.")
+        if phase != "recall" and (step.meanings or step.depth != "quick"):
+            raise StewardProtocolError("Meaning expansion and deep mode are recall-only.")
+        if step.depth == "deep" and self._recall_depth != "deep":
+            evidence = step.escalation_evidence.strip()
+            if not evidence or evidence not in self._input_text:
+                raise StewardProtocolError("Deep recall requires an exact current-user-message quote.")
+
+    async def _search(self, step: Search) -> list[dict[str, Any]]:
+        self._validate_search(step)
+        if self._search_count - self._search_budget_start >= 3:
+            raise StewardProtocolError("Recall search budget exhausted.")
+        if step.depth == "deep":
+            self._recall_depth = "deep"
+        source = "journal" if step.source == "recent" else step.source
+        self._search_sources.add(source)
+        store = self._memory if source == "memory" else self._journal
+        date = "formed_at" if source == "memory" else "occurred_at"
+        phrases = ([step.query] if step.source == "recent" else
+                   list(dict.fromkeys((step.query, *step.meanings))))
+        buckets: list[list[DurableMemory | JournalEntry]] = []
+        for phrase in phrases:
+            bucket: list[DurableMemory | JournalEntry] = []
+            tokens = set() if step.source == "recent" else _tokens(phrase)
+            rows = await candidates(store, tokens, limit=step.limit * 2)
+            rows = sorted(rows, key=lambda row: getattr(row, date), reverse=True)
+            for row in rows:
+                if isinstance(row, JournalEntry) and row.kind == JournalKind.CHECKPOINT:
+                    continue
+                encoded = row.model_dump_json()
+                if tokens and not tokens.intersection(_tokens(encoded)):
+                    continue
+                if row not in bucket:
+                    bucket.append(row)
+            buckets.append(bucket)
+        # Interleave interpretations: literal-word distractors must not consume
+        # every slot before an alternative meaning has any chance to contribute.
+        matched: list[DurableMemory | JournalEntry] = []
+        for index in range(step.limit * 2):
+            for bucket in buckets:
+                if index < len(bucket) and bucket[index] not in matched:
+                    matched.append(bucket[index])
+        # A bounded unfiltered sample lets the model evaluate records whose words
+        # differ from every query. This deliberately does not promise all-history
+        # semantic retrieval. Reserve half the result slots so lexical distractors
+        # cannot crowd that sample out; preserve existing mind-scoped store reads.
+        sample: list[DurableMemory | JournalEntry] = []
+        if self._recall_depth == "deep" and step.source != "recent":
+            rows = await candidates(store, set(), limit=step.limit * 2)
+            rows = sorted(rows, key=lambda row: getattr(row, date), reverse=True)
+            sample = [row for row in rows if row not in matched and not (
+                isinstance(row, JournalEntry) and row.kind == JournalKind.CHECKPOINT
+            )][:max(1, step.limit // 2)]
+        selected = matched[:step.limit - len(sample)] + sample
         found = []
-        for row in rows:
-            if isinstance(row, JournalEntry) and row.kind == JournalKind.CHECKPOINT:
-                continue
+        for row in selected:
             payload = row.model_dump(mode="json")
             encoded = json.dumps(payload, default=str)
-            if tokens and not tokens.intersection(_tokens(encoded)):
-                continue
             reference = next((ref for ref, known in self._records.items() if known == row), None)
             if reference is None:
                 reference = f"record_{len(self._records) + 1}"
                 self._records[reference] = row
-            found.append(
-                {
-                    "reference": reference,
-                    "record": payload if len(encoded) <= 12000 else encoded[:12000],
-                    "truncated": len(encoded) > 12000,
-                }
-            )
-            if len(found) >= step.limit:
-                break
+            found.append({
+                "reference": reference,
+                "record": payload if len(encoded) <= 12000 else encoded[:12000],
+                "truncated": len(encoded) > 12000,
+            })
+        self._search_count += 1
+        self._search_trace.append({
+            "source": source, "queries": phrases, "depth": self._recall_depth,
+            "returned": len(found), "unfiltered_sample": len(sample),
+        })
         return found
 
     def _validate_references(self, references: tuple[str, ...]) -> None:
@@ -418,6 +503,9 @@ class ModelMemorySteward(MemoryStewardTool):
             )
         if finished.outcome == "no_relevant_memory" and not self._search_count:
             raise StewardProtocolError("No-relevant-memory requires an actual search.")
+        if (finished.outcome == "no_relevant_memory" and self._recall_depth == "deep"
+                and not {"memory", "journal"}.issubset(self._search_sources)):
+            raise StewardProtocolError("Deep recall must check memory and journal before a miss.")
         if finished.outcome == "recalled":
             if not finished.references or not finished.summary.strip():
                 raise StewardProtocolError("A recalled brief requires sources and a summary.")
@@ -429,7 +517,10 @@ class ModelMemorySteward(MemoryStewardTool):
         finished = await self._run("recall", {}, validate_finish=self._validate_recall)
         self._select(finished.references, finished.summary)
         self.assessment = {"outcome": finished.outcome, "reason": finished.reason}
-        self._public_context = {**self.assessment, "summary": finished.summary}
+        self._public_context = {
+            **self.assessment, "summary": finished.summary,
+            "search_depth": self._recall_depth, "search_trace": self._search_trace,
+        }
         if finished.references:
             self._public_context["sources"] = [
                 self._source(reference) for reference in finished.references
