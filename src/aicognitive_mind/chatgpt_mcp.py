@@ -21,6 +21,7 @@ from aicognitive_mind.body.runtime import configured_voice_intent
 from aicognitive_mind.body_sessions import BodyQueue, active_body_status, body_session
 from aicognitive_mind.camera_runtime import CameraRequestRuntime
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
+from aicognitive_mind.community_memory import SyntheticLesson
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.domain import DiagnosticObservation
 from aicognitive_mind.github_capability import GitHubCapability
@@ -863,14 +864,13 @@ def build_chatgpt_mcp(
         if community is None or principal is None:
             return response
 
-        async def completed_personal_sleep() -> Any:
-            return report
-
         try:
-            _, count = await community.sleep(
-                completed_personal_sleep, principal, getattr(state, "task_dispatcher", None),
-            )
-            response["community_memory"] = {"newly_published": count}
+            receipt = await community.after_personal_sleep(principal)
+            if receipt is not None:
+                response["community_memory"] = {
+                    "status": "awaiting_local_steward",
+                    "handoff_receipt": receipt,
+                }
         except Exception as exc:
             emit("community sleep unavailable error=%s", type(exc).__name__)
             response["community_memory"] = {"status": "unavailable"}
@@ -908,6 +908,30 @@ def build_chatgpt_mcp(
             return await community.set_opt_in(principal, enabled)
         except ValueError as exc:
             raise MCPError(code=-32001, message="This Mind cannot join the community.") from exc
+
+    @account_tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False,
+    ))
+    async def submit_community_memory_candidate(
+        handoff_receipt: str,
+        lesson: SyntheticLesson,
+        ctx: Context[AppState],
+    ) -> dict[str, bool]:
+        """Accept only a fixed synthetic catalog ID selected inside the owner's local Steward.
+
+        Use this with the one-use receipt from the current authenticated Mind's
+        successful personal sleep. Never send source text, drafts, keys, or identity
+        overrides. No operator-proof guarantee is made for the server journal.
+        """
+        state = request_state(ctx)
+        community = getattr(state, "community_memory", None)
+        principal = getattr(state, "community_principal", None)
+        if community is None or principal is None:
+            raise MCPError(code=-32001, message="Community Memory is not configured.")
+        published = await community.submit(principal, handoff_receipt, lesson)
+        if published is None:
+            raise MCPError(code=-32001, message="Community handoff is not valid.")
+        return {"published": published}
 
     @account_tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, openWorldHint=False,

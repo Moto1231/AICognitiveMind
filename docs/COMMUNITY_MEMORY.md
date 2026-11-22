@@ -1,54 +1,52 @@
-# Community Memory: initial synthetic verification
+# Community Memory staged local handoff
 
-The initial candidate catalog contains two fixed synthetic lessons for exercising
-the workflow. It does not yet discover or learn new real-world lessons. It has
-no input for raw journal entries, personal sleep reports, credentials, customer
-data, user identifiers, or free-form draft text. The curator may only select or
-decline the provided candidate. New lessons require a separately reviewed,
-isolated source that validates origin, product/release, applicability, evidence
-and observed result before any prepared text can be considered for publication.
+Community Memory is disabled by default. The initial catalog contains only two
+fixed synthetic lessons to test the path. It cannot discover or publish real
+private lessons. A separate source and release policy would be needed before
+using real data.
 
-An account/Mind's single opt-in governs both publishing and the ability to read
-Community Memory. Each operation also requires separate group membership.
-Unknown accounts/groups and unset preferences are denied by default. Revocation
-stops recall and invalidates contributions and pending approvals from that grant;
-rejoining does not restore old content. Published results do not include names or
-other private identifiers, and are not written back into the private memory store.
+## Reciprocal participation
 
-The trusted caller must finish personal sleep successfully before handing fixed
-candidates to the optional curator. A declined, malformed or failed decision
-does not publish. Authorization is checked again atomically at publication and
-when reading. The synthetic store is in process, not a shareable persistence
-service; it is not an authentication layer, a scheduler, or a consent UI.
+The authenticated ChatGPT MCP tools `get_community_memory_setting` and
+`set_community_memory_setting` operate on the signed-in account and its
+verified Mind. Their one opt-in governs contribution and recall, and the
+server-managed group must also allow the Mind. Opting out removes published
+contributions and unsettled receipts. Rejoining does not restore them.
 
-## Staged application integration
-
-The authenticated ChatGPT MCP flow supports one reciprocal preference per
-account/Mind via `get_community_memory_setting` and
-`set_community_memory_setting`. The server derives the principal from the
-existing verified account scope; the tools do not accept a Mind selector.
-The setting defaults off. The deployment itself is also off by default.
-
-To stage the existing synthetic catalog, configure a dedicated absolute
-`COMMUNITY_MEMORY_DB_PATH` on retained storage, a
-`COMMUNITY_MEMORY_GROUP`, and a comma-separated
+For staging, configure a dedicated absolute `COMMUNITY_MEMORY_DB_PATH` on
+retained storage, one `COMMUNITY_MEMORY_GROUP`, and a comma-separated
 `COMMUNITY_MEMORY_ALLOWED_MINDS` list. Do not reuse a private datastore
-file. Configure the Mind's **Structured Extraction** task provider to make
-the publish-or-skip decision. No provider means no AI publication. The
-provider receives only the built-in synthetic candidate, never the personal
-sleep report or journal. The staging path uses a separate SQLite file and one
-server-managed group; it is not a production multi-tenant provisioning layer.
+file. This app-layer community store is plain SQLite, not a private key store.
 
-An authenticated `run_sleep_cycle` completes the normal private phase before
-curation. No nightly scheduler or real-world lesson source is installed by this
-change. At `begin_interaction`, currently eligible, opted-in members may see
-relevant references under `community_memory`. The server does not append the
-references to the diagnostic trace, host working context, or personal
-memory. A host or recipient can independently retain a previously delivered
-answer; authorization can block future recalls but cannot retract prior
-disclosures.
+## Local host testing
 
-The separate file and account checks do not provide cryptographic protection
-against the host or database operator. Do not feed real private records to
-this implementation. A private-data source requires a separate design whose
-keys and authorization are not controlled by those operators.
+1. Sign in to the staging MCP service. Use synthetic data only. Opt in using
+   the authenticated setting.
+2. Call `run_sleep_cycle`. Existing personal consolidation runs first. Only
+   after it succeeds will an opted-in Mind receive a short-lived
+   `community_memory.handoff_receipt`. The server does not run an AI curator.
+3. Run a Steward locally within the owner's key boundary. Keep the key,
+   source material, free-form reasoning, and drafts on that side. If the
+   local Steward selects a catalog lesson, use the owner-side
+   `private_community_steward.curate_and_submit_locally` helper and call
+   `submit_community_memory_candidate` with the receipt and the fixed
+   `lesson` identifier (`check_bindings` or `validate_import`). Use a
+   trusted local MCP client, not a hosted model, to relay the receipt.
+4. Confirm that a relevant question in an opted-in member's subsequent
+   `begin_interaction` can return the lesson under `community_memory`.
+   The transport trace, host working context, and private durable memory
+   omit direct copies of the shared reference.
+
+Receipts expire after five minutes, are single-use, and cannot be transferred
+to another Mind. Issuing one invalidates the prior receipt for that account
+and group. The staging DB retains only the receipt hash and grant metadata.
+Receipt redemption, opt-in verification, and publication occur in one store
+transaction. The receipt confirms completed personal sleep, not that a local
+model selected the ID; the catalog is the server-side content boundary.
+
+No automatic local-host bridge, nightly scheduler, real memory source, or
+production key provisioning is included. This handoff does not encrypt or
+otherwise change the existing server journal. The operator-resistant
+boundary applies only to inputs encrypted and processed on the owner side;
+the community lesson itself remains readable at the app layer. Revoking
+access blocks future recalls but does not retract prior disclosures.
