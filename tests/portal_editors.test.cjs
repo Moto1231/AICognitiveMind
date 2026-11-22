@@ -18,9 +18,9 @@ const editorFunctions = [
   'mcpToolKey', 'mcpToolEntries', 'selectedMcpTool', 'mcpToolsTargetServer',
   'invalidateMcpToolRun', 'selectMcpTool', 'renderMcpToolDetail', 'mcpToolArgumentsValid',
   'updateMcpToolsState', 'editMcpTools', 'cancelMcpTools', 'saveMcpTools', 'runMcpTool',
-  'refreshMcpServers', 'showAdminSection',
+  'refreshMcpServers', 'showAdminSection', 'selectInstructionTask', 'renderInstructionTaskSelectors',
   'allTaskNames', 'renderTaskProfiles', 'taskProviderEndpoint', 'taskEndpointOptions', 'selectedTaskBehaviorIds',
-  'taskBehaviorCatalog',
+  'taskBehaviorCatalog', 'taskSelectionDirty', 'activeProfileRecords',
   'taskProfileConfiguration', 'updateTaskSaveState', 'renderTaskBehaviorSelection',
   'syncTaskProviderRotation',
   'renderFallbackSelectors', 'selectTaskFallback', 'addTaskFallback', 'removeTaskFallback',
@@ -80,10 +80,13 @@ function editor({ apiHandler } = {}) {
   };
   const calls = [];
   const toasts = [];
-  const sections = Object.fromEntries(['overview', 'mcp', 'tools'].map(name => [name + 'Section', new Element('article')]));
-  const navigation = ['overview', 'mcp', 'tools'].map(name => {
+  const sections = Object.fromEntries(['overview', 'mcp', 'tools', 'instructions', 'foundations', 'behaviors', 'skills', 'tasks'].map(name => [name + 'Section', new Element('article')]));
+  const navigation = ['overview', 'mcp', 'tools', 'instructions', 'foundations', 'behaviors', 'skills', 'tasks'].map(name => {
     const button = new Element('button'); button.dataset.adminSection = name; return button;
   });
+  sections.foundationTaskSelect = new Element('select');
+  sections.behaviorTaskSelect = new Element('select');
+  sections.cancelTaskBehaviorMembership = new Element('button');
   const context = vm.createContext({
     state, el, URL, COMMON_ENDPOINT_PRESETS: [], crypto: { randomUUID: () => ++endpointSequence === 1 ? 'new-id' : `new-id-${endpointSequence}` },
     taskModelLabels: { reasoning: 'Reasoning', vision: 'Vision', audio_voice: 'Audio/Voice' },
@@ -93,7 +96,7 @@ function editor({ apiHandler } = {}) {
     },
     document: { createElement: tag => new Element(tag), createTextNode: value => value,
       getElementById: id => sections[id], querySelectorAll: () => navigation },
-    adminSectionIds: { overview: 'overviewSection', mcp: 'mcpSection', tools: 'toolsSection' },
+    adminSectionIds: Object.fromEntries(['overview', 'mcp', 'tools', 'instructions', 'foundations', 'behaviors', 'skills', 'tasks'].map(name => [name, name + 'Section'])),
     refreshDiagnostics() {}, refreshDeviceInventory() {}, refreshSkillDrafts() {}, refreshFoundations() {},
     renderTaskProfiles() {}, refreshTaskModelAssignments: async () => {}, toast: (...args) => toasts.push(args),
     resetEndpointApiKeyVisibility() {}, toggleEndpointApiKeyVisibility() {},
@@ -138,7 +141,7 @@ function editor({ apiHandler } = {}) {
   context.loadEndpointIntoForm();
   context.loadMcpServerIntoForm();
   context.renderMcpTools();
-  return { ...context, calls, toasts, sections, navigation };
+  return { ...context, vmContext: context, calls, toasts, sections, navigation };
 }
 
 test('missing capability details stay explicitly unverified without losing a saved model selection', () => {
@@ -2170,6 +2173,7 @@ function currentStatePortal({ diagnosticsHandler, bodySettings = true, fallbackS
       throw new Error('Unexpected API request: ' + url);
     },
   });
+  context.syncAdminKeepalive = () => {};
   vm.runInContext(source.match(/^let diagnosticsRevision = .*;$/m)[0], context);
   for (const name of ['setMode', 'bodySettingsAvailable', 'bodyFallbackSettingsAvailable', 'renderBodySettingsAvailability', 'updateVoiceSliderReadouts',
     'normalizeVoiceSettings', 'readVoiceSettingsForm', 'applyVoiceSettingsForm', 'voiceSettingsDirty',
@@ -2416,4 +2420,114 @@ test('scoped voice settings can refresh and save while the deployment fallback s
   assert.equal(ui.elements.cancelVoiceSettings.disabled, false);
   await ui.saveVoiceSettings();
   assert.equal(ui.requests.find(request => request.method === 'POST').body.voice_name, 'Account voice');
+});
+
+test('Instructions owns three separate children and parent navigation remains active', () => {
+  const ui = editor();
+  ui.showAdminSection('instructions');
+  assert.equal(ui.sections.instructionsSection.classList.contains('hidden'), false);
+  for (const name of ['foundations', 'behaviors', 'skills']) {
+    ui.showAdminSection(name);
+    assert.equal(ui.sections[name + 'Section'].classList.contains('hidden'), false);
+    assert.equal(ui.sections.instructionsSection.classList.contains('hidden'), true);
+    assert.equal(ui.navigation.find(b => b.dataset.adminSection === 'instructions').attributes['aria-current'], 'page');
+  }
+  assert.equal(ui.calls.length, 0, 'navigation does not save settings');
+});
+
+test('task instruction links keep task context but do not carry unsaved endpoint edits into membership saves', async () => {
+  const ui = editor();
+  ui.openTaskProfile('vision');
+  ui.state.taskModelAssignments[0].provider_rotation = 'daily_round_robin';
+  ui.showAdminSection('behaviors');
+  assert.equal(ui.state.activeTaskProfile, 'vision');
+  assert.equal(ui.sections.behaviorTaskSelect.value, 'vision');
+  assert.notEqual(ui.state.taskModelAssignments[0].provider_rotation, 'daily_round_robin');
+  const saved = JSON.parse(ui.taskProfileConfiguration());
+  ui.state.taskModelAssignments[0].behavior_ids = ['chosen-behavior'];
+  ui.updateTaskSaveState();
+  await ui.saveTaskProfile();
+  assert.equal(ui.calls.length, 1);
+  assert.equal(ui.calls[0].url, '/v1/admin/task-model-assignments');
+  assert.deepEqual(ui.calls[0].body.items[0], { ...saved, behavior_ids: ['chosen-behavior'], voice_reference_id: '' });
+  ui.state.taskModelAssignments[0].behavior_ids = ['unsaved'];
+  ui.selectInstructionTask('vision');
+  assert.deepEqual(Array.from(ui.state.taskModelAssignments[0].behavior_ids), ['chosen-behavior']);
+  assert.equal(ui.calls.length, 1, 'cancel never writes');
+});
+
+test('central foundation selector reuses revisioned save and cancels before switching tasks', async () => {
+  const ui = editor({ apiHandler: (url, body) => {
+    if (url === '/v1/admin/cognitive-configuration') return body
+      ? { revision: 9, task_foundations: { vision: 'saved vision' } }
+      : { revision: 8, task_foundations: { vision: 'old vision', reasoning: 'reasoning text' } };
+  }});
+  ui.openTaskProfile('vision');
+  ui.showAdminSection('foundations');
+  await ui.editTaskFoundation();
+  ui.el.taskProfileFoundation.value = 'saved vision';
+  await ui.saveTaskFoundation();
+  assert.deepEqual(ui.calls[1].body, { expected_revision: 8, task_foundations: { vision: 'saved vision' } });
+  await ui.editTaskFoundation();
+  ui.el.taskProfileFoundation.value = 'unsaved';
+  ui.selectInstructionTask('reasoning');
+  assert.equal(ui.state.taskFoundationDraft, null);
+  assert.equal(ui.sections.foundationTaskSelect.value, 'reasoning');
+  assert.equal(ui.calls.filter(c => c.body).length, 1);
+  ui.state.taskFoundationSaving = true;
+  ui.showAdminSection('tasks');
+  assert.equal(ui.sections.foundationsSection.classList.contains('hidden'), false);
+});
+
+test('library Save refreshes membership controls and snapshot before a subsequent membership save', async () => {
+  const ui = editor({ apiHandler: (url, body) => {
+    if (url === '/v1/admin/host-behaviors' && body) return { items: body.items, revision: 2 };
+  }});
+  ui.state.hostBehaviors = [{ id: 'old', name: 'Old', instruction: 'Old instruction', priority: 1, enabled: true }];
+  ui.state.hostBehaviorSnapshot = JSON.stringify(ui.state.hostBehaviors);
+  ui.state.taskModelAssignments[0].behavior_ids = ['old'];
+  ui.openTaskProfile('vision');
+  ui.showAdminSection('behaviors');
+  const staleToggle = ui.el.taskProfileBehaviorSelection.children[0].children[0];
+  // Production refresh replaces assignment objects, so exercise that replacement.
+  ui.vmContext.refreshTaskModelAssignments = async () => {
+    ui.state.taskModelAssignments = JSON.parse(JSON.stringify(ui.state.taskModelAssignments));
+  };
+  ui.editHostBehaviors();
+  ui.state.hostBehaviorDraft.push({ id: 'new', name: 'New', instruction: 'New instruction', priority: 2, enabled: true });
+  await ui.saveHostBehaviors();
+  assert.equal(ui.el.taskProfileBehaviorSelection.children.length, 2);
+  assert.equal(ui.taskProfileConfiguration(), ui.state.taskProfileSnapshot);
+  staleToggle.checked = false;
+  staleToggle.listeners.change();
+  assert.deepEqual(Array.from(ui.state.taskModelAssignments[0].behavior_ids), ['old']);
+  const newToggle = ui.el.taskProfileBehaviorSelection.children[1].children[0];
+  newToggle.checked = true;
+  newToggle.listeners.change();
+  await ui.saveTaskProfile();
+  const saved = ui.calls.find(c => c.url === '/v1/admin/task-model-assignments');
+  assert.deepEqual(saved.body.items[0].behavior_ids, ['old', 'new']);
+});
+
+test('dirty task selections block library editing and library drafts block membership saves', async () => {
+  const ui = editor();
+  ui.openTaskProfile('vision');
+  ui.showAdminSection('behaviors');
+  ui.state.taskModelAssignments[0].behavior_ids = ['unsaved'];
+  ui.updateTaskSaveState();
+  ui.editHostBehaviors();
+  ui.addHostBehavior();
+  assert.equal(ui.state.hostBehaviorDraft, null);
+  assert.equal(ui.el.editHostBehaviors.disabled, true);
+  ui.selectInstructionTask('vision');
+  ui.editHostBehaviors();
+  assert.ok(ui.state.hostBehaviorDraft);
+  ui.state.taskModelAssignments[0].behavior_ids = ['blocked'];
+  await ui.saveTaskProfile();
+  assert.equal(ui.calls.length, 0);
+  ui.state.hostBehaviorSaving = true;
+  ui.selectInstructionTask('reasoning');
+  ui.showAdminSection('tasks');
+  assert.equal(ui.state.activeTaskProfile, 'vision');
+  assert.equal(ui.sections.behaviorsSection.classList.contains('hidden'), false);
 });

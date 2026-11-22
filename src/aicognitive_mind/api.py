@@ -829,7 +829,7 @@ async def select_body_session(request: Request, call_next: Any) -> Response:
 async def protect_remote_runtime(request: Request, call_next: Any) -> Response:
     authorization = request.headers.get("authorization")
     public_path = (
-        request.url.path == "/health"
+        request.url.path in {"/health", "/ping"}
         or request.url.path == "/v1/portal/login"
         or request.url.path.startswith("/static/")
         # This endpoint authenticates its private, Mind-scoped host capability
@@ -1639,6 +1639,11 @@ async def complete_camera_request(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/ping", include_in_schema=False)
+async def ping() -> Response:
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/health")
