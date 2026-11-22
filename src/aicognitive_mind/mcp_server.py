@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -14,6 +15,11 @@ from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent
 from mcp.types import Tool as MCPTool
 
 from aicognitive_mind.account_mcp import request_state
+from aicognitive_mind.community_memory import CommunityPrincipal
+from aicognitive_mind.community_memory_runtime import (
+    CommunityMemoryRuntime,
+    configure_community_runtime,
+)
 from aicognitive_mind.config import get_settings
 from aicognitive_mind.github_capability import GitHubCapability
 from aicognitive_mind.governance_steward import GovernanceStewardTool, naming_is_eligible
@@ -35,6 +41,7 @@ from aicognitive_mind.task_behaviors import TaskExecutionContext
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskKind
 from aicognitive_mind.tenancy import verify_live_tenancy
+from aicognitive_mind.timing import emit
 from aicognitive_mind.voice_settings import VoiceSettings
 
 
@@ -46,6 +53,8 @@ class AppState:
     hosts: Any = None
     task_dispatcher: TaskModelDispatcher | None = None
     tenancy_probe: dict[str, Any] | None = None
+    community_memory: CommunityMemoryRuntime | None = None
+    community_principal: CommunityPrincipal | None = None
 
 
 async def notify_naming_eligibility_change(ctx: Any, before: dict, after: dict) -> bool:
@@ -133,8 +142,18 @@ class IdentityMCPServer(MCPServer[AppState]):
 
 @asynccontextmanager
 async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
-    storage = await create_storage(get_settings())
+    settings = get_settings()
+    storage = await create_storage(settings)
     try:
+        try:
+            community_memory = configure_community_runtime(
+                settings.community_memory_db_path, settings.community_memory_group,
+                settings.community_memory_allowed_minds,
+            )
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            # Staging errors must not disable ordinary personal operations.
+            emit("community memory configuration unavailable error=%s", type(exc).__name__)
+            community_memory = None
         service = CognitiveMcpService(
             mind=storage.mind,
             journal=storage.journal,
@@ -148,6 +167,7 @@ async def lifespan(_server: MCPServer[AppState]) -> AsyncIterator[AppState]:
             hosts=HostRuntime(storage.mind, service),
             task_dispatcher=TaskModelDispatcher(RuntimeRecords(storage.mind)),
             tenancy_probe=tenancy_probe,
+            community_memory=community_memory,
         )
 
     finally:

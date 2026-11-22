@@ -9,6 +9,7 @@ description = "A model-independent cognitive core with persistent identity and m
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "cryptography>=44,<51",
     "fastapi>=0.115,<1",
     "google-genai>=1.60,<3",
     "httpx>=0.28,<1",

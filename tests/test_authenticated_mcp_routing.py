@@ -6,6 +6,8 @@ import hashlib
 import time
 from contextvars import ContextVar
 from functools import wraps
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 import unittest
@@ -20,8 +22,10 @@ from aicognitive_mind import account_mcp, mcp_events
 from aicognitive_mind.accounts import AccountService
 from aicognitive_mind.chatgpt_mcp import build_chatgpt_mcp
 from aicognitive_mind.chatgpt_oauth import AxiomAuthorizationServerProvider
+from aicognitive_mind.community_memory import CommunityPrincipal, SyntheticLesson
+from aicognitive_mind.community_memory_runtime import configure_community_runtime
 from aicognitive_mind.config import Settings
-from aicognitive_mind.domain import JournalEntry, JournalKind
+from aicognitive_mind.domain import CognitiveActor, JournalEntry, JournalKind
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_server import AppState
@@ -29,6 +33,11 @@ from aicognitive_mind.mcp_service import CognitiveMcpService, MemoryProposal
 from aicognitive_mind.memory_steward import MemoryStewardTool
 from aicognitive_mind.naming import NamingChoiceRequired
 from aicognitive_mind.persistence import create_storage, scope_storage
+from aicognitive_mind.private_community_steward import (
+    PrivateRecordBinding,
+    curate_and_submit_locally,
+    encrypt_private_input,
+)
 from aicognitive_mind.provider_endpoints import ProviderEndpoint, ProviderEndpointRegistry
 from aicognitive_mind.task_dispatcher import TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskModelAssignment, TaskModelAssignmentRegistry
@@ -187,6 +196,147 @@ class AuthenticatedMcpRoutingTests(unittest.IsolatedAsyncioTestCase):
             return {tool.name: tool for tool in result.tools}
         finally:
             self.current_access.reset(handle)
+
+    async def test_community_memory_follows_verified_account_and_real_sleep_path(self):
+        self.assertEqual(
+            await self.invoke("get_community_memory_setting", self.alpha),
+            {"available": False, "opted_in": False},
+        )
+        with self.assertRaises(MCPError):
+            await self.invoke("set_community_memory_setting", self.alpha, enabled=True)
+        with TemporaryDirectory() as directory:
+            db = str(Path(directory) / "community.sqlite3")
+            self.root_state.community_memory = configure_community_runtime(
+                db, "synthetic", self.alpha.mind_id,
+            )
+            with self.assertRaises(MCPError):
+                await self.invoke("set_community_memory_setting", self.beta, enabled=True)
+            permitted = f"{self.alpha.mind_id},{self.beta.mind_id}"
+            self.root_state.community_memory = configure_community_runtime(
+                db, "synthetic", permitted,
+            )
+            with self.assertRaises(MCPError):
+                await self.invoke("set_community_memory_setting", enabled=True)
+            self.assertEqual(
+                await self.invoke("get_community_memory_setting", self.beta),
+                {"available": True, "opted_in": False},
+            )
+            private_canary = "CONFIDENTIAL_PRIVATE_JOURNAL_MARKER"
+            personal = scope_storage(self.storage, self.alpha.mind_id).journal
+            await personal.append(JournalEntry(
+                kind=JournalKind.INTERACTION, experience={"private_text": private_canary},
+            ), recorded_by=CognitiveActor.CONSCIOUS_WORKSPACE)
+            await self.invoke("set_community_memory_setting", self.alpha, enabled=True)
+            await self.invoke("set_community_memory_setting", self.beta, enabled=True)
+            with patch.object(TaskModelDispatcher, "complete_chat", new_callable=AsyncMock) as ai:
+                result = await self.invoke("run_sleep_cycle", self.alpha)
+                ai.assert_not_awaited()
+            self.assertTrue(any(
+                entry.experience.get("phase") == "sleep_consolidation"
+                for entry in await personal.read()
+            ))
+            handoff = result["community_memory"]
+            self.assertEqual(handoff["status"], "awaiting_local_steward")
+            receipt = handoff["handoff_receipt"]
+            self.assertRegex(receipt, r"^[A-Za-z0-9_-]{43}$")
+            self.assertNotIn(private_canary, repr(handoff))
+            before = await self.invoke(
+                "begin_interaction", self.beta, user_message="How should I check form bindings?",
+            )
+            self.assertNotIn("community_memory", before)
+            with self.assertRaises(MCPError):
+                await self.invoke(
+                    "submit_community_memory_candidate", self.beta,
+                    handoff_receipt=receipt, lesson=SyntheticLesson.CHECK_BINDINGS,
+                )
+            binding = PrivateRecordBinding(
+                CommunityPrincipal(self.alpha.username, self.alpha.mind_id), "record_1", 1,
+            )
+            key = bytes(range(32))  # Synthetic fixture only; never a deployment key.
+            private_input = private_canary.encode()
+            encrypted = encrypt_private_input(private_input, key=key, binding=binding)
+
+            def select(cleartext):
+                self.assertEqual(cleartext, private_input)
+                return SyntheticLesson.CHECK_BINDINGS
+
+            async def submit(token, lesson):
+                self.assertEqual(token, receipt)
+                self.assertIs(lesson, SyntheticLesson.CHECK_BINDINGS)
+                self.assertNotIn(private_canary, repr((token, lesson)))
+                response = await self.invoke(
+                    "submit_community_memory_candidate", self.alpha,
+                    handoff_receipt=token, lesson=lesson,
+                )
+                return response["published"]
+
+            self.assertTrue(await curate_and_submit_locally(
+                encrypted, key=key, binding=binding, receipt=receipt,
+                is_opted_in=lambda: True, select_local=select, submit=submit,
+            ))
+            with self.assertRaises(MCPError):
+                await self.invoke(
+                    "submit_community_memory_candidate", self.alpha,
+                    handoff_receipt=receipt, lesson=SyntheticLesson.VALIDATE_IMPORT,
+                )
+            # Reopen the staged store to establish persistence independent of an MCP context.
+            self.root_state.community_memory = configure_community_runtime(
+                db, "synthetic", permitted,
+            )
+            recalled = await self.invoke(
+                "begin_interaction", self.beta, user_message="How should I check form bindings?",
+            )
+            self.assertEqual(
+                recalled["community_memory"]["lessons"][0]["lesson_id"], "check_bindings",
+            )
+            self.assertNotIn(private_canary, repr(recalled))
+            trace = await self.invoke(
+                "interaction_trace", self.beta, interaction_id=recalled["interaction_trace_id"],
+            )
+            self.assertNotIn("check_bindings", repr(trace))
+            pending = (await self.invoke("run_sleep_cycle", self.alpha))["community_memory"]
+            await self.invoke("set_community_memory_setting", self.alpha, enabled=False)
+            self.assertNotIn("community_memory", await self.invoke("run_sleep_cycle", self.alpha))
+            await self.invoke("set_community_memory_setting", self.alpha, enabled=True)
+            with self.assertRaises(MCPError):
+                await self.invoke(
+                    "submit_community_memory_candidate", self.alpha,
+                    handoff_receipt=pending["handoff_receipt"],
+                    lesson=SyntheticLesson.VALIDATE_IMPORT,
+                )
+            after = await self.invoke(
+                "begin_interaction", self.beta, user_message="How should I check form bindings?",
+            )
+            self.assertNotIn("community_memory", after)
+
+    async def test_layout_of_staged_local_handoff_input(self):
+        tool = self.server._tool_manager.get_tool("submit_community_memory_candidate")
+        self.assertEqual(set(tool.parameters["properties"]), {"handoff_receipt", "lesson"})
+
+    async def test_local_handoff_expiry_and_successful_personal_sleep_required(self):
+        with TemporaryDirectory() as directory:
+            runtime = configure_community_runtime(
+                str(Path(directory) / "community.sqlite3"), "synthetic", self.alpha.mind_id,
+            )
+            self.root_state.community_memory = runtime
+            await self.invoke("set_community_memory_setting", self.alpha, enabled=True)
+            with (
+                patch.object(runtime, "after_personal_sleep", new_callable=AsyncMock) as issue,
+                patch("aicognitive_mind.chatgpt_mcp.SleepConsolidator") as consolidator,
+            ):
+                consolidator.return_value.sleep = AsyncMock(side_effect=RuntimeError("sleep failed"))
+                with self.assertRaisesRegex(RuntimeError, "sleep failed"):
+                    await self.invoke("run_sleep_cycle", self.alpha)
+                issue.assert_not_awaited()
+            with patch("aicognitive_mind.community_memory_runtime._RECEIPT_TTL_SECONDS", 0):
+                receipt = (await self.invoke("run_sleep_cycle", self.alpha))[
+                    "community_memory"
+                ]["handoff_receipt"]
+            with self.assertRaises(MCPError):
+                await self.invoke(
+                    "submit_community_memory_candidate", self.alpha,
+                    handoff_receipt=receipt, lesson=SyntheticLesson.CHECK_BINDINGS,
+                )
 
     async def test_status_begin_complete_use_existing_account_minds_with_empty_root(self):
         for account, marker in ((self.alpha, "Alpha"), (self.beta, "Beta")):

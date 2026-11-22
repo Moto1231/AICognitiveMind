@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextvars import ContextVar
+from dataclasses import replace
 from functools import wraps
 import inspect
 from typing import Any
@@ -11,6 +12,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.shared.exceptions import MCPError
 
 from aicognitive_mind.commit import CommitConflict
+from aicognitive_mind.community_memory import CommunityPrincipal
 from aicognitive_mind.host_runtime import HostRuntime, RuntimeRecords
 from aicognitive_mind.mcp_service import CognitiveMcpService
 from aicognitive_mind.persistence import scope_storage
@@ -65,8 +67,14 @@ async def authorized_account(provider: Any, token: Any) -> Any:
 async def authorized_state(root: Any, provider: Any) -> Any:
     """Select the same verified tenant for tools and raw MCP protocol methods."""
     account = await authorized_account(provider, get_access_token())
+    community = getattr(root, "community_memory", None)
     if account is None or account.mind_id == "__legacy__":
-        return root
+        if community is None:
+            return root
+        account_id = (
+            f"operator:{root.storage.mind_id}" if account is None else f"account:{account.mind_id}"
+        )
+        return replace(root, community_principal=CommunityPrincipal(account_id, root.storage.mind_id))
 
     # Import lazily: the local MCP server also uses request_state for shared
     # task execution, without depending on authenticated HTTP construction.
@@ -94,6 +102,10 @@ async def authorized_state(root: Any, provider: Any) -> Any:
         hosts=HostRuntime(storage.mind, service),
         task_dispatcher=TaskModelDispatcher(RuntimeRecords(storage.mind)),
         tenancy_probe=verification,
+        community_memory=community,
+        community_principal=(
+            CommunityPrincipal(f"account:{account.mind_id}", storage.mind_id) if community else None
+        ),
     )
 
 
