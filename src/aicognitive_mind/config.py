@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     surrealdb_password: str | None = None
     surrealdb_auth_level: str = "database"
 
+    # Staged Community Memory is unavailable until a separate datastore and an
+    # operator-approved group are explicitly configured. Individual opt-in is separate.
+    community_memory_db_path: str | None = None
+    community_memory_group: str = "staging"
+    community_memory_allowed_minds: str = ""
+
     # Axiom's primary reasoning architecture is an external host using MCP.
     # This provider exists only so the Body/API can operate when no external
     # host is actively driving cognition. REASONING_PROVIDER remains a
