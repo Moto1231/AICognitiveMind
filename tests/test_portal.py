@@ -253,7 +253,7 @@ class PortalTests(unittest.TestCase):
         )
         self.assertIn("#startupStatus:empty { display: none; }", stylesheet)
         self.assertIn("/static/portal.css?v=20261028-device-inner-panel", markup)
-        self.assertIn("/static/portal.js?v=20261116-instruction-navigation", markup)
+        self.assertIn("/static/portal.js?v=20261122-admin-keepalive", markup)
 
     def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
