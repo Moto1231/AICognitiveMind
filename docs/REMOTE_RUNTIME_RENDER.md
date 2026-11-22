@@ -74,7 +74,7 @@ Use a unique password. It is a deployment credential, not identity or cognitive 
 Render web services have a public HTTPS hostname, but this application requires HTTP Basic
 authentication whenever `APP_ACCESS_PASSWORD` is configured.
 
-Only `/health` remains unauthenticated so Render can perform service health checks.
+Render uses the unauthenticated `/health` route for service health checks. The unauthenticated `/ping` route returns only an empty, non-cacheable response without querying storage. The portal calls it at ten-minute intervals while authorized Administration is visible.
 
 This protection covers:
 

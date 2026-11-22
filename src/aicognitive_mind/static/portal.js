@@ -375,6 +375,59 @@ function toast(message, error = false) {
   toast.timer = setTimeout(() => el.toast.classList.add("hidden"), 3000);
 }
 
+// Render free web services sleep after 15 minutes without inbound traffic.
+// Keep this tied to foreground Administration, not the whole portal session.
+const ADMIN_KEEPALIVE_INTERVAL_MS = 10 * 60 * 1000;
+let adminKeepaliveTimer = null;
+let adminKeepaliveRequest = null;
+let adminKeepalivePageActive = true;
+
+function adminKeepaliveAllowed() {
+  return adminKeepalivePageActive && !document.hidden && state.mode === "admin" && state.adminAuthorized;
+}
+
+async function pingAdminKeepalive() {
+  if (!adminKeepaliveAllowed() || adminKeepaliveRequest) return;
+  const request = new AbortController();
+  adminKeepaliveRequest = request;
+  const timeout = window.setTimeout(() => request.abort(), 15_000);
+  try {
+    await fetch("/ping", {
+      cache: "no-store",
+      credentials: "omit",
+      signal: request.signal,
+    });
+  } catch (_) {
+    // A transient failure should not interrupt Administration.
+  } finally {
+    window.clearTimeout(timeout);
+    if (adminKeepaliveRequest === request) adminKeepaliveRequest = null;
+  }
+}
+
+function syncAdminKeepalive(resume = false) {
+  if (!adminKeepaliveAllowed()) {
+    if (adminKeepaliveTimer !== null) window.clearInterval(adminKeepaliveTimer);
+    adminKeepaliveTimer = null;
+    adminKeepaliveRequest?.abort();
+    adminKeepaliveRequest = null;
+    return;
+  }
+  if (adminKeepaliveTimer !== null) return;
+  adminKeepaliveTimer = window.setInterval(pingAdminKeepalive, ADMIN_KEEPALIVE_INTERVAL_MS);
+  if (resume) void pingAdminKeepalive();
+}
+
+document.addEventListener("visibilitychange", () => syncAdminKeepalive(true));
+window.addEventListener("pagehide", () => {
+  adminKeepalivePageActive = false;
+  syncAdminKeepalive();
+});
+window.addEventListener("pageshow", () => {
+  adminKeepalivePageActive = true;
+  syncAdminKeepalive(true);
+});
+
 function setMode(mode) {
   if (mode === "mind" && typeof discardDeviceSelectionChanges === "function") discardDeviceSelectionChanges();
   if (mode === "mind" && state.activeTaskProfile) closeTaskProfile();
@@ -384,6 +437,7 @@ function setMode(mode) {
   el.adminView.classList.toggle("hidden", !admin);
   el.mindTab.classList.toggle("active", !admin);
   el.adminTab.classList.toggle("active", admin);
+  syncAdminKeepalive();
 }
 
 async function validateAdmin() {
@@ -403,6 +457,7 @@ async function validateAdmin() {
     return true;
   } catch (error) {
     state.adminAuthorized = false;
+    syncAdminKeepalive();
     if (error.status === 401) {
       sessionStorage.removeItem("acm_admin_pin");
       state.adminPin = "";
@@ -2503,6 +2558,9 @@ function clearFilters(config) {
 }
 
 async function logout() {
+  adminKeepalivePageActive = false;
+  state.adminAuthorized = false;
+  syncAdminKeepalive();
   try {
     await api("/v1/portal/logout", { method: "POST" });
   } catch (_) {

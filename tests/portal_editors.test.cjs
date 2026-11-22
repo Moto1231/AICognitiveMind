@@ -2173,6 +2173,7 @@ function currentStatePortal({ diagnosticsHandler, bodySettings = true, fallbackS
       throw new Error('Unexpected API request: ' + url);
     },
   });
+  context.syncAdminKeepalive = () => {};
   vm.runInContext(source.match(/^let diagnosticsRevision = .*;$/m)[0], context);
   for (const name of ['setMode', 'bodySettingsAvailable', 'bodyFallbackSettingsAvailable', 'renderBodySettingsAvailability', 'updateVoiceSliderReadouts',
     'normalizeVoiceSettings', 'readVoiceSettingsForm', 'applyVoiceSettingsForm', 'voiceSettingsDirty',
