@@ -36,6 +36,7 @@ const state = {
   taskFoundationDraft: null,
   taskFoundationSaving: false,
   taskModelAssignments: [],
+  savedTaskBehaviorIds: null,
   taskBehaviors: [],
   taskFoundations: {},
   providerEndpoints: [],
@@ -217,6 +218,8 @@ const el = {
   taskProfileList: document.getElementById("taskProfileList"),
   taskProfileEditor: document.getElementById("taskProfileEditor"),
   taskProfileTitle: document.getElementById("taskProfileTitle"),
+  taskProfileFoundationSummary: document.getElementById("taskProfileFoundationSummary"),
+  taskProfileBehaviorsSummary: document.getElementById("taskProfileBehaviorsSummary"),
   taskProfileBack: document.getElementById("taskProfileBack"),
   taskProfileEndpointSection: document.getElementById("taskProfileEndpointSection"),
   taskProfileEndpointSelect: document.getElementById("taskProfileEndpointSelect"),
@@ -628,6 +631,7 @@ async function refreshHostBehaviors() {
   state.hostBehaviorRevision = payload.revision;
   state.hostBehaviorSnapshot = JSON.stringify(state.hostBehaviors);
   renderHostBehaviors();
+  renderTaskInstructionSummary();
 }
 
 function editHostBehaviors() {
@@ -708,6 +712,7 @@ function allTaskNames() {
 }
 
 function renderTaskProfiles() {
+  renderTaskInstructionSummary();
   if (!el.taskProfileList) return;
   el.taskProfileList.replaceChildren();
   const tasks = allTaskNames();
@@ -1163,6 +1168,29 @@ function cancelEndpointEdit() {
   loadEndpointIntoForm();
 }
 
+function renderTaskInstructionSummary() {
+  const task = state.activeTaskProfile;
+  if (!task || !el.taskProfileFoundationSummary || !el.taskProfileBehaviorsSummary) return;
+  const foundation = state.taskFoundations[task]?.trim() || "";
+  el.taskProfileFoundationSummary.textContent = foundation
+    ? foundation.length > 320 ? foundation.slice(0, 320).trimEnd() + "…" : foundation
+    : "No foundation loaded for this task.";
+  if (!Number.isInteger(state.hostBehaviorRevision)) {
+    el.taskProfileBehaviorsSummary.textContent = "Behavior configuration has not loaded.";
+    return;
+  }
+  const assignment = state.savedTaskBehaviorIds
+    ? { behavior_ids: state.savedTaskBehaviorIds[task] ?? null }
+    : state.taskProfileSnapshot ? JSON.parse(state.taskProfileSnapshot)
+      : state.taskModelAssignments.find(item => item.task === task);
+  const selected = new Set(selectedTaskBehaviorIds(task, assignment));
+  const names = taskBehaviorCatalog().filter(item => item.enabled !== false && selected.has(item.id))
+    .map(item => item.name || item.id);
+  el.taskProfileBehaviorsSummary.textContent = names.length
+    ? names.slice(0, 8).join(", ") + (names.length > 8 ? ` and ${names.length - 8} more` : "")
+    : "No enabled behaviors selected.";
+}
+
 function openTaskProfile(task) {
   if (state.taskFoundationSaving || (state.taskProfileSaving && task !== state.activeTaskProfile)) return;
   if (state.taskFoundationDraft?.task !== task) cancelTaskFoundationEdit();
@@ -1198,6 +1226,7 @@ function openTaskProfile(task) {
   renderTaskBehaviorSelection();
   renderFallbackSelectors();
   state.taskProfileSnapshot = taskProfileConfiguration();
+  renderTaskInstructionSummary();
   updateTaskSaveState();
   el.taskProfileOverview.classList.add("hidden");
   el.taskProfileList.classList.add("hidden");
@@ -1239,9 +1268,16 @@ async function refreshProviderEndpoints() {
   renderTaskProfiles();
 }
 
+function applySavedTaskModelAssignments(items) {
+  state.taskModelAssignments = items || [];
+  state.savedTaskBehaviorIds = Object.fromEntries(state.taskModelAssignments.map(item => [
+    item.task, Array.isArray(item.behavior_ids) ? [...item.behavior_ids] : null,
+  ]));
+}
+
 async function refreshTaskModelAssignments() {
   const payload = await api("/v1/admin/task-model-assignments", {}, true);
-  state.taskModelAssignments = payload.items || [];
+  applySavedTaskModelAssignments(payload.items);
   renderTaskProfiles();
 }
 
@@ -1281,7 +1317,7 @@ async function saveProviderEndpoints() {
     const assignments = await api("/v1/admin/task-model-assignments", {
       method: "PUT", body: JSON.stringify({ items: state.taskModelAssignments }),
     }, true);
-    state.taskModelAssignments = assignments.items || [];
+    applySavedTaskModelAssignments(assignments.items);
     state.endpointDraft = null;
     state.endpointEditBaseline = "";
     renderTaskProfileEndpointOptions();
@@ -1316,7 +1352,7 @@ async function removeEndpoint() {
     const assignments = await api("/v1/admin/task-model-assignments", {
       method: "PUT", body: JSON.stringify({ items }),
     }, true);
-    state.taskModelAssignments = assignments.items || [];
+    applySavedTaskModelAssignments(assignments.items);
     state.activeEndpointId = state.providerEndpoints[0]?.id || null;
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
@@ -1355,7 +1391,7 @@ async function saveTaskProfile() {
     const payload = await api("/v1/admin/task-model-assignments", {
       method: "PUT", body: JSON.stringify({ items: state.taskModelAssignments }),
     }, true);
-    state.taskModelAssignments = payload.items || [];
+    applySavedTaskModelAssignments(payload.items);
     toast(`Saved ${taskModelLabels[task] || displayLabel(task)} task profile`);
     renderTaskProfiles();
     openTaskProfile(task);

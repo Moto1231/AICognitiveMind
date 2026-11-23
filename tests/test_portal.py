@@ -63,6 +63,23 @@ class PortalPageMap(HTMLParser):
 
 
 class PortalTests(unittest.TestCase):
+    def test_administration_menu_order_and_copy(self) -> None:
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Identity and durable memory belong to the Mind.", markup)
+        self.assertNotIn("Reasoning is supplied by the connected MCP host.", markup)
+        nav = markup.split('aria-label="Administration sections">', 1)[1].split("</nav>", 1)[0]
+        pages = PortalPageMap(nav)
+        self.assertEqual(
+            [(key, item["text"].strip()) for key, item in pages.navigation.items()],
+            [("overview", "Overview"), ("instructions", "Instructions"), ("breaker", "Breaker"),
+             ("tools", "Tools"), ("mcp", "Endpoints"), ("tasks", "Tasks"), ("devices", "Devices"),
+             ("memories", "Memories"), ("journals", "Journals"), ("voice", "Speech Settings")],
+        )
+        self.assertIn("secondary-button", pages.elements["adminSpeechSettingsButton"][1]["class"])
+        self.assertTrue(nav.rstrip().endswith('title="Refresh">Refresh</button>'))
+        instructions = markup.split('id="instructionsSection"', 1)[1].split("</article>", 1)[0]
+        self.assertNotIn("Keep foundations, behaviors, and skills separate", instructions)
+
     def test_instructions_centralizes_editors_without_duplicates(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         pages = PortalPageMap(markup)
@@ -75,6 +92,10 @@ class PortalTests(unittest.TestCase):
         for element in ("taskProviderSelect", "saveTaskEndpoints", "taskProfileFoundationsLink",
                         "taskProfileBehaviorsLink"):
             self.assertEqual(pages.elements[element][2], "tasksSection")
+        for element in ("taskProfileFoundationSummary", "taskProfileBehaviorsSummary"):
+            self.assertEqual(pages.elements[element][0], "p")
+            self.assertEqual(pages.elements[element][2], "tasksSection")
+        self.assertEqual(pages.elements["taskProfileSkillsLink"][2], "tasksSection")
         self.assertEqual(pages.elements["skillsContent"][2], "skillsSection")
         controls = pages.page_controls["instructionsSection"]
         self.assertEqual({attrs["data-admin-section"] for _, attrs in controls
@@ -150,14 +171,16 @@ class PortalTests(unittest.TestCase):
         self.assertNotIn("const light =", button_icons)
 
     def test_tools_are_reachable_on_their_own_page_and_connection_controls_stay_separate(self) -> None:
-        pages = PortalPageMap((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+        markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        pages = PortalPageMap(markup)
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
 
         self.assertFalse(pages.duplicate_ids, f"Duplicate DOM controls: {pages.duplicate_ids}")
         self.assertEqual(pages.navigation["tools"]["text"].strip(), "Tools")
         self.assertEqual(pages.navigation["tools"]["attributes"]["type"], "button")
-        self.assertIn("Endpoints", pages.navigation["mcp"]["text"])
-        self.assertIn("MCP", pages.navigation["mcp"]["text"])
+        self.assertEqual(pages.navigation["mcp"]["text"].strip(), "Endpoints")
+        mcp_markup = markup.split('id="mcpSection"', 1)[1].split("</article>", 1)[0]
+        self.assertIn("Endpoints &amp; MCP Servers", mcp_markup)
         self.assertNotIn("Tools", pages.navigation["mcp"]["text"])
         self.assertRegex(script, r'\btools:\s*"toolsSection"')
 
@@ -252,8 +275,8 @@ class PortalTests(unittest.TestCase):
             "#foundationsSection .edit-actions button.axiom-icon-button,", stylesheet
         )
         self.assertIn("#startupStatus:empty { display: none; }", stylesheet)
-        self.assertIn("/static/portal.css?v=20261028-device-inner-panel", markup)
-        self.assertIn("/static/portal.js?v=20261122-admin-keepalive", markup)
+        self.assertIn("/static/portal.css?v=20261123-admin-menu", markup)
+        self.assertIn("/static/portal.js?v=20261123-admin-menu", markup)
 
     def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
@@ -261,7 +284,7 @@ class PortalTests(unittest.TestCase):
         stylesheet = (STATIC_DIR / "portal.css").read_text(encoding="utf-8")
         script = (STATIC_DIR / "portal.js").read_text(encoding="utf-8")
 
-        self.assertEqual(pages.navigation["breaker"]["text"].strip(), "The Breaker")
+        self.assertEqual(pages.navigation["breaker"]["text"].strip(), "Breaker")
         self.assertRegex(script, r'\bbreaker:\s*"breakerSection"')
         field_ids = (
             "breakerConsecutiveLimit", "breakerRollingLimit", "breakerRollingWindow",
