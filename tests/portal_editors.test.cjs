@@ -22,7 +22,7 @@ const editorFunctions = [
   'allTaskNames', 'renderTaskProfiles', 'taskProviderEndpoint', 'taskEndpointOptions', 'selectedTaskBehaviorIds',
   'taskBehaviorCatalog', 'taskSelectionDirty', 'activeProfileRecords',
   'taskProfileConfiguration', 'updateTaskSaveState', 'renderTaskBehaviorSelection',
-  'syncTaskProviderRotation',
+  'syncTaskProviderRotation', 'renderTaskInstructionSummary', 'applySavedTaskModelAssignments',
   'renderFallbackSelectors', 'selectTaskFallback', 'addTaskFallback', 'removeTaskFallback',
   'moveTaskFallback', 'changeTaskFallbackEndpoint', 'openTaskProfile', 'closeTaskProfile', 'discardTaskProfileChanges',
   'saveTaskProfile',
@@ -143,6 +143,43 @@ function editor({ apiHandler } = {}) {
   context.renderMcpTools();
   return { ...context, vmContext: context, calls, toasts, sections, navigation };
 }
+
+test('task instruction summaries follow the selected task and show only saved plain text', () => {
+  const ui = editor();
+  const markupLikeText = '<img src=x onerror=alert(1)> Vision foundation';
+  ui.state.taskFoundations = { vision: markupLikeText, reasoning: 'Reasoning foundation' };
+  ui.state.hostBehaviors = [
+    { id: 'vision-saved', name: '<b>Saved vision behavior</b>', enabled: true },
+    { id: 'disabled', name: 'Disabled behavior', enabled: false },
+    { id: 'reasoning-saved', name: 'Saved reasoning behavior', enabled: true },
+  ];
+  ui.state.taskModelAssignments[0].behavior_ids = ['vision-saved', 'disabled'];
+  ui.state.taskModelAssignments.push({ task: 'reasoning', behavior_ids: ['reasoning-saved'] });
+  ui.openTaskProfile('vision');
+  assert.equal(ui.el.taskProfileFoundationSummary.textContent, markupLikeText);
+  assert.equal(ui.el.taskProfileFoundationSummary.innerHTML, undefined);
+  assert.equal(ui.el.taskProfileBehaviorsSummary.textContent, '<b>Saved vision behavior</b>');
+  ui.state.taskModelAssignments[0].behavior_ids = ['reasoning-saved'];
+  ui.renderTaskInstructionSummary();
+  assert.equal(ui.el.taskProfileBehaviorsSummary.textContent, '<b>Saved vision behavior</b>');
+  ui.openTaskProfile('reasoning');
+  assert.equal(ui.el.taskProfileFoundationSummary.textContent, 'Reasoning foundation');
+  assert.equal(ui.el.taskProfileBehaviorsSummary.textContent, 'Saved reasoning behavior');
+  ui.applySavedTaskModelAssignments([{ task: 'reasoning', behavior_ids: [] }]);
+  ui.renderTaskProfiles();
+  assert.equal(ui.el.taskProfileBehaviorsSummary.textContent, 'No enabled behaviors selected.');
+  assert.equal(ui.calls.length, 0);
+});
+
+test('task instruction summary distinguishes a loaded blank foundation from an unloaded foundation', () => {
+  const ui = editor();
+  ui.openTaskProfile('vision');
+  assert.equal(ui.el.taskProfileFoundationSummary.textContent, 'Task foundation has not loaded.');
+  ui.state.taskFoundations = { vision: '' };
+  ui.renderTaskInstructionSummary();
+  assert.equal(ui.el.taskProfileFoundationSummary.textContent, 'No foundation set for this task.');
+  assert.equal(ui.calls.length, 0);
+});
 
 test('missing capability details stay explicitly unverified without losing a saved model selection', () => {
   const ui = editor();

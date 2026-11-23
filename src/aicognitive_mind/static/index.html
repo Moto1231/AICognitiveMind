@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261028-device-inner-panel">
+  <link rel="stylesheet" href="/static/portal.css?v=20261123-admin-menu">
   <script src="/static/button_icons.js?v=20261029-breaker-reset" defer></script>
   <script src="/static/local_clock.js?v=20261028-local-clock" defer></script>
 </head>
@@ -67,7 +67,7 @@
             <p class="eyebrow">PERSISTENT MIND</p>
             <h2 id="mindName">Loading…</h2>
             <p class="hero-copy">
-              Identity and durable memory belong to the Mind. Reasoning is supplied by the connected MCP host.
+              Identity and durable memory belong to the Mind.
             </p>
           </div>
           <div class="hero-status">
@@ -221,23 +221,22 @@
         </svg>
 
         <nav class="admin-section-nav" aria-label="Administration sections">
+          <button class="admin-section-button active" type="button" data-admin-section="overview"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-overview"/></svg></span><span>Overview</span></button>
           <button class="admin-section-button" type="button" data-admin-section="instructions"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Instructions</span></button>
-          <button class="admin-section-button active" type="button" data-admin-section="overview"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-overview"/></svg></span><span>System Overview</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="breaker"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-breaker"/></svg></span><span>The Breaker</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-devices"/></svg></span><span>Devices</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-voice"/></svg></span><span>Speech Settings</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tasks"/></svg></span><span>Task Profiles</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-mcp"/></svg></span><span>Endpoints &amp; MCP Servers</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="breaker"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-breaker"/></svg></span><span>Breaker</span></button>
           <button class="admin-section-button" type="button" data-admin-section="tools"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tools"/></svg></span><span>Tools</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-mcp"/></svg></span><span>Endpoints</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tasks"/></svg></span><span>Tasks</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-devices"/></svg></span><span>Devices</span></button>
           <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-memories"/></svg></span><span>Memories</span></button>
           <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-journals"/></svg></span><span>Journals</span></button>
+          <button id="adminSpeechSettingsButton" class="secondary-button admin-section-button" type="button" data-admin-section="voice"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-voice"/></svg></span><span>Speech Settings</span></button>
           <button id="adminRefreshButton" class="secondary-button" type="button" aria-label="Refresh" title="Refresh">Refresh</button>
         </nav>
 
         <div class="admin-grid">
           <article id="instructionsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">INSTRUCTION SETTINGS</p><h3>Instructions</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
-            <p>Keep foundations, behaviors, and skills separate while managing them in one place.</p>
             <nav class="admin-section-nav" aria-label="Instruction sections">
           <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Foundations</span></button>
           <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><span>Behaviors</span></button>
@@ -406,10 +405,21 @@
               </section>
               <section class="task-profile-section" aria-label="Applicable instructions">
                 <h4>Instructions</h4>
-                <p>Edit this task’s instructions in their central settings.</p>
-                <button id="taskProfileFoundationsLink" type="button" class="secondary-button">Task foundation</button>
-                <button id="taskProfileBehaviorsLink" type="button" class="secondary-button">Task behaviors</button>
-                <button id="taskProfileSkillsLink" type="button" class="secondary-button">Skills library</button>
+                <div class="task-instruction-summary">
+                  <h5>Foundation</h5>
+                  <p id="taskProfileFoundationSummary"></p>
+                  <button id="taskProfileFoundationsLink" type="button" class="secondary-button">Task foundation</button>
+                </div>
+                <div class="task-instruction-summary">
+                  <h5>Behaviors</h5>
+                  <p id="taskProfileBehaviorsSummary"></p>
+                  <button id="taskProfileBehaviorsLink" type="button" class="secondary-button">Task behaviors</button>
+                </div>
+                <div class="task-instruction-summary">
+                  <h5>Skills</h5>
+                  <p>Skills are managed for the Mind, not assigned here per task.</p>
+                  <button id="taskProfileSkillsLink" type="button" class="secondary-button">Skills library</button>
+                </div>
               </section>
             </section>
           </article>
@@ -885,6 +895,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261122-admin-keepalive"></script>
+  <script src="/static/portal.js?v=20261123-admin-menu"></script>
 </body>
 </html>
