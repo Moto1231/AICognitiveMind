@@ -171,6 +171,16 @@ test('task instruction summaries follow the selected task and show only saved pl
   assert.equal(ui.calls.length, 0);
 });
 
+test('task instruction summary distinguishes a loaded blank foundation from an unloaded foundation', () => {
+  const ui = editor();
+  ui.openTaskProfile('vision');
+  assert.equal(ui.el.taskProfileFoundationSummary.textContent, 'Task foundation has not loaded.');
+  ui.state.taskFoundations = { vision: '' };
+  ui.renderTaskInstructionSummary();
+  assert.equal(ui.el.taskProfileFoundationSummary.textContent, 'No foundation set for this task.');
+  assert.equal(ui.calls.length, 0);
+});
+
 test('missing capability details stay explicitly unverified without losing a saved model selection', () => {
   const ui = editor();
   const endpoint = ui.state.providerEndpoints[0];

@@ -1171,10 +1171,11 @@ function cancelEndpointEdit() {
 function renderTaskInstructionSummary() {
   const task = state.activeTaskProfile;
   if (!task || !el.taskProfileFoundationSummary || !el.taskProfileBehaviorsSummary) return;
-  const foundation = state.taskFoundations[task]?.trim() || "";
+  const foundationLoaded = Object.hasOwn(state.taskFoundations, task);
+  const foundation = foundationLoaded ? state.taskFoundations[task]?.trim() || "" : "";
   el.taskProfileFoundationSummary.textContent = foundation
     ? foundation.length > 320 ? foundation.slice(0, 320).trimEnd() + "…" : foundation
-    : "No foundation loaded for this task.";
+    : foundationLoaded ? "No foundation set for this task." : "Task foundation has not loaded.";
   if (!Number.isInteger(state.hostBehaviorRevision)) {
     el.taskProfileBehaviorsSummary.textContent = "Behavior configuration has not loaded.";
     return;
