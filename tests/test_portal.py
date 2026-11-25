@@ -275,8 +275,9 @@ class PortalTests(unittest.TestCase):
             "#foundationsSection .edit-actions button.axiom-icon-button,", stylesheet
         )
         self.assertIn("#startupStatus:empty { display: none; }", stylesheet)
-        self.assertIn("/static/portal.css?v=20261125-endpoint-errors", markup)
-        self.assertIn("/static/portal.js?v=20261125-endpoint-errors", markup)
+        self.assertRegex(markup, r'id="dismissEndpointError"[^>]*>Close</button>')
+        self.assertIn("/static/portal.css?v=20261125-endpoint-error-polish", markup)
+        self.assertIn("/static/portal.js?v=20261125-endpoint-error-polish", markup)
 
     def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")

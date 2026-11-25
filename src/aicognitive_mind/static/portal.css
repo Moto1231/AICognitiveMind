@@ -255,9 +255,10 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   background: rgba(255,255,255,.04); color: var(--text); outline: none;
 }
 .setup-card .primary-button { margin-top: 16px; }
+.toast, .endpoint-error { font-size: 11px; }
 .toast {
   position: fixed; right: 22px; bottom: 22px; z-index: 120; max-width: 420px;
-  padding: 12px 15px; border: 1px solid var(--border); border-radius: 12px; background: #132139; box-shadow: var(--shadow); font-size: 11px;
+  padding: 12px 15px; border: 1px solid var(--border); border-radius: 12px; background: #132139; box-shadow: var(--shadow);
 }
 .toast.error { color: #ffd1d1; border-color: rgba(255,154,154,.35); }
 @media (max-width: 860px) {
