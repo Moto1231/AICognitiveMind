@@ -58,6 +58,72 @@ class ProviderProbeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("secret-test-key", json.dumps(result))
         self.assertEqual(client.post.await_count, 1)
 
+    async def test_actual_admin_probe_route_shows_only_safe_upstream_diagnostics(self):
+        cases = (
+            (400, "https://api.openai.com/v1", {
+                "message": "Unsupported parameter. Private fixture secret-test-key",
+                "type": "invalid_request_error",
+                "code": "unsupported_parameter",
+                "param": "max_tokens",
+            }, ("rejected the probe request", "unsupported_parameter", "max_tokens")),
+            (400, "https://generativelanguage.googleapis.com/v1beta/openai", {
+                "status": "INVALID_ARGUMENT",
+                "code": 400,
+                "message": "Request contains invalid argument. Private fixture secret-test-key",
+                "details": [{"field": "tools", "value": "private-fixture-detail"}],
+                "param": "private-fixture-param",
+            }, ("rejected the probe request", "INVALID_ARGUMENT")),
+            (429, "https://generativelanguage.googleapis.com/v1beta/openai", {
+                "status": "RESOURCE_EXHAUSTED",
+                "code": "private-fixture-code",
+                "message": "Private fixture secret-test-key",
+            }, ("rate or quota limit", "RESOURCE_EXHAUSTED")),
+            (401, "https://api.openai.com/v1", {
+                "code": "invalid_api_key", "message": "Private fixture secret-test-key",
+            }, ("did not authenticate", "invalid_api_key")),
+            (403, "https://api.openai.com/v1", {
+                "code": [], "param": {"secret": "private-fixture-param"},
+            }, ("denied access",)),
+            (503, "https://api.openai.com/v1", None, ("reported a server error",)),
+        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=api.app), base_url="http://test"
+        ) as browser:
+            for status, base_url, error, expected in cases:
+                with self.subTest(status=status, base_url=base_url):
+                    provider = AsyncMock()
+                    request = httpx.Request("POST", base_url, headers={
+                        "Authorization": "Bearer secret-test-key",
+                    })
+                    if error is None:
+                        provider.post.return_value = httpx.Response(
+                            status, request=request, text="Private fixture secret-test-key"
+                        )
+                    else:
+                        provider.post.return_value = httpx.Response(
+                            status, request=request, json={"error": error}
+                        )
+                    with patch.object(api, "require_admin") as auth, patch(
+                        "aicognitive_mind.provider_probe.httpx.AsyncClient"
+                    ) as provider_factory:
+                        provider_factory.return_value.__aenter__.return_value = provider
+                        response = await browser.post(
+                            "/v1/admin/provider-endpoints/probe",
+                            json=self.endpoint().model_copy(
+                                update={"base_url": base_url}
+                            ).model_dump(mode="json"),
+                        )
+                    self.assertEqual(response.status_code, 200)
+                    result = response.json()
+                    self.assertIs(result["tool_calling_verified"], False)
+                    self.assertIn(f"Recall check returned HTTP {status}", result["message"])
+                    for token in expected:
+                        self.assertIn(token, result["message"])
+                    for forbidden in ("secret-test-key", "Private fixture", "private-fixture"):
+                        self.assertNotIn(forbidden, response.text)
+                    auth.assert_called_once()
+                    provider.post.assert_awaited_once()
+
     async def test_missing_credentials_or_model_does_not_make_request(self):
         client = AsyncMock()
         for change in ({"api_key": ""}, {"model": ""}):
