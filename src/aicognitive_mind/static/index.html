@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261123-admin-menu">
+  <link rel="stylesheet" href="/static/portal.css?v=20261125-endpoint-errors">
   <script src="/static/button_icons.js?v=20261029-breaker-reset" defer></script>
   <script src="/static/local_clock.js?v=20261028-local-clock" defer></script>
 </head>
@@ -471,6 +471,10 @@
               </div>
               <section class="integration-subsection model-catalog" aria-labelledby="endpointModelsHeading">
                 <div class="panel-heading"><h5 id="endpointModelsHeading">Models</h5><button id="taskProfileDiscover" class="secondary-button" type="button" disabled>Discover Models</button><button id="endpointProbeButton" class="secondary-button" type="button" aria-label="Test tool calling" title="Test tool calling" disabled>Test tool calling</button></div>
+                <div id="endpointError" class="endpoint-error hidden">
+                  <p id="endpointErrorMessage" role="alert"></p>
+                  <button id="dismissEndpointError" class="secondary-button" type="button" aria-label="Dismiss endpoint error">Dismiss</button>
+                </div>
                 <div class="task-model-fields">
                   <label class="host-behavior-field">Discovered Model
                     <select id="endpointModelSelect" disabled><option value="">Choose a discovered model</option></select>
@@ -895,6 +899,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261123-admin-menu"></script>
+  <script src="/static/portal.js?v=20261125-endpoint-errors"></script>
 </body>
 </html>
