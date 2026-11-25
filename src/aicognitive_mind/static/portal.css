@@ -1009,6 +1009,12 @@ select optgroup {
 .integration-subsection { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .integration-subsection h5 { margin-bottom: 0; font-size: 13px; }
 .integration-subsection .panel-heading { align-items: center; }
+.endpoint-error {
+  display: flex; flex-wrap: wrap; align-items: start; gap: 8px 12px;
+  margin: 10px 0; padding: 10px 12px; border: 1px solid rgba(255,154,154,.35);
+  border-radius: 10px; color: #ffd1d1; background: #33212e;
+}
+.endpoint-error p { flex: 1 1 220px; margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
 .integration-editor :is(.primary-button, .secondary-button) {
   width: auto;

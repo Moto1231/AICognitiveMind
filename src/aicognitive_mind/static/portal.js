@@ -53,6 +53,7 @@ const state = {
   endpointDiscovering: false,
   endpointProbing: false,
   endpointProbe: null,
+  endpointErrorOperation: "",
   providerSetupDraft: null,
   mcpServerDraft: null,
   mcpEditBaseline: "",
@@ -245,6 +246,9 @@ const el = {
   taskProfileApiKey: document.getElementById("taskProfileApiKey"),
   taskProfileDiscover: document.getElementById("taskProfileDiscover"),
   endpointProbeButton: document.getElementById("endpointProbeButton"),
+  endpointError: document.getElementById("endpointError"),
+  endpointErrorMessage: document.getElementById("endpointErrorMessage"),
+  dismissEndpointError: document.getElementById("dismissEndpointError"),
   taskProfileAssignmentSection: document.getElementById("taskProfileAssignmentSection"),
   taskProfileModel: document.getElementById("taskProfileModel"),
   taskProfileModels: document.getElementById("taskProfileModels"),
@@ -1065,6 +1069,19 @@ function toggleEndpointApiKeyVisibility() {
     : "Visually hidden. Use Show API key to read the value.";
 }
 
+function showEndpointError(operation, message) {
+  state.endpointErrorOperation = operation;
+  el.endpointError.classList.remove("hidden");
+  el.endpointErrorMessage.textContent = message;
+}
+
+function clearEndpointError(operation) {
+  if (operation && state.endpointErrorOperation !== operation) return;
+  state.endpointErrorOperation = "";
+  el.endpointError.classList.add("hidden");
+  el.endpointErrorMessage.textContent = "";
+}
+
 function renderEndpointModelStatus(endpoint) {
   el.endpointModelStatus.replaceChildren();
   if (!endpoint) {
@@ -1082,7 +1099,9 @@ function renderEndpointModelStatus(endpoint) {
   if (!model) el.endpointModelStatus.append(document.createTextNode(" · Needs model selection"));
   const probe = state.endpointProbe;
   if (probe?.endpointId === endpoint.id && probe.model === model && probe.baseUrl === endpoint.base_url) {
-    el.endpointModelStatus.append(document.createTextNode(" · " + probe.message));
+    el.endpointModelStatus.append(document.createTextNode(" · " + (
+      probe.verified ? probe.message : "Tool calling was not verified"
+    )));
   } else {
     el.endpointModelStatus.append(document.createTextNode(" · Tool calling has not been tested"));
   }
@@ -1324,8 +1343,9 @@ async function saveProviderEndpoints() {
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
     renderTaskProfiles();
+    clearEndpointError("save");
     toast("Saved endpoint and model");
-  } catch (error) { toast(error.status === 409 ? "Connections changed. Your draft is preserved. Cancel, refresh and review the latest connections before editing again." : error.message, true); }
+  } catch (error) { showEndpointError("save", error.status === 409 ? "Connections changed. Your draft is preserved. Cancel, refresh and review the latest connections before editing again." : error.message); }
   finally {
     state.integrationSaving = false;
     updateEndpointEditorState();
@@ -1358,8 +1378,9 @@ async function removeEndpoint() {
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
     renderTaskProfiles();
+    clearEndpointError("remove");
     toast("Removed endpoint");
-  } catch (error) { toast(error.status === 409 ? "Connections changed. Refresh and review the latest connections before removing an endpoint." : error.message, true); }
+  } catch (error) { showEndpointError("remove", error.status === 409 ? "Connections changed. Refresh and review the latest connections before removing an endpoint." : error.message); }
   finally {
     state.integrationSaving = false;
     updateEndpointEditorState();
@@ -1406,7 +1427,7 @@ async function discoverTaskProfileModels() {
   syncEndpointDraft();
   const endpoint = state.endpointDraft;
   if (!endpoint || !/^https?:\/\/\S+$/i.test(endpoint.base_url || "")) {
-    toast("Enter a valid endpoint Base URL before discovering models", true);
+    showEndpointError("discover", "Enter a valid endpoint Base URL before discovering models");
     return;
   }
   state.endpointDiscovering = true;
@@ -1424,9 +1445,10 @@ async function discoverTaskProfileModels() {
     if (!endpoint.model && endpoint.models.length === 1) endpoint.model = endpoint.models[0];
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
+    clearEndpointError("discover");
     toast(`Discovered ${endpoint.models.length} model(s)`);
   } catch (error) {
-    toast(error.message, true);
+    showEndpointError("discover", error.message);
   }
   finally {
     state.endpointDiscovering = false;
@@ -1440,7 +1462,7 @@ async function probeEndpointToolCalling() {
   if (state.endpointDraft) syncEndpointDraft();
   const endpoint = state.endpointDraft || selectedEndpoint();
   if (!endpoint?.model || !/^https?:\/\/\S+$/i.test(endpoint?.base_url || "")) {
-    toast("Choose a provider and model before testing tool calling", true);
+    showEndpointError("probe", "Choose a provider and model before testing tool calling");
     return;
   }
   const requestBody = JSON.stringify(endpoint);
@@ -1455,13 +1477,19 @@ async function probeEndpointToolCalling() {
     if (!isCurrent()) return;
     state.endpointProbe = {
       endpointId: endpoint.id, model: endpoint.model, baseUrl: endpoint.base_url,
+      verified: result.tool_calling_verified,
       message: result.tool_calling_verified ? "Tool calling verified in current test" : (result.message || "Tool calling test failed"),
     };
-    toast(state.endpointProbe.message, !result.tool_calling_verified);
+    if (state.endpointProbe.verified) {
+      clearEndpointError("probe");
+      toast(state.endpointProbe.message);
+    } else {
+      showEndpointError("probe", state.endpointProbe.message);
+    }
   } catch (error) {
     if (!isCurrent()) return;
-    state.endpointProbe = { endpointId: endpoint.id, model: endpoint.model, baseUrl: endpoint.base_url, message: "Tool calling test failed: " + error.message };
-    toast(error.message, true);
+    state.endpointProbe = { endpointId: endpoint.id, model: endpoint.model, baseUrl: endpoint.base_url, verified: false, message: "Tool calling test failed: " + error.message };
+    showEndpointError("probe", state.endpointProbe.message);
   } finally {
     state.endpointProbing = false;
     renderEndpointModelStatus(state.endpointDraft || selectedEndpoint());
@@ -1540,9 +1568,10 @@ async function saveProviderConnections() {
     renderTaskProfileEndpointOptions();
     loadEndpointIntoForm();
     renderTaskProfiles();
+    clearEndpointError("setup");
     toast(`Saved ${additions.length} new connection profile(s). Add keys, choose models and test tool calling before assigning tasks.`);
   } catch (error) {
-    toast(error.message, true);
+    showEndpointError("setup", error.message);
   } finally {
     state.integrationSaving = false;
     updateEndpointEditorState();
@@ -1553,7 +1582,7 @@ async function saveProviderConnections() {
 function addTaskProfileEndpointFromPreset(presetId) {
   const preset = COMMON_ENDPOINT_PRESETS.find(item => item.id === presetId);
   if (!preset) {
-    toast("Choose an endpoint preset first", true);
+    showEndpointError("setup", "Choose an endpoint preset first");
     return;
   }
   state.providerEndpointLoadRevision = (state.providerEndpointLoadRevision || 0) + 1;
@@ -3543,6 +3572,17 @@ el.taskProviderSelect.addEventListener("change", () => {
 });
 if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener("click", discoverTaskProfileModels);
 if (el.endpointProbeButton) el.endpointProbeButton.addEventListener("click", probeEndpointToolCalling);
+if (el.dismissEndpointError) el.dismissEndpointError.addEventListener("click", () => {
+  const returnFocus = {
+    probe: el.endpointProbeButton,
+    discover: el.taskProfileDiscover,
+    save: el.saveProviderEndpoints,
+    remove: el.endpointRemoveButton,
+    setup: el.prepareProviderConnections,
+  }[state.endpointErrorOperation];
+  clearEndpointError();
+  (returnFocus && !returnFocus.disabled ? returnFocus : el.taskProfileEndpointSelect).focus();
+});
 if (el.taskProviderRotation) el.taskProviderRotation.addEventListener("change", syncTaskProviderRotation);
 if (el.saveTaskProfile) el.saveTaskProfile.addEventListener("click", saveTaskProfile);
 if (el.saveTaskEndpoints) el.saveTaskEndpoints.addEventListener("click", saveTaskProfile);

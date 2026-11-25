@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../src/aicognitive_mind/static/portal.js'), 'utf8');
 const editorFunctions = [
   'selectedEndpoint', 'renderTaskProfileEndpointOptions', 'fillSelect', 'modelCapabilityLabel', 'capabilityDocumentationSource',
-  'loadEndpointIntoForm', 'renderEndpointModelStatus', 'endpointFormIsValid', 'syncEndpointDraft',
+  'loadEndpointIntoForm', 'showEndpointError', 'clearEndpointError', 'renderEndpointModelStatus', 'endpointFormIsValid', 'syncEndpointDraft',
   'updateEndpointEditorState', 'editEndpoint', 'cancelEndpointEdit', 'saveProviderEndpoints',
   'refreshProviderEndpoints',
   'removeEndpoint', 'discoverTaskProfileModels', 'addTaskProfileEndpoint', 'applyEndpointTemplate',
@@ -61,6 +61,7 @@ class Element {
 function editor({ apiHandler } = {}) {
   let endpointSequence = 0;
   const el = new Proxy({}, { get: (target, name) => target[name] ||= new Element() });
+  el.endpointError.classList.add('hidden');
   const state = {
     providerEndpoints: [{ id: 'openai', name: 'OpenAI - GPT', provider_name: 'OpenAI', model: 'gpt-test',
       base_url: 'https://provider.example/v1', api_key: 'test-key', models: ['gpt-test'], model_capabilities: {} }],
@@ -138,6 +139,9 @@ function editor({ apiHandler } = {}) {
   const toolsBindingsStart = source.indexOf('if (el.mcpEditTools) el.mcpEditTools.addEventListener');
   const toolsBindingsEnd = source.indexOf('if (el.taskProfileEndpointSelect)', toolsBindingsStart);
   vm.runInContext(source.slice(toolsBindingsStart, toolsBindingsEnd), context);
+  const endpointBindings = source.indexOf('if (el.taskProfileDiscover) el.taskProfileDiscover.addEventListener');
+  const endpointBindingsEnd = source.indexOf('if (el.taskProviderRotation)', endpointBindings);
+  vm.runInContext(source.slice(endpointBindings, endpointBindingsEnd), context);
   context.loadEndpointIntoForm();
   context.loadMcpServerIntoForm();
   context.renderMcpTools();
@@ -218,7 +222,7 @@ test('provider documentation labels distinguish speech output and keep live tool
   ui.state.endpointProbe = { endpointId: endpoint.id, model: endpoint.model,
     baseUrl: endpoint.base_url, message: 'Tool calling test failed: incompatible model' };
   ui.renderEndpointModelStatus(endpoint);
-  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling test failed: incompatible model'));
+  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling was not verified'));
   assert.equal(ui.state.providerEndpoints[0].model, 'models/gemini-3.8-flash-tts');
 });
 
@@ -420,12 +424,41 @@ test('tool-calling probe reports its actual result and editing invalidates the e
 
 test('a failed tool-calling probe reports failure without converting it into verified readiness', async () => {
   const ui = editor({ apiHandler: async () => ({ tool_calling_verified: false, message: 'Provider returned text instead of a tool call' }) });
-  await ui.probeEndpointToolCalling();
+  await ui.el.endpointProbeButton.listeners.click();
   assert.equal(ui.state.endpointProbe.message, 'Provider returned text instead of a tool call');
-  assert.equal(ui.toasts[0][1], true);
+  assert.equal(ui.el.endpointError.classList.contains('hidden'), false);
+  assert.equal(ui.el.endpointErrorMessage.textContent, 'Provider returned text instead of a tool call');
+  assert.equal(ui.toasts.length, 0);
   assert.equal(ui.calls.length, 1);
   assert.equal(ui.state.endpointDraft, null);
   assert.equal(ui.state.endpointProbing, false);
+});
+
+test('HTTP probe failure remains visible until dismissed or a successful probe retry', async () => {
+  let failing = true;
+  const providerError = '<provider> rejected the request (HTTP 400)';
+  const ui = editor({ apiHandler: async () => {
+    if (failing) throw Object.assign(new Error(providerError), { status: 400 });
+    return { tool_calling_verified: true };
+  } });
+  const clickProbe = ui.el.endpointProbeButton.listeners.click;
+  await clickProbe();
+  assert.equal(ui.el.endpointError.classList.contains('hidden'), false);
+  assert.equal(ui.el.endpointErrorMessage.textContent, 'Tool calling test failed: ' + providerError);
+  assert.equal(ui.el.endpointErrorMessage.innerHTML, undefined);
+  assert.equal(ui.toasts.length, 0);
+  ui.loadEndpointIntoForm();
+  ui.clearEndpointError('discover');
+  assert.equal(ui.el.endpointError.classList.contains('hidden'), false);
+  ui.el.dismissEndpointError.listeners.click();
+  assert.equal(ui.el.endpointError.classList.contains('hidden'), true);
+  assert.equal(ui.el.endpointErrorMessage.textContent, '');
+  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling was not verified'));
+  await clickProbe();
+  failing = false;
+  await clickProbe();
+  assert.equal(ui.el.endpointError.classList.contains('hidden'), true);
+  assert.deepEqual(ui.toasts, [['Tool calling verified in current test']]);
 });
 
 test('a pending tool-calling probe locks provider and MCP changes and never displays premature proof', async () => {
@@ -482,7 +515,7 @@ test('endpoint saves send the loaded revision and preserve a stale draft instead
   assert.equal(ui.state.endpointDraft.name, 'My edited endpoint');
   assert.equal(ui.state.providerEndpointRevision, 9);
   assert.equal(ui.el.saveProviderEndpoints.disabled, false);
-  assert.match(ui.toasts[0][0], /Cancel, refresh and review/);
+  assert.match(ui.el.endpointErrorMessage.textContent, /Cancel, refresh and review/);
 });
 
 test('endpoint removal supplies the loaded revision and preserves saved records after a conflict', async () => {
@@ -493,7 +526,7 @@ test('endpoint removal supplies the loaded revision and preserves saved records 
   assert.equal(ui.calls.length, 1);
   assert.equal(ui.calls[0].body.expected_revision, 11);
   assert.equal(JSON.stringify(ui.state.providerEndpoints), original);
-  assert.match(ui.toasts[0][0], /Refresh and review/);
+  assert.match(ui.el.endpointErrorMessage.textContent, /Refresh and review/);
 });
 
 test('endpoint refresh cannot replace the revision or values after an edit begins', async () => {
@@ -789,11 +822,13 @@ test('a failed model discovery keeps the draft intact and unlocks the editor for
   assert.equal(ui.el.taskProfileDiscover.disabled, false);
   assert.equal(ui.el.taskProfileEndpointName.disabled, false);
   assert.equal(ui.el.endpointCancelButton.disabled, false);
-  assert.equal(ui.toasts.some(([message, error]) => message === 'Provider unavailable' && error), true);
+  assert.equal(ui.el.endpointErrorMessage.textContent, 'Provider unavailable');
+  assert.equal(ui.el.endpointError.classList.contains('hidden'), false);
   failing = false;
   await ui.discoverTaskProfileModels();
   assert.equal(ui.calls.length, 2);
   assert.deepEqual([...ui.state.endpointDraft.models], ['gpt-test', 'gpt-next']);
+  assert.equal(ui.el.endpointError.classList.contains('hidden'), true);
 });
 
 test('saving endpoint model updates primary and fallback references then locks the form', async () => {
