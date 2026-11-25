@@ -703,7 +703,7 @@ const taskModelLabels = {
   coding: "Coding",
   image_generation: "Drawing & Image Generation",
   summarization: "Summarizing",
-  memory_recall: "Memory Recall",
+  memory_recall: "Memory Steward",
   web_research: "Web Research",
   structured_extraction: "Structured Extraction",
 };

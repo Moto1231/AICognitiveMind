@@ -40,11 +40,11 @@ The source normalizes usernames by trimming whitespace and converting them to lo
 3. Choose **Create account**.
 4. Wait for **Account created. Sign in above.**
 5. Sign in with those credentials.
-6. Have an authorized Administrator configure a working provider/model for **Memory Recall** before expecting normal begin/complete interactions.
+6. Have an authorized Administrator configure a working provider/model for **Memory Steward** before expecting normal begin/complete interactions.
 
 The public **Create new account** link uses the HTML signup route; the inline sign-in form uses the JSON signup route. Both use the same account service. Signup initializes the account's unnamed Mind before publishing and reading back the account record.
 
-A fresh Mind has no saved provider endpoints or Memory Recall assignment. Initialization does not require a model call, but ordinary interaction uses the production Memory Steward. An unconfigured Steward can therefore prevent the first conversation even though signup succeeded.
+A fresh Mind has no saved provider endpoints or Memory Steward assignment. Initialization does not require a model call, but ordinary interaction uses the production Memory Steward. An unconfigured Steward can therefore prevent the first conversation even though signup succeeded.
 
 Do not run the CLI initializer as an extra signup step. It targets the configured root store, not the new account's tenant.
 

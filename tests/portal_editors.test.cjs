@@ -90,7 +90,6 @@ function editor({ apiHandler } = {}) {
   sections.cancelTaskBehaviorMembership = new Element('button');
   const context = vm.createContext({
     state, el, URL, COMMON_ENDPOINT_PRESETS: [], crypto: { randomUUID: () => ++endpointSequence === 1 ? 'new-id' : `new-id-${endpointSequence}` },
-    taskModelLabels: { reasoning: 'Reasoning', vision: 'Vision', audio_voice: 'Audio/Voice' },
     displayLabel: value => value,
     Option: class extends Element {
       constructor(label, value) { super('option'); this.textContent = label; this.value = value; }
@@ -112,6 +111,9 @@ function editor({ apiHandler } = {}) {
       return body;
     },
   });
+  const labels = source.match(/^const taskModelLabels = \{[\s\S]*?^\};/m);
+  assert.ok(labels, 'task model labels exist');
+  vm.runInContext(labels[0], context);
   const presetsStart = source.indexOf('const COMMON_ENDPOINT_PRESETS = [');
   const presetsEnd = source.indexOf('\n];', presetsStart);
   vm.runInContext(source.slice(presetsStart, presetsEnd + 3), context);
@@ -2621,4 +2623,16 @@ test('dirty task selections block library editing and library drafts block membe
   ui.showAdminSection('tasks');
   assert.equal(ui.state.activeTaskProfile, 'vision');
   assert.equal(ui.sections.behaviorsSection.classList.contains('hidden'), false);
+});
+
+test('Tasks list and profile show Memory Steward while retaining the memory_recall task ID', () => {
+  const ui = editor();
+  ui.state.taskModelAssignments.push({ task: 'memory_recall', provider: 'openai', model: 'gpt-test', fallbacks: [] });
+  ui.renderTaskProfiles();
+  const card = ui.el.taskProfileList.children.find(button => button.children[0].textContent === 'Memory Steward');
+  assert.ok(card);
+  card.listeners.click();
+  assert.equal(ui.state.activeTaskProfile, 'memory_recall');
+  assert.match(ui.el.taskProfileTitle.textContent, /Memory Steward/);
+  assert.equal(ui.el.taskProviderSelect.value, 'openai');
 });

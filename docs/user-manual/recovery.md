@@ -17,7 +17,7 @@ Distinguish login, Mind access, Administrator authorization, provider discovery,
 | Administrator authorization rejected | Configured PIN | Re-enter the correct PIN; do not infer authority from chat |
 | Mind Not Initialized / Awaiting Genesis | Account/root scope and storage | Investigate before clicking Create Mind |
 | Expected history missing | Account/Mind, filters, count type | Preserve observed time/count and compare the correct scope |
-| Memory Recall has no complete assignment | Endpoint/model and task selection | Finish provider setup, test tool calling, save task |
+| Memory Steward has no complete assignment | Endpoint/model and task selection | Finish provider setup, test tool calling, save task |
 | All providers cooling down | Earliest retry time and failure reason | Wait for eligibility or repair the actual credential/configuration problem |
 | Tool-call probe fails | Model function contract/access/quota | Use a compatible tested model; do not trust labels alone |
 | Save disabled | Edit mode, change, required fields, busy/revision state | Fix the specific form condition |
