@@ -276,8 +276,11 @@ class PortalTests(unittest.TestCase):
         )
         self.assertIn("#startupStatus:empty { display: none; }", stylesheet)
         self.assertRegex(markup, r'id="dismissEndpointError"[^>]*>Close</button>')
-        self.assertIn("/static/portal.css?v=20261125-endpoint-error-polish", markup)
-        self.assertIn("/static/portal.js?v=20261125-endpoint-error-polish", markup)
+        self.assertRegex(markup, r'id="endpointProbeButton"[^>]*><svg[^>]*aria-hidden="true"')
+        self.assertIn('<span id="endpointProbeLabel">Test Endpoint</span>', markup)
+        self.assertRegex(markup, r'id="endpointTestResult"[^>]*role="status"')
+        self.assertIn("/static/portal.css?v=20261125-endpoint-test-result", markup)
+        self.assertIn("/static/portal.js?v=20261125-endpoint-test-result", markup)
 
     def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")

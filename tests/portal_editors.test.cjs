@@ -196,7 +196,7 @@ test('missing capability details stay explicitly unverified without losing a sav
   assert.match(saved.textContent, /Capabilities not supplied; compatibility unverified/);
   assert.match(saved.textContent, /\(saved\)/);
   assert.match(ui.el.endpointModelStatus.textContent, /Capabilities not supplied; compatibility unverified/);
-  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling has not been tested'));
+  assert.ok(ui.el.endpointModelStatus.children.includes(' · Endpoint not tested'));
   assert.equal(JSON.stringify(endpoint), before);
   assert.equal(ui.calls.length, 0);
 });
@@ -218,11 +218,12 @@ test('provider documentation labels distinguish speech output and keep live tool
   assert.equal(link.href, endpoint.model_capability_sources[endpoint.model]);
   assert.equal(link.textContent, 'Documented capabilities (not tested)');
   assert.equal(link.rel, 'noopener noreferrer');
-  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling has not been tested'));
+  assert.ok(ui.el.endpointModelStatus.children.includes(' · Endpoint not tested'));
   ui.state.endpointProbe = { endpointId: endpoint.id, model: endpoint.model,
-    baseUrl: endpoint.base_url, message: 'Tool calling test failed: incompatible model' };
+    baseUrl: endpoint.base_url, revision: ui.state.providerEndpointRevision, verified: false,
+    message: 'Endpoint test failed: incompatible model' };
   ui.renderEndpointModelStatus(endpoint);
-  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling was not verified'));
+  assert.ok(ui.el.endpointModelStatus.children.includes(' · Endpoint test did not pass'));
   assert.equal(ui.state.providerEndpoints[0].model, 'models/gemini-3.8-flash-tts');
 });
 
@@ -312,7 +313,7 @@ test('five provider connections remain drafts until Save and Cancel preserves sa
   assert.equal(JSON.stringify(ui.state.taskModelAssignments), assignments);
   assert.equal(ui.el.endpointEditButton.disabled, true);
   assert.equal(ui.el.providerSetupList.children.length, 5);
-  assert.ok(ui.el.providerSetupList.children.every(item => item.textContent.includes('Tool calling has not been tested')));
+  assert.ok(ui.el.providerSetupList.children.every(item => item.textContent.includes('Endpoint not tested')));
   assert.equal(ui.calls.length, 0);
   ui.cancelProviderConnections();
   assert.equal(ui.state.providerSetupDraft, null);
@@ -410,16 +411,21 @@ test('tool-calling probe reports its actual result and editing invalidates the e
   const ui = editor({ apiHandler: async () => ({ tool_calling_verified: true }) });
   ui.editEndpoint();
   await ui.probeEndpointToolCalling();
+  assert.equal(ui.el.endpointTestResult.textContent, 'Passed: recall and review');
+  assert.equal(ui.el.endpointProbeLabel.textContent, 'Test Endpoint');
+  ui.loadEndpointIntoForm();
+  assert.equal(ui.el.endpointTestResult.textContent, 'Passed: recall and review');
   assert.equal(ui.calls[0].url, '/v1/admin/provider-endpoints/probe');
   assert.equal(ui.calls[0].body.model, 'gpt-test');
   assert.equal(ui.calls[0].body.api_key, 'test-key');
-  assert.equal(ui.state.endpointProbe.message, 'Tool calling verified in current test');
+  assert.equal(ui.state.endpointProbe.message, 'Passed: recall and review');
   assert.equal(ui.state.endpointProbing, false);
   assert.equal(ui.state.providerEndpoints[0].model, 'gpt-test');
   ui.el.endpointModelId.value = 'different-model';
   ui.syncEndpointDraft();
   assert.equal(ui.state.endpointProbe, null);
-  assert.ok(ui.el.endpointModelStatus.children.some(text => String(text).includes('Tool calling has not been tested')));
+  assert.equal(ui.el.endpointTestResult.textContent, '');
+  assert.ok(ui.el.endpointModelStatus.children.some(text => String(text).includes('Endpoint not tested')));
 });
 
 test('a failed tool-calling probe reports failure without converting it into verified readiness', async () => {
@@ -434,6 +440,16 @@ test('a failed tool-calling probe reports failure without converting it into ver
   assert.equal(ui.state.endpointProbing, false);
 });
 
+test('an empty or malformed endpoint result does not register a pass', async () => {
+  for (const response of [null, {}, { tool_calling_verified: "true" }]) {
+    const ui = editor({ apiHandler: async () => response });
+    await ui.el.endpointProbeButton.listeners.click();
+    assert.equal(ui.el.endpointTestResult.textContent, '');
+    assert.equal(ui.el.endpointErrorMessage.textContent, 'Endpoint test failed');
+    assert.equal(ui.state.endpointProbe.verified, false);
+  }
+});
+
 test('HTTP probe failure remains visible until dismissed or a successful probe retry', async () => {
   let failing = true;
   const providerError = '<provider> rejected the request (HTTP 400)';
@@ -444,7 +460,7 @@ test('HTTP probe failure remains visible until dismissed or a successful probe r
   const clickProbe = ui.el.endpointProbeButton.listeners.click;
   await clickProbe();
   assert.equal(ui.el.endpointError.classList.contains('hidden'), false);
-  assert.equal(ui.el.endpointErrorMessage.textContent, 'Tool calling test failed: ' + providerError);
+  assert.equal(ui.el.endpointErrorMessage.textContent, 'Endpoint test failed: ' + providerError);
   assert.equal(ui.el.endpointErrorMessage.innerHTML, undefined);
   assert.equal(ui.toasts.length, 0);
   ui.loadEndpointIntoForm();
@@ -453,12 +469,13 @@ test('HTTP probe failure remains visible until dismissed or a successful probe r
   ui.el.dismissEndpointError.listeners.click();
   assert.equal(ui.el.endpointError.classList.contains('hidden'), true);
   assert.equal(ui.el.endpointErrorMessage.textContent, '');
-  assert.ok(ui.el.endpointModelStatus.children.includes(' · Tool calling was not verified'));
+  assert.ok(ui.el.endpointModelStatus.children.includes(' · Endpoint test did not pass'));
   await clickProbe();
   failing = false;
   await clickProbe();
   assert.equal(ui.el.endpointError.classList.contains('hidden'), true);
-  assert.deepEqual(ui.toasts, [['Tool calling verified in current test']]);
+  assert.equal(ui.el.endpointTestResult.textContent, 'Passed: recall and review');
+  assert.deepEqual(ui.toasts, []);
 });
 
 test('a pending tool-calling probe locks provider and MCP changes and never displays premature proof', async () => {
@@ -470,6 +487,8 @@ test('a pending tool-calling probe locks provider and MCP changes and never disp
   assert.equal(ui.state.endpointProbing, true);
   assert.equal(ui.state.endpointProbe, null);
   assert.equal(ui.el.endpointProbeButton.disabled, true);
+  assert.equal(ui.el.endpointProbeLabel.textContent, 'Testing…');
+  assert.equal(ui.el.endpointTestResult.textContent, '');
   assert.equal(ui.el.taskProfileDiscover.disabled, true);
   assert.equal(ui.el.taskProfileApiKey.disabled, true);
   assert.equal(ui.el.saveProviderEndpoints.disabled, true);
@@ -482,7 +501,7 @@ test('a pending tool-calling probe locks provider and MCP changes and never disp
   assert.equal(ui.state.endpointProbing, false);
   assert.equal(ui.el.taskProfileApiKey.disabled, false);
   assert.equal(ui.el.mcpServerName.disabled, false);
-  assert.equal(ui.state.endpointProbe.message, 'Tool calling verified in current test');
+  assert.equal(ui.state.endpointProbe.message, 'Passed: recall and review');
 });
 
 test('a tool-calling response for superseded credentials or model cannot mark the new draft verified', async () => {
@@ -498,7 +517,7 @@ test('a tool-calling response for superseded credentials or model cannot mark th
   assert.equal(ui.state.endpointProbing, false);
   assert.equal(ui.state.endpointDraft.model, 'new-model');
   assert.equal(ui.toasts.length, 0);
-  assert.ok(ui.el.endpointModelStatus.children.some(text => String(text).includes('Tool calling has not been tested')));
+  assert.ok(ui.el.endpointModelStatus.children.some(text => String(text).includes('Endpoint not tested')));
 });
 
 test('endpoint saves send the loaded revision and preserve a stale draft instead of retrying', async () => {
