@@ -17,7 +17,7 @@ Choose **Administration → Task Profiles**. The page heading is **Task Configur
 | Coding | Coding task instructions/assignment |
 | Drawing & Image Generation | Image-generation task instructions/assignment |
 | Summarizing | Summary task instructions/assignment |
-| Memory Recall | Provider used by the independent Memory Steward for recall and review |
+| Memory Steward | Provider used by the independent Memory Steward for recall and review |
 | Web Research | Research task instructions/assignment |
 | Structured Extraction | Structured-data extraction instructions/assignment |
 
@@ -103,13 +103,13 @@ Use redacted routing/status diagnostics to distinguish **configured**, **cooling
 ## Practical Memory Steward setup
 
 1. Configure a model endpoint with a passing recall/review tool-calling test.
-2. Select it in **Memory Recall**.
+2. Select it in **Memory Steward**.
 3. Add only tested, complete alternates.
 4. Keep **Primary, then fallbacks** initially unless daily rotation is intentional.
 5. Save.
 6. Run a short interaction and verify both begin and completion.
 
-Do not assume the connected chat model automatically substitutes for an unconfigured Memory Recall provider.
+Do not assume the connected chat model automatically substitutes for an unconfigured Memory Steward provider.
 
 ## Source references
 
