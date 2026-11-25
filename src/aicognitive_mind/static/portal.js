@@ -246,6 +246,8 @@ const el = {
   taskProfileApiKey: document.getElementById("taskProfileApiKey"),
   taskProfileDiscover: document.getElementById("taskProfileDiscover"),
   endpointProbeButton: document.getElementById("endpointProbeButton"),
+  endpointProbeLabel: document.getElementById("endpointProbeLabel"),
+  endpointTestResult: document.getElementById("endpointTestResult"),
   endpointError: document.getElementById("endpointError"),
   endpointErrorMessage: document.getElementById("endpointErrorMessage"),
   dismissEndpointError: document.getElementById("dismissEndpointError"),
@@ -1083,6 +1085,11 @@ function clearEndpointError(operation) {
 }
 
 function renderEndpointModelStatus(endpoint) {
+  const probe = state.endpointProbe;
+  const matches = endpoint && probe?.endpointId === endpoint.id
+    && probe.model === endpoint.model && probe.baseUrl === endpoint.base_url
+    && probe.revision === state.providerEndpointRevision;
+  el.endpointTestResult.textContent = matches && probe.verified ? probe.message : "";
   el.endpointModelStatus.replaceChildren();
   if (!endpoint) {
     el.endpointModelStatus.textContent = "Select an endpoint, then Edit to configure its model.";
@@ -1097,13 +1104,10 @@ function renderEndpointModelStatus(endpoint) {
     : `${endpoint.models?.length || 0} discovered models`;
   if (!endpoint.has_api_key && !endpoint.api_key) el.endpointModelStatus.append(document.createTextNode(" · Needs API key"));
   if (!model) el.endpointModelStatus.append(document.createTextNode(" · Needs model selection"));
-  const probe = state.endpointProbe;
-  if (probe?.endpointId === endpoint.id && probe.model === model && probe.baseUrl === endpoint.base_url) {
-    el.endpointModelStatus.append(document.createTextNode(" · " + (
-      probe.verified ? probe.message : "Tool calling was not verified"
-    )));
-  } else {
-    el.endpointModelStatus.append(document.createTextNode(" · Tool calling has not been tested"));
+  if (matches && !probe.verified) {
+    el.endpointModelStatus.append(document.createTextNode(" · Endpoint test did not pass"));
+  } else if (!matches && !state.endpointProbing) {
+    el.endpointModelStatus.append(document.createTextNode(" · Endpoint not tested"));
   }
   if (source === "provider_metadata") {
     el.endpointModelStatus.append(document.createTextNode(" · Provider metadata"));
@@ -1160,7 +1164,7 @@ function updateEndpointEditorState() {
   el.taskProfileDiscover.textContent = state.endpointDiscovering ? "Discovering…" : "Discover Models";
   if (el.endpointProbeButton) {
     el.endpointProbeButton.disabled = busy || preparing || !endpoint?.model || !/^https?:\/\/\S+$/i.test(endpoint?.base_url || "");
-    el.endpointProbeButton.textContent = state.endpointProbing ? "Testing tool calling…" : "Test tool calling";
+    el.endpointProbeLabel.textContent = state.endpointProbing ? "Testing…" : "Test Endpoint";
   }
   if (el.saveProviderConnections) el.saveProviderConnections.disabled = busy || !state.providerSetupDraft?.length;
   if (el.cancelProviderConnections) el.cancelProviderConnections.disabled = busy || !preparing;
@@ -1462,12 +1466,15 @@ async function probeEndpointToolCalling() {
   if (state.endpointDraft) syncEndpointDraft();
   const endpoint = state.endpointDraft || selectedEndpoint();
   if (!endpoint?.model || !/^https?:\/\/\S+$/i.test(endpoint?.base_url || "")) {
-    showEndpointError("probe", "Choose a provider and model before testing tool calling");
+    showEndpointError("probe", "Choose a provider and model before testing the endpoint");
     return;
   }
   const requestBody = JSON.stringify(endpoint);
   const isCurrent = () => JSON.stringify(state.endpointDraft || selectedEndpoint()) === requestBody;
+  state.endpointProbe = null;
   state.endpointProbing = true;
+  clearEndpointError("probe");
+  renderEndpointModelStatus(endpoint);
   updateEndpointEditorState();
   updateMcpEditorState();
   try {
@@ -1477,18 +1484,15 @@ async function probeEndpointToolCalling() {
     if (!isCurrent()) return;
     state.endpointProbe = {
       endpointId: endpoint.id, model: endpoint.model, baseUrl: endpoint.base_url,
-      verified: result.tool_calling_verified,
-      message: result.tool_calling_verified ? "Tool calling verified in current test" : (result.message || "Tool calling test failed"),
+      revision: state.providerEndpointRevision,
+      verified: result?.tool_calling_verified === true,
+      message: result?.tool_calling_verified === true
+        ? "Passed: recall and review" : (result?.message || "Endpoint test failed"),
     };
-    if (state.endpointProbe.verified) {
-      clearEndpointError("probe");
-      toast(state.endpointProbe.message);
-    } else {
-      showEndpointError("probe", state.endpointProbe.message);
-    }
+    if (!state.endpointProbe.verified) showEndpointError("probe", state.endpointProbe.message);
   } catch (error) {
     if (!isCurrent()) return;
-    state.endpointProbe = { endpointId: endpoint.id, model: endpoint.model, baseUrl: endpoint.base_url, verified: false, message: "Tool calling test failed: " + error.message };
+    state.endpointProbe = { endpointId: endpoint.id, model: endpoint.model, baseUrl: endpoint.base_url, revision: state.providerEndpointRevision, verified: false, message: "Endpoint test failed: " + error.message };
     showEndpointError("probe", state.endpointProbe.message);
   } finally {
     state.endpointProbing = false;
@@ -1531,7 +1535,7 @@ function prepareProviderConnections() {
   for (const endpoint of state.providerSetupDraft) {
     const row = document.createElement("p");
     row.className = "record-empty";
-    row.textContent = `${endpoint.name} · Needs API key · Needs model · Tool calling has not been tested`;
+    row.textContent = `${endpoint.name} · Needs API key · Needs model · Endpoint not tested`;
     el.providerSetupList.append(row);
   }
   el.providerSetupPanel.classList.remove("hidden");
@@ -1569,7 +1573,7 @@ async function saveProviderConnections() {
     loadEndpointIntoForm();
     renderTaskProfiles();
     clearEndpointError("setup");
-    toast(`Saved ${additions.length} new connection profile(s). Add keys, choose models and test tool calling before assigning tasks.`);
+    toast(`Saved ${additions.length} new connection profile(s). Add keys, choose models and test endpoints before assigning tasks.`);
   } catch (error) {
     showEndpointError("setup", error.message);
   } finally {

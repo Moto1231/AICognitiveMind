@@ -255,7 +255,7 @@ main { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 64
   background: rgba(255,255,255,.04); color: var(--text); outline: none;
 }
 .setup-card .primary-button { margin-top: 16px; }
-.toast, .endpoint-error { font-size: 11px; }
+.toast, .endpoint-error, .endpoint-test-result { font-size: 11px; }
 .toast {
   position: fixed; right: 22px; bottom: 22px; z-index: 120; max-width: 420px;
   padding: 12px 15px; border: 1px solid var(--border); border-radius: 12px; background: #132139; box-shadow: var(--shadow);
@@ -1010,6 +1010,9 @@ select optgroup {
 .integration-subsection { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .integration-subsection h5 { margin-bottom: 0; font-size: 13px; }
 .integration-subsection .panel-heading { align-items: center; }
+.endpoint-test-button { display: inline-flex; align-items: center; gap: 6px; }
+.endpoint-test-result { margin: 10px 0; color: #b5f5d3; }
+.endpoint-test-result:empty { margin: 0; }
 .endpoint-error {
   display: flex; flex-wrap: wrap; align-items: start; gap: 8px 12px;
   margin: 10px 0; padding: 10px 12px; border: 1px solid rgba(255,154,154,.35);
