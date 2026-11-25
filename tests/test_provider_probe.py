@@ -36,6 +36,35 @@ class ProviderProbeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("no_recall_needed", json.dumps(requests[0]["tools"]))
         self.assertIn("memories", json.dumps(requests[1]["tools"]))
 
+    async def test_token_limit_matches_provider_in_both_probe_phases(self):
+        cases = (
+            ("https://api.openai.com/v1", "max_completion_tokens"),
+            ("https://api.openai.com/v1/chat/completions", "max_completion_tokens"),
+            ("https://generativelanguage.googleapis.com/v1beta/openai", "max_tokens"),
+            ("https://api.openai.com.example.test/v1", "max_tokens"),
+        )
+        for base_url, expected in cases:
+            with self.subTest(base_url=base_url):
+                requests = []
+
+                async def respond(request):
+                    body = json.loads(request.content)
+                    requests.append(body)
+                    sample = json.loads(body["messages"][0]["content"].split("equal to: ")[1])
+                    actual = {key: body[key] for key in ("max_tokens", "max_completion_tokens")
+                              if key in body}
+                    if actual != {expected: 768}:
+                        return httpx.Response(400, json={"error": {"code": "unsupported_parameter"}})
+                    return httpx.Response(200, json={"choices": [{"message": {"tool_calls": [
+                        {"function": {"name": "steward_action", "arguments": json.dumps({"decision": sample})}}
+                    ]}}]})
+
+                endpoint = self.endpoint().model_copy(update={"base_url": base_url})
+                async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+                    result = await probe_endpoint_tools(endpoint, client=client)
+                self.assertTrue(result["tool_calling_verified"], result["message"])
+                self.assertEqual(len(requests), 2)
+
     async def test_rejects_text_or_wrong_action_and_stops_after_first_failure(self):
         for message in ({"content": "looks fine"}, {"content": None, "tool_calls": [
             {"function": {"name": "invented", "arguments": "{}"}}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import ValidationError
@@ -81,6 +82,14 @@ async def probe_endpoint_tools(endpoint: ProviderEndpoint, *, client: Any | None
     if client is None:
         async with httpx.AsyncClient(timeout=20.0) as session:
             return await probe_endpoint_tools(endpoint, client=session)
+    url = TaskModelDispatcher._url(endpoint, "chat/completions")
+    target = urlparse(url)
+    # OpenAI uses the new field; other compatible endpoints keep their existing contract.
+    token_limit = (
+        "max_completion_tokens"
+        if target.scheme == "https" and target.hostname == "api.openai.com"
+        else "max_tokens"
+    )
     for phase in ("recall", "review"):
         sample = (
             {"action": "finish", "outcome": "no_recall_needed", "reason": "Synthetic connection check.",
@@ -92,10 +101,10 @@ async def probe_endpoint_tools(endpoint: ProviderEndpoint, *, client: Any | None
         )
         try:
             response = await client.post(
-                TaskModelDispatcher._url(endpoint, "chat/completions"),
+                url,
                 headers=TaskModelDispatcher._headers(endpoint),
                 json={
-                    "model": endpoint.model, "max_tokens": 768,
+                    "model": endpoint.model, token_limit: 768,
                     "messages": [{"role": "user", "content":
                         "Synthetic Axiom connection check. Do not search or retain anything. "
                         "Call steward_action once with decision equal to: " + json.dumps(sample)}],
