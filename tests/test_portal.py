@@ -106,6 +106,9 @@ class PortalTests(unittest.TestCase):
         self.assertEqual({attrs["data-admin-section"] for _, attrs in pages.page_controls["facultySection"]
                           if "data-admin-section" in attrs}, {"facultyFoundation", "functions", "behaviors"})
         self.assertEqual(pages.elements["mindStartupSkillLink"][2], "foundationsSection")
+        for section in ("facultyFoundation", "functions", "behaviors"):
+            self.assertTrue(any("data-faculty-back" in attrs
+                                for _, attrs in pages.page_controls[section + "Section"]))
         for section in ("foundations", "faculty", "skills"):
             back = [attrs for _, attrs in pages.page_controls[section + "Section"]
                     if "data-admin-back" in attrs]
