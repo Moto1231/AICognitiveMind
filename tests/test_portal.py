@@ -101,8 +101,10 @@ class PortalTests(unittest.TestCase):
         controls = pages.page_controls["instructionsSection"]
         self.assertEqual({attrs["data-admin-section"] for _, attrs in controls
                           if "data-admin-section" in attrs}, {"foundations", "faculty", "skills"})
-        self.assertEqual([attrs["data-admin-faculty"] for _, attrs in controls if "data-admin-faculty" in attrs],
+        faculty_buttons = [attrs for _, attrs in controls if "data-admin-faculty" in attrs]
+        self.assertEqual([attrs["data-admin-faculty"] for attrs in faculty_buttons],
                          ["reasoning", "memory_recall"])
+        self.assertTrue(all(attrs.get("data-keep-label") == "true" for attrs in faculty_buttons))
         self.assertEqual({attrs["data-admin-section"] for _, attrs in pages.page_controls["facultySection"]
                           if "data-admin-section" in attrs}, {"facultyFoundation", "functions", "behaviors"})
         self.assertEqual(pages.elements["mindStartupSkillLink"][2], "foundationsSection")

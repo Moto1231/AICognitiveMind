@@ -238,14 +238,14 @@
           <article id="instructionsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">INSTRUCTION SETTINGS</p><h3>Instructions</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
             <nav class="admin-section-nav" aria-label="Instruction sections">
-              <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Mind</span></button>
-              <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-skills"/></svg></span><span>Skills</span></button>
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><strong>Mind</strong></button>
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-skills"/></svg></span><strong>Skills</strong></button>
             </nav>
             <section class="overview-group" aria-labelledby="facultiesHeading">
               <h4 id="facultiesHeading">Faculties</h4>
               <div class="faculty-grid">
-                <button class="task-profile-card" type="button" data-admin-section="faculty" data-admin-faculty="reasoning"><strong>Reasoning</strong></button>
-                <button class="task-profile-card" type="button" data-admin-section="faculty" data-admin-faculty="memory_recall"><strong>Memory Steward</strong></button>
+                <button class="task-profile-card" data-keep-label="true" type="button" data-admin-section="faculty" data-admin-faculty="reasoning"><strong>Reasoning</strong></button>
+                <button class="task-profile-card" data-keep-label="true" type="button" data-admin-section="faculty" data-admin-faculty="memory_recall"><strong>Memory Steward</strong></button>
               </div>
             </section>
           </article>
@@ -253,9 +253,9 @@
           <article id="facultySection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">FACULTY</p><h3 id="facultyTitle"></h3></div><button type="button" class="secondary-button" data-admin-back="instructions" aria-label="Back to Instructions" title="Back to Instructions">Back</button></div>
             <nav class="admin-section-nav" aria-label="Faculty instructions">
-              <button class="admin-section-button" type="button" data-admin-section="facultyFoundation" data-faculty-child><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Foundation</span></button>
-              <button class="admin-section-button" type="button" data-admin-section="functions" data-faculty-child><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tools"/></svg></span><span>Functions</span></button>
-              <button class="admin-section-button" type="button" data-admin-section="behaviors" data-faculty-child><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><span>Behaviors</span></button>
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="facultyFoundation" data-faculty-child><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><strong>Foundation</strong></button>
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="functions" data-faculty-child><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tools"/></svg></span><strong>Functions</strong></button>
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="behaviors" data-faculty-child><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><strong>Behaviors</strong></button>
             </nav>
           </article>
 
@@ -272,7 +272,7 @@
               </dl>
               <p id="foundationStatus" role="status" aria-live="polite"></p>
             </section>
-            <section class="overview-group"><div class="panel-heading"><h4>Startup</h4><button id="mindStartupSkillLink" class="secondary-button" type="button">AxiomsMind Startup Skill</button></div><div class="host-behavior-fields">
+            <section class="overview-group"><div class="panel-heading"><h4>Startup</h4><button id="mindStartupSkillLink" class="secondary-button" data-keep-label="true" type="button"><strong>AxiomsMind Startup Skill</strong></button></div><div class="host-behavior-fields">
               <label class="host-behavior-field host-behavior-instruction">Base operating contract<textarea id="foundationContract" rows="18" readonly spellcheck="false"></textarea></label>
               <label class="host-behavior-field host-behavior-instruction">Additional startup instructions<textarea id="foundationStartup" rows="12" readonly spellcheck="false"></textarea></label>
             </div>
