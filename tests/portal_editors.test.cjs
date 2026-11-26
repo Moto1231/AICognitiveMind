@@ -18,7 +18,7 @@ const editorFunctions = [
   'mcpToolKey', 'mcpToolEntries', 'selectedMcpTool', 'mcpToolsTargetServer',
   'invalidateMcpToolRun', 'selectMcpTool', 'renderMcpToolDetail', 'mcpToolArgumentsValid',
   'updateMcpToolsState', 'editMcpTools', 'cancelMcpTools', 'saveMcpTools', 'runMcpTool',
-  'refreshMcpServers', 'showAdminSection', 'selectInstructionTask', 'renderInstructionTaskSelectors',
+  'refreshMcpServers', 'showAdminSection', 'updateFacultyView', 'instructionFacultyFor', 'selectInstructionTask', 'renderInstructionTaskSelectors',
   'allTaskNames', 'renderTaskProfiles', 'taskProviderEndpoint', 'taskEndpointOptions', 'selectedTaskBehaviorIds',
   'taskBehaviorCatalog', 'taskSelectionDirty', 'activeProfileRecords',
   'taskProfileConfiguration', 'updateTaskSaveState', 'renderTaskBehaviorSelection',
@@ -81,12 +81,15 @@ function editor({ apiHandler } = {}) {
   };
   const calls = [];
   const toasts = [];
-  const sections = Object.fromEntries(['overview', 'mcp', 'tools', 'instructions', 'foundations', 'behaviors', 'skills', 'tasks'].map(name => [name + 'Section', new Element('article')]));
-  const navigation = ['overview', 'mcp', 'tools', 'instructions', 'foundations', 'behaviors', 'skills', 'tasks'].map(name => {
+  const sections = Object.fromEntries(['overview', 'mcp', 'tools', 'instructions', 'foundations', 'faculty', 'facultyFoundation', 'functions', 'behaviors', 'skills', 'tasks'].map(name => [name + 'Section', new Element('article')]));
+  const navigation = ['overview', 'mcp', 'tools', 'instructions', 'foundations', 'faculty', 'facultyFoundation', 'functions', 'behaviors', 'skills', 'tasks'].map(name => {
     const button = new Element('button'); button.dataset.adminSection = name; return button;
   });
   sections.foundationTaskSelect = new Element('select');
   sections.behaviorTaskSelect = new Element('select');
+  for (const id of ['facultyTitle', 'facultyFoundationScope', 'facultyFunctionsScope', 'facultyBehaviorsScope',
+    'foundationScopePicker', 'behaviorScopePicker', 'instructionFunctionSelect']) sections[id] = new Element();
+
   sections.cancelTaskBehaviorMembership = new Element('button');
   const context = vm.createContext({
     state, el, URL, COMMON_ENDPOINT_PRESETS: [], crypto: { randomUUID: () => ++endpointSequence === 1 ? 'new-id' : `new-id-${endpointSequence}` },
@@ -96,8 +99,9 @@ function editor({ apiHandler } = {}) {
     },
     document: { createElement: tag => new Element(tag), createTextNode: value => value,
       getElementById: id => sections[id], querySelectorAll: () => navigation },
-    adminSectionIds: Object.fromEntries(['overview', 'mcp', 'tools', 'instructions', 'foundations', 'behaviors', 'skills', 'tasks'].map(name => [name, name + 'Section'])),
+    adminSectionIds: Object.fromEntries(['overview', 'mcp', 'tools', 'instructions', 'foundations', 'faculty', 'facultyFoundation', 'functions', 'behaviors', 'skills', 'tasks'].map(name => [name, name + 'Section'])),
     refreshDiagnostics() {}, refreshDeviceInventory() {}, refreshInstructionFunctions() {}, refreshSkillDrafts() {}, refreshFoundations() {},
+    resetFacultyFunctionEditor() {}, refreshFacultyFoundation() {},
     renderTaskProfiles() {}, refreshTaskModelAssignments: async () => {}, toast: (...args) => toasts.push(args),
     resetEndpointApiKeyVisibility() {}, toggleEndpointApiKeyVisibility() {},
     api: async (url, options = {}) => {
@@ -2236,7 +2240,7 @@ function currentStatePortal({ diagnosticsHandler, bodySettings = true, fallbackS
     refreshMemory() { updates.push('memory'); }, refreshJournal() { updates.push('journal'); },
     refreshHostBehaviors() { updates.push('behaviors'); }, refreshTaskModelAssignments() { updates.push('tasks'); },
     refreshTaskBehaviors() {}, refreshProviderEndpoints() { updates.push('endpoints'); }, refreshMcpServers() {},
-    refreshInstructionFunctions() {}, refreshSkillDrafts() {}, refreshDeviceInventory() {}, refreshFoundations() {}, toast: (...args) => toasts.push(args),
+    refreshInstructionFunctions() {}, refreshSkillDrafts() {}, refreshDeviceInventory() {}, refreshFoundations() {}, refreshFacultyFoundation() {}, toast: (...args) => toasts.push(args),
     api: async (url, options = {}) => {
       calls.push(url);
       requests.push({ url, method: options.method || 'GET', body: options.body && JSON.parse(options.body) });
@@ -2515,7 +2519,7 @@ test('scoped voice settings can refresh and save while the deployment fallback s
   assert.equal(ui.requests.find(request => request.method === 'POST').body.voice_name, 'Account voice');
 });
 
-test('Instructions owns three separate children and parent navigation remains active', () => {
+test('Instructions remains active on child pages', () => {
   const ui = editor();
   ui.showAdminSection('instructions');
   assert.equal(ui.sections.instructionsSection.classList.contains('hidden'), false);
@@ -2526,6 +2530,27 @@ test('Instructions owns three separate children and parent navigation remains ac
     assert.equal(ui.navigation.find(b => b.dataset.adminSection === 'instructions').attributes['aria-current'], 'page');
   }
   assert.equal(ui.calls.length, 0, 'navigation does not save settings');
+});
+
+test('peer Faculties scope Foundation, Functions and Behaviors without changing routing', () => {
+  const ui = editor();
+  ui.state.taskFoundations = { reasoning: 'Reasoning rules', memory_recall: 'Steward rules' };
+  ui.showAdminSection('faculty', 'memory_recall');
+  assert.equal(ui.sections.facultyTitle.textContent, 'Memory Steward');
+  assert.equal(ui.sections.foundationsSection.classList.contains('hidden'), true);
+  ui.showAdminSection('facultyFoundation', 'memory_recall');
+  assert.equal(ui.el.taskProfileFoundation.value, 'Steward rules');
+  assert.equal(ui.sections.foundationScopePicker.classList.contains('hidden'), true);
+  ui.showAdminSection('functions', 'memory_recall');
+  assert.deepEqual(Array.from(ui.sections.instructionFunctionSelect.children, item => item.value), ['recall', 'save', 'sleep']);
+  ui.showAdminSection('functions', 'reasoning');
+  assert.deepEqual(Array.from(ui.sections.instructionFunctionSelect.children, item => item.value), ['current_state']);
+  ui.showAdminSection('behaviors', 'reasoning');
+  assert.equal(ui.state.activeTaskProfile, 'reasoning');
+  assert.equal(ui.sections.behaviorScopePicker.classList.contains('hidden'), true);
+  ui.showAdminSection('tasks');
+  assert.equal(ui.sections.behaviorScopePicker.classList.contains('hidden'), false);
+  assert.equal(ui.calls.length, 0);
 });
 
 test('task instruction links keep task context but do not carry unsaved endpoint edits into membership saves', async () => {
@@ -2556,7 +2581,7 @@ test('central foundation selector reuses revisioned save and cancels before swit
       : { revision: 8, task_foundations: { vision: 'old vision', reasoning: 'reasoning text' } };
   }});
   ui.openTaskProfile('vision');
-  ui.showAdminSection('foundations');
+  ui.showAdminSection('facultyFoundation');
   await ui.editTaskFoundation();
   ui.el.taskProfileFoundation.value = 'saved vision';
   await ui.saveTaskFoundation();
@@ -2569,7 +2594,7 @@ test('central foundation selector reuses revisioned save and cancels before swit
   assert.equal(ui.calls.filter(c => c.body).length, 1);
   ui.state.taskFoundationSaving = true;
   ui.showAdminSection('tasks');
-  assert.equal(ui.sections.foundationsSection.classList.contains('hidden'), false);
+  assert.equal(ui.sections.facultyFoundationSection.classList.contains('hidden'), false);
 });
 
 test('library Save refreshes membership controls and snapshot before a subsequent membership save', async () => {
@@ -2645,6 +2670,7 @@ test('Functions editor saves only the selected rule with its configuration revis
     save: 'Save', sleep: 'Sleep' } };
   fields.instructionFunctionSelect.value = 'recall';
   const ctx = vm.createContext({
+    state: {},
     document: { getElementById: id => fields[id] },
     api: async (url, options, admin) => {
       calls.push({ url, options, admin });

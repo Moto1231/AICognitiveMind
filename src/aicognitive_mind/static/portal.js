@@ -33,6 +33,8 @@ const state = {
   breakerResetting: false,
   breakerLoadRevision: 0,
   foundationIdentity: null,
+  instructionFaculty: null,
+  instructionFunctionSaving: false,
   taskFoundationDraft: null,
   taskFoundationSaving: false,
   taskModelAssignments: [],
@@ -2894,6 +2896,8 @@ const adminSectionIds = {
   journals: "journalsSection",
   overview: "overviewSection",
   foundations: "foundationsSection",
+  faculty: "facultySection",
+  facultyFoundation: "facultyFoundationSection",
   functions: "functionsSection",
   breaker: "breakerSection",
   devices: "devicesSection",
@@ -2925,6 +2929,7 @@ document.getElementById("continuityRefreshButton")?.addEventListener("click", re
 async function refreshAdmin() {
   const updates = [refresh()];
   if (document.getElementById("foundationsSection")?.classList.contains("hidden") === false) updates.push(refreshFoundations());
+  if (document.getElementById("facultyFoundationSection")?.classList.contains("hidden") === false) updates.push(refreshFacultyFoundation());
   if (document.getElementById("functionsSection")?.classList.contains("hidden") === false) updates.push(refreshInstructionFunctions());
   if (typeof refreshBreakerSettings === "function" && document.getElementById("breakerSection")?.classList.contains("hidden") === false) updates.push(refreshBreakerSettings());
   if (document.getElementById("skillsSection")?.classList.contains("hidden") === false) {
@@ -3454,10 +3459,44 @@ function renderInstructionTaskSelectors() {
   }
 }
 
-function showAdminSection(sectionName) {
-  if (state.taskFoundationSaving || state.taskProfileSaving || state.hostBehaviorSaving) return;
-  const instructionChild = ["foundations", "functions", "behaviors", "skills"].includes(sectionName);
-  const instructionTask = state.activeTaskProfile || "reasoning";
+function instructionFacultyFor(profile) {
+  return ["reasoning", "memory_recall"].includes(profile) ? profile : null;
+}
+
+function updateFacultyView(sectionName, faculty) {
+  resetFacultyFunctionEditor();
+  state.instructionFaculty = faculty;
+  const name = faculty && taskModelLabels[faculty];
+  const labels = {
+    facultyTitle: name || "",
+    facultyFoundationScope: name || "MODEL ROUTING",
+    facultyFunctionsScope: name || "",
+    facultyBehaviorsScope: name || "BEHAVIOR LIBRARY",
+  };
+  for (const [id, label] of Object.entries(labels)) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = label;
+  }
+  for (const id of ["foundationScopePicker", "behaviorScopePicker"]) {
+    document.getElementById(id)?.classList.toggle("hidden", Boolean(faculty));
+  }
+  if (sectionName === "functions") {
+    const select = document.getElementById("instructionFunctionSelect");
+    if (select) {
+      const entries = faculty === "reasoning" ? [["current_state", "Current State Ledger"]]
+        : [["recall", "Recall"], ["save", "Save"], ["sleep", "Sleep"]];
+      const previous = select.value;
+      select.replaceChildren(...entries.map(([key, label]) => new Option(label, key)));
+      select.value = entries.some(([key]) => key === previous) ? previous : entries[0][0];
+    }
+  }
+}
+
+function showAdminSection(sectionName, faculty = null, preferredSkill = null) {
+  if (state.taskFoundationSaving || state.taskProfileSaving || state.hostBehaviorSaving || state.instructionFunctionSaving) return;
+  const instructionChild = ["foundations", "faculty", "facultyFoundation", "functions", "behaviors", "skills"].includes(sectionName);
+  const instructionTask = faculty || state.activeTaskProfile || "reasoning";
+  updateFacultyView(sectionName, faculty);
   if (sectionName !== "devices" && typeof discardDeviceSelectionChanges === "function") discardDeviceSelectionChanges();
   if (sectionName !== "mcp" && state.providerSetupDraft) cancelProviderConnections();
   for (const [name, id] of Object.entries(adminSectionIds)) {
@@ -3471,10 +3510,11 @@ function showAdminSection(sectionName) {
     button.setAttribute("aria-current", active ? "page" : "false");
   });
   if (state.activeTaskProfile) closeTaskProfile();
-  if (["foundations", "behaviors"].includes(sectionName)) selectInstructionTask(instructionTask);
+  if (["facultyFoundation", "behaviors"].includes(sectionName)) selectInstructionTask(instructionTask);
+  if (sectionName === "facultyFoundation") refreshFacultyFoundation();
   if (sectionName === "tasks") renderTaskProfiles();
   if (sectionName === "devices") refreshDeviceInventory();
-  if (sectionName === "skills") refreshSkillDrafts();
+  if (sectionName === "skills") refreshSkillDrafts(preferredSkill);
   if (sectionName === "foundations") refreshFoundations();
   if (sectionName === "functions") refreshInstructionFunctions();
   if (sectionName === "breaker") refreshBreakerSettings();
@@ -3487,16 +3527,23 @@ function showAdminSection(sectionName) {
 }
 
 document.querySelectorAll("[data-admin-section]").forEach(button => {
-  button.addEventListener("click", () => showAdminSection(button.dataset.adminSection));
+  button.addEventListener("click", () => showAdminSection(
+    button.dataset.adminSection,
+    button.dataset.adminFaculty || (button.hasAttribute("data-faculty-child") ? state.instructionFaculty : null),
+  ));
 });
 document.querySelectorAll("[data-admin-back]").forEach(button => {
-  button.addEventListener("click", () => showAdminSection(button.dataset.adminBack || "overview"));
+  button.addEventListener("click", () => {
+    const faculty = button.hasAttribute("data-faculty-back") && state.instructionFaculty;
+    showAdminSection(faculty ? "faculty" : button.dataset.adminBack || "overview", faculty || null);
+  });
 });
 for (const id of ["foundationTaskSelect", "behaviorTaskSelect"]) {
   document.getElementById(id)?.addEventListener("change", event => selectInstructionTask(event.target.value));
 }
-document.getElementById("taskProfileFoundationsLink")?.addEventListener("click", () => showAdminSection("foundations"));
-document.getElementById("taskProfileBehaviorsLink")?.addEventListener("click", () => showAdminSection("behaviors"));
+document.getElementById("taskProfileFoundationsLink")?.addEventListener("click", () => showAdminSection("facultyFoundation", instructionFacultyFor(state.activeTaskProfile)));
+document.getElementById("taskProfileBehaviorsLink")?.addEventListener("click", () => showAdminSection("behaviors", instructionFacultyFor(state.activeTaskProfile)));
+document.getElementById("mindStartupSkillLink")?.addEventListener("click", () => showAdminSection("skills", null, "mind:axiom-continuity"));
 document.getElementById("taskProfileSkillsLink")?.addEventListener("click", () => showAdminSection("skills"));
 document.getElementById("cancelTaskBehaviorMembership")?.addEventListener("click", () => selectInstructionTask(state.activeTaskProfile));
 if (el.mcpAddServer) el.mcpAddServer.addEventListener("click", addMcpServer);
@@ -4126,6 +4173,19 @@ function updateTaskFoundationEditor() {
   if (el.taskFoundationSave) el.taskFoundationSave.disabled = !editing || busy || el.taskProfileFoundation.value === draft.original;
 }
 
+async function refreshFacultyFoundation() {
+  const task = state.activeTaskProfile;
+  if (!task || state.taskFoundationDraft || state.taskFoundationSaving) return;
+  try {
+    const result = await api("/v1/admin/cognitive-configuration", {}, true);
+    if (state.activeTaskProfile !== task || state.taskFoundationDraft || state.taskFoundationSaving) return;
+    state.taskFoundations = result.task_foundations || {};
+    el.taskProfileFoundation.value = state.taskFoundations[task] ?? "";
+  } catch (error) {
+    if (state.activeTaskProfile === task && el.taskFoundationStatus) el.taskFoundationStatus.textContent = error.message;
+  }
+}
+
 async function editTaskFoundation() {
   const task = state.activeTaskProfile;
   if (!task || state.taskFoundationDraft || state.taskFoundationSaving) return;
@@ -4138,7 +4198,7 @@ async function editTaskFoundation() {
     state.taskFoundationDraft = { task, revision: configuration.revision, original: value };
     state.taskFoundations[task] = value;
     el.taskProfileFoundation.value = value;
-    if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = "Editing task foundation.";
+    if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = "Editing foundation.";
   } catch (error) { if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = error.message; }
   finally { state.taskFoundationSaving = false; updateTaskFoundationEditor(); }
 }
@@ -4163,7 +4223,7 @@ async function saveTaskFoundation() {
     state.taskFoundations = configuration.task_foundations || {};
     state.taskFoundationDraft = null;
     el.taskProfileFoundation.value = state.taskFoundations[draft.task] ?? "";
-    if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = "Task foundation saved.";
+    if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = "Foundation saved.";
   } catch (error) { if (el.taskFoundationStatus) el.taskFoundationStatus.textContent = error.message; }
   finally { state.taskFoundationSaving = false; updateTaskFoundationEditor(); }
 }
@@ -4187,6 +4247,13 @@ const functionEditor = Object.fromEntries(["Select", "Text", "Edit", "Save", "Ca
 let instructionFunctions = null;
 let instructionFunctionEditing = false;
 let instructionFunctionBusy = false;
+
+function resetFacultyFunctionEditor() {
+  if (!functionEditor.Select) return;
+  instructionFunctionEditing = false;
+  functionEditor.Status.textContent = "";
+  renderInstructionFunctions(true);
+}
 
 function renderInstructionFunctions(reset = false) {
   const { Select, Text, Edit, Save, Cancel } = functionEditor;
@@ -4236,6 +4303,7 @@ if (functionEditor.Select) {
   functionEditor.Save.addEventListener("click", async () => {
     if (functionEditor.Save.disabled) return;
     instructionFunctionBusy = true;
+    state.instructionFunctionSaving = true;
     renderInstructionFunctions();
     try {
       instructionFunctions = await api("/v1/admin/cognitive-configuration", {
@@ -4250,6 +4318,7 @@ if (functionEditor.Select) {
       functionEditor.Status.textContent = error.message;
     } finally {
       instructionFunctionBusy = false;
+      state.instructionFunctionSaving = false;
       renderInstructionFunctions(!instructionFunctionEditing);
     }
   });
@@ -4335,7 +4404,7 @@ async function loadSkillSelection(value) {
   }
   updateSkillEditorState();
 }
-async function refreshSkillDrafts() {
+async function refreshSkillDrafts(preferredSelection = null) {
   if (skillEditing || skillSaving) return;
   const revision = ++skillLoadRevision;
   const list = document.getElementById("skillsList");
@@ -4344,7 +4413,7 @@ async function refreshSkillDrafts() {
       api("/v1/admin/skill-configurations", {}, true), api("/v1/admin/skills", {}, true),
     ]);
     if (revision !== skillLoadRevision || skillEditing || skillSaving) return;
-    const previous = list.value;
+    const previous = preferredSelection || list.value;
     const relocated = new Set(["axiom-current-state", "memory-steward"]);
     skillCatalog = [
       ...configuration.items.filter(item => !relocated.has(item.slug)).map(item => ({

@@ -1285,3 +1285,16 @@ body {
   .local-clock-date { font-size: 9px; }
   .local-clock-time { font-size: 13px; }
 }
+
+
+.faculty-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.faculty-grid > button { width: 100%; }
+#facultyFoundationSection .host-behavior-field.hidden,
+#behaviorsSection .host-behavior-field.hidden { display: none; }
+@media (max-width: 440px) {
+  .faculty-grid { grid-template-columns: minmax(0, 1fr); }
+}
