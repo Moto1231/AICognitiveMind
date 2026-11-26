@@ -72,7 +72,7 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(
             [(key, item["text"].strip()) for key, item in pages.navigation.items()],
             [("overview", "Overview"), ("instructions", "Instructions"), ("breaker", "Breaker"),
-             ("tools", "Tools"), ("mcp", "Endpoints"), ("tasks", "Tasks"), ("devices", "Devices"),
+             ("tools", "Tools"), ("mcp", "Endpoints"), ("tasks", "Model Routing"), ("devices", "Devices"),
              ("memories", "Memories"), ("journals", "Journals"), ("voice", "Speech Settings")],
         )
         self.assertIn("secondary-button", pages.elements["adminSpeechSettingsButton"][1]["class"])
@@ -85,7 +85,7 @@ class PortalTests(unittest.TestCase):
         pages = PortalPageMap(markup)
         self.assertFalse(pages.duplicate_ids)
         for element in ("taskProfileFoundation", "taskFoundationEdit", "foundationTaskSelect"):
-            self.assertEqual(pages.elements[element][2], "foundationsSection")
+            self.assertEqual(pages.elements[element][2], "facultyFoundationSection")
         for element in ("hostBehaviorList", "taskProfileBehaviorSelection", "saveTaskProfile",
                         "behaviorTaskSelect", "cancelTaskBehaviorMembership"):
             self.assertEqual(pages.elements[element][2], "behaviorsSection")
@@ -100,8 +100,18 @@ class PortalTests(unittest.TestCase):
         self.assertEqual(pages.elements["instructionFunctionText"][2], "functionsSection")
         controls = pages.page_controls["instructionsSection"]
         self.assertEqual({attrs["data-admin-section"] for _, attrs in controls
-                          if "data-admin-section" in attrs}, {"foundations", "functions", "behaviors", "skills"})
-        for section in ("foundations", "functions", "behaviors", "skills"):
+                          if "data-admin-section" in attrs}, {"foundations", "faculty", "skills"})
+        faculty_buttons = [attrs for _, attrs in controls if "data-admin-faculty" in attrs]
+        self.assertEqual([attrs["data-admin-faculty"] for attrs in faculty_buttons],
+                         ["reasoning", "memory_recall"])
+        self.assertTrue(all(attrs.get("data-keep-label") == "true" for attrs in faculty_buttons))
+        self.assertEqual({attrs["data-admin-section"] for _, attrs in pages.page_controls["facultySection"]
+                          if "data-admin-section" in attrs}, {"facultyFoundation", "functions", "behaviors"})
+        self.assertEqual(pages.elements["mindStartupSkillLink"][2], "foundationsSection")
+        for section in ("facultyFoundation", "functions", "behaviors"):
+            self.assertTrue(any("data-faculty-back" in attrs
+                                for _, attrs in pages.page_controls[section + "Section"]))
+        for section in ("foundations", "faculty", "skills"):
             back = [attrs for _, attrs in pages.page_controls[section + "Section"]
                     if "data-admin-back" in attrs]
             self.assertEqual(back[0]["data-admin-back"], "instructions")
@@ -256,7 +266,7 @@ class PortalTests(unittest.TestCase):
         for name in ("SelfName", "Pronouns", "Development", "Values", "Commitments", "Relationships"):
             with self.subTest(name=name):
                 self.assertEqual(foundations.fields["foundation" + name][0], "dd")
-        self.assertEqual(len(foundations.controls), 11)
+        self.assertEqual(len(foundations.controls), 7)
         tag, back = foundations.controls[0]
         self.assertEqual(tag, "button")
         self.assertIn("data-admin-back", back)
@@ -280,8 +290,8 @@ class PortalTests(unittest.TestCase):
         self.assertRegex(markup, r'id="endpointProbeButton"[^>]*><svg[^>]*aria-hidden="true"')
         self.assertIn('<span id="endpointProbeLabel">Test Endpoint</span>', markup)
         self.assertRegex(markup, r'id="endpointTestResult"[^>]*role="status"')
-        self.assertIn("/static/portal.css?v=20261125-endpoint-test-result", markup)
-        self.assertIn("/static/portal.js?v=20261125-endpoint-test-result", markup)
+        self.assertIn("/static/portal.css?v=20261126-faculties", markup)
+        self.assertIn("/static/portal.js?v=20261126-faculties", markup)
 
     def test_breaker_has_its_own_locked_revisioned_parameters_form(self) -> None:
         markup = (STATIC_DIR / "index.html").read_text(encoding="utf-8")

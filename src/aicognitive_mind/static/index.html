@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Axiom</title>
-  <link rel="stylesheet" href="/static/portal.css?v=20261125-endpoint-test-result">
+  <link rel="stylesheet" href="/static/portal.css?v=20261126-faculties">
   <script src="/static/button_icons.js?v=20261029-breaker-reset" defer></script>
   <script src="/static/local_clock.js?v=20261028-local-clock" defer></script>
 </head>
@@ -226,7 +226,7 @@
           <button class="admin-section-button" type="button" data-admin-section="breaker"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-breaker"/></svg></span><span>Breaker</span></button>
           <button class="admin-section-button" type="button" data-admin-section="tools"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tools"/></svg></span><span>Tools</span></button>
           <button class="admin-section-button" type="button" data-admin-section="mcp"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-mcp"/></svg></span><span>Endpoints</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tasks"/></svg></span><span>Tasks</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="tasks"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tasks"/></svg></span><span>Model Routing</span></button>
           <button class="admin-section-button" type="button" data-admin-section="devices"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-devices"/></svg></span><span>Devices</span></button>
           <button class="admin-section-button" type="button" data-admin-section="memories"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-memories"/></svg></span><span>Memories</span></button>
           <button class="admin-section-button" type="button" data-admin-section="journals"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-journals"/></svg></span><span>Journals</span></button>
@@ -238,15 +238,29 @@
           <article id="instructionsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">INSTRUCTION SETTINGS</p><h3>Instructions</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
             <nav class="admin-section-nav" aria-label="Instruction sections">
-          <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Foundations</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="functions"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tools"/></svg></span><span>Functions</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><span>Behaviors</span></button>
-          <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-skills"/></svg></span><span>Skills</span></button>
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><strong>Mind</strong></button>
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-skills"/></svg></span><strong>Skills</strong></button>
+            </nav>
+            <section class="overview-group" aria-labelledby="facultiesHeading">
+              <h4 id="facultiesHeading">Faculties</h4>
+              <div class="faculty-grid">
+                <button class="task-profile-card" data-keep-label="true" type="button" data-admin-section="faculty" data-admin-faculty="reasoning"><strong>Reasoning</strong></button>
+                <button class="task-profile-card" data-keep-label="true" type="button" data-admin-section="faculty" data-admin-faculty="memory_recall"><strong>Memory Steward</strong></button>
+              </div>
+            </section>
+          </article>
+
+          <article id="facultySection" class="panel hidden">
+            <div class="panel-heading"><div><p class="eyebrow">FACULTY</p><h3 id="facultyTitle"></h3></div><button type="button" class="secondary-button" data-admin-back="instructions" aria-label="Back to Instructions" title="Back to Instructions">Back</button></div>
+            <nav class="admin-section-nav" aria-label="Faculty instructions">
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="facultyFoundation" data-faculty-child><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><strong>Foundation</strong></button>
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="functions" data-faculty-child><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tools"/></svg></span><strong>Functions</strong></button>
+              <button class="admin-section-button" data-keep-label="true" type="button" data-admin-section="behaviors" data-faculty-child><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><strong>Behaviors</strong></button>
             </nav>
           </article>
 
           <article id="foundationsSection" class="panel hidden">
-            <div class="panel-heading"><div><p class="eyebrow">MIND CONFIGURATION</p><h3>Foundations</h3></div><button type="button" class="secondary-button" data-admin-back="instructions" aria-label="Back to Instructions" title="Back to Instructions">Back</button></div>
+            <div class="panel-heading"><div><p class="eyebrow">MIND CONFIGURATION</p><h3>Mind</h3></div><button type="button" class="secondary-button" data-admin-back="instructions" aria-label="Back to Instructions" title="Back to Instructions">Back</button></div>
             <section class="overview-group"><h4>Identity</h4>
               <dl class="foundation-identity">
                 <div><dt>Self-name</dt><dd id="foundationSelfName">Unknown</dd></div>
@@ -258,27 +272,27 @@
               </dl>
               <p id="foundationStatus" role="status" aria-live="polite"></p>
             </section>
-            <section class="overview-group"><h4>Startup</h4><div class="host-behavior-fields">
+            <section class="overview-group"><div class="panel-heading"><h4>Startup</h4><button id="mindStartupSkillLink" class="secondary-button" data-keep-label="true" type="button"><strong>AxiomsMind Startup Skill</strong></button></div><div class="host-behavior-fields">
               <label class="host-behavior-field host-behavior-instruction">Base operating contract<textarea id="foundationContract" rows="18" readonly spellcheck="false"></textarea></label>
-              <label class="host-behavior-field host-behavior-instruction">Startup instructions<textarea id="foundationStartup" rows="12" readonly spellcheck="false"></textarea></label>
+              <label class="host-behavior-field host-behavior-instruction">Additional startup instructions<textarea id="foundationStartup" rows="12" readonly spellcheck="false"></textarea></label>
             </div>
             <div class="edit-actions"><button id="startupEdit" class="secondary-button" type="button" aria-label="Edit startup instructions" title="Edit startup instructions" disabled>Edit</button><button id="startupSave" class="primary-button" type="button" aria-label="Save startup instructions" title="Save startup instructions" disabled>Save Startup</button><button id="startupCancel" class="secondary-button" type="button" aria-label="Cancel startup changes" title="Cancel startup changes" disabled>Cancel</button></div>
             <p id="startupStatus" role="status" aria-live="polite"></p></section>
+          </article>
+          <article id="facultyFoundationSection" class="panel hidden">
+              <div class="panel-heading"><div><p class="eyebrow" id="facultyFoundationScope">MODEL ROUTING</p><h3>Foundation</h3></div><button type="button" class="secondary-button" data-admin-back="tasks" data-faculty-back aria-label="Back" title="Back">Back</button></div>
               <section class="task-profile-section task-profile-foundation-section">
-                <h4>Task Foundations</h4>
-                <label class="host-behavior-field">Task<select id="foundationTaskSelect" aria-label="Task foundation selection"></select></label>
-                <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Task foundation"></textarea>
-                <div class="edit-actions"><button id="taskFoundationEdit" class="secondary-button" type="button" aria-label="Edit task foundation" title="Edit task foundation">Edit</button><button id="taskFoundationSave" class="primary-button" type="button" aria-label="Save task foundation" title="Save task foundation" disabled>Save</button><button id="taskFoundationCancel" class="secondary-button" type="button" aria-label="Cancel task foundation changes" title="Cancel task foundation changes" disabled>Cancel</button></div>
+                <label id="foundationScopePicker" class="host-behavior-field">Profile<select id="foundationTaskSelect"></select></label>
+                <textarea id="taskProfileFoundation" readonly rows="5" aria-label="Foundation"></textarea>
+                <div class="edit-actions"><button id="taskFoundationEdit" class="secondary-button" type="button" aria-label="Edit foundation" title="Edit foundation">Edit</button><button id="taskFoundationSave" class="primary-button" type="button" aria-label="Save foundation" title="Save foundation" disabled>Save</button><button id="taskFoundationCancel" class="secondary-button" type="button" aria-label="Cancel foundation changes" title="Cancel foundation changes" disabled>Cancel</button></div>
                 <p id="taskFoundationStatus" role="status" aria-live="polite"></p>
               </section>
           </article>
           <article id="functionsSection" class="panel hidden">
-            <div class="panel-heading"><div><p class="eyebrow">INSTRUCTION SETTINGS</p><h3>Functions</h3></div><button type="button" class="secondary-button" data-admin-back="instructions" aria-label="Back to Instructions">Back</button></div>
+            <div class="panel-heading"><div><p class="eyebrow" id="facultyFunctionsScope"></p><h3>Functions</h3></div><button type="button" class="secondary-button" data-admin-back="instructions" data-faculty-back aria-label="Back" title="Back">Back</button></div>
             <section class="overview-group">
               <label class="host-behavior-field">Function
                 <select id="instructionFunctionSelect">
-                  <optgroup label="Reasoning"><option value="current_state">Current State Ledger</option></optgroup>
-                  <optgroup label="Memory Steward"><option value="recall">Recall</option><option value="save">Save</option><option value="sleep">Sleep</option></optgroup>
                 </select>
               </label>
               <label class="host-behavior-field host-behavior-instruction">Rules<textarea id="instructionFunctionText" rows="13" readonly spellcheck="false"></textarea></label>
@@ -333,9 +347,9 @@
           </article>
           <article id="behaviorsSection" class="panel admin-behavior-panel hidden">
             <div class="panel-heading">
-              <div><p class="eyebrow">BEHAVIOR LIBRARY</p><h3>Behaviors</h3></div>
+              <div><p class="eyebrow" id="facultyBehaviorsScope">BEHAVIOR LIBRARY</p><h3>Behaviors</h3></div>
               <button id="addHostBehavior" class="secondary-button" type="button">Add Behavior</button>
-              <button class="secondary-button" type="button" data-admin-back="instructions" aria-label="Back to Instructions" title="Back to Instructions">Back</button>
+              <button class="secondary-button" type="button" data-admin-back="tasks" data-faculty-back aria-label="Back" title="Back">Back</button>
             </div>
             
             <div class="behavior-library-navigation">
@@ -350,8 +364,8 @@
             <p id="hostBehaviorSummary" class="record-empty" role="status" aria-live="polite"></p>
             <div id="hostBehaviorList" class="record-list"></div>
               <section class="task-profile-section task-profile-behaviors-section">
-                 <div class="panel-heading task-profile-behavior-heading"><h4>Task Memberships</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
-                <label class="host-behavior-field">Task<select id="behaviorTaskSelect" aria-label="Task behavior selection"></select></label>
+                 <div class="panel-heading task-profile-behavior-heading"><h4>Assigned Behaviors</h4><button id="taskProfileAddBehavior" class="secondary-button" type="button">Select behaviors</button></div>
+                <label id="behaviorScopePicker" class="host-behavior-field">Profile<select id="behaviorTaskSelect"></select></label>
                 <div id="taskProfileBehaviorSelection" class="task-behavior-selection"></div>
 
                 <label class="host-behavior-field hidden">Behavior name
@@ -371,16 +385,16 @@
           <article id="tasksSection" class="panel admin-task-model-panel task-profiles-panel hidden">
             <div id="taskProfileOverview">
               <div class="panel-heading">
-                <div><p class="eyebrow">TASK PROFILES</p><h3>Task Configuration</h3></div>
+                <div><h3>Model Routing</h3></div>
                 <button class="secondary-button" type="button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button>
               </div>
-              <section class="overview-group task-profile-selection" aria-label="Task selection">
+              <section class="overview-group task-profile-selection" aria-label="Model routing profiles">
                 <div id="taskProfileList" class="task-profile-grid"></div>
               </section>
             </div>
             <section id="taskProfileEditor" class="task-profile-editor hidden" aria-live="polite">
               <div class="panel-heading task-profile-editor-heading">
-                <div class="task-profile-detail-identity"><span id="taskProfileDetailIcon" class="task-detail-icon" aria-hidden="true">◆</span><div><p class="eyebrow">TASK PROFILE</p><h3 id="taskProfileTitle">Task</h3></div></div>
+                <div class="task-profile-detail-identity"><span id="taskProfileDetailIcon" class="task-detail-icon" aria-hidden="true">◆</span><div><p class="eyebrow">MODEL ROUTING</p><h3 id="taskProfileTitle">Profile</h3></div></div>
                 <button id="taskProfileBack" class="secondary-button" type="button">Return</button>
               </div>
               <section id="taskProfileAssignmentSection" class="task-profile-section">
@@ -915,6 +929,6 @@ Preserve continuity of identity</textarea>
   </div>
 
   <div id="toast" class="toast hidden" role="status"></div>
-  <script src="/static/portal.js?v=20261125-endpoint-test-result"></script>
+  <script src="/static/portal.js?v=20261126-faculties"></script>
 </body>
 </html>
