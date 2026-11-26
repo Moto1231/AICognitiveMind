@@ -11,7 +11,8 @@
 | Identity | Persistent self-name, pronouns, values, commitments, relationships and developmental state | A carefully reviewed commitment |
 | Base operating contract | The Mind's general cognitive instructions | How to distinguish evidence from inference |
 | Startup instructions | Orientation at interaction startup | Read current state before relying on it |
-| Mind skills | Reusable instruction documents and startup flags | Axiom Continuity |
+| Mind Skills | AxiomsMind Startup and reusable instructions loaded on request | SyteLine QA |
+| Function | Protected instructions or parameters for an active responsibility | Memory Steward Recall |
 | Task Foundation | Instructions specific to a task | Preserve uncertainty during transcription |
 | Behavior catalog | Named, reusable behavior instructions | Keep answers concise |
 | Task behavior selection | Explicit membership for a task | Apply concise answers to Reasoning |
@@ -92,15 +93,14 @@ Section sources: [Foundations form](https://github.com/Moto1231/AICognitiveMind/
 | Skill control | Meaning |
 | --- | --- |
 | Enabled | Whether the effective skill is active |
-| Load at startup | The UI name for the `required` flag |
 | Protected | Saved policy metadata; does not prevent authenticated Administrator edits |
-| Enabled + Load at startup | Full content is included in the startup skill contract |
 | Skill ID | Stable slug; existing selections keep their ID read-only |
 | Display name | Human-readable name, distinct from the slug |
 
-The two packaged default startup skills are **Axiom Continuity** and **Axiom Current State**. Their effective saved flags and content govern whether/how those protocols apply. A disabled skill is not made active merely by leaving Load at startup checked.
-
-The internal **Memory Steward** skill is also configurable. Disabling its added instructions does not remove the software's phase schemas or turn off the independent Steward lifecycle.
+**AxiomsMind Startup** is the only automatically loaded server Skill. The
+**Current State Ledger** and **Recall**, **Save**, and **Sleep** rules are under
+**Administration → Instructions → Functions**. Older saved overrides remain
+available to the runtime until replaced by an explicit Function edit.
 
 ## Add a skill or work on a draft
 
@@ -164,3 +164,20 @@ Section sources: [Behavior form and navigation](https://github.com/Moto1231/AICo
 - [src/aicognitive_mind/task_behaviors.py](https://github.com/Moto1231/AICognitiveMind/blob/57f38db876e63d45e37f58f57768e25396a75a8d/src/aicognitive_mind/task_behaviors.py)
 - [src/aicognitive_mind/domain.py](https://github.com/Moto1231/AICognitiveMind/blob/57f38db876e63d45e37f58f57768e25396a75a8d/src/aicognitive_mind/domain.py)
 - [src/aicognitive_mind/static/portal.js](https://github.com/Moto1231/AICognitiveMind/blob/57f38db876e63d45e37f58f57768e25396a75a8d/src/aicognitive_mind/static/portal.js)
+
+## Functions checkpoint
+
+In **Administration → Instructions → Functions**, Reasoning owns **Current State
+Ledger**, and the Memory Steward owns **Recall**, **Save**, and **Sleep**. Only
+the authenticated Administrator can change these rules. The active function is
+loaded alongside its Foundation; saved Behaviors are preferences within those
+rules. Existing provider assignments and the `memory_recall` routing ID are unchanged.
+
+The server loads **AxiomsMind Startup** automatically. In a conversation, say
+`Load your <name> skill and …` to attach one enabled Mind Skill by its exact name
+or ID for that turn. A GitHub draft is not an enabled Mind Skill. Older installed
+connector packages may still carry their legacy startup compatibility instructions.
+
+**Save** is the Memory Steward's completed-turn review. **Sleep** is the existing
+deterministic consolidation, with three editable integer parameters. This checkpoint
+does not schedule Sleep, replay failed reviews, or change when Save runs.

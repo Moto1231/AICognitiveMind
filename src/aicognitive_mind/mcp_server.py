@@ -37,6 +37,7 @@ from aicognitive_mind.naming import (
 )
 from aicognitive_mind.persistence import StorageRuntime, create_storage
 from aicognitive_mind.sleep import SleepConsolidator
+from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry, sleep_function_settings
 from aicognitive_mind.task_behaviors import TaskExecutionContext
 from aicognitive_mind.task_dispatcher import TaskDispatchError, TaskModelDispatcher
 from aicognitive_mind.task_model_assignments import TaskKind
@@ -416,9 +417,11 @@ async def execute_task(
 async def run_sleep_cycle(ctx: Context[AppState]) -> dict[str, Any]:
     """Manually run Axiom's subconscious sleep-cycle consolidation now."""
     storage = ctx.request_context.lifespan_context.storage
+    configuration = await CognitiveConfigurationRegistry(RuntimeRecords(storage.mind)).effective()
     report = await SleepConsolidator(
         journal=storage.journal,
         memory=storage.memory,
+        **sleep_function_settings(configuration["functions"]["sleep"]),
     ).sleep()
     return report.model_dump(mode="json")
 

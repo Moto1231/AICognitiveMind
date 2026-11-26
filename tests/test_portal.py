@@ -97,10 +97,11 @@ class PortalTests(unittest.TestCase):
             self.assertEqual(pages.elements[element][2], "tasksSection")
         self.assertEqual(pages.elements["taskProfileSkillsLink"][2], "tasksSection")
         self.assertEqual(pages.elements["skillsContent"][2], "skillsSection")
+        self.assertEqual(pages.elements["instructionFunctionText"][2], "functionsSection")
         controls = pages.page_controls["instructionsSection"]
         self.assertEqual({attrs["data-admin-section"] for _, attrs in controls
-                          if "data-admin-section" in attrs}, {"foundations", "behaviors", "skills"})
-        for section in ("foundations", "behaviors", "skills"):
+                          if "data-admin-section" in attrs}, {"foundations", "functions", "behaviors", "skills"})
+        for section in ("foundations", "functions", "behaviors", "skills"):
             back = [attrs for _, attrs in pages.page_controls[section + "Section"]
                     if "data-admin-back" in attrs]
             self.assertEqual(back[0]["data-admin-back"], "instructions")

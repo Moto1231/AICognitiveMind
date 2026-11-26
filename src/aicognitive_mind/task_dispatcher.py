@@ -530,13 +530,16 @@ class TaskModelDispatcher:
             memory_refs=runtime_context.memory_refs,
             working_context=runtime_context.working_context,
         )
-        system_prompt = await self.prompt_assembler.system_prompt(runtime_context)
         caller_system = [
             str(message.get("content", ""))
             for message in messages
             if message.get("role") == "system" and message.get("content")
         ]
-        if caller_system:
+        system_prompt = await self.prompt_assembler.system_prompt(
+            runtime_context,
+            function_instructions="\n".join(caller_system) if steward_action_phase else "",
+        )
+        if caller_system and not steward_action_phase:
             system_prompt += "\n\nADDITIONAL CALLER INSTRUCTIONS:\n" + "\n".join(caller_system)
         request_messages = [
             {"role": "system", "content": system_prompt},

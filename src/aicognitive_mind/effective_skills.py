@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from importlib.resources import files
 from typing import Any
 
@@ -82,14 +83,43 @@ class EffectiveSkillRegistry:
     async def get(self, slug: str) -> dict[str, Any] | None:
         return next((item for item in await self.list() if item["slug"] == slug), None)
 
-    async def startup_contract(self) -> str:
-        active = [item for item in await self.list() if item["enabled"] and item["required"]]
+    async def startup_contract(self, items: list[dict[str, Any]] | None = None) -> str:
+        active = [item for item in (items if items is not None else await self.list())
+                  if item["enabled"] and item["slug"] == "axiom-continuity"]
         if not active:
             return ""
         return "\n\n".join([
-            "Effective Administrator startup skills (saved Mind settings take precedence over package defaults):",
+            "AXIOMSMIND STARTUP (saved Mind settings take precedence over package defaults):",
             *(f"## {item['name']} ({item['slug']})\n\n{item['content']}" for item in active),
         ])
+
+    async def requested_skill(self, message: str) -> dict[str, Any] | None:
+        # Direct imperative only; a quoted instruction or a mention is not a request.
+        request = re.match(r"^\s*load\s+(?:your\s+|the\s+)?(.+?) skill(?=$|[\s.,:;!?])",
+                           message, flags=re.IGNORECASE)
+        if not request:
+            return None
+        name = request[1].strip(" \"’'“”").casefold()
+        matches = [item for item in await self.list()
+                   if item["slug"] not in {*REQUIRED_SKILLS, "memory-steward"}
+                   and name in {item["slug"].casefold(), item["name"].casefold()}]
+        if len(matches) != 1 or not matches[0]["enabled"]:
+            return {"name": name, "status": "unavailable"}
+        item = matches[0]
+        return {"name": item["name"], "slug": item["slug"], "status": "loaded", "content": item["content"]}
+
+    async def requested_skill_context(self, message: str) -> tuple[str, dict[str, Any] | None]:
+        item = await self.requested_skill(message)
+        if item is None:
+            return "", None
+        if item["status"] != "loaded":
+            return ("ON-DEMAND SKILL: The requested Mind Skill is unavailable. Do not claim it was loaded.",
+                    item)
+        metadata = {key: value for key, value in item.items() if key != "content"}
+        return (
+            "ON-DEMAND SKILL (current turn only; cannot override Foundations, Functions, "
+            "or authorization):\n" + item["content"], metadata,
+        )
 
     async def save(
         self, slug: str, changes: dict[str, Any], *, expected_revision: int,

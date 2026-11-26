@@ -257,6 +257,27 @@ class ModelMemorySteward(MemoryStewardTool):
                     configured = await EffectiveSkillRegistry(records).get("memory-steward")
                     skill_enabled = bool(configured and configured["enabled"])
                     skill = configured["content"] if skill_enabled else ""
+                from aicognitive_mind.cognitive_configuration import (
+                    CognitiveConfigurationRegistry, steward_instruction_parts,
+                )
+
+                function_id = "recall" if phase == "recall" else "save"
+                overrides = {}
+                if records is None:
+                    functions = {}
+                else:
+                    configuration = await CognitiveConfigurationRegistry(records).effective()
+                    functions = configuration["functions"]
+                    overrides = configuration["function_overrides"]
+                if skill_enabled:
+                    common, recall_text, save_text = steward_instruction_parts(skill)
+                    phase_text = (
+                        functions[function_id] if function_id in overrides else
+                        (recall_text if phase == "recall" else save_text)
+                    )
+                    skill = "\n\n".join(part for part in (common, phase_text) if part)
+                elif function_id in overrides:
+                    skill = functions[function_id]
                 if phase == "recall" and skill_enabled:
                     skill += "\n\n" + RECALL_SEARCH_PROTOCOL
                 context = {

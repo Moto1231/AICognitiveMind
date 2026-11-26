@@ -2894,6 +2894,7 @@ const adminSectionIds = {
   journals: "journalsSection",
   overview: "overviewSection",
   foundations: "foundationsSection",
+  functions: "functionsSection",
   breaker: "breakerSection",
   devices: "devicesSection",
   voice: "voiceSection",
@@ -2924,6 +2925,7 @@ document.getElementById("continuityRefreshButton")?.addEventListener("click", re
 async function refreshAdmin() {
   const updates = [refresh()];
   if (document.getElementById("foundationsSection")?.classList.contains("hidden") === false) updates.push(refreshFoundations());
+  if (document.getElementById("functionsSection")?.classList.contains("hidden") === false) updates.push(refreshInstructionFunctions());
   if (typeof refreshBreakerSettings === "function" && document.getElementById("breakerSection")?.classList.contains("hidden") === false) updates.push(refreshBreakerSettings());
   if (document.getElementById("skillsSection")?.classList.contains("hidden") === false) {
     updates.push(refreshSkillDrafts());
@@ -3454,7 +3456,7 @@ function renderInstructionTaskSelectors() {
 
 function showAdminSection(sectionName) {
   if (state.taskFoundationSaving || state.taskProfileSaving || state.hostBehaviorSaving) return;
-  const instructionChild = ["foundations", "behaviors", "skills"].includes(sectionName);
+  const instructionChild = ["foundations", "functions", "behaviors", "skills"].includes(sectionName);
   const instructionTask = state.activeTaskProfile || "reasoning";
   if (sectionName !== "devices" && typeof discardDeviceSelectionChanges === "function") discardDeviceSelectionChanges();
   if (sectionName !== "mcp" && state.providerSetupDraft) cancelProviderConnections();
@@ -3474,6 +3476,7 @@ function showAdminSection(sectionName) {
   if (sectionName === "devices") refreshDeviceInventory();
   if (sectionName === "skills") refreshSkillDrafts();
   if (sectionName === "foundations") refreshFoundations();
+  if (sectionName === "functions") refreshInstructionFunctions();
   if (sectionName === "breaker") refreshBreakerSettings();
   if (sectionName === "overview") refreshDiagnostics();
   if (sectionName === "mcp" && state.adminAuthorized) refreshIntegrations();
@@ -4179,6 +4182,79 @@ el.taskFoundationCancel?.addEventListener("click", cancelTaskFoundationEdit);
 el.taskFoundationSave?.addEventListener("click", saveTaskFoundation);
 el.taskProfileFoundation?.addEventListener("input", updateTaskFoundationEditor);
 
+const functionEditor = Object.fromEntries(["Select", "Text", "Edit", "Save", "Cancel", "Status"].map(key =>
+  [key, document.getElementById("instructionFunction" + key)]));
+let instructionFunctions = null;
+let instructionFunctionEditing = false;
+let instructionFunctionBusy = false;
+
+function renderInstructionFunctions(reset = false) {
+  const { Select, Text, Edit, Save, Cancel } = functionEditor;
+  if (!Select) return;
+  const original = instructionFunctions?.functions?.[Select.value];
+  if (reset) Text.value = original ?? "";
+  Text.readOnly = !instructionFunctionEditing || instructionFunctionBusy;
+  Select.disabled = instructionFunctionEditing || instructionFunctionBusy;
+  Edit.disabled = typeof original !== "string" || instructionFunctionEditing || instructionFunctionBusy;
+  Save.disabled = !instructionFunctionEditing || instructionFunctionBusy || Text.value === original;
+  Cancel.disabled = !instructionFunctionEditing || instructionFunctionBusy;
+}
+
+async function refreshInstructionFunctions() {
+  if (!functionEditor.Select || instructionFunctionBusy || instructionFunctionEditing) return;
+  instructionFunctionBusy = true;
+  functionEditor.Status.textContent = "";
+  renderInstructionFunctions();
+  try {
+    instructionFunctions = await api("/v1/admin/cognitive-configuration", {}, true);
+  } catch (error) {
+    instructionFunctions = null;
+    functionEditor.Status.textContent = error.message;
+  } finally {
+    instructionFunctionBusy = false;
+    renderInstructionFunctions(true);
+  }
+}
+
+if (functionEditor.Select) {
+  functionEditor.Select.addEventListener("change", () => {
+    functionEditor.Status.textContent = "";
+    renderInstructionFunctions(true);
+  });
+  functionEditor.Edit.addEventListener("click", () => {
+    instructionFunctionEditing = true;
+    functionEditor.Status.textContent = "";
+    renderInstructionFunctions();
+    functionEditor.Text.focus();
+  });
+  functionEditor.Cancel.addEventListener("click", () => {
+    instructionFunctionEditing = false;
+    functionEditor.Status.textContent = "";
+    renderInstructionFunctions(true);
+  });
+  functionEditor.Text.addEventListener("input", () => renderInstructionFunctions());
+  functionEditor.Save.addEventListener("click", async () => {
+    if (functionEditor.Save.disabled) return;
+    instructionFunctionBusy = true;
+    renderInstructionFunctions();
+    try {
+      instructionFunctions = await api("/v1/admin/cognitive-configuration", {
+        method: "PUT", body: JSON.stringify({
+          expected_revision: instructionFunctions.revision,
+          functions: { [functionEditor.Select.value]: functionEditor.Text.value },
+        }),
+      }, true);
+      instructionFunctionEditing = false;
+      functionEditor.Status.textContent = "Saved";
+    } catch (error) {
+      functionEditor.Status.textContent = error.message;
+    } finally {
+      instructionFunctionBusy = false;
+      renderInstructionFunctions(!instructionFunctionEditing);
+    }
+  });
+}
+
 let skillDraftSha = null;
 let skillCatalog = [];
 let skillDraftsAvailable = false;
@@ -4241,7 +4317,7 @@ async function loadSkillSelection(value) {
   skillEditing = !selected;
   fillSkillForm(null);
   document.getElementById("skillsSource").textContent = skillSelectionKind === "mind"
-    ? "Mind configuration. Enabled skills marked Load at startup are applied to this Mind's interactions."
+    ? "Enabled Mind skills are available on request. AxiomsMind Startup is the only automatic skill."
     : "GitHub draft. Saving a draft does not change this Mind or publish to ChatGPT.";
   updateSkillEditorState();
   if (!selected) { skillFormBaseline = ""; return; }
@@ -4269,8 +4345,12 @@ async function refreshSkillDrafts() {
     ]);
     if (revision !== skillLoadRevision || skillEditing || skillSaving) return;
     const previous = list.value;
+    const relocated = new Set(["axiom-current-state", "memory-steward"]);
     skillCatalog = [
-      ...configuration.items.map(item => ({ ...item, kind: "mind", selection: "mind:" + item.slug })),
+      ...configuration.items.filter(item => !relocated.has(item.slug)).map(item => ({
+        ...item, displayName: item.slug === "axiom-continuity" ? "AxiomsMind Startup" : item.name,
+        kind: "mind", selection: "mind:" + item.slug,
+      })),
       ...data.items.filter(item => !configuration.items.some(config => config.slug === item.slug && item.source !== "github_draft" && !item.path?.startsWith("skills/drafts/")))
         .map(item => ({ ...item, kind: "github", selection: "github:" + item.slug })),
     ];
@@ -4278,7 +4358,7 @@ async function refreshSkillDrafts() {
     const newDraft = new Option("New GitHub draft", "new:github");
     newDraft.disabled = !skillDraftsAvailable;
     list.replaceChildren(new Option("New Mind skill", "new:mind"), newDraft);
-    for (const item of skillCatalog) list.add(new Option((item.name || item.slug) + (item.kind === "mind" ? " · Mind" : " · GitHub draft"), item.selection));
+    for (const item of skillCatalog) list.add(new Option((item.displayName || item.name || item.slug) + (item.kind === "mind" ? " · Mind" : " · GitHub draft"), item.selection));
     list.value = skillCatalog.some(item => item.selection === previous) ? previous : skillCatalog[0]?.selection || "new:mind";
     const message = skillDraftsAvailable ? "Mind skills and GitHub drafts loaded."
       : "Mind skills available. Custom drafts unavailable: " + (data.drafts_error || "Draft access is unavailable.");

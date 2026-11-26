@@ -205,7 +205,14 @@ class CognitiveMcpService:
             naming = await naming_assessment(mind, self._journal)
             naming_instruction = naming_guidance(naming)
         with timer.stage("contract"):
+            from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+
             contract = await self._compose_reasoning_contract()
+            skill_text, requested_skill = ("", None)
+            if source == "human":
+                skill_text, requested_skill = await EffectiveSkillRegistry(self._records).requested_skill_context(user_message)
+            if skill_text:
+                contract += "\n\n" + skill_text
             contract += "\n\nNAMING LIFECYCLE (software protocol):\n" + naming_instruction
         with timer.stage("behaviors"):
             behaviors = await self._host_behaviors.selected("reasoning")
@@ -231,6 +238,7 @@ class CognitiveMcpService:
                 and current_state.fields["who_is_speaking"].status == "unknown"
             ),
             "conscious_workspace_contract": contract,
+            "requested_skill": requested_skill,
             "continuity_health": continuity_health,
             "presentation_policy": {
                 "name": "The Breaker",
