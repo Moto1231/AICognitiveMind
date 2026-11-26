@@ -22,7 +22,7 @@ from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.mcp_events import MessageEvents
 from aicognitive_mind.persistence import create_storage
 from aicognitive_mind.chatgpt_mcp import HOST_INSTRUCTIONS
-from aicognitive_mind.core_skills import REQUIRED_SKILLS, REQUIRED_SKILL_NAMES, load_required_skill
+from aicognitive_mind.core_skills import REQUIRED_SKILLS, load_required_skill
 from aicognitive_mind.domain import CognitiveActor, JournalEntry, JournalKind
 from aicognitive_mind.storage import InMemoryJournalStore
 
@@ -388,8 +388,9 @@ class DeploymentMcpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(initialized.json()["result"]["serverInfo"]["name"], "Axiom")
         instructions = initialized.json()["result"]["instructions"]
         self.assertEqual(instructions, HOST_INSTRUCTIONS)
+        self.assertIn("AxiomsMind Startup is the server's automatic Skill", instructions)
+        self.assertIn("Current State Ledger is a Reasoning", instructions)
         for slug in REQUIRED_SKILLS:
-            self.assertIn(REQUIRED_SKILL_NAMES[slug], instructions)
             self.assertNotIn(load_required_skill(slug), instructions)
         listed = await self.rpc(token)
         self.assertEqual(listed.status_code, 200, listed.text)
