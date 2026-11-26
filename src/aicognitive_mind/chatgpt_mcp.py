@@ -108,8 +108,8 @@ current reasoning faculty. Authenticated Administrator settings own the applicat
 values, foundations, startup instructions, skills, required/protected flags, and behaviors.
 Saved settings are authoritative; packaged instructions supply defaults only where no override
 exists. Do not restore a package default over an explicit saved edit, blank, or disabled skill.
-Factory skill names include Axiom Continuity and Axiom Current State; their effective content,
-enabled/required/protected settings and startup use come from the saved Administrator configuration.
+AxiomsMind Startup is the server's automatic Skill. The Current State Ledger is a Reasoning
+Function. Other enabled Mind Skills attach only on an explicit conversational request.
 
 Call begin_interaction with the actual user message to retrieve the current Mind and its effective
 conscious_workspace_contract. Consume that full contract and the returned state before dependent
