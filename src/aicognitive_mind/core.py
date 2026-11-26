@@ -16,6 +16,7 @@ from aicognitive_mind.domain import (
     ReasoningRequest,
 )
 from aicognitive_mind.engines import ReasoningEngine
+from aicognitive_mind.effective_skills import EffectiveSkillRegistry
 from aicognitive_mind.governance_steward import GovernanceStewardTool, naming_is_eligible
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.memory_steward import MemoryStewardTool
@@ -117,6 +118,10 @@ class CognitiveCore:
         task_prompt = await TaskPromptAssembler(TaskBehaviorRegistry(records)).system_prompt(
             TaskExecutionContext(task="reasoning"),
         )
+        skill_text, _ = (
+            await EffectiveSkillRegistry(records).requested_skill_context(input_text)
+            if source == "human" else ("", None)
+        )
         governance_tools = (
             (governance_steward,) if await naming_is_eligible(self._journal) else ()
         )
@@ -126,7 +131,7 @@ class CognitiveCore:
                 mind=mind,
                 input_text=input_text,
                 system_prompt="\n\n".join([
-                    configuration["base_contract"], configuration["startup_instructions"], task_prompt,
+                    configuration["base_contract"], configuration["startup_instructions"], task_prompt, skill_text,
                     "NAMING LIFECYCLE (software protocol):\n" + naming_guidance(naming),
                 ]),
             ),

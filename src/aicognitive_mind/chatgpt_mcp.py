@@ -38,6 +38,7 @@ from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.naming import ensure_naming_ready
 from aicognitive_mind.sleep import SleepConsolidator
+from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry, sleep_function_settings
 from aicognitive_mind.task_model_assignments import TaskKind
 from aicognitive_mind.timing import StageTimer, emit
 from aicognitive_mind.voice_settings import VoiceSettings
@@ -107,8 +108,8 @@ current reasoning faculty. Authenticated Administrator settings own the applicat
 values, foundations, startup instructions, skills, required/protected flags, and behaviors.
 Saved settings are authoritative; packaged instructions supply defaults only where no override
 exists. Do not restore a package default over an explicit saved edit, blank, or disabled skill.
-Factory skill names include Axiom Continuity and Axiom Current State; their effective content,
-enabled/required/protected settings and startup use come from the saved Administrator configuration.
+AxiomsMind Startup is the server's automatic Skill. The Current State Ledger is a Reasoning
+Function. Other enabled Mind Skills attach only on an explicit conversational request.
 
 Call begin_interaction with the actual user message to retrieve the current Mind and its effective
 conscious_workspace_contract. Consume that full contract and the returned state before dependent
@@ -857,7 +858,11 @@ def build_chatgpt_mcp(
         """
         state = request_state(ctx)
         storage = state.storage
-        report = await SleepConsolidator(journal=storage.journal, memory=storage.memory).sleep()
+        configuration = await CognitiveConfigurationRegistry(RuntimeRecords(storage.mind)).effective()
+        report = await SleepConsolidator(
+            journal=storage.journal, memory=storage.memory,
+            **sleep_function_settings(configuration["functions"]["sleep"]),
+        ).sleep()
         response = report.model_dump(mode="json")
         community = getattr(state, "community_memory", None)
         principal = getattr(state, "community_principal", None)

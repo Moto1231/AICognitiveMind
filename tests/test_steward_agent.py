@@ -212,6 +212,26 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(supplied["identity"]["self_name"], "Axiom")
         self.assertEqual(supplied["current_state"], {"revision": 7})
 
+    async def test_protected_functions_are_separate_in_recall_and_save_prompts(self):
+        from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
+
+        model = ScriptedModel(SKIP, NOTHING)
+        agent = self.agent(model)
+        mind = InMemoryMindStore()
+        await mind.initialize(agent._mind)
+        agent.skill_records = RuntimeRecords(mind)
+        config = CognitiveConfigurationRegistry(agent.skill_records)
+        await config.save({"functions": {
+            "recall": "RECALL-ONLY-MARKER", "save": "SAVE-ONLY-MARKER",
+        }}, expected_revision=0)
+        await agent.invoke({"action": "recall", "focus": agent._input_text})
+        await agent.review_interaction("A reply", (), (), (), ())
+        recall, save = [call[1]["messages"][0]["content"] for call in model.calls]
+        self.assertIn("RECALL-ONLY-MARKER", recall)
+        self.assertNotIn("SAVE-ONLY-MARKER", recall)
+        self.assertIn("SAVE-ONLY-MARKER", save)
+        self.assertNotIn("RECALL-ONLY-MARKER", save)
+
     async def test_agent_directs_search_and_returns_only_its_synthesized_brief(self):
         model = ScriptedModel(SEARCH, BRIEF)
         agent = self.agent(model, message="What database did we choose for that project?")

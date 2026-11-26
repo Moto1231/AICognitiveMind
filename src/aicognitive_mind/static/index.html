@@ -239,6 +239,7 @@
             <div class="panel-heading"><div><p class="eyebrow">INSTRUCTION SETTINGS</p><h3>Instructions</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
             <nav class="admin-section-nav" aria-label="Instruction sections">
           <button class="admin-section-button" type="button" data-admin-section="foundations"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-foundations"/></svg></span><span>Foundations</span></button>
+          <button class="admin-section-button" type="button" data-admin-section="functions"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-tools"/></svg></span><span>Functions</span></button>
           <button class="admin-section-button" type="button" data-admin-section="behaviors"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-behaviors"/></svg></span><span>Behaviors</span></button>
           <button class="admin-section-button" type="button" data-admin-section="skills"><span class="admin-section-icon" aria-hidden="true"><svg class="admin-line-icon" viewBox="0 0 48 48"><use href="#admin-icon-skills"/></svg></span><span>Skills</span></button>
             </nav>
@@ -271,6 +272,20 @@
                 <p id="taskFoundationStatus" role="status" aria-live="polite"></p>
               </section>
           </article>
+          <article id="functionsSection" class="panel hidden">
+            <div class="panel-heading"><div><p class="eyebrow">INSTRUCTION SETTINGS</p><h3>Functions</h3></div><button type="button" class="secondary-button" data-admin-back="instructions" aria-label="Back to Instructions">Back</button></div>
+            <section class="overview-group">
+              <label class="host-behavior-field">Function
+                <select id="instructionFunctionSelect">
+                  <optgroup label="Reasoning"><option value="current_state">Current State Ledger</option></optgroup>
+                  <optgroup label="Memory Steward"><option value="recall">Recall</option><option value="save">Save</option><option value="sleep">Sleep</option></optgroup>
+                </select>
+              </label>
+              <label class="host-behavior-field host-behavior-instruction">Rules<textarea id="instructionFunctionText" rows="13" readonly spellcheck="false"></textarea></label>
+              <div class="edit-actions"><button id="instructionFunctionEdit" class="secondary-button" type="button" disabled>Edit</button><button id="instructionFunctionSave" class="primary-button" type="button" disabled>Save</button><button id="instructionFunctionCancel" class="secondary-button" type="button" disabled>Cancel</button></div>
+              <p id="instructionFunctionStatus" role="status" aria-live="polite"></p>
+            </section>
+          </article>
           <article id="breakerSection" class="panel breaker-settings-panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">CONTINUITY CONTROL</p><h3>The Breaker</h3></div><button type="button" class="secondary-button" data-admin-back aria-label="Back to System Overview" title="Back to System Overview">Back</button></div>
             <section class="overview-group">
@@ -301,12 +316,12 @@
           <article id="skillsSection" class="panel hidden">
             <div class="panel-heading"><div><p class="eyebrow">SKILL LIBRARY</p><h3>Skills</h3></div><button type="button" class="secondary-button" data-admin-back="instructions" aria-label="Back to Instructions" title="Back to Instructions">Back</button></div>
             <section class="overview-group">
-              <h4>Required Skills and Drafts</h4>
+              <h4>Skills and Drafts</h4>
               <label class="host-behavior-field">Available skills<select id="skillsList"><option value="">New skill</option></select></label>
               <p id="skillsSource" class="record-empty"></p>
               <label class="host-behavior-field">Skill ID<input id="skillsSlug" placeholder="my-skill" pattern="[a-z0-9-]+" maxlength="64"></label>
               <label class="host-behavior-field" id="skillsNameField">Display name<input id="skillsName" maxlength="120" readonly></label>
-              <div id="skillsConfigurationFlags" class="host-behavior-controls"><label class="host-behavior-enabled"><input id="skillsEnabled" type="checkbox" disabled> Enabled</label><label class="host-behavior-enabled"><input id="skillsRequired" type="checkbox" disabled> Load at startup</label><label class="host-behavior-enabled"><input id="skillsProtected" type="checkbox" disabled> Protected</label></div>
+              <div id="skillsConfigurationFlags" class="host-behavior-controls"><label class="host-behavior-enabled"><input id="skillsEnabled" type="checkbox" disabled> Enabled</label><input id="skillsRequired" type="checkbox" hidden disabled><label class="host-behavior-enabled"><input id="skillsProtected" type="checkbox" disabled> Protected</label></div>
               <label class="host-behavior-field">SKILL.md<textarea id="skillsContent" rows="18" spellcheck="false" placeholder="---&#10;name: my-skill&#10;description: What the skill does&#10;---&#10;&#10;# Instructions"></textarea></label>
               <div class="edit-actions"><button id="skillsEdit" type="button" class="secondary-button" aria-label="Edit skill" title="Edit skill" disabled>Edit</button><button id="skillsValidate" type="button" class="secondary-button" aria-label="Validate skill" title="Validate skill">Check</button><button id="skillsSave" type="button" class="primary-button">Save</button><button id="skillsCancel" type="button" class="secondary-button" aria-label="Cancel skill changes" title="Cancel skill changes" disabled>Cancel</button></div>
             </section>

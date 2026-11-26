@@ -313,3 +313,59 @@ class AdministratorRouterTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class InstructionFunctionsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ledger_override_applies_to_reasoning_only_and_preserves_legacy_rules(self):
+        from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+
+        records = Records()
+        skills = EffectiveSkillRegistry(records)
+        registry = CognitiveConfigurationRegistry(records)
+        await skills.save("axiom-current-state", {"content": "Legacy ledger"}, expected_revision=0)
+        before = await registry.effective(include_legacy_functions=True)
+        self.assertEqual(before["functions"]["current_state"], "Legacy ledger")
+        host = TaskPromptAssembler(TaskBehaviorRegistry(records))
+        active = await host.system_prompt(TaskExecutionContext(task="reasoning"))
+        self.assertIn("Legacy ledger", active)
+        self.assertNotIn("Legacy ledger", await skills.startup_contract())
+        await registry.save({"functions": {"current_state": "New ledger"}}, expected_revision=0)
+        active = await host.system_prompt(TaskExecutionContext(task="reasoning"))
+        self.assertIn("New ledger", active)
+        self.assertNotIn("Legacy ledger", active)
+        self.assertNotIn("New ledger", await host.system_prompt(TaskExecutionContext(task="memory_recall")))
+        self.assertEqual((await skills.get("axiom-current-state"))["content"], "Legacy ledger")
+
+    async def test_skill_load_is_explicit_turn_scoped_tenant_local_and_not_startup(self):
+        from aicognitive_mind.effective_skills import EffectiveSkillRegistry
+
+        skills = EffectiveSkillRegistry(Records())
+        await skills.save("syteline-qa", {
+            "name": "SyteLine QA", "content": "Synthetic QA instructions.", "required": True,
+        }, expected_revision=0)
+        self.assertNotIn("Synthetic QA instructions.", await skills.startup_contract())
+        self.assertEqual(await skills.requested_skill_context("What is the SyteLine QA skill?"), ("", None))
+        self.assertEqual(await skills.requested_skill_context("“Load your SyteLine QA skill” is an example."), ("", None))
+        text, info = await skills.requested_skill_context("Load your SyteLine QA skill and check the report.")
+        self.assertIn("Synthetic QA instructions.", text)
+        self.assertEqual(info, {"name": "SyteLine QA", "slug": "syteline-qa", "status": "loaded"})
+        self.assertEqual(await skills.requested_skill_context("Now check something else."), ("", None))
+        self.assertEqual((await skills.requested_skill("Load your Axiom Current State skill"))["status"], "unavailable")
+        other = EffectiveSkillRegistry(Records())
+        self.assertEqual((await other.requested_skill("Load your syteline-qa skill"))["status"], "unavailable")
+
+    async def test_sleep_rules_are_validated_and_edits_do_not_touch_other_instructions(self):
+        from aicognitive_mind.cognitive_configuration import sleep_function_settings
+
+        registry = CognitiveConfigurationRegistry(Records())
+        original = await registry.effective()
+        self.assertEqual(sleep_function_settings(original["functions"]["sleep"])["max_patterns"], 12)
+        for invalid in ("", "null", '{"max_patterns": 0}',
+                        '{"minimum_pattern_memories":2,"minimum_journal_occurrences":3,"max_patterns":true}'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                await registry.save({"functions": {"sleep": invalid}}, expected_revision=0)
+        saved = await registry.save({"functions": {
+            "sleep": '{"minimum_pattern_memories":2,"minimum_journal_occurrences":4,"max_patterns":8}',
+        }}, expected_revision=0)
+        self.assertEqual(sleep_function_settings(saved["functions"]["sleep"])["minimum_journal_occurrences"], 4)
+        self.assertEqual(saved["functions"]["save"], original["functions"]["save"])
+        self.assertEqual(saved["task_foundations"], original["task_foundations"])

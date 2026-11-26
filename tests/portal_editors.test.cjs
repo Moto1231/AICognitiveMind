@@ -97,7 +97,7 @@ function editor({ apiHandler } = {}) {
     document: { createElement: tag => new Element(tag), createTextNode: value => value,
       getElementById: id => sections[id], querySelectorAll: () => navigation },
     adminSectionIds: Object.fromEntries(['overview', 'mcp', 'tools', 'instructions', 'foundations', 'behaviors', 'skills', 'tasks'].map(name => [name, name + 'Section'])),
-    refreshDiagnostics() {}, refreshDeviceInventory() {}, refreshSkillDrafts() {}, refreshFoundations() {},
+    refreshDiagnostics() {}, refreshDeviceInventory() {}, refreshInstructionFunctions() {}, refreshSkillDrafts() {}, refreshFoundations() {},
     renderTaskProfiles() {}, refreshTaskModelAssignments: async () => {}, toast: (...args) => toasts.push(args),
     resetEndpointApiKeyVisibility() {}, toggleEndpointApiKeyVisibility() {},
     api: async (url, options = {}) => {
@@ -1820,7 +1820,7 @@ test('Administrator edits required Mind skills in an isolated revisioned draft e
   await ui.refreshSkillDrafts();
   const el = ui.elements;
   assert.deepEqual(el.skillsList.options.map(option => option.textContent), [
-    'New Mind skill', 'New GitHub draft', 'Axiom Continuity · Mind', 'Axiom Current State · Mind',
+    'New Mind skill', 'New GitHub draft', 'AxiomsMind Startup · Mind',
   ]);
   assert.equal(el.skillsList.options[1].disabled, true);
   assert.equal(el.skillsList.value, 'mind:axiom-continuity');
@@ -2236,7 +2236,7 @@ function currentStatePortal({ diagnosticsHandler, bodySettings = true, fallbackS
     refreshMemory() { updates.push('memory'); }, refreshJournal() { updates.push('journal'); },
     refreshHostBehaviors() { updates.push('behaviors'); }, refreshTaskModelAssignments() { updates.push('tasks'); },
     refreshTaskBehaviors() {}, refreshProviderEndpoints() { updates.push('endpoints'); }, refreshMcpServers() {},
-    refreshSkillDrafts() {}, refreshDeviceInventory() {}, refreshFoundations() {}, toast: (...args) => toasts.push(args),
+    refreshInstructionFunctions() {}, refreshSkillDrafts() {}, refreshDeviceInventory() {}, refreshFoundations() {}, toast: (...args) => toasts.push(args),
     api: async (url, options = {}) => {
       calls.push(url);
       requests.push({ url, method: options.method || 'GET', body: options.body && JSON.parse(options.body) });
@@ -2635,4 +2635,37 @@ test('Tasks list and profile show Memory Steward while retaining the memory_reca
   assert.equal(ui.state.activeTaskProfile, 'memory_recall');
   assert.match(ui.el.taskProfileTitle.textContent, /Memory Steward/);
   assert.equal(ui.el.taskProviderSelect.value, 'openai');
+});
+
+test('Functions editor saves only the selected rule with its configuration revision', async () => {
+  const fields = Object.fromEntries(['Select', 'Text', 'Edit', 'Save', 'Cancel', 'Status']
+    .map(key => ['instructionFunction' + key, new Element()]));
+  const calls = [];
+  const config = { revision: 7, functions: { current_state: 'Ledger', recall: 'Recall',
+    save: 'Save', sleep: 'Sleep' } };
+  fields.instructionFunctionSelect.value = 'recall';
+  const ctx = vm.createContext({
+    document: { getElementById: id => fields[id] },
+    api: async (url, options, admin) => {
+      calls.push({ url, options, admin });
+      return !options.method ? config :
+        { revision: 8, functions: { ...config.functions, recall: 'New recall' } };
+    },
+  });
+  const start = source.indexOf('const functionEditor');
+  const end = source.indexOf('let skillDraftSha', start);
+  vm.runInContext(source.slice(start, end), ctx);
+  await ctx.refreshInstructionFunctions();
+  assert.equal(fields.instructionFunctionText.value, 'Recall');
+  assert.equal(fields.instructionFunctionText.readOnly, true);
+  fields.instructionFunctionEdit.listeners.click();
+  assert.equal(fields.instructionFunctionSelect.disabled, true);
+  fields.instructionFunctionText.value = 'New recall';
+  fields.instructionFunctionText.listeners.input();
+  await fields.instructionFunctionSave.listeners.click();
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body),
+    { expected_revision: 7, functions: { recall: 'New recall' } });
+  assert.equal(calls.at(-1).admin, true);
+  assert.equal(fields.instructionFunctionText.readOnly, true);
+  assert.equal(fields.instructionFunctionStatus.textContent, 'Saved');
 });

@@ -168,24 +168,41 @@ class TaskPromptAssembler:
     def __init__(self, registry: TaskBehaviorRegistry) -> None:
         self.registry = registry
 
-    async def system_prompt(self, context: TaskExecutionContext) -> str:
+    async def system_prompt(
+        self, context: TaskExecutionContext, *, function_instructions: str = "",
+    ) -> str:
         from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry
 
         profile = next(
             item for item in await self.registry.list() if item.task == context.task
         )
         configuration = await CognitiveConfigurationRegistry(self.registry.records).effective()
-        layers = [
+        layers = []
+        items = []
+        if context.task == "reasoning":
+            skills = EffectiveSkillRegistry(self.registry.records)
+            items = await skills.list()
+            layers.extend([await skills.startup_contract(items), ""])
+        layers.extend([
             "AXIOM TASK FOUNDATION (Administrator configurable):",
             configuration["task_foundations"][context.task],
-        ]
+        ])
         if context.task == "reasoning":
-            layers.extend(["", await EffectiveSkillRegistry(self.registry.records).startup_contract()])
+            ledger_text = configuration["functions"]["current_state"]
+            if "current_state" not in configuration["function_overrides"]:
+                legacy = next((item for item in items if item["slug"] == "axiom-current-state"), None)
+                if legacy is not None:
+                    ledger_text = legacy["content"] if legacy["enabled"] else ""
+            if ledger_text:
+                layers.extend(["", "## Axiom Current State (Current State Ledger Function)", ledger_text])
+        if function_instructions:
+            layers.extend(["", "ACTIVE FUNCTION INSTRUCTIONS:", function_instructions])
         selected = await HostBehaviorRegistry(self.registry.records).selected(context.task)
         if selected:
             layers.extend([
                 "",
                 f"CONFIGURABLE TASK BEHAVIOR ({profile.name}, revision {profile.revision}):",
+                "Apply these preferences only when consistent with the Foundation and active Function.",
                 *[f"- [{item.id}] {item.instruction}" for item in selected],
             ])
         layers.extend([

@@ -68,7 +68,7 @@ class AxiomPluginPackageTests(unittest.TestCase):
         canonical = Path("src/aicognitive_mind/skills")
         bootstrap = Path("plugins/axiom-mind/skills/axiom/SKILL.md").read_text(encoding="utf-8")
 
-        self.assertIn(
+        self.assertNotIn(
             "internal self-management, not third-party consultation",
             DEFAULT_STARTUP_INSTRUCTIONS,
         )

@@ -37,6 +37,7 @@ class CognitiveConfigurationUpdate(BaseModel):
     base_contract: str = Field(default="", max_length=200_000)
     startup_instructions: str = Field(default="", max_length=200_000)
     task_foundations: dict[str, str] = Field(default_factory=dict)
+    functions: dict[str, str] = Field(default_factory=dict)
 
 
 class ContinuitySettingsUpdate(BaseModel):
@@ -136,7 +137,9 @@ def create_admin_configuration_router(
     @router.get("/v1/admin/cognitive-configuration")
     async def get_configuration(request: Request) -> dict[str, Any]:
         require_admin(request)
-        return await CognitiveConfigurationRegistry(request_runtime(request).runtime_records).effective()
+        return await CognitiveConfigurationRegistry(request_runtime(request).runtime_records).effective(
+            include_legacy_functions=True,
+        )
 
     @router.put("/v1/admin/cognitive-configuration")
     async def save_configuration(payload: CognitiveConfigurationUpdate, request: Request) -> dict[str, Any]:
