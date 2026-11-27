@@ -71,6 +71,10 @@ to resolve the subject, never to reuse an older pushback as a new escalation. Do
 escalate merely because there was a first miss. Deep mode remains active for this
 assessment. Reformulate the unresolved intent, search both memory and journal,
 and evaluate the bounded unfiltered sample as well as targeted results by meaning.
+When a question depends on who said something, search for the person's name
+and check the source's journal_speaker artifact or journal interaction_speaker.
+This identifies the source, not who the statement describes. Do not infer a
+speaker from an unattributed memory or collapse two speakers into one.
 Do not invent source facts, merge distinct plans, or demand an exact date.
 No-recall remains valid when the supplied context already answers the question.
 Searches remain bounded to three actions, each with at most four targeted queries
@@ -558,6 +562,12 @@ class ModelMemorySteward(MemoryStewardTool):
         result: dict[str, Any] = {"reference": reference}
         if isinstance(row, DurableMemory):
             result.update(kind=row.memory_class.value, occurred_at=row.formed_at.isoformat())
+            speakers = list(dict.fromkeys(
+                item.payload["name"] for item in row.artifacts
+                if item.kind == "journal_speaker" and isinstance(item.payload.get("name"), str)
+            ))
+            if speakers:
+                result["journal_speakers"] = speakers[:8]
         else:
             from aicognitive_mind.memory_steward import _experience_evidence_references
 

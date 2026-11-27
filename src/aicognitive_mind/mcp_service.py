@@ -741,28 +741,21 @@ class CognitiveMcpService:
     async def _commit_journal_memories(
         self, entry: JournalEntry, *, idempotency_key: str,
     ) -> dict[str, Any]:
+        speaker = entry.experience.get("interaction_speaker")
+        attribution = None
+        if isinstance(speaker, dict) and speaker.get("status") == "confirmed":
+            name = speaker.get("name")
+            if isinstance(name, str) and name.strip():
+                attribution = {"name": name, "journal_reference": idempotency_key}
         steward = ModelMemorySteward(
             mind=await self._require_mind(), input_text="", memory=self._memory,
-            journal=self._journal, runtime=None,
+            journal=self._journal, runtime=None, journal_speaker=attribution,
         )
         steward._select((), "")
         accepted = 0
         for proposal in self._journal_review_proposals:
-            value = proposal.model_dump(mode="json")
-            speaker = entry.experience.get("interaction_speaker")
-            if isinstance(speaker, dict) and speaker.get("status") == "confirmed" and speaker.get("name"):
-                value["artifacts"] = [
-                    *[item for item in value["artifacts"] if item["kind"] != "journal_speaker"],
-                    {"kind": "journal_speaker", "payload": {
-                        "name": speaker["name"], "journal_reference": idempotency_key,
-                    }},
-                ]
-            else:
-                value["artifacts"] = [
-                    item for item in value["artifacts"] if item["kind"] != "journal_speaker"
-                ]
             decision = await steward.invoke({
-                "action": "propose_memory", **value,
+                "action": "propose_memory", **proposal.model_dump(mode="json"),
                 "grounding": [*proposal.grounding, f"journal:{idempotency_key}"],
             })
             accepted += bool(decision.get("accepted"))

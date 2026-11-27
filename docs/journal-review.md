@@ -14,7 +14,11 @@ Reasoning responds or runs the existing interaction Save.
   original review succeeded. It reuses the configured Steward provider and
   governed memory writes, with the journal entry and confirmed original speaker
   (when captured on that turn) as provenance. This is not a claim that the
-  speaker is the subject of every memory. Receipt keys
+  speaker is the subject of every memory. Identical content in the same memory
+  class and semantic scope keeps separate source references without duplicating
+  the memory, including when an earlier Save left it unattributed. Recall can
+  search by the recorded source name; it does not resolve same-name identities.
+  Receipt keys
   make repeating a recovered write safe and existing memory is checked again
   at the write boundary. It does not replay the original interaction or invoke
   any external actions.

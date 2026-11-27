@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import unittest
 from unittest.mock import patch
 
-from aicognitive_mind.domain import CognitiveActor, CognitiveMind, JournalEntry, JournalKind, MindIdentity
+from aicognitive_mind.domain import CognitiveActor, CognitiveMind, DurableMemory, JournalEntry, JournalKind, MemoryClass, MindIdentity
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.journal_review import (
     JournalReviewRunner,
@@ -13,7 +13,7 @@ from aicognitive_mind.journal_review import (
     journal_review_key,
 )
 from aicognitive_mind.mcp_service import CognitiveMcpService
-from aicognitive_mind.steward_agent import StewardProtocolError
+from aicognitive_mind.steward_agent import ModelMemorySteward, StewardProtocolError
 from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMemoryStore, InMemoryMindStore
 
 NOW = datetime(2026, 11, 27, 18, tzinfo=UTC)
@@ -126,6 +126,68 @@ class JournalReviewTests(unittest.TestCase):
             } for artifact in rows[0].artifacts)
         asyncio.run(scenario())
 
+
+    def test_two_original_speakers_share_content_without_losing_attribution(self):
+        async def scenario():
+            service, journal, memory, entry, _ = await setup()
+            existing = DurableMemory(
+                memory_class=MemoryClass.PROCEDURAL,
+                content="Use regional columns in future reports.",
+                grounding=("existing evidence",),
+            )
+            await memory.remember(existing, recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+            second = entry.model_copy(update={
+                "occurred_at": entry.occurred_at + timedelta(seconds=1),
+                "experience": {**entry.experience, "interaction_speaker": {
+                    "name": "Another Person", "status": "confirmed",
+                }},
+            })
+            for original in (entry, second, entry, second):
+                await service.review_journal_entry(
+                    "memory_review", original, idempotency_key=journal_review_key(original),
+                )
+            rows = await memory.read()
+            assert len(rows) == 1
+            assert rows[0].formed_at == existing.formed_at
+            assert tuple(artifact.payload for artifact in rows[0].artifacts) == (
+                {"name": "Example Speaker", "journal_reference": journal_review_key(entry)},
+                {"name": "Another Person", "journal_reference": journal_review_key(second)},
+            )
+
+            class RecallRuntime:
+                def __init__(self, name):
+                    self.name = name
+
+                async def execute(self, ctx, payload):
+                    messages = payload["messages"]
+                    assert "Do not infer a" in messages[0]["content"]
+                    if len(messages) == 2:
+                        return json.dumps({
+                            "action": "search", "source": "memory", "query": self.name,
+                        })
+                    results = json.loads(messages[-1]["content"])["search_results"]
+                    assert len(results) == 1
+                    assert any(
+                        item["payload"]["name"] == self.name
+                        for item in results[0]["record"]["artifacts"]
+                    )
+                    return json.dumps({
+                        "action": "finish", "outcome": "recalled", "reason": "Matching source.",
+                        "summary": f"{self.name} said to use regional columns.",
+                        "references": [results[0]["reference"]],
+                    })
+
+            for name in ("Example Speaker", "Another Person"):
+                steward = ModelMemorySteward(
+                    mind=await service._require_mind(), memory=memory, journal=journal,
+                    input_text=f"What did {name} say about reports?", runtime=RecallRuntime(name),
+                )
+                hit = await steward.invoke({"action": "recall", "focus": name})
+                assert hit["context"]["summary"].startswith(name)
+                assert hit["context"]["sources"][0]["journal_speakers"] == [
+                    "Example Speaker", "Another Person",
+                ]
+        asyncio.run(scenario())
 
     def test_slow_provider_never_blocks_conversational_begin(self):
         async def scenario():
