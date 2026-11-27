@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.exceptions import MCPError
 from mcp.types import AudioContent, CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import AnyHttpUrl
@@ -38,6 +39,9 @@ from aicognitive_mind.mcp_service import MemoryProposal
 from aicognitive_mind.memory_steward import ResearchObservation
 from aicognitive_mind.naming import ensure_naming_ready
 from aicognitive_mind.sleep import SleepConsolidator
+from aicognitive_mind.steward_agent import (
+    StewardAssessmentExhausted, StewardAssessmentTimeout, recall_failure_message,
+)
 from aicognitive_mind.cognitive_configuration import CognitiveConfigurationRegistry, sleep_function_settings
 from aicognitive_mind.task_model_assignments import TaskKind
 from aicognitive_mind.timing import StageTimer, emit
@@ -1018,6 +1022,10 @@ def build_chatgpt_mcp(
                 except Exception as exc:
                     emit("community recall unavailable error=%s", type(exc).__name__)
             return response
+        except (StewardAssessmentExhausted, StewardAssessmentTimeout) as exc:
+            message = recall_failure_message(exc)
+            emit("mcp.begin_interaction recall_failure=%s", message)
+            raise ToolError(message) from exc
         except Exception as exc:
             emit("timing mcp.begin_interaction error=%s", type(exc).__name__)
             raise

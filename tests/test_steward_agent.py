@@ -1231,7 +1231,7 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len([entry for entry in await journal.read() if entry.kind == "interaction"]), 1)
         budgets = [json.loads(call["messages"][1]["content"])["assessment_budget"] for call in calls]
         self.assertEqual([budget["decision_attempts_remaining"] for budget in budgets],
-                         [4, 3, 2, 1, 5, 4, 3, 2])
+                         [5, 4, 3, 1, 5, 4, 3, 2])
         self.assertTrue(all(budget["provider_candidates_total"] == 1 for budget in budgets))
         self.assertTrue(all(budget["provider_candidates_remaining"] == 1 for budget in budgets))
         self.assertEqual(budgets[7]["review_corrections_remaining"], 0)
@@ -1482,6 +1482,59 @@ class StewardAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(await memory.read(), [])
         self.assertEqual(len([e for e in await journal.read() if e.kind == "interaction"]), 1)
+
+    async def test_missing_native_recall_query_corrects_once_before_fallback(self):
+        malformed = {"action": "search", "source": "memory"}
+        for repeat_malformed in (False, True):
+            with self.subTest(repeat_malformed=repeat_malformed):
+                service, _, memory = await self.service(None)
+                await memory.remember(DurableMemory(
+                    memory_class=MemoryClass.SEMANTIC, content="Atlas uses SurrealDB.",
+                    grounding=("Earlier project decision",),
+                ), recorded_by=CognitiveActor.CONSCIOUS_MEMORY_STEWARD)
+                records = await self.configured_steward_pool(service, count=2)
+                calls = []
+                steps = iter(
+                    [malformed, malformed, SEARCH, BRIEF] if repeat_malformed
+                    else [malformed, SEARCH, BRIEF]
+                )
+
+                def handle(request):
+                    calls.append((request.url.host, json.loads(request.content)))
+                    return httpx.Response(200, json={
+                        "choices": [{"message": native_message(next(steps))}],
+                    })
+
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                    service._steward_runtime = TaskModelDispatcher(records, client=client)
+                    with patch("aicognitive_mind.steward_agent.candidates", wraps=candidates) as search:
+                        begun = await service.begin_interaction("What database does Atlas use?")
+                search.assert_awaited_once()
+                self.assertEqual(begun["recalled_context"]["summary"], "Atlas uses SurrealDB.")
+                expected = ["provider-0.example"] * (2 if repeat_malformed else 3)
+                if repeat_malformed:
+                    expected.extend(["provider-1.example"] * 2)
+                self.assertEqual([host for host, _ in calls], expected)
+                initial = json.loads(calls[0][1]["messages"][1]["content"])["assessment_budget"]
+                self.assertEqual(initial["recall_corrections_remaining"], 1)
+                self.assertEqual(initial["decision_attempts_remaining"], 6)
+                correction = calls[1][1]["messages"]
+                budget = json.loads(correction[1]["content"])["assessment_budget"]
+                self.assertEqual(budget.get("recall_corrections_remaining", 0), 0)
+                self.assertEqual(budget["searches_remaining"], 3)
+                self.assertEqual(budget["decision_attempts_remaining"], 5)
+                self.assertIn("Supply a searchable query", json.loads(correction[-1]["content"])["correction"])
+
+    async def test_empty_recent_search_still_runs_without_correction(self):
+        recent = {"action": "search", "source": "recent"}
+        finish = {"action": "finish", "outcome": "no_relevant_memory", "reason": "No related history."}
+        model = ScriptedModel(recent, finish)
+        service, _, _ = await self.service(model)
+        with patch("aicognitive_mind.steward_agent.candidates", wraps=candidates) as search:
+            begun = await service.begin_interaction("What did we decide?")
+        self.assertEqual(begun["recalled_context"]["outcome"], "no_relevant_memory")
+        search.assert_awaited_once()
+        self.assertIn("search_results", json.loads(model.calls[1][1]["messages"][-1]["content"]))
 
     async def test_http_native_review_uses_phase_validation_and_bounded_correction(self):
         service, _, memory = await self.service(None)
