@@ -2542,7 +2542,7 @@ test('peer Faculties scope Foundation, Functions and Behaviors without changing 
   assert.equal(ui.el.taskProfileFoundation.value, 'Steward rules');
   assert.equal(ui.sections.foundationScopePicker.classList.contains('hidden'), true);
   ui.showAdminSection('functions', 'memory_recall');
-  assert.deepEqual(Array.from(ui.sections.instructionFunctionSelect.children, item => item.value), ['recall', 'save', 'sleep']);
+  assert.deepEqual(Array.from(ui.sections.instructionFunctionSelect.children, item => item.value), ['recall', 'save', 'sleep', 'current_state_review', 'memory_review']);
   ui.showAdminSection('functions', 'reasoning');
   assert.deepEqual(Array.from(ui.sections.instructionFunctionSelect.children, item => item.value), ['current_state']);
   ui.showAdminSection('behaviors', 'reasoning');
