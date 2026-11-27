@@ -32,6 +32,18 @@ class TaskDispatchError(RuntimeError):
     """A selected task provider could not be resolved or did not complete the request."""
 
 
+class MissingProviderAssignment(TaskDispatchError):
+    """The task has no complete provider/model assignment or fallback."""
+
+
+class ProviderHTTPError(TaskDispatchError):
+    """An HTTP failure with a status safe to include in diagnostics."""
+
+    def __init__(self, status_code: int, message: str) -> None:
+        self.status_code = status_code
+        super().__init__(message)
+
+
 class StewardProviderPoolExhausted(TaskDispatchError):
     """One assessment has tried every eligible saved provider/model candidate."""
 
@@ -162,7 +174,7 @@ class TaskModelDispatcher:
             ):
                 candidates.append(fallback)
         if not candidates:
-            raise TaskDispatchError(
+            raise MissingProviderAssignment(
                 f"Task '{task}' has no complete provider/model assignment or fallback."
             )
         endpoints = await self.endpoints.list()
@@ -399,8 +411,9 @@ class TaskModelDispatcher:
                 "task_provider_http_error endpoint=%s url=%s operation=%s status=%s response=%r",
                 endpoint.name, request_url, path, response.status_code, excerpt,
             )
-            raise TaskDispatchError(
-                f"Provider endpoint '{endpoint.name}' returned HTTP {response.status_code}: {excerpt}"
+            raise ProviderHTTPError(
+                response.status_code,
+                f"Provider endpoint '{endpoint.name}' returned HTTP {response.status_code}: {excerpt}",
             )
         try:
             payload = response.json()
@@ -769,10 +782,11 @@ class _StewardAssessment:
         budget["provider_candidates_remaining"] = self.remaining_candidates
         remaining = budget.get("decision_attempts_remaining")
         searches = budget.get("searches_remaining")
-        corrections = budget.get("review_corrections_remaining")
-        if all(type(value) is int for value in (remaining, searches, corrections)):
+        review_corrections = budget.get("review_corrections_remaining")
+        recall_corrections = budget.get("recall_corrections_remaining", 0)
+        if all(type(value) is int for value in (remaining, searches, review_corrections, recall_corrections)):
             budget["decision_attempts_remaining"] = min(
-                remaining, searches + self.remaining_candidates + corrections,
+                remaining, searches + self.remaining_candidates + review_corrections + recall_corrections,
             )
         updated[1]["content"] = json.dumps(context, default=str)
         return updated

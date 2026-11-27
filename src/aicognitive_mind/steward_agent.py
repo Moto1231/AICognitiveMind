@@ -16,7 +16,8 @@ from aicognitive_mind.memory_steward import MemoryStewardTool, ProposeMemoryCall
 from aicognitive_mind.retrieval import candidates
 from aicognitive_mind.task_behaviors import TaskExecutionContext
 from aicognitive_mind.task_dispatcher import (
-    StewardProviderPoolExhausted, TaskDispatchError, _StewardAssessment,
+    MissingProviderAssignment, ProviderHTTPError, StewardProviderPoolExhausted,
+    TaskDispatchError, _StewardAssessment,
 )
 
 
@@ -24,11 +25,18 @@ class StewardProtocolError(TaskDispatchError):
     """The Steward could not produce a grounded, valid assessment."""
 
 
+class MissingTargetedSearchQuery(StewardProtocolError):
+    """A targeted search did not contain any searchable words."""
+
+
 class StewardAssessmentExhausted(StewardProtocolError):
     """Every eligible candidate failed this assessment; no cognitive writes commit."""
 
-    def __init__(self, last_error: Exception | None = None) -> None:
+    def __init__(
+        self, last_error: Exception | None = None, *, missing_query: bool = False,
+    ) -> None:
         self.last_error = last_error
+        self.missing_query = missing_query
         detail = f" Last failure: {last_error}" if last_error is not None else ""
         super().__init__("Memory Steward assessment exhausted its eligible provider pool." + detail)
 
@@ -36,10 +44,30 @@ class StewardAssessmentExhausted(StewardProtocolError):
 class StewardAssessmentTimeout(StewardProtocolError):
     """The assessment's overall deadline expired, independently of its candidate pool."""
 
-    def __init__(self, last_error: Exception | None = None) -> None:
+    def __init__(
+        self, last_error: Exception | None = None, *, missing_query: bool = False,
+    ) -> None:
         self.last_error = last_error
+        self.missing_query = missing_query
         detail = f" Last failure: {last_error}" if last_error is not None else ""
         super().__init__("Memory Steward assessment timed out." + detail)
+
+
+def recall_failure_message(error: StewardAssessmentExhausted | StewardAssessmentTimeout) -> str:
+    """Give the host the known cause without provider bodies or user content."""
+    if isinstance(error, StewardAssessmentTimeout):
+        message = "Memory Steward recall timed out."
+    else:
+        message = "Memory Steward recall exhausted its available providers."
+    if error.missing_query:
+        message += " A targeted memory search was missing its query."
+    if isinstance(error.last_error, MissingProviderAssignment):
+        message += " The memory_recall task has no complete provider/model assignment or fallback."
+    elif isinstance(error.last_error, ProviderHTTPError):
+        message += f" The last provider returned HTTP {error.last_error.status_code}."
+    elif isinstance(error.last_error, StewardProtocolError) and not error.missing_query:
+        message += " The last provider returned an invalid recall decision."
+    return message
 
 
 class Step(BaseModel):
@@ -238,6 +266,7 @@ class ModelMemorySteward(MemoryStewardTool):
     ) -> Any:
         provider_session: Any = None
         last_rejection: StewardProtocolError | None = None
+        missing_query = False
         deadline = asyncio.timeout(self.assessment_timeout_seconds)
         try:
             async with deadline:
@@ -319,22 +348,31 @@ class ModelMemorySteward(MemoryStewardTool):
                 singleton_review = phase == "review" and (
                     provider_session is None or provider_session.single_provider
                 )
+                recall_correction = phase == "recall"
                 decision_limit = (
-                    candidate_count + 3 + int(singleton_review)
-                    if finite_pool else 4 + int(phase == "review")
+                    candidate_count + 3 + int(singleton_review or recall_correction)
+                    if finite_pool else 5
                 )
                 for decision_index in range(decision_limit):
+                    if not finite_pool and recall_correction and decision_index >= 4 and not missing_query:
+                        break
                     searches_completed = self._search_count - searches_at_start
                     searches_remaining = max(0, 3 - searches_completed)
                     finish_only = searches_remaining == 0
                     round_adapter = finish_adapter if finish_only else adapter
-                    corrections_remaining = int(singleton_review and not self._validation_corrections)
+                    review_corrections = int(singleton_review and not self._validation_corrections)
+                    recall_corrections = int(recall_correction and not missing_query and not finish_only)
+                    corrections_remaining = review_corrections + recall_corrections
                     remaining_candidates = provider_session.remaining_candidates if finite_pool else None
                     decisions_remaining = decision_limit - decision_index
                     if finite_pool:
                         decisions_remaining = min(
                             decisions_remaining,
                             searches_remaining + remaining_candidates + corrections_remaining,
+                        )
+                    elif phase == "recall":
+                        decisions_remaining = min(
+                            decisions_remaining, searches_remaining + 1 + recall_corrections,
                         )
                     context["recall_search_state"] = {
                         "depth": self._recall_depth,
@@ -348,8 +386,10 @@ class ModelMemorySteward(MemoryStewardTool):
                         "searches_remaining": searches_remaining,
                         "search_allowed": not finish_only,
                         "searches_completed": searches_completed,
-                        "review_corrections_remaining": corrections_remaining,
+                        "review_corrections_remaining": review_corrections,
                     }
+                    if recall_corrections:
+                        context["assessment_budget"]["recall_corrections_remaining"] = recall_corrections
                     messages[1]["content"] = json.dumps(context, default=str)
                     if not native_actions:
                         messages[0]["content"] = (
@@ -388,13 +428,17 @@ class ModelMemorySteward(MemoryStewardTool):
                         else:
                             detail = str(exc)
                         last_rejection = StewardProtocolError(detail)
-                        can_correct = bool(corrections_remaining)
+                        is_missing_query = isinstance(exc, MissingTargetedSearchQuery)
+                        can_correct_recall = bool(is_missing_query and recall_corrections)
+                        if phase == "recall" and is_missing_query:
+                            missing_query = True
+                        can_correct = bool(review_corrections or can_correct_recall)
                         has_fallback = False
                         if provider_session is not None and not can_correct:
                             has_fallback = provider_session.reject_response(last_rejection)
                         if not (can_correct or has_fallback):
                             if finite_pool:
-                                raise StewardAssessmentExhausted(last_rejection) from exc
+                                raise StewardAssessmentExhausted(last_rejection, missing_query=missing_query) from exc
                             raise StewardProtocolError(
                                 f"Memory Steward {phase} validation failed: {detail}"
                             ) from exc
@@ -405,6 +449,9 @@ class ModelMemorySteward(MemoryStewardTool):
                             {"role": "user", "content": json.dumps({
                                 "validation_error": detail,
                                 "correction": (
+                                    "Return one corrected recall action. Supply a searchable query "
+                                    "for a targeted memory or journal search."
+                                    if can_correct_recall else
                                     f"Return one corrected {phase} matching the phase schema. "
                                     "Preserve supported decisions and their classifications; "
                                     "do not invent evidence or silently discard valid learning. "
@@ -425,16 +472,16 @@ class ModelMemorySteward(MemoryStewardTool):
                     "Memory Steward exceeded its bounded custom-runtime decision budget." + detail
                 )
         except StewardProviderPoolExhausted as exc:
-            raise StewardAssessmentExhausted(exc.last_error) from exc
+            raise StewardAssessmentExhausted(exc.last_error, missing_query=missing_query) from exc
         except TimeoutError as exc:
             if not deadline.expired():
                 raise
             last_error = getattr(provider_session, "last_error", None) or last_rejection
-            raise StewardAssessmentTimeout(last_error) from exc
+            raise StewardAssessmentTimeout(last_error, missing_query=missing_query) from exc
 
     def _validate_search(self, step: Search, phase: str = "recall") -> None:
         if step.source != "recent" and not _tokens(step.query):
-            raise StewardProtocolError("A targeted memory search requires a query.")
+            raise MissingTargetedSearchQuery("A targeted memory search requires a query.")
         if any(not _tokens(phrase) or len(phrase) > 300 for phrase in step.meanings):
             raise StewardProtocolError("Meaning queries require searchable words and at most 300 characters.")
         if phase != "recall" and (step.meanings or step.depth != "quick"):

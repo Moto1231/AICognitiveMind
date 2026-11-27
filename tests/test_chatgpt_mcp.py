@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 from pydantic import AnyUrl
 
 from mcp.server.auth.provider import AccessToken, AuthorizationParams
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.auth import OAuthClientInformationFull
 
 from aicognitive_mind.chatgpt_mcp import (
@@ -19,6 +20,8 @@ from aicognitive_mind.domain import CognitiveActor, CognitiveMind, JournalEntry,
 from aicognitive_mind.host_context import HostWorkingContext
 from aicognitive_mind.host_runtime import RuntimeRecords
 from aicognitive_mind.storage import InMemoryJournalStore, InMemoryMindStore
+from aicognitive_mind.steward_agent import StewardAssessmentExhausted, StewardAssessmentTimeout
+from aicognitive_mind.task_dispatcher import ProviderHTTPError
 
 
 class ChatGptOAuthTests(unittest.IsolatedAsyncioTestCase):
@@ -543,6 +546,25 @@ class ChatGptMcpSurfaceTests(unittest.IsolatedAsyncioTestCase):
             "Continue.", working.model_dump(mode="json")
         )
         self.assertEqual(result["host_working_context"], working.model_dump(mode="json"))
+
+    async def test_deployed_begin_reports_safe_recall_failure(self):
+        server = build_chatgpt_mcp(self.base, self.provider)
+        for error, expected in (
+            (StewardAssessmentExhausted(
+                ProviderHTTPError(402, "provider body must stay private"), missing_query=True,
+            ), "Memory Steward recall exhausted its available providers. "
+               "A targeted memory search was missing its query. The last provider returned HTTP 402."),
+            (StewardAssessmentTimeout(), "Memory Steward recall timed out."),
+        ):
+            with self.subTest(expected=expected):
+                service = SimpleNamespace(begin_interaction=AsyncMock(side_effect=error))
+                ctx = SimpleNamespace(request_context=SimpleNamespace(
+                    lifespan_context=SimpleNamespace(mind_service=service),
+                ))
+                begin = server._tool_manager.get_tool("begin_interaction").fn
+                with self.assertRaises(ToolError) as failure:
+                    await begin(user_message="Actual user input", ctx=ctx)
+                self.assertEqual(str(failure.exception), expected)
 
     async def test_deployed_state_tools_delegate_events_and_reads(self):
         server = build_chatgpt_mcp(self.base, self.provider)
