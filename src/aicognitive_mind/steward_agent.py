@@ -16,7 +16,8 @@ from aicognitive_mind.memory_steward import MemoryStewardTool, ProposeMemoryCall
 from aicognitive_mind.retrieval import candidates
 from aicognitive_mind.task_behaviors import TaskExecutionContext
 from aicognitive_mind.task_dispatcher import (
-    ProviderHTTPError, StewardProviderPoolExhausted, TaskDispatchError, _StewardAssessment,
+    MissingProviderAssignment, ProviderHTTPError, StewardProviderPoolExhausted,
+    TaskDispatchError, _StewardAssessment,
 )
 
 
@@ -60,7 +61,9 @@ def recall_failure_message(error: StewardAssessmentExhausted | StewardAssessment
         message = "Memory Steward recall exhausted its available providers."
     if error.missing_query:
         message += " A targeted memory search was missing its query."
-    if isinstance(error.last_error, ProviderHTTPError):
+    if isinstance(error.last_error, MissingProviderAssignment):
+        message += " The memory_recall task has no complete provider/model assignment or fallback."
+    elif isinstance(error.last_error, ProviderHTTPError):
         message += f" The last provider returned HTTP {error.last_error.status_code}."
     elif isinstance(error.last_error, StewardProtocolError) and not error.missing_query:
         message += " The last provider returned an invalid recall decision."

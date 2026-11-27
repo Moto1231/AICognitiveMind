@@ -32,6 +32,10 @@ class TaskDispatchError(RuntimeError):
     """A selected task provider could not be resolved or did not complete the request."""
 
 
+class MissingProviderAssignment(TaskDispatchError):
+    """The task has no complete provider/model assignment or fallback."""
+
+
 class ProviderHTTPError(TaskDispatchError):
     """An HTTP failure with a status safe to include in diagnostics."""
 
@@ -170,7 +174,7 @@ class TaskModelDispatcher:
             ):
                 candidates.append(fallback)
         if not candidates:
-            raise TaskDispatchError(
+            raise MissingProviderAssignment(
                 f"Task '{task}' has no complete provider/model assignment or fallback."
             )
         endpoints = await self.endpoints.list()
