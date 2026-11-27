@@ -3484,7 +3484,8 @@ function updateFacultyView(sectionName, faculty) {
     const select = document.getElementById("instructionFunctionSelect");
     if (select) {
       const entries = faculty === "reasoning" ? [["current_state", "Current State Ledger"]]
-        : [["recall", "Recall"], ["save", "Save"], ["sleep", "Sleep"]];
+        : [["recall", "Recall"], ["save", "Save"], ["sleep", "Sleep"],
+          ["current_state_review", "Current State Review"], ["memory_review", "Memory Review"]];
       const previous = select.value;
       select.replaceChildren(...entries.map(([key, label]) => new Option(label, key)));
       select.value = entries.some(([key]) => key === previous) ? previous : entries[0][0];

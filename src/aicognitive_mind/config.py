@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     mcp_access_token: str | None = None
     standalone_calls_per_minute: int = Field(default=6, ge=1, le=120)
     standalone_quota_cooldown_seconds: int = Field(default=300, ge=1)
+    # Opt in on an always-running deployment. Zero leaves the scheduler disabled.
+    journal_review_interval_seconds: int = Field(default=0, ge=0, le=86400)
+    journal_review_mind_id: str | None = None
     reasoning_timeout_seconds: int = Field(default=120, ge=1)
     # Body cognition is external-host-only by default. Standalone reasoning must
     # be explicitly enabled; it must never silently take ownership when the

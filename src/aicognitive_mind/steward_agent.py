@@ -71,6 +71,10 @@ to resolve the subject, never to reuse an older pushback as a new escalation. Do
 escalate merely because there was a first miss. Deep mode remains active for this
 assessment. Reformulate the unresolved intent, search both memory and journal,
 and evaluate the bounded unfiltered sample as well as targeted results by meaning.
+When a question depends on who said something, search for the person's name
+and check the source's journal_speaker artifact or journal interaction_speaker.
+This identifies the source, not who the statement describes. Do not infer a
+speaker from an unattributed memory or collapse two speakers into one.
 Do not invent source facts, merge distinct plans, or demand an exact date.
 No-recall remains valid when the supplied context already answers the question.
 Searches remain bounded to three actions, each with at most four targeted queries
@@ -230,6 +234,7 @@ class ModelMemorySteward(MemoryStewardTool):
     async def _run(
         self, phase: Literal["recall", "review"], result: dict[str, Any],
         *, validate_finish: Callable[[Any], None] | None = None,
+        function_override: str | None = None,
     ) -> Any:
         provider_session: Any = None
         last_rejection: StewardProtocolError | None = None
@@ -258,10 +263,10 @@ class ModelMemorySteward(MemoryStewardTool):
                     skill_enabled = bool(configured and configured["enabled"])
                     skill = configured["content"] if skill_enabled else ""
                 from aicognitive_mind.cognitive_configuration import (
-                    CognitiveConfigurationRegistry, steward_instruction_parts,
+                    CognitiveConfigurationRegistry, function_defaults, steward_instruction_parts,
                 )
 
-                function_id = "recall" if phase == "recall" else "save"
+                function_id = function_override or ("recall" if phase == "recall" else "save")
                 overrides = {}
                 if records is None:
                     functions = {}
@@ -269,15 +274,19 @@ class ModelMemorySteward(MemoryStewardTool):
                     configuration = await CognitiveConfigurationRegistry(records).effective()
                     functions = configuration["functions"]
                     overrides = configuration["function_overrides"]
-                if skill_enabled:
+                if skill_enabled and function_override is None:
                     common, recall_text, save_text = steward_instruction_parts(skill)
                     phase_text = (
                         functions[function_id] if function_id in overrides else
                         (recall_text if phase == "recall" else save_text)
                     )
                     skill = "\n\n".join(part for part in (common, phase_text) if part)
-                elif function_id in overrides:
+                elif function_override is None and function_id in overrides:
                     skill = functions[function_id]
+                if function_override is not None:
+                    common = steward_instruction_parts(skill)[0] if skill_enabled else ""
+                    policy = functions[function_id] if functions else function_defaults()[function_id]
+                    skill = "\n\n".join(part for part in (common, policy) if part)
                 if phase == "recall" and skill_enabled:
                     skill += "\n\n" + RECALL_SEARCH_PROTOCOL
                 context = {
@@ -553,6 +562,12 @@ class ModelMemorySteward(MemoryStewardTool):
         result: dict[str, Any] = {"reference": reference}
         if isinstance(row, DurableMemory):
             result.update(kind=row.memory_class.value, occurred_at=row.formed_at.isoformat())
+            speakers = list(dict.fromkeys(
+                item.payload["name"] for item in row.artifacts
+                if item.kind == "journal_speaker" and isinstance(item.payload.get("name"), str)
+            ))
+            if speakers:
+                result["journal_speakers"] = speakers[:8]
         else:
             from aicognitive_mind.memory_steward import _experience_evidence_references
 
@@ -582,6 +597,7 @@ class ModelMemorySteward(MemoryStewardTool):
         current_evidence: tuple[Any, ...],
         belief_transitions: tuple[Any, ...],
         belief_reframes: tuple[Any, ...],
+        *, journal_review: bool = False,
     ) -> dict[str, Any]:
         def data(items: tuple[Any, ...]) -> list[dict[str, Any]]:
             return [item.model_dump(mode="json") for item in items]
@@ -603,6 +619,7 @@ class ModelMemorySteward(MemoryStewardTool):
                 "belief_reframes": data(belief_reframes),
             },
             validate_finish=validate,
+            function_override="memory_review" if journal_review else None,
         )
         reviewed = self._validate_review(
             finished, response_text, current_evidence, belief_transitions, belief_reframes,

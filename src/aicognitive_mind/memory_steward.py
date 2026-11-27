@@ -295,6 +295,7 @@ class MemoryStewardNotConsultedError(RuntimeError):
 
 
 _SEMANTIC_INTERPRETATION_KIND = "semantic_interpretation"
+JOURNAL_SPEAKER_KIND = "journal_speaker"
 _SEMANTIC_EQUIVALENCE_KIND = "semantic_equivalence"
 _SEMANTIC_SCOPE_DISTINCTION_KIND = "semantic_scope_distinction"
 _SEMANTIC_TENSION_KIND = "semantic_tension"
@@ -1166,6 +1167,7 @@ class MemoryStewardTool:
         working_context: dict[str, Any] | None = None,
         current_state: dict[str, Any] | None = None,
         runtime: Any = None,
+        journal_speaker: dict[str, str] | None = None,
     ) -> None:
         self._mind = mind
         self._input_text = input_text
@@ -1174,6 +1176,7 @@ class MemoryStewardTool:
         self._recall_limit = recall_limit
         self._working_context = working_context or {}
         self._current_state = current_state or {}
+        self._journal_speaker = journal_speaker
         self.assessment: dict[str, Any] = {}
         self._brief: MemoryBrief | None = None
         self._evidence: list[ResearchObservation] = []
@@ -2117,13 +2120,47 @@ class MemoryStewardTool:
 
         existing = await self._working_memories()
         proposed_interpretations = _semantic_interpretations(call.artifacts)
+        speaker = (
+            MemoryArtifact(kind=JOURNAL_SPEAKER_KIND, payload=self._journal_speaker)
+            if self._journal_speaker else None
+        )
 
         exact_content_matches = [
             memory
             for memory in existing
             if memory.content.casefold() == call.content.casefold()
         ]
-        if exact_content_matches:
+        if speaker is not None:
+            matching_scope = [
+                memory for memory in exact_content_matches
+                if memory.memory_class == call.memory_class
+                and _semantic_interpretations(memory.artifacts).keys()
+                == proposed_interpretations.keys()
+            ]
+            if any(
+                item.kind == JOURNAL_SPEAKER_KIND
+                and item.payload.get("journal_reference") == speaker.payload["journal_reference"]
+                for memory in matching_scope for item in memory.artifacts
+            ):
+                return MemoryDecision(
+                    accepted=False, reason="This journal source was already attached.",
+                )
+            if matching_scope:
+                memory = matching_scope[0]
+                replacement = memory.model_copy(update={
+                    "artifacts": (*memory.artifacts, speaker),
+                    "grounding": tuple(dict.fromkeys((*memory.grounding, *call.grounding))),
+                })
+                if memory in self._pending:
+                    self._pending[self._pending.index(memory)] = replacement
+                else:
+                    self._stage_replacement(memory, replacement)
+                return MemoryDecision(
+                    accepted=True, reason="Attached a confirmed journal source to existing memory.",
+                    memory=replacement,
+                )
+
+        if exact_content_matches and speaker is None:
             if not proposed_interpretations:
                 return MemoryDecision(
                     accepted=False,
@@ -2210,7 +2247,12 @@ class MemoryStewardTool:
         ]
 
         associations = call.associations or tuple(_derived_associations(call.content))
-        artifacts = [_materialize_artifact(artifact) for artifact in call.artifacts]
+        artifacts = [
+            _materialize_artifact(artifact) for artifact in call.artifacts
+            if artifact.kind != JOURNAL_SPEAKER_KIND
+        ]
+        if speaker is not None:
+            artifacts.append(speaker)
         if equivalent_evidence:
             matched_memory, matched_meaning = equivalent_evidence[0]
             artifacts.append(

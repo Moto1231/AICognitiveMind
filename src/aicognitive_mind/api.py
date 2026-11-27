@@ -700,7 +700,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         presence=app.state.presence,
     )
     try:
-        yield
+        if settings.journal_review_interval_seconds:
+            from aicognitive_mind.journal_review import JournalReviewRunner
+
+            from aicognitive_mind.persistence import scope_storage
+
+            selected = scope_storage(storage, settings.journal_review_mind_id or storage.mind_id)
+            runner = JournalReviewRunner(
+                CognitiveMcpService(selected.mind, selected.journal, selected.memory),
+                selected.journal, RuntimeRecords(selected.mind),
+            )
+            async with runner.running(max(60, settings.journal_review_interval_seconds)):
+                yield
+        else:
+            yield
     finally:
         await storage.runtime.close()
 

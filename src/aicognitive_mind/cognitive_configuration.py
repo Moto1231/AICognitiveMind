@@ -15,7 +15,7 @@ class CognitiveConfigurationConflict(CommitConflict):
     """The Administrator edited a configuration revision that is no longer current."""
 
 
-FUNCTION_IDS = ("current_state", "recall", "save", "sleep")
+FUNCTION_IDS = ("current_state", "recall", "save", "sleep", "current_state_review", "memory_review")
 SLEEP_DEFAULTS = {
     "minimum_pattern_memories": 2,
     "minimum_journal_occurrences": 3,
@@ -42,6 +42,23 @@ def function_defaults() -> dict[str, str]:
         "recall": recall,
         "save": save,
         "sleep": json.dumps(SLEEP_DEFAULTS, indent=2),
+        "current_state_review": (
+            "Independently compare the journal observation with the recorded Current State. "
+            "Report material changes that were missed or mishandled, not mere mentions, "
+            "questions, hypotheticals, or previously resolved changes. Cite an exact quote "
+            "from the original input. Distinguish historical discrepancies from anything "
+            "still unresolved. Never infer a location or speaker from ambiguous evidence."
+        ),
+        "memory_review": (
+            "Independently look for durable decisions, preferences, and lessons omitted from "
+            "memory, even if the original review succeeded. Use saved memory search to avoid "
+            "paraphrased duplicates. The original speaker identifies who supplied the input, "
+            "not necessarily who the memory is about. For person-specific learning, identify "
+            "the subject explicitly when grounded and do not merge different people. "
+            "Do not assume an unknown speaker's identity. Ground proposals in actual words "
+            "or supplied evidence. Do not treat the assistant's prose as independent evidence. "
+            "If there is nothing new worth retaining, finish with no proposals."
+        ),
     }
 
 
